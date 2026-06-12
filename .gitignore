@@ -1,0 +1,8 @@
+/target/
+/market_watch.db*
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo
+*.log
+*.db
+config.toml
