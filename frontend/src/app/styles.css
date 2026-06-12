@@ -1,8 +1,5 @@
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #d7dce2;
-  background: #111418;
   font-synthesis: none;
 }
 
@@ -18,17 +15,6 @@ body,
   margin: 0;
 }
 
-button,
-a {
-  font: inherit;
-}
-
-button:focus-visible,
-a:focus-visible {
-  outline: 0.125rem solid #58a6ff;
-  outline-offset: -0.125rem;
-}
-
 .app-shell {
   width: 100%;
   height: 100%;
@@ -37,24 +23,21 @@ a:focus-visible {
 }
 
 .navigation-trigger {
-  position: fixed;
-  z-index: 9;
+  position: fixed !important;
+  z-index: 1200;
   top: 0.25rem;
   left: 0.25rem;
   width: 1.75rem;
   height: 1.75rem;
-  padding: 0;
-  border: 0.0625rem solid #343b45;
-  border-radius: 0.25rem;
-  color: #c8d0d9;
-  background: #222831;
-  cursor: pointer;
+  border: 0.0625rem solid #343b45 !important;
+  color: #c8d0d9 !important;
+  background: #222831 !important;
+  cursor: grab !important;
+  touch-action: none;
 }
 
-.status-text,
-.panel-empty {
-  color: #7f8995;
-  font-size: 0.75rem;
+.navigation-trigger:active {
+  cursor: grabbing !important;
 }
 
 .workspace {
@@ -84,49 +67,40 @@ a:focus-visible {
   border-right: 0;
 }
 
-.panel-header,
-.drawer-title {
+.panel-header {
   padding: 0.4rem 0.625rem;
-  color: #aeb7c2;
+  color: #aeb7c2 !important;
   background: #191e24;
-  font-size: 0.75rem;
-  font-weight: 650;
+  font-size: 0.75rem !important;
+  font-weight: 650 !important;
 }
 
 .panel-empty {
   display: grid;
   flex: 1;
   place-items: center;
-}
-
-.drawer-backdrop {
-  position: fixed;
-  z-index: 10;
-  inset: 0;
-  border: 0;
-  background: rgb(0 0 0 / 55%);
+  font-size: 0.75rem !important;
 }
 
 .navigation-drawer {
-  position: fixed;
-  z-index: 11;
-  inset: 0 auto 0 0;
-  display: flex;
   width: 15rem;
-  flex-direction: column;
   border-right: 0.0625rem solid #343b45;
   background: #191e24;
   box-shadow: 0.5rem 0 1.5rem rgb(0 0 0 / 35%);
 }
 
-.navigation-drawer a {
-  padding: 0.55rem 0.75rem;
+.navigation-drawer .MuiListItemButton-root {
+  padding: 0.4rem 0.75rem;
   color: #aeb7c2;
-  text-decoration: none;
 }
 
-.navigation-drawer a:hover,
-.navigation-drawer a.active {
+.navigation-drawer .MuiListItemIcon-root {
+  min-width: 2rem;
+  color: inherit;
+}
+
+.navigation-drawer .MuiListItemButton-root:hover,
+.navigation-drawer .MuiListItemButton-root.active {
   color: #f0f4f8;
   background: #252c35;
 }
