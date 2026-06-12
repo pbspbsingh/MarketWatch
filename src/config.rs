@@ -34,16 +34,15 @@ pub struct MarketConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProviderConfig {
-    pub connect_timeout_seconds: u64,
-    pub request_timeout_seconds: u64,
-    pub minimum_jitter_seconds: u64,
-    pub maximum_jitter_seconds: u64,
+    pub connect_timeout_secs: u64,
+    pub request_timeout_secs: u64,
+    pub min_delay_ms: u64,
+    pub max_delay_ms: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct FinvizConfig {
-    pub industry_url: String,
-    pub ticker_filters: Vec<String>,
+    pub industry_membership_filters: Vec<String>,
     pub membership_fresh_days: u16,
 }
 
@@ -76,24 +75,26 @@ impl Config {
             "market.refresh_minute must be below 60"
         );
         anyhow::ensure!(
-            self.providers.connect_timeout_seconds > 0,
-            "providers.connect_timeout_seconds must be positive"
+            self.providers.connect_timeout_secs > 0,
+            "providers.connect_timeout_secs must be positive"
         );
         anyhow::ensure!(
-            self.providers.request_timeout_seconds >= self.providers.connect_timeout_seconds,
-            "providers.request_timeout_seconds must not be shorter than the connection timeout"
+            self.providers.request_timeout_secs >= self.providers.connect_timeout_secs,
+            "providers.request_timeout_secs must not be shorter than the connection timeout"
         );
         anyhow::ensure!(
-            self.providers.maximum_jitter_seconds >= self.providers.minimum_jitter_seconds,
-            "providers.maximum_jitter_seconds must not be below the minimum"
+            self.providers.max_delay_ms >= self.providers.min_delay_ms,
+            "providers.max_delay_ms must not be below providers.min_delay_ms"
         );
         anyhow::ensure!(
-            !self.finviz.industry_url.trim().is_empty(),
-            "finviz.industry_url is required"
-        );
-        anyhow::ensure!(
-            !self.finviz.ticker_filters.is_empty(),
-            "finviz.ticker_filters is required"
+            self.finviz
+                .industry_membership_filters
+                .iter()
+                .all(|filter| !filter.is_empty()
+                    && filter
+                        .chars()
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_')),
+            "finviz.industry_membership_filters must contain valid Finviz filter tokens"
         );
         anyhow::ensure!(
             self.finviz.membership_fresh_days > 0,
@@ -112,6 +113,6 @@ mod tests {
         let config = Config::load("config.toml").unwrap();
 
         assert_eq!(config.market.benchmark, "QQQ");
-        assert_eq!(config.finviz.membership_fresh_days, 30);
+        assert_eq!(config.finviz.membership_fresh_days, 15);
     }
 }

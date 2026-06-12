@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::providers::FinvizClient;
 use crate::store::Store;
 use axum::Router;
 use std::sync::Arc;
@@ -10,14 +11,17 @@ use tower_http::trace::TraceLayer;
 pub struct AppState {
     pub config: Arc<Config>,
     pub store: Store,
+    pub finviz: FinvizClient,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
+    let finviz = FinvizClient::new(&config.finviz, &config.providers)?;
     let frontend_dist = config.server.frontend_dist.clone();
     let state = AppState {
         config: Arc::new(config),
         store,
+        finviz,
     };
 
     let frontend = ServeDir::new(&frontend_dist)
