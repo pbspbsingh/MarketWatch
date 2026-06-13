@@ -1,8 +1,9 @@
+mod api;
 mod app;
 mod config;
 mod constants;
 mod models;
-mod providers;
+pub mod providers;
 mod services;
 mod store;
 mod utils;
@@ -11,7 +12,7 @@ use anyhow::Context;
 use config::Config;
 use tracing::info;
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 

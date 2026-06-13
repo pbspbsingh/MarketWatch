@@ -275,23 +275,26 @@ Each page is completed, tested, and reviewed before starting the next page. Open
 
 ## Current Status
 
-Completed scaffold:
+Completed:
 
-- Rust/Axum server, SQLite connection and migrations, validated TOML configuration, tracing, and graceful shutdown.
-- Global Axum application state containing shared configuration and SQLite store.
-- React, TypeScript, Vite, React Router, production build, and development proxy.
-- Full-viewport professional dark shell with a floating navigation trigger and overlay drawer.
-- Three-panel Market Watch placeholder and SVG favicon.
-- Latest dependency versions pinned in Cargo and npm lockfiles.
-- Backend checks/tests and frontend type-check/build pass.
+- Rust/Axum server, SQLite connection and migrations, validated TOML configuration, tracing, graceful shutdown, and local API routing.
+- Serialized Finviz client for industry performance, filtered industry membership, and ticker-industry lookup.
+- Daily persisted Finviz industry snapshots with market-close freshness scheduling.
+- Generic Yahoo chart/profile client with serialized requests, cookie/crumb handling, typed retryable errors, jittered exponential retries, and exchange normalization.
+- Persistence-backed Yahoo service with profiles, daily candles, forward-only refresh with overlap, per-symbol request deduplication, and market-close-plus-five-minute freshness.
+- Shared market schedule, exchange, candle, profile, performance, and RS domain models.
+- Latest-industry API with QQQ benchmark-relative RS calculated at read time.
+- React/Material UI shell with draggable navigation trigger, overlay drawer, reusable toast, and three-panel Market Watch workspace.
+- Market Watch industry ranked list with multi-selection, persisted sort key/direction, selectable RS/performance metrics, and dynamic min/max metric coloring.
+- Backend tests/clippy and frontend type-check/build pass without warning suppressions.
 
 Next implementation slice:
 
-1. Replace the placeholder migration with explicit industry snapshot persistence.
-2. Add the serialized Finviz provider client with configured timeout, jitter, and fixture-based parser tests.
-3. Implement once-per-trading-day industry snapshot freshness and scheduling.
-4. Expose latest stored industries through the first local API.
-5. Render the real Market Watch industry list from SQLite.
+1. Persist filtered Finviz industry ticker membership with the configured freshness period.
+2. Add an API that returns the combined deduplicated ticker set for selected industry keys.
+3. Populate the Market Watch ticker panel from selected industries.
+4. Add ticker selection, sorting, loading/error states, and request deduplication.
+5. Calculate and display ticker performance and RS using the persisted Yahoo daily candles.
 
 Every implementation review must also confirm that:
 
@@ -316,7 +319,7 @@ Every implementation review must also confirm that:
 
 Decide immediately before the relevant page is implemented:
 
-- RS chip color thresholds
+- Validate historical return cutoffs by accepting the latest candle on or before each target date only when it is within an agreed maximum calendar-day distance; otherwise treat the period as missing and return zero. Do not use a minimum candle-count requirement because newly listed tickers legitimately have shorter histories.
 - Theme catalog and multi-ETF aggregation
 - AI provider, prompt, and reclassification policy
 - RRG benchmark, formula, trails, and filters

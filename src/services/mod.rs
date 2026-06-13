@@ -1,3 +1,3 @@
 pub mod industries;
-#[allow(dead_code)]
+pub mod industry_analysis;
 pub mod yahoo;
