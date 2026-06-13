@@ -4,11 +4,12 @@ use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::sync::Notify;
 use tokio::time::sleep;
 use tracing::warn;
 
@@ -17,12 +18,21 @@ const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 
-#[derive(Clone)]
 pub struct YahooService {
     store: Store,
-    yahoo: YahooClient,
+    yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
-    daily_candle_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    daily_candle_locks: KeyedLock,
+}
+
+struct KeyedLock {
+    held_keys: Mutex<HashSet<String>>,
+    released: Notify,
+}
+
+struct KeyedLockGuard<'a> {
+    lock: &'a KeyedLock,
+    key: String,
 }
 
 #[derive(Debug, Error)]
@@ -44,12 +54,16 @@ pub enum YahooServiceError {
 }
 
 impl YahooService {
-    pub fn new(store: Store, yahoo: YahooClient, market: &MarketConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        store: Store,
+        yahoo: Arc<YahooClient>,
+        market: &MarketConfig,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             store,
             yahoo,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
-            daily_candle_locks: Arc::new(Mutex::new(HashMap::new())),
+            daily_candle_locks: KeyedLock::new(),
         })
     }
 
@@ -81,14 +95,7 @@ impl YahooService {
             return Err(YahooServiceError::InvalidRange);
         }
 
-        let lock = {
-            let mut locks = self.daily_candle_locks.lock().await;
-            locks
-                .entry(symbol.to_owned())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
-        };
-        let _guard = lock.lock().await;
+        let _guard = self.daily_candle_locks.lock(symbol).await;
         self.daily_candles_locked(symbol, start, end).await
     }
 
@@ -207,7 +214,67 @@ impl YahooService {
     }
 }
 
+impl KeyedLock {
+    fn new() -> Self {
+        Self {
+            held_keys: Mutex::new(HashSet::new()),
+            released: Notify::new(),
+        }
+    }
+
+    async fn lock(&self, key: &str) -> KeyedLockGuard<'_> {
+        loop {
+            let notified = self.released.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if self
+                .held_keys
+                .lock()
+                .expect("keyed lock mutex is not poisoned")
+                .insert(key.to_owned())
+            {
+                return KeyedLockGuard {
+                    lock: self,
+                    key: key.to_owned(),
+                };
+            }
+
+            notified.await;
+        }
+    }
+}
+
+impl Drop for KeyedLockGuard<'_> {
+    fn drop(&mut self) {
+        self.lock
+            .held_keys
+            .lock()
+            .expect("keyed lock mutex is not poisoned")
+            .remove(&self.key);
+        self.lock.released.notify_waiters();
+    }
+}
+
 fn jitter(delay: Duration) -> Duration {
     let maximum = delay.as_millis() as u64;
     Duration::from_millis(fastrand::u64(maximum / 2..=maximum))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn keyed_lock_serializes_same_key_only() {
+        let lock = KeyedLock::new();
+        let guard = lock.lock("AAPL").await;
+
+        assert!(timeout(Duration::from_millis(10), lock.lock("AAPL")).await.is_err());
+        assert!(timeout(Duration::from_millis(10), lock.lock("MSFT")).await.is_ok());
+
+        drop(guard);
+        assert!(timeout(Duration::from_millis(10), lock.lock("AAPL")).await.is_ok());
+    }
 }

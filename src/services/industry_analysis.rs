@@ -2,14 +2,14 @@ use crate::models::{DailyCandle, IndustryRanking, PerformancePeriods};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use chrono::{NaiveDate, TimeDelta};
+use std::sync::Arc;
 use thiserror::Error;
 
 const BENCHMARK_HISTORY_DAYS: i64 = 380;
 
-#[derive(Clone)]
 pub struct IndustryAnalysisService {
     store: Store,
-    yahoo: YahooService,
+    yahoo: Arc<YahooService>,
     benchmark: String,
 }
 
@@ -23,7 +23,7 @@ pub enum IndustryAnalysisError {
 }
 
 impl IndustryAnalysisService {
-    pub fn new(store: Store, yahoo: YahooService, benchmark: String) -> Self {
+    pub fn new(store: Store, yahoo: Arc<YahooService>, benchmark: String) -> Self {
         Self {
             store,
             yahoo,

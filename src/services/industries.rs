@@ -3,16 +3,16 @@ use crate::providers::FinvizClient;
 use crate::store::{IndustrySnapshotRow, NewIndustrySnapshot, Store};
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, Utc};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
 const REFRESH_SLEEP_DURATION: Duration = Duration::from_mins(15);
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(20);
 
-#[derive(Clone)]
 pub struct IndustryRefreshService {
     store: Store,
-    finviz: FinvizClient,
+    finviz: Arc<FinvizClient>,
     market_schedule: MarketSchedule,
 }
 
@@ -24,7 +24,11 @@ enum IndustryRefreshOutcome {
 }
 
 impl IndustryRefreshService {
-    pub fn new(store: Store, finviz: FinvizClient, market: &MarketConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        store: Store,
+        finviz: Arc<FinvizClient>,
+        market: &MarketConfig,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             store,
             finviz,

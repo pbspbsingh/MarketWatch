@@ -6,24 +6,25 @@ use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use axum::Router;
+use std::sync::Arc;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub industry_analysis: IndustryAnalysisService,
+    pub industry_analysis: Arc<IndustryAnalysisService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
-    let finviz = FinvizClient::new(&config.finviz, &config.providers)?;
-    let yahoo = YahooClient::new(&config.providers);
-    let yahoo = YahooService::new(store.clone(), yahoo, &config.market)?;
-    let industry_analysis = IndustryAnalysisService::new(
+    let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
+    let yahoo = Arc::new(YahooClient::new(&config.providers));
+    let yahoo = Arc::new(YahooService::new(store.clone(), yahoo, &config.market)?);
+    let industry_analysis = Arc::new(IndustryAnalysisService::new(
         store.clone(),
         yahoo.clone(),
         config.market.benchmark.clone(),
-    );
+    ));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();

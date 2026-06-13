@@ -3,7 +3,6 @@ use crate::constants::BROWSER_USER_AGENT;
 use anyhow::Context;
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
@@ -16,7 +15,6 @@ const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
 const MAX_CONCURRENT_REQUESTS: usize = 1;
 
-#[derive(Clone)]
 pub struct FinvizClient {
     http: Client,
     industry_url: Url,
@@ -25,7 +23,7 @@ pub struct FinvizClient {
     industry_membership_filters: Vec<String>,
     min_delay: Duration,
     max_delay: Duration,
-    request_permits: Arc<Semaphore>,
+    request_permits: Semaphore,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,7 +66,7 @@ impl FinvizClient {
             industry_membership_filters: finviz.industry_membership_filters.clone(),
             min_delay: Duration::from_millis(provider.min_delay_ms),
             max_delay: Duration::from_millis(provider.max_delay_ms),
-            request_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+            request_permits: Semaphore::new(MAX_CONCURRENT_REQUESTS),
         })
     }
 

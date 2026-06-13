@@ -11,7 +11,6 @@ use de::{ChartResponse, QuoteSummaryResponse};
 use reqwest::{Client, StatusCode, Url, header};
 use serde::de::DeserializeOwned;
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::sleep;
@@ -25,13 +24,12 @@ const COOKIE_FALLBACK_URL: &str = "https://finance.yahoo.com/";
 const CRUMB_FALLBACK_URL: &str = "https://query1.finance.yahoo.com/v1/test/getcrumb";
 const MAX_CONCURRENT_REQUESTS: usize = 1;
 
-#[derive(Clone)]
 pub struct YahooClient {
     http: Client,
     min_delay: Duration,
     max_delay: Duration,
-    request_permits: Arc<Semaphore>,
-    crumb: Arc<Mutex<Option<String>>>,
+    request_permits: Semaphore,
+    crumb: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,8 +72,8 @@ impl YahooClient {
             http,
             min_delay: Duration::from_millis(provider.min_delay_ms),
             max_delay: Duration::from_millis(provider.max_delay_ms),
-            request_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
-            crumb: Arc::new(Mutex::new(None)),
+            request_permits: Semaphore::new(MAX_CONCURRENT_REQUESTS),
+            crumb: Mutex::new(None),
         }
     }
 
