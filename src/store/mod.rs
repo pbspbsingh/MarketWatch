@@ -12,6 +12,8 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[allow(dead_code)]
 mod industries;
+#[allow(dead_code)]
+mod market_data;
 
 #[allow(unused_imports)]
 pub use industries::{IndustrySnapshot, IndustrySnapshotRow, NewIndustrySnapshot};

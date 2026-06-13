@@ -20,7 +20,6 @@ pub(super) struct ChartData {
 #[derive(Debug, Deserialize)]
 pub(super) struct Indicators {
     pub(super) quote: Vec<QuoteIndicator>,
-    pub(super) adjclose: Option<Vec<AdjustedCloseIndicator>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,11 +29,6 @@ pub(super) struct QuoteIndicator {
     pub(super) low: Option<Vec<Option<f64>>>,
     pub(super) close: Option<Vec<Option<f64>>>,
     pub(super) volume: Option<Vec<Option<u64>>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AdjustedCloseIndicator {
-    pub(super) adjclose: Option<Vec<Option<f64>>>,
 }
 
 #[derive(Debug, Deserialize)]

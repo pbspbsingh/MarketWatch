@@ -5,7 +5,7 @@ pub use error::YahooError;
 
 use crate::config::ProviderConfig;
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::Exchange;
+use crate::models::{CompanyProfile, Exchange};
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
 use reqwest::{Client, StatusCode, Url, header};
@@ -53,17 +53,6 @@ pub struct Candle {
     pub low: f64,
     pub close: f64,
     pub volume: u64,
-    pub adjusted_close: Option<f64>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompanyProfile {
-    pub symbol: String,
-    pub name: Option<String>,
-    pub exchange: Option<Exchange>,
-    pub yahoo_exchange_name: Option<String>,
-    pub yahoo_exchange_code: Option<String>,
-    pub description: Option<String>,
 }
 
 impl YahooClient {
@@ -109,7 +98,7 @@ impl YahooClient {
             .append_pair("period1", &start.timestamp().to_string())
             .append_pair("period2", &end.timestamp().to_string())
             .append_pair("includePrePost", "false")
-            .append_pair("includeAdjustedClose", "true");
+            .append_pair("includeAdjustedClose", "false");
         let response: ChartResponse = self.get_json(url, symbol).await?;
         let candles = parse_chart(response, symbol, start, end)?;
         info!(symbol, candle_count = candles.len(), "fetched Yahoo chart");
@@ -298,12 +287,6 @@ fn parse_chart(
         .into_iter()
         .next()
         .ok_or_else(|| invalid(format!("chart has no quote data for {symbol}")))?;
-    let adjusted_closes = data
-        .indicators
-        .adjclose
-        .and_then(|values| values.into_iter().next())
-        .and_then(|values| values.adjclose)
-        .unwrap_or_default();
     let opens = quote.open.unwrap_or_default();
     let highs = quote.high.unwrap_or_default();
     let lows = quote.low.unwrap_or_default();
@@ -324,7 +307,6 @@ fn parse_chart(
                 low: lows.get(index).copied().flatten()?,
                 close: closes.get(index).copied().flatten()?,
                 volume: volumes.get(index).copied().flatten()?,
-                adjusted_close: adjusted_closes.get(index).copied().flatten(),
             })
         })
         .collect::<Vec<_>>();
@@ -348,18 +330,24 @@ fn parse_profile(
     let yahoo_exchange_name = price.as_ref().and_then(|price| price.exchange_name.clone());
     let yahoo_exchange_code = price.as_ref().and_then(|price| price.exchange_code.clone());
 
+    let exchange = normalize_exchange(
+        yahoo_exchange_code.as_deref(),
+        yahoo_exchange_name.as_deref(),
+    )
+    .ok_or_else(|| YahooError::UnsupportedExchange {
+        symbol: symbol.to_owned(),
+        code: yahoo_exchange_code,
+        name: yahoo_exchange_name,
+    })?;
+
     Ok(CompanyProfile {
         symbol: symbol.to_owned(),
         name: price
             .as_ref()
             .and_then(|price| price.long_name.clone().or_else(|| price.short_name.clone())),
-        exchange: normalize_exchange(
-            yahoo_exchange_code.as_deref(),
-            yahoo_exchange_name.as_deref(),
-        ),
-        yahoo_exchange_name,
-        yahoo_exchange_code,
+        exchange,
         description: result.asset_profile.and_then(|profile| profile.description),
+        fetched_at: Utc::now(),
     })
 }
 
@@ -411,7 +399,6 @@ mod tests {
 
         assert_eq!(candles.len(), 2);
         assert_eq!(candles[0].close, 470.48);
-        assert_eq!(candles[0].adjusted_close, Some(469.12));
         assert_eq!(candles[1].volume, 31_200_000);
     }
 
@@ -423,9 +410,8 @@ mod tests {
 
         assert_eq!(profile.symbol, "AAPL");
         assert_eq!(profile.name.as_deref(), Some("Apple Inc."));
-        assert_eq!(profile.exchange, Some(Exchange::Nasdaq));
-        assert_eq!(profile.exchange.unwrap().tradingview_code(), "NASDAQ");
-        assert_eq!(profile.yahoo_exchange_code.as_deref(), Some("NMS"));
+        assert_eq!(profile.exchange, Exchange::Nasdaq);
+        assert_eq!(profile.exchange.tradingview_code(), "NASDAQ");
         assert_eq!(
             profile.description.as_deref(),
             Some("Apple designs products.")

@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn parses_industry_performance_and_identity() {
-        let industries = parse_industries(include_str!("finviz/fixtures/groups.html")).unwrap();
+        let industries = parse_industries(include_str!("fixtures/groups.html")).unwrap();
 
         assert_eq!(
             industries,
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn parses_screener_tickers_and_total() {
-        let page = parse_screener_page(include_str!("finviz/fixtures/screener.html")).unwrap();
+        let page = parse_screener_page(include_str!("fixtures/screener.html")).unwrap();
 
         assert_eq!(page.tickers, ["ADI", "AMD"]);
         assert_eq!(page.total, 42);
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn parses_ticker_industry_identity() {
-        let industry = parse_ticker_industry(include_str!("finviz/fixtures/quote.html")).unwrap();
+        let industry = parse_ticker_industry(include_str!("fixtures/quote.html")).unwrap();
 
         assert_eq!(
             industry,

@@ -8,7 +8,7 @@ Build a local, keyboard-first market-analysis web application focused on industr
 
 - Backend: Rust, Axum, SQLite
 - Frontend: React, TypeScript, Vite
-- Minimal frontend dependencies; no UI framework, TanStack, client cache, or global state library initially
+- Material UI v7 for shared controls and overlays; no TanStack, client cache, or global state library initially
 - External data:
   - Finviz: industries and industry ticker membership
   - Yahoo Finance: ticker prices, performance, charts, and profiles
@@ -23,7 +23,7 @@ Build a local, keyboard-first market-analysis web application focused on industr
 - Prioritize space for data tables and charts over margins, padding, decoration, and navigation
 - Prefer `rem` for sizing and spacing; use `px` only where fixed pixel precision is necessary
 - Closed-by-default overlay navigation drawer
-- Compact utility bar containing menu button, page title, status, and page actions
+- No persistent header or utility bar; use a compact floating navigation trigger that overlays the workspace
 - Keyboard-first navigation with centralized shortcuts
 - Reusable ticker-details popup available from every page
 
@@ -34,6 +34,8 @@ Complete before implementing feature pages.
 ### Backend
 
 - Create Axum application, SQLite migrations, scheduler, provider clients, and local APIs.
+- Keep long-lived shared resources such as configuration, SQLite store, provider clients/queues, and scheduler handles in global Axum application state.
+- Keep request-specific and feature-local state outside global state.
 - Keep code clean, modular, and understandable without AI assistance.
 - Organize modules around clear domain responsibilities and keep provider, persistence, business logic, API, and scheduling concerns separate.
 - Prefer explicit, straightforward code over clever abstractions, hidden behavior, macros, or premature generic frameworks.
@@ -76,7 +78,12 @@ Complete before implementing feature pages.
 
 ### Shared Frontend
 
-- Application shell, overlay navigation drawer, compact utility bar, and routing.
+- Full-viewport application shell, floating navigation trigger, overlay navigation drawer, and routing.
+- Use a centralized dense dark Material UI theme and shared MUI components for controls, forms, feedback, and overlays.
+- Reuse styling through theme tokens, global component overrides, and shared semantic classes or components; keep component-local `sx` limited to genuinely unique styling.
+- Avoid duplicated colors, spacing, typography, and unnecessary `!important` overrides.
+- Keep data-dense layouts, keyboard-navigable market lists, charts, and visualizations as focused custom components.
+- Avoid MUI X paid components unless their licensing and value are explicitly reviewed.
 - Typed local API client using native `fetch`.
 - Reusable list, sorting controls, RS chip, chart workspace, loading/error state, and ticker popup.
 - Central keyboard-shortcut system and shortcut-reference dialog.
@@ -265,6 +272,26 @@ Behavior:
 7. Theme Management.
 
 Each page is completed, tested, and reviewed before starting the next page. Open formulas and visualization details are decided only when their page becomes active.
+
+## Current Status
+
+Completed scaffold:
+
+- Rust/Axum server, SQLite connection and migrations, validated TOML configuration, tracing, and graceful shutdown.
+- Global Axum application state containing shared configuration and SQLite store.
+- React, TypeScript, Vite, React Router, production build, and development proxy.
+- Full-viewport professional dark shell with a floating navigation trigger and overlay drawer.
+- Three-panel Market Watch placeholder and SVG favicon.
+- Latest dependency versions pinned in Cargo and npm lockfiles.
+- Backend checks/tests and frontend type-check/build pass.
+
+Next implementation slice:
+
+1. Replace the placeholder migration with explicit industry snapshot persistence.
+2. Add the serialized Finviz provider client with configured timeout, jitter, and fixture-based parser tests.
+3. Implement once-per-trading-day industry snapshot freshness and scheduling.
+4. Expose latest stored industries through the first local API.
+5. Render the real Market Watch industry list from SQLite.
 
 Every implementation review must also confirm that:
 

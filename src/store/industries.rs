@@ -37,10 +37,10 @@ struct StoredSnapshot {
 impl Store {
     pub async fn latest_industry_snapshot_date(&self) -> anyhow::Result<Option<NaiveDate>> {
         sqlx::query_scalar!(
-            "SELECT market_date AS \"market_date: NaiveDate\"
+            r#"SELECT market_date AS "market_date: NaiveDate"
              FROM industry_snapshots
              ORDER BY market_date DESC
-             LIMIT 1"
+             LIMIT 1"#
         )
         .fetch_optional(&self.pool)
         .await
@@ -113,11 +113,11 @@ impl Store {
     pub async fn latest_industry_snapshot(&self) -> anyhow::Result<Option<IndustrySnapshot>> {
         let snapshot = sqlx::query_as!(
             StoredSnapshot,
-            "SELECT id, market_date AS \"market_date: NaiveDate\",
-                    fetched_at AS \"fetched_at: NaiveDateTime\"
+            r#"SELECT id, market_date AS "market_date: NaiveDate",
+                    fetched_at AS "fetched_at: NaiveDateTime"
              FROM industry_snapshots
              ORDER BY market_date DESC
-             LIMIT 1"
+             LIMIT 1"#
         )
         .fetch_optional(&self.pool)
         .await

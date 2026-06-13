@@ -27,6 +27,13 @@ pub enum YahooError {
     #[error("invalid Yahoo Finance response: {message}")]
     InvalidResponse { message: String },
 
+    #[error("unsupported Yahoo Finance exchange for {symbol}: code={code:?}, name={name:?}")]
+    UnsupportedExchange {
+        symbol: String,
+        code: Option<String>,
+        name: Option<String>,
+    },
+
     #[error("Yahoo Finance request queue was closed")]
     RequestQueueClosed,
 }
