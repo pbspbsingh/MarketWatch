@@ -1,4 +1,5 @@
 use anyhow::Context;
+use chrono::NaiveTime;
 use chrono_tz::Tz;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -28,8 +29,7 @@ pub struct DatabaseConfig {
 pub struct MarketConfig {
     pub timezone: String,
     pub benchmark: String,
-    pub refresh_hour: u8,
-    pub refresh_minute: u8,
+    pub market_hours: (NaiveTime, NaiveTime),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -65,14 +65,6 @@ impl Config {
         anyhow::ensure!(
             !self.market.benchmark.trim().is_empty(),
             "market.benchmark is required"
-        );
-        anyhow::ensure!(
-            self.market.refresh_hour < 24,
-            "market.refresh_hour must be below 24"
-        );
-        anyhow::ensure!(
-            self.market.refresh_minute < 60,
-            "market.refresh_minute must be below 60"
         );
         anyhow::ensure!(
             self.providers.connect_timeout_secs > 0,

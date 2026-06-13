@@ -35,6 +35,18 @@ struct StoredSnapshot {
 }
 
 impl Store {
+    pub async fn latest_industry_snapshot_date(&self) -> anyhow::Result<Option<NaiveDate>> {
+        sqlx::query_scalar!(
+            "SELECT market_date AS \"market_date: NaiveDate\"
+             FROM industry_snapshots
+             ORDER BY market_date DESC
+             LIMIT 1"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load latest industry snapshot date")
+    }
+
     /// Inserts a complete snapshot unless one already exists for its market date.
     pub async fn insert_industry_snapshot_if_absent(
         &self,

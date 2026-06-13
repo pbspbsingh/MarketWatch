@@ -1,6 +1,8 @@
 use anyhow::Context;
 use sqlx::SqlitePool;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::sqlite::{
+    SqliteAutoVacuum, SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
+};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -16,7 +18,6 @@ pub use industries::{IndustrySnapshot, IndustrySnapshotRow, NewIndustrySnapshot}
 
 #[derive(Clone)]
 pub struct Store {
-    #[allow(dead_code)]
     pool: SqlitePool,
 }
 
@@ -27,6 +28,7 @@ impl Store {
             .foreign_keys(true)
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal)
+            .auto_vacuum(SqliteAutoVacuum::Incremental)
             .busy_timeout(BUSY_TIMEOUT)
             .optimize_on_close(true, None);
         let pool = SqlitePoolOptions::new()
