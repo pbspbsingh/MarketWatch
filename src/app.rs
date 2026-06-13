@@ -1,6 +1,7 @@
 use crate::api;
 use crate::config::Config;
 use crate::providers::{FinvizClient, YahooClient};
+use crate::services::chart::ChartService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::tickers::TickerCatalogService;
@@ -13,6 +14,7 @@ use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub chart: Arc<ChartService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
 }
@@ -30,15 +32,21 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let ticker_catalog = Arc::new(TickerCatalogService::new(
         store.clone(),
         finviz.clone(),
-        yahoo,
+        yahoo.clone(),
         &config.finviz,
         &config.market,
     )?);
+    let chart = Arc::new(ChartService::new(
+        store.clone(),
+        yahoo.clone(),
+        &config.market,
+    ));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
     let frontend_dist = config.server.frontend_dist.clone();
     let state = AppState {
+        chart,
         industry_analysis,
         ticker_catalog,
     };

@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type PointerEvent,
+  type SetStateAction,
+} from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
@@ -8,10 +16,14 @@ import {
   IconButton,
   MenuItem,
   Select,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import { fetchIndustries, type IndustryRanking } from "../../api/industries";
 import { streamTickers, type TickerRanking } from "../../api/tickers";
+import { TradingViewChart } from "../../components/TradingViewChart";
 import { Toast } from "../../components/Toast";
 
 type SortKey = "relative_strength" | keyof IndustryRanking["performance"];
@@ -29,6 +41,8 @@ const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
 
 const sortSettingKey = "market-watch.industry-sort";
 const tickerSortSettingKey = "market-watch.ticker-sort";
+const chartSplitKey = "market-watch.chart-split";
+const chartIntervalKey = "market-watch.chart-interval";
 const defaultSortSetting: SortSetting = { key: "relative_strength", direction: "desc" };
 
 function readSortSetting(): SortSetting {
@@ -219,9 +233,14 @@ function IndustriesPanel({
   );
 }
 
-function TickersPanel({ industryKeys }: { industryKeys: Set<string> }) {
+interface TickersPanelProps {
+  industryKeys: Set<string>;
+  selectedTicker: string | undefined;
+  setSelectedTicker: Dispatch<SetStateAction<string | undefined>>;
+}
+
+function TickersPanel({ industryKeys, selectedTicker, setSelectedTicker }: TickersPanelProps) {
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
-  const [selectedTicker, setSelectedTicker] = useState<string>();
   const tickerElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => {
     const value = localStorage.getItem(tickerSortSettingKey);
@@ -453,21 +472,178 @@ function tickerSortValue(ticker: TickerRanking, key: SortKey) {
   return ticker.performance?.[key] ?? undefined;
 }
 
-function EmptyPanel({ title }: { title: string }) {
+function readChartSplit() {
+  const storedValue = localStorage.getItem(chartSplitKey);
+  if (storedValue === null) return 50;
+  const value = Number(storedValue);
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 50;
+}
+
+function readChartInterval(): "D" | "W" {
+  return localStorage.getItem(chartIntervalKey) === "W" ? "W" : "D";
+}
+
+function ChartPanel({
+  industryKeys,
+  selectedTicker,
+}: {
+  industryKeys: Set<string>;
+  selectedTicker: string | undefined;
+}) {
+  const [summary, setSummary] = useState<ChartSummary>();
+  const [interval, setInterval] = useState<"D" | "W">(readChartInterval);
+  const [split, setSplit] = useState(readChartSplit);
+  const [error, setError] = useState<string>();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const splitRef = useRef(split);
+  const selectedIndustry = summary?.industry_name ?? "All industries";
+
+  useEffect(() => {
+    setError(undefined);
+    if (selectedTicker === undefined) {
+      setSummary(undefined);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
+      .then(setSummary)
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setSummary(undefined);
+          setError(requestError.message);
+        }
+      });
+    return () => controller.abort();
+  }, [industryKeys, selectedTicker]);
+
+  const updateSplit = (event: PointerEvent<HTMLDivElement>) => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (bounds === undefined || bounds.height === 0) return;
+    const nextSplit = Math.max(
+      0,
+      Math.min(100, (100 * (event.clientY - bounds.top)) / bounds.height),
+    );
+    splitRef.current = nextSplit;
+    setSplit(nextSplit);
+  };
+
+  const handleDividerPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateSplit(event);
+  };
+
+  const handleDividerPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) updateSplit(event);
+  };
+
+  const handleDividerPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    localStorage.setItem(chartSplitKey, String(splitRef.current));
+  };
+
   return (
     <section className="workspace-panel">
-      <Typography className="panel-header" component="header">
-        {title}
-      </Typography>
-      <Typography className="panel-empty" color="text.secondary">
-        Pending implementation
-      </Typography>
+      <header className="panel-header chart-header">
+        <div className="chart-header-identity">
+          <Typography component="h2">
+            {selectedIndustry} /{" "}
+            {summary === undefined ? (
+              <span>{selectedTicker ?? "Select a ticker"}</span>
+            ) : (
+              <a
+                href={tradingViewSymbolUrl(summary.tradingview_symbol)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {summary.symbol}
+              </a>
+            )}
+          </Typography>
+        </div>
+        {summary !== undefined && (
+          <div className="chart-indicators">
+            <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
+            <Typography>Avg Vol {formatVolume(summary.average_volume)}</Typography>
+          </div>
+        )}
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={interval}
+          aria-label="Chart interval"
+          onChange={(_, value: "D" | "W" | null) => {
+            if (value !== null) {
+              setInterval(value);
+              localStorage.setItem(chartIntervalKey, value);
+            }
+          }}
+        >
+          <ToggleButton value="D">Daily</ToggleButton>
+          <ToggleButton value="W">Weekly</ToggleButton>
+        </ToggleButtonGroup>
+      </header>
+      {selectedTicker === undefined && (
+        <Typography className="panel-empty" color="text.secondary">
+          Select a ticker to display charts
+        </Typography>
+      )}
+      {selectedTicker !== undefined && summary === undefined && error === undefined && (
+        <div className="panel-status">
+          <CircularProgress size="1rem" />
+          <Typography color="text.secondary">Loading chart</Typography>
+        </div>
+      )}
+      {summary !== undefined && (
+        <div
+          ref={workspaceRef}
+          className="chart-workspace"
+          style={{
+            gridTemplateRows: `minmax(0, ${split}fr) 2px minmax(0, ${100 - split}fr)`,
+          }}
+        >
+          <TradingViewChart
+            symbol={summary.tradingview_symbol}
+            interval={interval}
+            onError={setError}
+          />
+          <div
+            className="chart-divider"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-valuenow={Math.round(split)}
+            onPointerDown={handleDividerPointerDown}
+            onPointerMove={handleDividerPointerMove}
+            onPointerUp={handleDividerPointerUp}
+            onPointerCancel={handleDividerPointerUp}
+          />
+          <TradingViewChart
+            symbol={summary.benchmark_symbol}
+            interval={interval}
+            onError={setError}
+          />
+        </div>
+      )}
+      <Toast message={error} onClose={() => setError(undefined)} />
     </section>
   );
 }
 
+function formatVolume(volume: number) {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(volume);
+}
+
+function tradingViewSymbolUrl(symbol: string) {
+  return `https://www.tradingview.com/symbols/${symbol.replace(":", "-")}/`;
+}
+
 export function MarketWatchPage() {
   const [selectedIndustryKeys, setSelectedIndustryKeys] = useState<Set<string>>(() => new Set());
+  const [selectedTicker, setSelectedTicker] = useState<string>();
 
   return (
     <section className="market-watch-page" aria-label="Market Watch">
@@ -475,8 +651,15 @@ export function MarketWatchPage() {
         selectedIndustryKeys={selectedIndustryKeys}
         setSelectedIndustryKeys={setSelectedIndustryKeys}
       />
-      <TickersPanel industryKeys={selectedIndustryKeys} />
-      <EmptyPanel title="Chart" />
+      <TickersPanel
+        industryKeys={selectedIndustryKeys}
+        selectedTicker={selectedTicker}
+        setSelectedTicker={setSelectedTicker}
+      />
+      <ChartPanel
+        industryKeys={selectedIndustryKeys}
+        selectedTicker={selectedTicker}
+      />
     </section>
   );
 }

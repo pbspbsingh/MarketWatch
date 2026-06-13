@@ -30,6 +30,8 @@ pub struct MarketConfig {
     pub timezone: String,
     pub benchmark: String,
     pub market_hours: (NaiveTime, NaiveTime),
+    pub adr_sessions: u16,
+    pub average_volume_sessions: u16,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -65,6 +67,14 @@ impl Config {
         anyhow::ensure!(
             !self.market.benchmark.trim().is_empty(),
             "market.benchmark is required"
+        );
+        anyhow::ensure!(
+            self.market.adr_sessions > 0,
+            "market.adr_sessions must be positive"
+        );
+        anyhow::ensure!(
+            self.market.average_volume_sessions > 0,
+            "market.average_volume_sessions must be positive"
         );
         anyhow::ensure!(
             self.providers.connect_timeout_secs > 0,
@@ -105,6 +115,8 @@ mod tests {
         let config = Config::load("config.toml").unwrap();
 
         assert_eq!(config.market.benchmark, "QQQ");
+        assert_eq!(config.market.adr_sessions, 20);
+        assert_eq!(config.market.average_volume_sessions, 50);
         assert_eq!(config.finviz.membership_fresh_days, 15);
     }
 }

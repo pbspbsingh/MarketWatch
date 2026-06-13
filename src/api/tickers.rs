@@ -16,7 +16,7 @@ use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
 
-const STREAM_BUFFER_SIZE: usize = 4;
+const STREAM_BUFFER_SIZE: usize = 2;
 
 #[derive(Deserialize)]
 struct TickerRequest {

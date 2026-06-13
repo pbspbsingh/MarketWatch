@@ -65,6 +65,9 @@ Complete before implementing feature pages.
 
 ### Ticker Data
 
+- Implemented persisted Finviz industry membership with lazy refresh and per-industry request deduplication.
+- Implemented streamed ticker rankings so locally known tickers display immediately and Yahoo performance/RS arrives incrementally.
+- Implemented browser-disconnect and selection-change cancellation for active ticker streams.
 - Treat Yahoo Finance price history as stale only on a US trading day after 1:20 PM Pacific when no successful refresh exists for that date.
 - Before 1:20 PM Pacific, on weekends, and on US market holidays, continue using the latest available price history.
 - Fetch Yahoo Finance price history only when missing or stale, and make at most one successful refresh per ticker per trading day.
@@ -75,10 +78,13 @@ Complete before implementing feature pages.
 - Fetch Yahoo company profiles lazily.
 - Fetch TradingView fundamentals lazily.
 - Persist all reusable data in SQLite.
+- Implemented configurable chart indicators using persisted Yahoo candles:
+  - ADR window defaults to 20 sessions.
+  - Average-volume window defaults to 50 sessions.
 
 ### Shared Frontend
 
-- Full-viewport application shell, floating navigation trigger, overlay navigation drawer, and routing.
+- Implemented full-viewport application shell, prominent draggable floating navigation trigger, overlay navigation drawer, and routing.
 - Use a centralized dense dark Material UI theme and shared MUI components for controls, forms, feedback, and overlays.
 - Reuse styling through theme tokens, global component overrides, and shared semantic classes or components; keep component-local `sx` limited to genuinely unique styling.
 - Avoid duplicated colors, spacing, typography, and unnecessary `!important` overrides.
@@ -88,6 +94,7 @@ Complete before implementing feature pages.
 - Reusable list, sorting controls, RS chip, chart workspace, loading/error state, and ticker popup.
 - Central keyboard-shortcut system and shortcut-reference dialog.
 - Preserve focus and selection while moving between lists, charts, and popups.
+- Implemented reusable toast feedback and persisted metric sorting.
 
 ### Relative Strength
 
@@ -133,11 +140,10 @@ Primary daily-use page.
 
 ### Industries
 
-- Read latest industry data from SQLite.
-- Sort by `1W`, `1M`, `3M`, `6M`, `1Y`, or RS.
-- Default sort: descending RS.
-- Display RS chips.
-- Lazily load ticker membership when selected.
+- Implemented latest industry data loading from SQLite.
+- Implemented sorting by `1W`, `1M`, `3M`, `6M`, `1Y`, or RS.
+- Implemented descending RS default sort.
+- Implemented multi-selection and lazy ticker membership loading.
 
 ### Themes
 
@@ -148,11 +154,21 @@ Primary daily-use page.
 
 ### Tickers
 
-- Sort by `1W`, `1M`, `3M`, `6M`, `1Y`, or RS.
-- Default sort: descending RS.
-- Display RS chips.
-- Keyboard navigation moves through tickers and updates the chart.
+- Implemented streamed loading and sorting by `1W`, `1M`, `3M`, `6M`, `1Y`, or RS.
+- Implemented descending RS default sort.
+- Implemented missing-performance fallback that preserves failed tickers at the bottom.
+- Implemented keyboard navigation, selected position/count, and scroll-into-view behavior.
+- Keyboard navigation updates the selected ticker chart.
 - Open ticker-details popup from the selected ticker.
+
+### Chart Workspace
+
+- Implemented TradingView Advanced Charts for the selected ticker and configurable benchmark.
+- Implemented ticker TradingView link, ADR, and average-volume header indicators.
+- Implemented persisted Daily/Weekly chart interval.
+- Implemented draggable horizontal chart split persisted as a percentage, defaulting to `50/50` and allowing `0–100%` extremes.
+- Keep the benchmark chart mounted while changing tickers.
+- Remaining: display a selected-industry chart when no ticker is selected.
 
 ### Acceptance
 

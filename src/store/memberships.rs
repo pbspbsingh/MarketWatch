@@ -107,6 +107,37 @@ impl Store {
             .await
             .context("failed to load tickers for industries")
     }
+
+    pub async fn industry_name_for_ticker(
+        &self,
+        symbol: &str,
+        industry_keys: &[String],
+    ) -> anyhow::Result<Option<String>> {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT industry_name
+             FROM industry_membership_tickers
+             JOIN industry_snapshot_rows
+               ON industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
+             JOIN industry_snapshots
+               ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
+             WHERE symbol = ",
+        );
+        query.push_bind(symbol);
+        if !industry_keys.is_empty() {
+            query.push(" AND industry_membership_tickers.industry_key IN (");
+            let mut separated = query.separated(", ");
+            for industry_key in industry_keys {
+                separated.push_bind(industry_key);
+            }
+            query.push(")");
+        }
+        query.push(" ORDER BY industry_snapshots.market_date DESC LIMIT 1");
+        query
+            .build_query_scalar::<String>()
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to load ticker industry name")
+    }
 }
 
 #[cfg(test)]
