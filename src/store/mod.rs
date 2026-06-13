@@ -10,6 +10,7 @@ const MAX_CONNECTIONS: u32 = 8;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
+mod fundamentals;
 mod industries;
 mod market_data;
 mod memberships;

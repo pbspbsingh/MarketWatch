@@ -9,6 +9,7 @@ import {
 } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,
@@ -25,6 +26,7 @@ import { fetchIndustries, type IndustryRanking } from "../../api/industries";
 import { streamTickers, type TickerRanking } from "../../api/tickers";
 import { TradingViewChart } from "../../components/TradingViewChart";
 import { Toast } from "../../components/Toast";
+import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 
 type SortKey = "relative_strength" | keyof IndustryRanking["performance"];
 type SortDirection = "asc" | "desc";
@@ -494,9 +496,45 @@ function ChartPanel({
   const [interval, setInterval] = useState<"D" | "W">(readChartInterval);
   const [split, setSplit] = useState(readChartSplit);
   const [error, setError] = useState<string>();
+  const [warning, setWarning] = useState<string>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef(split);
   const selectedIndustry = summary?.industry_name ?? "All industries";
+
+  useEffect(() => {
+    if (selectedTicker === undefined) setDetailsOpen(false);
+  }, [selectedTicker]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isArrowKeyControl(event.target)
+      ) {
+        return;
+      }
+      if (event.key === "Escape" && detailsOpen) {
+        event.preventDefault();
+        setDetailsOpen(false);
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+      event.preventDefault();
+      if (selectedTicker === undefined) {
+        setWarning("No ticker is selected");
+      } else {
+        setDetailsOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [detailsOpen, selectedTicker]);
 
   useEffect(() => {
     setError(undefined);
@@ -561,28 +599,38 @@ function ChartPanel({
               </a>
             )}
           </Typography>
+          <IconButton
+            size="small"
+            aria-label="Open ticker details"
+            disabled={selectedTicker === undefined}
+            onClick={() => setDetailsOpen(true)}
+          >
+            <AssessmentOutlinedIcon fontSize="small" />
+          </IconButton>
         </div>
-        {summary !== undefined && (
-          <div className="chart-indicators">
-            <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
-            <Typography>Avg Vol {formatVolume(summary.average_volume)}</Typography>
-          </div>
-        )}
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={interval}
-          aria-label="Chart interval"
-          onChange={(_, value: "D" | "W" | null) => {
-            if (value !== null) {
-              setInterval(value);
-              localStorage.setItem(chartIntervalKey, value);
-            }
-          }}
-        >
-          <ToggleButton value="D">Daily</ToggleButton>
-          <ToggleButton value="W">Weekly</ToggleButton>
-        </ToggleButtonGroup>
+        <div className="chart-header-controls">
+          {summary !== undefined && (
+            <div className="chart-indicators">
+              <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
+              <Typography>Avg Vol {formatVolume(summary.average_volume)}</Typography>
+            </div>
+          )}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={interval}
+            aria-label="Chart interval"
+            onChange={(_, value: "D" | "W" | null) => {
+              if (value !== null) {
+                setInterval(value);
+                localStorage.setItem(chartIntervalKey, value);
+              }
+            }}
+          >
+            <ToggleButton value="D">Daily</ToggleButton>
+            <ToggleButton value="W">Weekly</ToggleButton>
+          </ToggleButtonGroup>
+        </div>
       </header>
       {selectedTicker === undefined && (
         <Typography className="panel-empty" color="text.secondary">
@@ -626,6 +674,16 @@ function ChartPanel({
         </div>
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={warning}
+        severity="warning"
+        onClose={() => setWarning(undefined)}
+      />
+      <TickerDetailsDialog
+        symbol={selectedTicker}
+        open={detailsOpen && selectedTicker !== undefined}
+        onClose={() => setDetailsOpen(false)}
+      />
     </section>
   );
 }

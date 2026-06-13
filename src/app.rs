@@ -1,7 +1,8 @@
 use crate::api;
 use crate::config::Config;
-use crate::providers::{FinvizClient, YahooClient};
+use crate::providers::{FinvizClient, TradingViewClient, YahooClient};
 use crate::services::chart::ChartService;
+use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::tickers::TickerCatalogService;
@@ -15,6 +16,7 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub chart: Arc<ChartService>,
+    pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
 }
@@ -23,7 +25,13 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo = Arc::new(YahooClient::new(&config.providers));
+    let tradingview = Arc::new(TradingViewClient::new(&config.providers));
     let yahoo = Arc::new(YahooService::new(store.clone(), yahoo, &config.market)?);
+    let details = Arc::new(TickerDetailsService::new(
+        store.clone(),
+        tradingview,
+        yahoo.clone(),
+    ));
     let industry_analysis = Arc::new(IndustryAnalysisService::new(
         store.clone(),
         yahoo.clone(),
@@ -47,6 +55,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let frontend_dist = config.server.frontend_dist.clone();
     let state = AppState {
         chart,
+        details,
         industry_analysis,
         ticker_catalog,
     };

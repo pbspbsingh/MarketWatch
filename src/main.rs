@@ -24,10 +24,10 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to bind server to {address}"))?;
 
     info!(%address, "MarketWatch server started");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("server failed")
+    tokio::select! {
+        result = axum::serve(listener, app) => result.context("server failed"),
+        _ = shutdown_signal() => Ok(()),
+    }
 }
 
 fn init_tracing() {

@@ -208,16 +208,148 @@ body,
 }
 
 .chart-header-identity {
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chart-header-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .chart-header-identity h2 {
+  min-width: 0;
   overflow: hidden;
   margin: 0;
   font-size: inherit;
   font-weight: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ticker-details-dialog {
+  width: 80vw;
+  height: 88vh;
+  max-height: 88vh;
+}
+
+.ticker-details-dialog:focus,
+.ticker-details-dialog:focus-visible {
+  outline: none;
+}
+
+.ticker-details-title {
+  display: flex;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ticker-details-title h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticker-details-title h2 a {
+  color: #f0f4f8;
+  text-decoration: none;
+}
+
+.ticker-details-title h2 a:hover {
+  color: #58a6ff;
+}
+
+.ticker-details-actions p {
+  font-size: 0.7rem;
+}
+
+.ticker-details-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.125rem;
+  white-space: nowrap;
+}
+
+.ticker-details-actions .MuiIconButton-root {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.25rem;
+}
+
+.ticker-details-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.company-description {
+  max-height: 5rem;
+  overflow: auto;
+  font-size: 0.75rem !important;
+  line-height: 1.5 !important;
+}
+
+.fundamentals-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.fundamentals-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.5rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  background: #151a20;
+  flex-direction: column;
+}
+
+.fundamentals-panel h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.fundamentals-canvas-wrap {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+
+.fundamentals-summary {
+  display: flex;
+  min-height: 1rem;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.fundamentals-summary p {
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+.fundamentals-summary p + p::before {
+  margin-right: 0.375rem;
+  color: #4a5563;
+  content: "|";
 }
 
 .chart-header-identity span,
@@ -231,7 +363,6 @@ body,
 
 .chart-indicators {
   display: flex;
-  margin-left: auto;
   padding: 0.15rem 0.375rem;
   border: 0.0625rem solid #343b45;
   border-radius: 0.25rem;
