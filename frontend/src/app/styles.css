@@ -50,7 +50,7 @@ body,
 
 .market-watch-page {
   display: grid;
-  grid-template-columns: minmax(15rem, 0.7fr) minmax(17rem, 0.9fr) minmax(30rem, 2.4fr);
+  grid-template-columns: minmax(15rem, 0.7fr) minmax(10rem, 0.55fr) minmax(32rem, 2.75fr);
   width: 100%;
   height: 100%;
 }
@@ -77,41 +77,44 @@ body,
   text-transform: uppercase;
 }
 
-.industry-header {
+.panel-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-.industry-header h2 {
+.panel-list-header h2 {
   font-size: inherit;
   font-weight: inherit;
 }
 
-.industry-header-title {
+.panel-header-title {
   display: flex;
   align-items: center;
   gap: 0.375rem;
 }
 
-.industry-header-title .MuiIconButton-root {
+.panel-header-title .MuiIconButton-root {
   padding: 0.125rem;
 }
 
-.industry-sort-controls {
+.panel-position {
+  font-size: 0.625rem !important;
+}
+
+.metric-sort-controls {
   display: flex;
   align-items: center;
   gap: 0.125rem;
 }
 
-.industry-sort-controls .MuiSelect-select {
-  min-width: 2.5rem;
-  padding: 0.125rem 1.5rem 0.125rem 0.375rem;
+.metric-sort-controls .MuiSelect-select {
+  padding: 0.125rem 1.25rem 0.125rem 0.5rem;
   font-size: 0.7rem;
 }
 
-.industry-sort-controls .MuiIconButton-root {
+.metric-sort-controls .MuiIconButton-root {
   padding: 0.125rem;
 }
 
@@ -130,7 +133,7 @@ body,
   gap: 0.5rem;
 }
 
-.industry-list {
+.ranked-list {
   min-height: 0;
   margin: 0;
   padding: 0.2rem 0;
@@ -138,7 +141,7 @@ body,
   list-style: none;
 }
 
-.industry-list-item {
+.ranked-list-item {
   display: grid;
   width: 100%;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -155,28 +158,28 @@ body,
   cursor: pointer;
 }
 
-.industry-list-item:hover,
-.industry-list-item:focus-visible {
+.ranked-list-item:hover,
+.ranked-list-item:focus-visible {
   background: #1b222a;
 }
 
-.industry-list-item[aria-pressed="true"] {
+.ranked-list-item[aria-pressed="true"] {
   color: #f0f4f8;
   background: #253140;
 }
 
-.industry-list-item:focus-visible {
+.ranked-list-item:focus-visible {
   outline: 0.0625rem solid #58a6ff;
   outline-offset: -0.0625rem;
 }
 
-.industry-name {
+.ranked-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.industry-metric {
+.ranked-metric {
   font-variant-numeric: tabular-nums;
   font-size: 0.66rem;
   font-weight: 600;

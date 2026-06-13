@@ -1,3 +1,5 @@
+use crate::models::DailyCandle;
+use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
@@ -15,6 +17,13 @@ pub struct IndustryRanking {
     pub name: String,
     pub performance: PerformancePeriods,
     pub relative_strength: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TickerRanking {
+    pub symbol: String,
+    pub performance: Option<PerformancePeriods>,
+    pub relative_strength: Option<f64>,
 }
 
 impl PerformancePeriods {
@@ -38,8 +47,36 @@ impl PerformancePeriods {
     }
 }
 
+pub fn candle_performance(candles: &[DailyCandle], as_of: NaiveDate) -> PerformancePeriods {
+    let Some(end_close) = close_on_or_before(candles, as_of) else {
+        return PerformancePeriods::default();
+    };
+
+    PerformancePeriods {
+        week: period_return(candles, end_close, as_of - TimeDelta::days(7)),
+        month: period_return(candles, end_close, as_of - TimeDelta::days(30)),
+        quarter: period_return(candles, end_close, as_of - TimeDelta::days(90)),
+        half_year: period_return(candles, end_close, as_of - TimeDelta::days(180)),
+        year: period_return(candles, end_close, as_of - TimeDelta::days(365)),
+    }
+}
+
 fn relative_return(asset: f64, benchmark: f64) -> f64 {
     ((1.0 + asset) / (1.0 + benchmark)) - 1.0
+}
+
+fn period_return(candles: &[DailyCandle], end_close: f64, date: NaiveDate) -> f64 {
+    close_on_or_before(candles, date)
+        .filter(|close| *close != 0.0)
+        .map_or(0.0, |close| (end_close / close) - 1.0)
+}
+
+fn close_on_or_before(candles: &[DailyCandle], date: NaiveDate) -> Option<f64> {
+    candles
+        .iter()
+        .rev()
+        .find(|candle| candle.market_date <= date)
+        .map(|candle| candle.close)
 }
 
 #[cfg(test)]

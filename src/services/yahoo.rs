@@ -2,14 +2,11 @@ use crate::config::MarketConfig;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
 use crate::store::Store;
-use crate::utils::MarketSchedule;
+use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
-use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Notify;
 use tokio::time::sleep;
 use tracing::warn;
 
@@ -23,16 +20,6 @@ pub struct YahooService {
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock,
-}
-
-struct KeyedLock {
-    held_keys: Mutex<HashSet<String>>,
-    released: Notify,
-}
-
-struct KeyedLockGuard<'a> {
-    lock: &'a KeyedLock,
-    key: String,
 }
 
 #[derive(Debug, Error)]
@@ -214,67 +201,7 @@ impl YahooService {
     }
 }
 
-impl KeyedLock {
-    fn new() -> Self {
-        Self {
-            held_keys: Mutex::new(HashSet::new()),
-            released: Notify::new(),
-        }
-    }
-
-    async fn lock(&self, key: &str) -> KeyedLockGuard<'_> {
-        loop {
-            let notified = self.released.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self
-                .held_keys
-                .lock()
-                .expect("keyed lock mutex is not poisoned")
-                .insert(key.to_owned())
-            {
-                return KeyedLockGuard {
-                    lock: self,
-                    key: key.to_owned(),
-                };
-            }
-
-            notified.await;
-        }
-    }
-}
-
-impl Drop for KeyedLockGuard<'_> {
-    fn drop(&mut self) {
-        self.lock
-            .held_keys
-            .lock()
-            .expect("keyed lock mutex is not poisoned")
-            .remove(&self.key);
-        self.lock.released.notify_waiters();
-    }
-}
-
 fn jitter(delay: Duration) -> Duration {
     let maximum = delay.as_millis() as u64;
     Duration::from_millis(fastrand::u64(maximum / 2..=maximum))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::time::timeout;
-
-    #[tokio::test]
-    async fn keyed_lock_serializes_same_key_only() {
-        let lock = KeyedLock::new();
-        let guard = lock.lock("AAPL").await;
-
-        assert!(timeout(Duration::from_millis(10), lock.lock("AAPL")).await.is_err());
-        assert!(timeout(Duration::from_millis(10), lock.lock("MSFT")).await.is_ok());
-
-        drop(guard);
-        assert!(timeout(Duration::from_millis(10), lock.lock("AAPL")).await.is_ok());
-    }
 }

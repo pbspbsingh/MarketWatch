@@ -12,6 +12,7 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 mod industries;
 mod market_data;
+mod memberships;
 
 pub use industries::{IndustrySnapshotRow, NewIndustrySnapshot};
 

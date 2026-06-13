@@ -4,4 +4,4 @@ mod performance;
 
 pub use exchange::Exchange;
 pub use market_data::{CompanyProfile, DailyCandle};
-pub use performance::{IndustryRanking, PerformancePeriods};
+pub use performance::{IndustryRanking, PerformancePeriods, TickerRanking, candle_performance};

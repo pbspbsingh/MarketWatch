@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::providers::{FinvizClient, YahooClient};
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::tickers::TickerCatalogService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use axum::Router;
@@ -13,6 +14,7 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub industry_analysis: Arc<IndustryAnalysisService>,
+    pub ticker_catalog: Arc<TickerCatalogService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -25,11 +27,21 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         config.market.benchmark.clone(),
     ));
+    let ticker_catalog = Arc::new(TickerCatalogService::new(
+        store.clone(),
+        finviz.clone(),
+        yahoo,
+        &config.finviz,
+        &config.market,
+    )?);
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
     let frontend_dist = config.server.frontend_dist.clone();
-    let state = AppState { industry_analysis };
+    let state = AppState {
+        industry_analysis,
+        ticker_catalog,
+    };
 
     let frontend = ServeDir::new(&frontend_dist)
         .not_found_service(ServeFile::new(frontend_dist.join("index.html")));

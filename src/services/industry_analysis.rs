@@ -1,7 +1,7 @@
-use crate::models::{DailyCandle, IndustryRanking, PerformancePeriods};
+use crate::models::{IndustryRanking, PerformancePeriods, candle_performance};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
-use chrono::{NaiveDate, TimeDelta};
+use chrono::TimeDelta;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -46,7 +46,7 @@ impl IndustryAnalysisService {
             .yahoo
             .daily_candles(&self.benchmark, start, end)
             .await?;
-        let benchmark = benchmark_performance(&benchmark_candles, snapshot.market_date);
+        let benchmark = candle_performance(&benchmark_candles, snapshot.market_date);
 
         Ok(snapshot
             .rows
@@ -70,37 +70,11 @@ impl IndustryAnalysisService {
     }
 }
 
-fn benchmark_performance(candles: &[DailyCandle], as_of: NaiveDate) -> PerformancePeriods {
-    let Some(end_close) = close_on_or_before(candles, as_of) else {
-        return PerformancePeriods::default();
-    };
-
-    PerformancePeriods {
-        week: period_return(candles, end_close, as_of - TimeDelta::days(7)),
-        month: period_return(candles, end_close, as_of - TimeDelta::days(30)),
-        quarter: period_return(candles, end_close, as_of - TimeDelta::days(90)),
-        half_year: period_return(candles, end_close, as_of - TimeDelta::days(180)),
-        year: period_return(candles, end_close, as_of - TimeDelta::days(365)),
-    }
-}
-
-fn period_return(candles: &[DailyCandle], end_close: f64, date: NaiveDate) -> f64 {
-    close_on_or_before(candles, date)
-        .filter(|close| *close != 0.0)
-        .map_or(0.0, |close| (end_close / close) - 1.0)
-}
-
-fn close_on_or_before(candles: &[DailyCandle], date: NaiveDate) -> Option<f64> {
-    candles
-        .iter()
-        .rev()
-        .find(|candle| candle.market_date <= date)
-        .map(|candle| candle.close)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::DailyCandle;
+    use chrono::NaiveDate;
 
     fn candle(date: &str, close: f64) -> DailyCandle {
         DailyCandle {
@@ -123,7 +97,7 @@ mod tests {
         ];
 
         let performance =
-            benchmark_performance(&candles, NaiveDate::from_ymd_opt(2026, 6, 12).unwrap());
+            candle_performance(&candles, NaiveDate::from_ymd_opt(2026, 6, 12).unwrap());
 
         assert!((performance.week - 0.111_111_111_111_111_16).abs() < f64::EPSILON);
         assert!((performance.year - 1.0).abs() < f64::EPSILON);
