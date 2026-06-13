@@ -1383,6 +1383,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "thiserror",
  "tokio",
  "toml",
  "tower-http",

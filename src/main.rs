@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod constants;
+mod models;
 mod providers;
 mod services;
 mod store;

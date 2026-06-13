@@ -1,0 +1,16 @@
+{
+  "quoteSummary": {
+    "result": [{
+      "assetProfile": {
+        "longBusinessSummary": "Apple designs products."
+      },
+      "price": {
+        "longName": "Apple Inc.",
+        "shortName": "Apple",
+        "exchangeName": "NasdaqGS",
+        "exchange": "NMS"
+      }
+    }],
+    "error": null
+  }
+}

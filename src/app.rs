@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::providers::FinvizClient;
+use crate::providers::{FinvizClient, YahooClient};
 use crate::services::industries::IndustryRefreshService;
 use crate::store::Store;
 use axum::Router;
@@ -13,11 +13,13 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub store: Store,
     pub finviz: FinvizClient,
+    pub yahoo: YahooClient,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
     let finviz = FinvizClient::new(&config.finviz, &config.providers)?;
+    let yahoo = YahooClient::new(&config.providers);
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -26,6 +28,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         config: Arc::new(config),
         store,
         finviz,
+        yahoo,
     };
 
     let frontend = ServeDir::new(&frontend_dist)

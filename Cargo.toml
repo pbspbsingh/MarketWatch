@@ -10,10 +10,13 @@ codegen-units = 1
 
 [dependencies]
 # Application and runtime
-anyhow = "1.0.102"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+
+# Error handling
+anyhow = "1.0.102"
+thiserror = "2.0.18"
 
 # Web
 axum = "0.8.9"
