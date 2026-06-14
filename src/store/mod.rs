@@ -14,6 +14,7 @@ mod fundamentals;
 mod industries;
 mod market_data;
 mod memberships;
+mod themes;
 
 pub use industries::{IndustrySnapshotRow, NewIndustrySnapshot};
 

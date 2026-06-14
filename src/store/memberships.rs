@@ -4,6 +4,55 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
 
 impl Store {
+    pub async fn ticker_has_industry(&self, symbol: &str) -> anyhow::Result<bool> {
+        sqlx::query_scalar!(
+            "SELECT EXISTS(
+                SELECT 1 FROM industry_membership_tickers WHERE symbol = ?
+             ) AS \"exists!: bool\"",
+            symbol,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("failed to check ticker industry")
+    }
+
+    pub async fn add_ticker_industry(
+        &self,
+        industry_key: &str,
+        symbol: &str,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin ticker industry transaction")?;
+        let stale_fetched_at = DateTime::<Utc>::UNIX_EPOCH.naive_utc();
+        sqlx::query!(
+            "INSERT INTO industry_memberships (industry_key, fetched_at)
+             VALUES (?, ?)
+             ON CONFLICT (industry_key) DO NOTHING",
+            industry_key,
+            stale_fetched_at,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to ensure industry membership")?;
+        sqlx::query!(
+            "INSERT INTO industry_membership_tickers (industry_key, symbol)
+             VALUES (?, ?)
+             ON CONFLICT (industry_key, symbol) DO NOTHING",
+            industry_key,
+            symbol,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to add ticker industry")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit ticker industry")
+    }
+
     pub async fn industry_membership_fetched_at(
         &self,
         industry_key: &str,

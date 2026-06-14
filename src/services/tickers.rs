@@ -114,6 +114,39 @@ impl TickerCatalogService {
         Ok(())
     }
 
+    pub async fn ensure_ticker(&self, symbol: &str) -> anyhow::Result<()> {
+        let symbol = symbol.trim().to_uppercase();
+        anyhow::ensure!(
+            !symbol.is_empty()
+                && symbol
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric()
+                        || matches!(character, '.' | '-')),
+            "invalid ticker symbol"
+        );
+        self.yahoo.profile(&symbol).await?;
+        if !self.store.ticker_has_industry(&symbol).await? {
+            let industry = self.finviz.ticker_industry(&symbol).await?;
+            if self
+                .store
+                .latest_snapshot_has_industry(&industry.key)
+                .await?
+            {
+                self.store
+                    .add_ticker_industry(&industry.key, &symbol)
+                    .await?;
+            } else {
+                info!(
+                    symbol,
+                    industry_key = industry.key,
+                    industry_name = industry.name,
+                    "skipping industry absent from latest snapshot"
+                );
+            }
+        }
+        Ok(())
+    }
+
     async fn refresh_membership_if_stale(&self, industry_key: &str) -> anyhow::Result<()> {
         let _guard = self.membership_locks.lock(industry_key).await;
         let fetched_at = self

@@ -1,10 +1,11 @@
 use crate::api;
 use crate::config::Config;
-use crate::providers::{FinvizClient, TradingViewClient, YahooClient};
+use crate::providers::{AiClient, FinvizClient, TradingViewClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::themes::ThemeService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
@@ -19,13 +20,16 @@ pub struct AppState {
     pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
+    pub themes: Arc<ThemeService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
+    store.fail_interrupted_theme_ai_jobs().await?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo = Arc::new(YahooClient::new(&config.providers));
     let tradingview = Arc::new(TradingViewClient::new(&config.providers));
+    let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
     let yahoo = Arc::new(YahooService::new(store.clone(), yahoo, &config.market)?);
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
@@ -49,6 +53,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     ));
+    let themes = Arc::new(ThemeService::new(store.clone(), ai, ticker_catalog.clone()));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -58,6 +63,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         details,
         industry_analysis,
         ticker_catalog,
+        themes,
     };
 
     let frontend = ServeDir::new(&frontend_dist)

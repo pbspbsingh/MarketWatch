@@ -2,8 +2,13 @@ mod exchange;
 mod fundamentals;
 mod market_data;
 mod performance;
+mod themes;
 
 pub use exchange::Exchange;
 pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use performance::{IndustryRanking, PerformancePeriods, TickerRanking, candle_performance};
+pub use themes::{
+    AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
+    ThemeSuggestion, ThemeTicker,
+};

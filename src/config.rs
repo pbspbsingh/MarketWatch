@@ -12,6 +12,8 @@ pub struct Config {
     pub market: MarketConfig,
     pub providers: ProviderConfig,
     pub finviz: FinvizConfig,
+    #[serde(default)]
+    pub ai: Option<AiConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -46,6 +48,26 @@ pub struct ProviderConfig {
 pub struct FinvizConfig {
     pub industry_membership_filters: Vec<String>,
     pub membership_fresh_days: u16,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "provider", rename_all = "snake_case")]
+pub enum AiConfig {
+    Ollama {
+        endpoint: String,
+        model: String,
+        batch_size: usize,
+        max_concurrent_requests: usize,
+        request_timeout_secs: u64,
+    },
+    DeepSeek {
+        endpoint: String,
+        model: String,
+        api_key: String,
+        batch_size: usize,
+        max_concurrent_requests: usize,
+        request_timeout_secs: u64,
+    },
 }
 
 impl Config {
@@ -102,6 +124,49 @@ impl Config {
             self.finviz.membership_fresh_days > 0,
             "finviz.membership_fresh_days must be positive"
         );
+        if let Some(ai) = &self.ai {
+            ai.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl AiConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        let (endpoint, model, batch_size, concurrency, timeout) = match self {
+            Self::Ollama {
+                endpoint,
+                model,
+                batch_size,
+                max_concurrent_requests,
+                request_timeout_secs,
+            }
+            | Self::DeepSeek {
+                endpoint,
+                model,
+                batch_size,
+                max_concurrent_requests,
+                request_timeout_secs,
+                ..
+            } => (
+                endpoint,
+                model,
+                batch_size,
+                max_concurrent_requests,
+                request_timeout_secs,
+            ),
+        };
+        anyhow::ensure!(!endpoint.trim().is_empty(), "ai.endpoint is required");
+        anyhow::ensure!(!model.trim().is_empty(), "ai.model is required");
+        anyhow::ensure!(*batch_size > 0, "ai.batch_size must be positive");
+        anyhow::ensure!(
+            *concurrency > 0,
+            "ai.max_concurrent_requests must be positive"
+        );
+        anyhow::ensure!(*timeout > 0, "ai.request_timeout_secs must be positive");
+        if let Self::DeepSeek { api_key, .. } = self {
+            anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key is required");
+        }
         Ok(())
     }
 }

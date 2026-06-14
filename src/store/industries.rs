@@ -35,6 +35,26 @@ struct StoredSnapshot {
 }
 
 impl Store {
+    pub async fn latest_snapshot_has_industry(&self, industry_key: &str) -> anyhow::Result<bool> {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM industry_snapshot_rows
+                   WHERE snapshot_id = (
+                       SELECT id
+                       FROM industry_snapshots
+                       ORDER BY market_date DESC
+                       LIMIT 1
+                   )
+                   AND industry_key = ?
+               ) AS "exists!: bool""#,
+            industry_key,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("failed to check latest industry snapshot")
+    }
+
     pub async fn latest_industry_snapshot_date(&self) -> anyhow::Result<Option<NaiveDate>> {
         sqlx::query_scalar!(
             r#"SELECT market_date AS "market_date: NaiveDate"
@@ -211,6 +231,18 @@ mod tests {
                 fetched_at: expected.fetched_at,
                 rows: expected.rows,
             }
+        );
+        assert!(
+            store
+                .latest_snapshot_has_industry("semiconductors")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .latest_snapshot_has_industry("exchangetradedfund")
+                .await
+                .unwrap()
         );
     }
 

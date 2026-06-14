@@ -63,6 +63,393 @@ body,
   overflow: hidden;
 }
 
+.theme-management-page {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.theme-management-header {
+  display: flex;
+  min-height: 3rem;
+  padding: 0 0.75rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  background: #191e24;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.theme-management-header h1 {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.theme-management-header .MuiTab-root {
+  min-height: 3rem;
+  padding: 0 0.75rem;
+  font-size: 0.7rem;
+}
+
+.theme-management-body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 20rem minmax(0, 1fr);
+}
+
+.theme-list-pane {
+  display: flex;
+  min-height: 0;
+  padding: 0.5rem;
+  border-right: 0.0625rem solid #2a3038;
+  background: #151a20;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.theme-pane-header,
+.theme-editor-heading,
+.bulk-assignment-heading {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-pane-header h2,
+.theme-editor-heading h2,
+.assignment-card h2 {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.theme-management-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.theme-management-list-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-bottom: 0.0625rem solid #20262e;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.theme-management-list-item:hover,
+.theme-management-list-item[aria-pressed="true"] {
+  background: #253140;
+}
+
+.theme-management-list-item span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.theme-management-list-item strong,
+.theme-management-list-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-management-list-item strong {
+  font-size: 0.72rem;
+}
+
+.theme-management-list-item small {
+  color: #8f9aa7;
+  font-size: 0.625rem;
+}
+
+.theme-management-list-item .MuiChip-root {
+  height: 1.25rem;
+  font-size: 0.625rem;
+}
+
+.theme-editor-pane {
+  display: flex;
+  width: min(42rem, 100%);
+  padding: 1rem;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.theme-editor-pane .MuiButton-root {
+  align-self: flex-start;
+}
+
+.ticker-assignment-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.ticker-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem auto;
+  gap: 0.25rem;
+}
+
+.ticker-selection-controls {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.ticker-assignment-row > .MuiCheckbox-root {
+  padding: 0.25rem;
+}
+
+.ticker-assignment-row .theme-management-list-item {
+  min-width: 0;
+  flex: 1;
+}
+
+.assignment-layout {
+  grid-template-columns: 22rem minmax(0, 1fr);
+}
+
+.automatic-layout {
+  grid-template-columns: 22rem minmax(0, 1fr);
+}
+
+.automatic-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.automatic-schedule-card {
+  width: 100%;
+}
+
+.automatic-job-review {
+  display: grid;
+  min-width: 0;
+  min-height: 24rem;
+  grid-template-columns: 20rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.automatic-job-list {
+  display: flex;
+  min-height: 0;
+  padding: 0.5rem;
+  border: 0.0625rem solid #2a3038;
+  border-radius: 0.25rem;
+  background: #151a20;
+  flex-direction: column;
+}
+
+.automatic-job-detail {
+  min-width: 0;
+}
+
+.automatic-job-detail > .assignment-card {
+  width: 100%;
+}
+
+.ai-job-suggestions {
+  max-height: none;
+}
+
+.assignment-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.75rem;
+  overflow: auto;
+}
+
+.assignment-card {
+  display: flex;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 0.0625rem solid #2a3038;
+  border-radius: 0.25rem;
+  background: #151a20;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.assignment-card > .MuiButton-root {
+  align-self: flex-start;
+}
+
+.assignment-card > p {
+  font-size: 0.7rem;
+}
+
+.theme-chip-grid {
+  display: flex;
+  align-content: flex-start;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.theme-chip-grid .MuiChip-root {
+  height: 1.5rem;
+  font-size: 0.65rem;
+}
+
+.bulk-assignment-card {
+  width: 100%;
+  align-self: start;
+}
+
+.ticker-theme-editor,
+.assignment-empty-state {
+  width: 100%;
+  align-self: start;
+}
+
+.ticker-profile {
+  display: flex;
+  padding-bottom: 0.75rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ticker-profile p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulk-manual-workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.bulk-manual-pane {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bulk-manual-pane > .MuiButton-root {
+  align-self: flex-start;
+}
+
+.bulk-response-pane {
+  height: calc(100vh - 10rem);
+}
+
+.bulk-prompt-pane {
+  height: calc(100vh - 10rem);
+}
+
+.bulk-prompt-pane > .MuiFormControl-root {
+  min-height: 0;
+  flex: 1;
+}
+
+.bulk-prompt-pane > .MuiFormControl-root .MuiInputBase-root {
+  height: 100%;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.bulk-prompt-pane > .MuiFormControl-root .MuiInputBase-inputMultiline {
+  height: 100% !important;
+  max-height: 100%;
+  overflow: auto !important;
+}
+
+.bulk-response-pane > .MuiFormControl-root,
+.bulk-response-pane > .suggestion-preview {
+  min-height: 0;
+  flex: 1 1 50%;
+}
+
+.bulk-response-pane > .MuiFormControl-root .MuiInputBase-root {
+  height: 100%;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.bulk-response-pane > .MuiFormControl-root .MuiInputBase-inputMultiline {
+  height: 100% !important;
+  max-height: 100%;
+  overflow: auto !important;
+}
+
+.bulk-response-pane > .suggestion-preview {
+  max-height: none;
+}
+
+.suggestion-preview {
+  display: flex;
+  min-height: 0;
+  max-height: calc(100vh - 17rem);
+  padding-top: 0.5rem;
+  border-top: 0.0625rem solid #2a3038;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.suggestion-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+.suggestion-preview > .MuiButton-root {
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.suggestion-preview h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.suggestion-row {
+  display: grid;
+  padding: 0.35rem 0;
+  border-bottom: 0.0625rem solid #20262e;
+  grid-template-columns: 5rem minmax(8rem, 0.6fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  font-size: 0.68rem;
+}
+
+.suggestion-row small {
+  color: #8f9aa7;
+}
+
 .market-watch-page {
   display: grid;
   grid-template-columns: 17rem 12rem minmax(0, 1fr);
