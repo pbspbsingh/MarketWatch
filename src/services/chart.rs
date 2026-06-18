@@ -20,12 +20,18 @@ pub struct ChartService {
 #[derive(Serialize)]
 pub struct ChartSummary {
     symbol: String,
-    industry_name: Option<String>,
+    industry: Option<ChartIndustry>,
     themes: Vec<String>,
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
     average_volume: i64,
+}
+
+#[derive(Serialize)]
+pub struct ChartIndustry {
+    key: String,
+    name: String,
 }
 
 impl ChartService {
@@ -51,20 +57,20 @@ impl ChartService {
         let profile = self.yahoo.profile(symbol).await?;
         let benchmark_profile = self.yahoo.profile(&self.benchmark).await?;
         let candles = self.yahoo.daily_candles(symbol, start, end).await?;
-        let industry_name = self
+        let industry = self
             .store
-            .industry_name_for_ticker(symbol, industry_keys)
+            .industry_for_ticker(symbol, industry_keys)
             .await?;
-        let industry_name = if industry_name.is_none() && !industry_keys.is_empty() {
-            self.store.industry_name_for_ticker(symbol, &[]).await?
+        let industry = if industry.is_none() && !industry_keys.is_empty() {
+            self.store.industry_for_ticker(symbol, &[]).await?
         } else {
-            industry_name
+            industry
         };
         let themes = self.store.theme_names_for_ticker(symbol).await?;
 
         Ok(ChartSummary {
             symbol: symbol.to_owned(),
-            industry_name,
+            industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),

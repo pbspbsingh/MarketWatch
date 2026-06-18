@@ -68,6 +68,15 @@ Complete before implementing feature pages.
 - Implemented persisted Finviz industry membership with lazy refresh and per-industry request deduplication.
 - Implemented streamed ticker rankings so locally known tickers display immediately and Yahoo performance/RS arrives incrementally.
 - Implemented browser-disconnect and selection-change cancellation for active ticker streams.
+- Current Market Watch industry mode uses an unbounded ticker universe: selecting an industry may lazily fetch and persist filtered membership from Finviz.
+- Future bounded ticker-set workflows should reuse the same market-list/chart UI, but must not let group selection call Finviz. The parent page should provide the ticker universe and decide how group membership is loaded.
+- For bounded ticker sets, treat ticker metadata enrichment as an ingestion/background concern:
+  - normalize symbols first;
+  - use Yahoo profile to validate tickers and store exchange/profile metadata;
+  - use Finviz ticker-industry lookup only for missing industry metadata;
+  - store the enriched ticker and industry membership locally;
+  - keep theme membership user/AI assigned, not provider-fetched.
+- Reusable UI extraction target: a ticker-lens component that renders groups, tickers, sorting, selection, charts, and ticker details from supplied data/callbacks. It should not know whether the parent uses Finviz-backed lazy membership or a bounded persisted ticker universe.
 - Treat Yahoo Finance price history as stale only on a US trading day after 1:20 PM Pacific when no successful refresh exists for that date.
 - Before 1:20 PM Pacific, on weekends, and on US market holidays, continue using the latest available price history.
 - Fetch Yahoo Finance price history only when missing or stale, and make at most one successful refresh per ticker per trading day.

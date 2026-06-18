@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -7,9 +8,11 @@ import {
   type PointerEvent,
   type SetStateAction,
 } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,
@@ -47,6 +50,10 @@ type GroupRanking = {
   name: string;
   performance: PerformancePeriods | null;
   relative_strength: number | null;
+};
+type SelectedTickerContext = {
+  industry: { key: string; name: string } | null;
+  themeNames: string[];
 };
 
 const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
@@ -103,8 +110,56 @@ function metricColor(value: number, minimum: number, maximum: number) {
   return metricColors[index];
 }
 
-function readGroupMode(): GroupMode {
-  return localStorage.getItem(groupModeKey) === "theme" ? "theme" : "industry";
+function searchGroupMode(searchParams: URLSearchParams): GroupMode | undefined {
+  const mode = searchParams.get("mode");
+  return mode === "industry" || mode === "theme" ? mode : undefined;
+}
+
+function readGroupMode(searchParams?: URLSearchParams): GroupMode {
+  return searchParams !== undefined
+    ? (searchGroupMode(searchParams) ?? readGroupMode())
+    : localStorage.getItem(groupModeKey) === "theme"
+      ? "theme"
+      : "industry";
+}
+
+function searchIndustryKeys(searchParams: URLSearchParams) {
+  return new Set(
+    (searchParams.get("groups") ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+}
+
+function searchThemeNames(searchParams: URLSearchParams) {
+  const themeParams = searchParams.getAll("themes");
+  if (themeParams.length > 1) return themeParams.map((name) => name.trim()).filter(Boolean);
+  return (themeParams[0] ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function searchIncludesUnassigned(searchParams: URLSearchParams) {
+  return searchParams.get("unassigned") === "1";
+}
+
+function industryMarketWatchUrl(industryKey: string) {
+  const params = new URLSearchParams({ mode: "industry", groups: industryKey });
+  return `/market-watch?${params.toString()}`;
+}
+
+function themeMarketWatchUrl(themeName: string) {
+  return themesMarketWatchUrl([themeName]);
+}
+
+function themesMarketWatchUrl(themeNames: string[]) {
+  const params = new URLSearchParams({ mode: "theme" });
+  for (const themeName of themeNames) {
+    params.append("themes", themeName);
+  }
+  return `/market-watch?${params.toString()}`;
 }
 
 const unassignedGroupKey = "unassigned";
@@ -115,6 +170,9 @@ interface GroupsPanelProps {
   setMode: (mode: GroupMode) => void;
   selectedGroupKeys: Set<string>;
   setSelectedGroupKeys: Dispatch<SetStateAction<Set<string>>>;
+  selectedTickerContext: SelectedTickerContext | undefined;
+  requestedThemeNames: string[];
+  requestedUnassigned: boolean;
 }
 
 function GroupsPanel({
@@ -122,8 +180,12 @@ function GroupsPanel({
   setMode,
   selectedGroupKeys,
   setSelectedGroupKeys,
+  selectedTickerContext,
+  requestedThemeNames,
+  requestedUnassigned,
 }: GroupsPanelProps) {
   const [groups, setGroups] = useState<GroupRanking[]>([]);
+  const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(readSortSetting);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -167,6 +229,28 @@ function GroupsPanel({
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
 
+  useEffect(() => {
+    if (mode !== "theme") return;
+    if (requestedThemeNames.length === 0 && !requestedUnassigned) return;
+
+    const requestedNames = new Set(requestedThemeNames);
+    const next = new Set(
+      groups
+        .filter((group) => requestedNames.has(group.name))
+        .map((group) => group.key),
+    );
+    if (requestedUnassigned) next.add(unassignedGroupKey);
+    if (next.size > 0 || requestedThemeNames.length === 0) {
+      setSelectedGroupKeys(next);
+    }
+  }, [
+    groups,
+    mode,
+    requestedThemeNames,
+    requestedUnassigned,
+    setSelectedGroupKeys,
+  ]);
+
   const sortedGroups = useMemo(
     () =>
       [...groups].sort((left, right) => {
@@ -191,6 +275,32 @@ function GroupsPanel({
       maximum: values.length > 0 ? Math.max(...values) : 0,
     };
   }, [groups, sortSetting.key]);
+  const highlightedGroupKeys = useMemo(() => {
+    if (selectedTickerContext === undefined) return new Set<string>();
+    if (mode === "industry") {
+      const industry = selectedTickerContext.industry;
+      if (industry === null) return new Set<string>();
+      return new Set(
+        groups.filter((group) => group.key === industry.key).map((group) => group.key),
+      );
+    }
+
+    if (selectedTickerContext.themeNames.length === 0) {
+      return new Set([unassignedGroupKey]);
+    }
+    const themeNames = new Set(selectedTickerContext.themeNames);
+    return new Set(
+      groups.filter((group) => themeNames.has(group.name)).map((group) => group.key),
+    );
+  }, [groups, mode, selectedTickerContext]);
+
+  useEffect(() => {
+    const highlightedKey =
+      sortedGroups.find((group) => highlightedGroupKeys.has(group.key))?.key ??
+      (highlightedGroupKeys.has(unassignedGroupKey) ? unassignedGroupKey : undefined);
+    if (highlightedKey === undefined) return;
+    groupElements.current.get(highlightedKey)?.scrollIntoView({ block: "nearest" });
+  }, [highlightedGroupKeys, sortedGroups]);
 
   return (
     <section className="workspace-panel industries-panel">
@@ -270,11 +380,16 @@ function GroupsPanel({
         <ol className="ranked-list" aria-label={`${mode} rankings`}>
           {sortedGroups.map((group) => {
             const metric = sortValue(group, sortSetting.key);
+            const highlighted = highlightedGroupKeys.has(group.key);
             return (
               <li key={group.key}>
                 <button
-                  className="ranked-list-item"
+                  className={`ranked-list-item${highlighted ? " ranked-list-item-context" : ""}`}
                   type="button"
+                  ref={(element) => {
+                    if (element === null) groupElements.current.delete(group.key);
+                    else groupElements.current.set(group.key, element);
+                  }}
                   aria-pressed={selectedGroupKeys.has(group.key)}
                   onClick={() =>
                     setSelectedGroupKeys((selected) => {
@@ -303,8 +418,16 @@ function GroupsPanel({
           {mode === "theme" && (
             <li className="unassigned-group">
               <button
-                className="ranked-list-item"
+                className={`ranked-list-item${
+                  highlightedGroupKeys.has(unassignedGroupKey)
+                    ? " ranked-list-item-context"
+                    : ""
+                }`}
                 type="button"
+                ref={(element) => {
+                  if (element === null) groupElements.current.delete(unassignedGroupKey);
+                  else groupElements.current.set(unassignedGroupKey, element);
+                }}
                 aria-pressed={selectedGroupKeys.has(unassignedGroupKey)}
                 onClick={() =>
                   setSelectedGroupKeys((selected) => {
@@ -599,9 +722,11 @@ function readChartInterval(): "D" | "W" {
 function ChartPanel({
   industryKeys,
   selectedTicker,
+  onSelectedTickerContext,
 }: {
   industryKeys: Set<string>;
   selectedTicker: string | undefined;
+  onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
 }) {
   const [summary, setSummary] = useState<ChartSummary>();
   const [interval, setInterval] = useState<"D" | "W">(readChartInterval);
@@ -611,11 +736,14 @@ function ChartPanel({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef(split);
-  const selectedIndustry = summary?.industry_name ?? "All industries";
+  const selectedIndustry = summary?.industry?.name ?? "All industries";
 
   useEffect(() => {
-    if (selectedTicker === undefined) setDetailsOpen(false);
-  }, [selectedTicker]);
+    if (selectedTicker === undefined) {
+      setDetailsOpen(false);
+      onSelectedTickerContext(undefined);
+    }
+  }, [onSelectedTickerContext, selectedTicker]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -651,20 +779,29 @@ function ChartPanel({
     setError(undefined);
     if (selectedTicker === undefined) {
       setSummary(undefined);
+      onSelectedTickerContext(undefined);
       return;
     }
 
     const controller = new AbortController();
+    onSelectedTickerContext(undefined);
     fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
-      .then(setSummary)
+      .then((chartSummary) => {
+        setSummary(chartSummary);
+        onSelectedTickerContext({
+          industry: chartSummary.industry,
+          themeNames: chartSummary.themes,
+        });
+      })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
           setSummary(undefined);
+          onSelectedTickerContext(undefined);
           setError(requestError.message);
         }
       });
     return () => controller.abort();
-  }, [industryKeys, selectedTicker]);
+  }, [industryKeys, onSelectedTickerContext, selectedTicker]);
 
   const updateSplit = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = workspaceRef.current?.getBoundingClientRect();
@@ -697,7 +834,19 @@ function ChartPanel({
       <header className="panel-header chart-header">
         <div className="chart-header-identity">
           <Typography component="h2">
-            {selectedIndustry} /{" "}
+            {summary?.industry === undefined || summary.industry === null ? (
+              <span>{selectedIndustry}</span>
+            ) : (
+              <Link
+                className="chart-context-link"
+                to={industryMarketWatchUrl(summary.industry.key)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {summary.industry.name}
+              </Link>
+            )}{" "}
+            /{" "}
             {summary === undefined ? (
               <span>{selectedTicker ?? "Select a ticker"}</span>
             ) : (
@@ -725,8 +874,30 @@ function ChartPanel({
               {summary.themes.length > 0 && (
                 <div className="chart-theme-chips">
                   {summary.themes.map((theme) => (
-                    <Chip key={theme} size="small" label={theme} />
+                    <Chip
+                      key={theme}
+                      size="small"
+                      label={theme}
+                      component={Link}
+                      to={themeMarketWatchUrl(theme)}
+                      target="_blank"
+                      rel="noreferrer"
+                      clickable
+                    />
                   ))}
+                  {summary.themes.length > 1 && (
+                    <IconButton
+                      className="chart-theme-link"
+                      size="small"
+                      component={Link}
+                      to={themesMarketWatchUrl(summary.themes)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open Market Watch with all ticker themes selected"
+                    >
+                      <OpenInNewIcon fontSize="inherit" />
+                    </IconButton>
+                  )}
                 </div>
               )}
               <div className="chart-indicators">
@@ -820,14 +991,46 @@ function tradingViewSymbolUrl(symbol: string) {
 }
 
 export function MarketWatchPage() {
-  const [groupMode, setGroupMode] = useState<GroupMode>(readGroupMode);
-  const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() => new Set());
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [groupMode, setGroupMode] = useState<GroupMode>(() => readGroupMode(searchParams));
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() =>
+    readGroupMode(searchParams) === "industry"
+      ? searchIndustryKeys(searchParams)
+      : searchIncludesUnassigned(searchParams)
+        ? new Set([unassignedGroupKey])
+        : new Set(),
+  );
   const [selectedTicker, setSelectedTicker] = useState<string>();
+  const [selectedTickerContext, setSelectedTickerContext] =
+    useState<SelectedTickerContext>();
+  const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
+  const requestedUnassigned = searchIncludesUnassigned(searchParams);
+
+  useEffect(() => {
+    const mode = searchGroupMode(searchParams);
+    if (mode === undefined) return;
+
+    localStorage.setItem(groupModeKey, mode);
+    setGroupMode(mode);
+    if (mode === "industry") {
+      setSelectedGroupKeys(searchIndustryKeys(searchParams));
+    } else {
+      setSelectedGroupKeys(
+        searchIncludesUnassigned(searchParams) ? new Set([unassignedGroupKey]) : new Set(),
+      );
+    }
+  }, [searchParams]);
+
   const setMode = (mode: GroupMode) => {
+    setSearchParams({}, { replace: true });
     localStorage.setItem(groupModeKey, mode);
     setGroupMode(mode);
     setSelectedGroupKeys(new Set());
   };
+  const handleSelectedTickerContext = useCallback(
+    (context: SelectedTickerContext | undefined) => setSelectedTickerContext(context),
+    [],
+  );
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
 
   return (
@@ -837,6 +1040,9 @@ export function MarketWatchPage() {
         setMode={setMode}
         selectedGroupKeys={selectedGroupKeys}
         setSelectedGroupKeys={setSelectedGroupKeys}
+        selectedTickerContext={selectedTickerContext}
+        requestedThemeNames={requestedThemeNames}
+        requestedUnassigned={requestedUnassigned}
       />
       <TickersPanel
         mode={groupMode}
@@ -847,6 +1053,7 @@ export function MarketWatchPage() {
       <ChartPanel
         industryKeys={industryKeys}
         selectedTicker={selectedTicker}
+        onSelectedTickerContext={handleSelectedTickerContext}
       />
     </section>
   );

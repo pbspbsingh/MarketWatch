@@ -159,13 +159,13 @@ impl Store {
             .context("failed to load tickers for industries")
     }
 
-    pub async fn industry_name_for_ticker(
+    pub async fn industry_for_ticker(
         &self,
         symbol: &str,
         industry_keys: &[String],
-    ) -> anyhow::Result<Option<String>> {
+    ) -> anyhow::Result<Option<(String, String)>> {
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT industry_name
+            "SELECT industry_membership_tickers.industry_key, industry_name
              FROM industry_membership_tickers
              JOIN industry_snapshot_rows
                ON industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
@@ -184,10 +184,10 @@ impl Store {
         }
         query.push(" ORDER BY industry_snapshots.market_date DESC LIMIT 1");
         query
-            .build_query_scalar::<String>()
+            .build_query_as::<(String, String)>()
             .fetch_optional(&self.pool)
             .await
-            .context("failed to load ticker industry name")
+            .context("failed to load ticker industry")
     }
 }
 
@@ -256,16 +256,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            store
-                .industry_name_for_ticker("NVDA", &[])
-                .await
-                .unwrap()
-                .as_deref(),
-            Some("Semiconductors")
+            store.industry_for_ticker("NVDA", &[]).await.unwrap(),
+            Some(("semiconductors".to_owned(), "Semiconductors".to_owned()))
         );
         assert_eq!(
             store
-                .industry_name_for_ticker("NVDA", &["computerhardware".to_owned()])
+                .industry_for_ticker("NVDA", &["computerhardware".to_owned()])
                 .await
                 .unwrap(),
             None

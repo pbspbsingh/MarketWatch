@@ -587,6 +587,17 @@ body,
   background: #253140;
 }
 
+.ranked-list-item-context {
+  box-shadow: inset 0.1875rem 0 0 #f5a524;
+  background: rgba(245, 165, 36, 0.10);
+}
+
+.ranked-list-item-context[aria-pressed="true"] {
+  background:
+    linear-gradient(90deg, rgba(245, 165, 36, 0.18), rgba(245, 165, 36, 0) 45%),
+    #253140;
+}
+
 .ranked-list-item:focus-visible {
   outline: 0.0625rem solid #58a6ff;
   outline-offset: -0.0625rem;
@@ -761,8 +772,18 @@ body,
   color: #f0f4f8;
 }
 
+.chart-context-link {
+  text-decoration: none;
+}
+
 .chart-header-identity a:hover {
   color: #58a6ff;
+}
+
+.chart-context-link:hover,
+.chart-context-link:focus-visible {
+  color: #f5a524 !important;
+  text-decoration: underline;
 }
 
 .chart-indicators {
@@ -794,6 +815,17 @@ body,
 .chart-theme-chips .MuiChip-root {
   height: 1.15rem;
   font-size: 0.55rem;
+}
+
+.chart-theme-link {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: #9ba5b0 !important;
+  font-size: 0.72rem !important;
+}
+
+.chart-theme-link:hover {
+  color: #f5a524 !important;
 }
 
 .chart-header .MuiToggleButton-root {
