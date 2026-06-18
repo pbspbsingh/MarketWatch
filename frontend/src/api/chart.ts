@@ -1,6 +1,7 @@
 export interface ChartSummary {
   symbol: string;
   industry_name: string | null;
+  themes: string[];
   tradingview_symbol: string;
   benchmark_symbol: string;
   adr_percent: number;

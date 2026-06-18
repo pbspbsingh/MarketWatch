@@ -5,6 +5,7 @@ pub enum Exchange {
     Nasdaq,
     Nyse,
     Amex,
+    Cboe,
     Otc,
 }
 
@@ -14,6 +15,7 @@ impl Exchange {
             Self::Nasdaq => "NASDAQ",
             Self::Nyse => "NYSE",
             Self::Amex => "AMEX",
+            Self::Cboe => "CBOE",
             Self::Otc => "OTC",
         }
     }
@@ -23,6 +25,7 @@ impl Exchange {
             "NASDAQ" => Some(Self::Nasdaq),
             "NYSE" => Some(Self::Nyse),
             "AMEX" => Some(Self::Amex),
+            "CBOE" => Some(Self::Cboe),
             "OTC" => Some(Self::Otc),
             _ => None,
         }

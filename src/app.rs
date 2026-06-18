@@ -5,6 +5,7 @@ use crate::services::chart::ChartService;
 use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::themes::ThemeService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::yahoo::YahooService;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
     pub themes: Arc<ThemeService>,
+    pub theme_analysis: Arc<ThemeAnalysisService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -54,6 +56,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.market,
     ));
     let themes = Arc::new(ThemeService::new(store.clone(), ai, ticker_catalog.clone()));
+    let theme_analysis = Arc::new(ThemeAnalysisService::new(
+        store.clone(),
+        yahoo.clone(),
+        &config.market,
+    )?);
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -64,6 +71,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         industry_analysis,
         ticker_catalog,
         themes,
+        theme_analysis,
     };
 
     let frontend = ServeDir::new(&frontend_dist)

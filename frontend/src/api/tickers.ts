@@ -6,20 +6,24 @@ export interface TickerRanking {
   relative_strength: number | null;
 }
 
+export type TickerGroupSelection =
+  | { group_type: "industry"; keys: string[] }
+  | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
+
 type TickerStreamEvent =
   | { type: "ticker"; ticker: TickerRanking }
   | { type: "complete" }
   | { type: "error"; message: string };
 
 export async function streamTickers(
-  industryKeys: string[],
+  selection: TickerGroupSelection,
   onTicker: (ticker: TickerRanking) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch("/api/tickers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ industry_keys: industryKeys }),
+    body: JSON.stringify(selection),
     signal,
   });
   if (!response.ok) {

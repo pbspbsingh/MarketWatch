@@ -41,6 +41,80 @@ struct StoredThemeAiJobSummary {
 }
 
 impl Store {
+    pub async fn theme_names_for_ticker(&self, symbol: &str) -> anyhow::Result<Vec<String>> {
+        sqlx::query_scalar!(
+            r#"SELECT themes.name
+               FROM theme_stocks
+               JOIN themes ON themes.id = theme_stocks.theme_id
+               WHERE theme_stocks.symbol = ?
+               ORDER BY themes.name COLLATE NOCASE"#,
+            symbol,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load ticker theme names")
+    }
+
+    pub async fn themes_with_assignments(&self) -> anyhow::Result<Vec<Theme>> {
+        sqlx::query_as!(
+            Theme,
+            r#"SELECT themes.id, themes.name, themes.etf_symbol, themes.description,
+                      COUNT(theme_stocks.symbol) AS "stock_count!: i64"
+               FROM themes
+               JOIN theme_stocks ON theme_stocks.theme_id = themes.id
+               GROUP BY themes.id
+               ORDER BY themes.name COLLATE NOCASE"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load assigned themes")
+    }
+
+    pub async fn tickers_for_themes(
+        &self,
+        theme_ids: &[i64],
+        include_unassigned: bool,
+    ) -> anyhow::Result<Vec<String>> {
+        if theme_ids.is_empty() && !include_unassigned {
+            return self.known_tickers().await;
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "WITH known_symbols AS (
+                 SELECT symbol FROM tickers
+                 UNION
+                 SELECT symbol FROM industry_membership_tickers
+                 UNION
+                 SELECT symbol FROM theme_stocks
+             )
+             SELECT DISTINCT known_symbols.symbol
+             FROM known_symbols
+             LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
+             WHERE ",
+        );
+        if theme_ids.is_empty() {
+            query.push("theme_stocks.symbol IS NULL");
+        } else {
+            query.push("theme_stocks.theme_id IN (");
+            {
+                let mut separated = query.separated(", ");
+                for theme_id in theme_ids {
+                    separated.push_bind(theme_id);
+                }
+            }
+            query.push(")");
+            if include_unassigned {
+                query.push(" OR theme_stocks.symbol IS NULL");
+            }
+        }
+        query.push(" ORDER BY known_symbols.symbol");
+        query
+            .build_query_scalar::<String>()
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load tickers for themes")
+    }
+
     pub async fn themes(&self) -> anyhow::Result<Vec<Theme>> {
         sqlx::query_as!(
             Theme,
@@ -510,6 +584,52 @@ mod tests {
                 .unwrap()
                 .assignments
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn filters_theme_tickers_and_includes_unassigned() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        for symbol in ["AAPL", "MSFT", "NVDA"] {
+            store
+                .upsert_company_profile(&CompanyProfile {
+                    symbol: symbol.to_owned(),
+                    name: None,
+                    exchange: Exchange::Nasdaq,
+                    description: None,
+                    fetched_at: Utc::now(),
+                })
+                .await
+                .unwrap();
+        }
+        let theme_id = store.create_theme("AI", "AIQ", None).await.unwrap();
+        store
+            .replace_theme_assignments("NVDA", &[theme_id], AssignmentSource::Manual, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.tickers_for_themes(&[theme_id], false).await.unwrap(),
+            ["NVDA"]
+        );
+        assert_eq!(
+            store.tickers_for_themes(&[], true).await.unwrap(),
+            ["AAPL", "MSFT"]
+        );
+        assert_eq!(
+            store.tickers_for_themes(&[theme_id], true).await.unwrap(),
+            ["AAPL", "MSFT", "NVDA"]
+        );
+        assert_eq!(store.theme_names_for_ticker("NVDA").await.unwrap(), ["AI"]);
+        assert_eq!(
+            store
+                .themes_with_assignments()
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|theme| theme.name)
+                .collect::<Vec<_>>(),
+            ["AI"]
         );
     }
 }

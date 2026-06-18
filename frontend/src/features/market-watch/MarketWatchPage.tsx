@@ -13,6 +13,7 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,
+  Chip,
   CircularProgress,
   IconButton,
   MenuItem,
@@ -22,8 +23,17 @@ import {
   Typography,
 } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
-import { fetchIndustries, type IndustryRanking } from "../../api/industries";
-import { streamTickers, type TickerRanking } from "../../api/tickers";
+import {
+  fetchIndustries,
+  fetchThemeRankings,
+  type IndustryRanking,
+  type PerformancePeriods,
+} from "../../api/industries";
+import {
+  streamTickers,
+  type TickerGroupSelection,
+  type TickerRanking,
+} from "../../api/tickers";
 import { TradingViewChart } from "../../components/TradingViewChart";
 import { Toast } from "../../components/Toast";
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
@@ -31,6 +41,13 @@ import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 type SortKey = "relative_strength" | keyof IndustryRanking["performance"];
 type SortDirection = "asc" | "desc";
 type SortSetting = { key: SortKey; direction: SortDirection };
+type GroupMode = "industry" | "theme";
+type GroupRanking = {
+  key: string;
+  name: string;
+  performance: PerformancePeriods | null;
+  relative_strength: number | null;
+};
 
 const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: "relative_strength", label: "RS" },
@@ -42,6 +59,7 @@ const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
 ];
 
 const sortSettingKey = "market-watch.industry-sort";
+const groupModeKey = "market-watch.group-mode";
 const tickerSortSettingKey = "market-watch.ticker-sort";
 const chartSplitKey = "market-watch.chart-split";
 const chartIntervalKey = "market-watch.chart-interval";
@@ -63,9 +81,9 @@ function readSortSetting(): SortSetting {
   }
 }
 
-function sortValue(industry: IndustryRanking, key: SortKey) {
-  if (key === "relative_strength") return industry[key];
-  return industry.performance[key];
+function sortValue(group: GroupRanking, key: SortKey) {
+  if (key === "relative_strength") return group[key] ?? undefined;
+  return group.performance?.[key] ?? undefined;
 }
 
 function formatMetric(value: number, key: SortKey) {
@@ -85,24 +103,55 @@ function metricColor(value: number, minimum: number, maximum: number) {
   return metricColors[index];
 }
 
-interface IndustriesPanelProps {
-  selectedIndustryKeys: Set<string>;
-  setSelectedIndustryKeys: Dispatch<SetStateAction<Set<string>>>;
+function readGroupMode(): GroupMode {
+  return localStorage.getItem(groupModeKey) === "theme" ? "theme" : "industry";
 }
 
-function IndustriesPanel({
-  selectedIndustryKeys,
-  setSelectedIndustryKeys,
-}: IndustriesPanelProps) {
-  const [industries, setIndustries] = useState<IndustryRanking[]>([]);
+const unassignedGroupKey = "unassigned";
+const emptyGroupKeys = new Set<string>();
+
+interface GroupsPanelProps {
+  mode: GroupMode;
+  setMode: (mode: GroupMode) => void;
+  selectedGroupKeys: Set<string>;
+  setSelectedGroupKeys: Dispatch<SetStateAction<Set<string>>>;
+}
+
+function GroupsPanel({
+  mode,
+  setMode,
+  selectedGroupKeys,
+  setSelectedGroupKeys,
+}: GroupsPanelProps) {
+  const [groups, setGroups] = useState<GroupRanking[]>([]);
   const [sortSetting, setSortSetting] = useState(readSortSetting);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchIndustries(controller.signal)
-      .then(setIndustries)
+    setLoading(true);
+    setError(undefined);
+    const request =
+      mode === "industry"
+        ? fetchIndustries(controller.signal).then((industries) =>
+            industries.map(({ key, name, performance, relative_strength }) => ({
+              key,
+              name,
+              performance,
+              relative_strength,
+            })),
+          )
+        : fetchThemeRankings(controller.signal).then((themes) =>
+            themes.map(({ id, name, performance, relative_strength }) => ({
+              key: String(id),
+              name,
+              performance,
+              relative_strength,
+            })),
+          );
+    request
+      .then(setGroups)
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
           setError(requestError.message);
@@ -112,41 +161,60 @@ function IndustriesPanel({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
 
-  const sortedIndustries = useMemo(
+  const sortedGroups = useMemo(
     () =>
-      [...industries].sort((left, right) => {
-        const comparison =
-          sortValue(left, sortSetting.key) - sortValue(right, sortSetting.key);
+      [...groups].sort((left, right) => {
+        const leftValue = sortValue(left, sortSetting.key);
+        const rightValue = sortValue(right, sortSetting.key);
+        if (leftValue === undefined && rightValue === undefined) {
+          return left.name.localeCompare(right.name);
+        }
+        if (leftValue === undefined) return 1;
+        if (rightValue === undefined) return -1;
+        const comparison = leftValue - rightValue;
         return sortSetting.direction === "desc" ? -comparison : comparison;
       }),
-    [industries, sortSetting],
+    [groups, sortSetting],
   );
   const metricRange = useMemo(() => {
-    const values = industries.map((industry) => sortValue(industry, sortSetting.key));
+    const values = groups
+      .map((group) => sortValue(group, sortSetting.key))
+      .filter((value): value is number => value !== undefined);
     return {
-      minimum: Math.min(...values),
-      maximum: Math.max(...values),
+      minimum: values.length > 0 ? Math.min(...values) : 0,
+      maximum: values.length > 0 ? Math.max(...values) : 0,
     };
-  }, [industries, sortSetting.key]);
+  }, [groups, sortSetting.key]);
 
   return (
     <section className="workspace-panel industries-panel">
       <header className="panel-header panel-list-header">
         <div className="panel-header-title">
-          <Typography component="h2">Industries</Typography>
-          {selectedIndustryKeys.size > 0 && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={mode}
+            aria-label="Group tickers by"
+            onChange={(_, value: GroupMode | null) => {
+              if (value !== null) setMode(value);
+            }}
+          >
+            <ToggleButton value="industry">Industry</ToggleButton>
+            <ToggleButton value="theme">Theme</ToggleButton>
+          </ToggleButtonGroup>
+          {selectedGroupKeys.size > 0 && (
             <IconButton
               size="small"
-              aria-label={`Unselect ${selectedIndustryKeys.size} industries`}
-              onClick={() => setSelectedIndustryKeys(new Set())}
+              aria-label={`Unselect ${selectedGroupKeys.size} groups`}
+              onClick={() => setSelectedGroupKeys(new Set())}
             >
-              <Badge badgeContent={selectedIndustryKeys.size} color="primary">
+              <Badge badgeContent={selectedGroupKeys.size} color="primary">
                 <RemoveDoneIcon fontSize="small" />
               </Badge>
             </IconButton>
@@ -156,7 +224,7 @@ function IndustriesPanel({
           <Select
             size="small"
             value={sortSetting.key}
-            aria-label="Sort industries by"
+            aria-label={`Sort ${mode === "industry" ? "industries" : "themes"} by`}
             onChange={(event) =>
               setSortSetting({ key: event.target.value as SortKey, direction: "desc" })
             }
@@ -188,46 +256,69 @@ function IndustriesPanel({
       {loading && (
         <div className="panel-status">
           <CircularProgress size="1rem" />
-          <Typography color="text.secondary">Loading industries</Typography>
+          <Typography color="text.secondary">
+            Loading {mode === "industry" ? "industries" : "themes"}
+          </Typography>
         </div>
       )}
-      {!loading && !error && industries.length === 0 && (
+      {!loading && !error && groups.length === 0 && mode === "industry" && (
         <Typography className="panel-empty" color="text.secondary">
-          No industry snapshot available
+          No {mode === "industry" ? "industry snapshot" : "theme rankings"} available
         </Typography>
       )}
-      {!loading && !error && industries.length > 0 && (
-        <ol className="ranked-list" aria-label="Industry rankings">
-          {sortedIndustries.map((industry) => {
-            const metric = sortValue(industry, sortSetting.key);
+      {!loading && !error && (groups.length > 0 || mode === "theme") && (
+        <ol className="ranked-list" aria-label={`${mode} rankings`}>
+          {sortedGroups.map((group) => {
+            const metric = sortValue(group, sortSetting.key);
             return (
-              <li key={industry.key}>
+              <li key={group.key}>
                 <button
                   className="ranked-list-item"
                   type="button"
-                  aria-pressed={selectedIndustryKeys.has(industry.key)}
+                  aria-pressed={selectedGroupKeys.has(group.key)}
                   onClick={() =>
-                    setSelectedIndustryKeys((selected) => {
+                    setSelectedGroupKeys((selected) => {
                       const next = new Set(selected);
-                      if (next.has(industry.key)) next.delete(industry.key);
-                      else next.add(industry.key);
+                      if (next.has(group.key)) next.delete(group.key);
+                      else next.add(group.key);
                       return next;
                     })
                   }
                 >
-                  <span className="ranked-name">{industry.name}</span>
-                  <span
-                    className="ranked-metric"
-                    style={{
-                      color: metricColor(metric, metricRange.minimum, metricRange.maximum),
-                    }}
-                  >
-                    {formatMetric(metric, sortSetting.key)}
-                  </span>
+                  <span className="ranked-name">{group.name}</span>
+                  {metric !== undefined && (
+                    <span
+                      className="ranked-metric"
+                      style={{
+                        color: metricColor(metric, metricRange.minimum, metricRange.maximum),
+                      }}
+                    >
+                      {formatMetric(metric, sortSetting.key)}
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
+          {mode === "theme" && (
+            <li className="unassigned-group">
+              <button
+                className="ranked-list-item"
+                type="button"
+                aria-pressed={selectedGroupKeys.has(unassignedGroupKey)}
+                onClick={() =>
+                  setSelectedGroupKeys((selected) => {
+                    const next = new Set(selected);
+                    if (next.has(unassignedGroupKey)) next.delete(unassignedGroupKey);
+                    else next.add(unassignedGroupKey);
+                    return next;
+                  })
+                }
+              >
+                <span className="ranked-name">Unassigned</span>
+              </button>
+            </li>
+          )}
         </ol>
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
@@ -236,12 +327,18 @@ function IndustriesPanel({
 }
 
 interface TickersPanelProps {
-  industryKeys: Set<string>;
+  mode: GroupMode;
+  groupKeys: Set<string>;
   selectedTicker: string | undefined;
   setSelectedTicker: Dispatch<SetStateAction<string | undefined>>;
 }
 
-function TickersPanel({ industryKeys, selectedTicker, setSelectedTicker }: TickersPanelProps) {
+function TickersPanel({
+  mode,
+  groupKeys,
+  selectedTicker,
+  setSelectedTicker,
+}: TickersPanelProps) {
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
   const tickerElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => {
@@ -259,8 +356,22 @@ function TickersPanel({ industryKeys, selectedTicker, setSelectedTicker }: Ticke
   });
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const industryKey = [...industryKeys].sort().join(",");
-  const metricsActive = industryKeys.size > 0;
+  const groupKey = [...groupKeys].sort().join(",");
+  const metricsActive = groupKeys.size > 0;
+  const selection = useMemo<TickerGroupSelection>(
+    () =>
+      mode === "industry"
+        ? { group_type: "industry", keys: groupKey ? groupKey.split(",") : [] }
+        : {
+            group_type: "theme",
+            ids: groupKey
+              .split(",")
+              .filter((key) => key && key !== unassignedGroupKey)
+              .map(Number),
+            include_unassigned: groupKeys.has(unassignedGroupKey),
+          },
+    [groupKey, groupKeys, mode],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -269,7 +380,7 @@ function TickersPanel({ industryKeys, selectedTicker, setSelectedTicker }: Ticke
     setTickers([]);
     setSelectedTicker(undefined);
     streamTickers(
-      industryKey ? industryKey.split(",") : [],
+      selection,
       (ticker) =>
         setTickers((current) => {
           const existing = current.findIndex((item) => item.symbol === ticker.symbol);
@@ -289,7 +400,7 @@ function TickersPanel({ industryKeys, selectedTicker, setSelectedTicker }: Ticke
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [industryKey]);
+  }, [selection]);
 
   useEffect(() => {
     localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
@@ -610,10 +721,19 @@ function ChartPanel({
         </div>
         <div className="chart-header-controls">
           {summary !== undefined && (
-            <div className="chart-indicators">
-              <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
-              <Typography>Avg Vol {formatVolume(summary.average_volume)}</Typography>
-            </div>
+            <>
+              {summary.themes.length > 0 && (
+                <div className="chart-theme-chips">
+                  {summary.themes.map((theme) => (
+                    <Chip key={theme} size="small" label={theme} />
+                  ))}
+                </div>
+              )}
+              <div className="chart-indicators">
+                <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
+                <Typography>Avg Vol {formatVolume(summary.average_volume)}</Typography>
+              </div>
+            </>
           )}
           <ToggleButtonGroup
             exclusive
@@ -700,22 +820,32 @@ function tradingViewSymbolUrl(symbol: string) {
 }
 
 export function MarketWatchPage() {
-  const [selectedIndustryKeys, setSelectedIndustryKeys] = useState<Set<string>>(() => new Set());
+  const [groupMode, setGroupMode] = useState<GroupMode>(readGroupMode);
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() => new Set());
   const [selectedTicker, setSelectedTicker] = useState<string>();
+  const setMode = (mode: GroupMode) => {
+    localStorage.setItem(groupModeKey, mode);
+    setGroupMode(mode);
+    setSelectedGroupKeys(new Set());
+  };
+  const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
 
   return (
     <section className="market-watch-page" aria-label="Market Watch">
-      <IndustriesPanel
-        selectedIndustryKeys={selectedIndustryKeys}
-        setSelectedIndustryKeys={setSelectedIndustryKeys}
+      <GroupsPanel
+        mode={groupMode}
+        setMode={setMode}
+        selectedGroupKeys={selectedGroupKeys}
+        setSelectedGroupKeys={setSelectedGroupKeys}
       />
       <TickersPanel
-        industryKeys={selectedIndustryKeys}
+        mode={groupMode}
+        groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}
         setSelectedTicker={setSelectedTicker}
       />
       <ChartPanel
-        industryKeys={selectedIndustryKeys}
+        industryKeys={industryKeys}
         selectedTicker={selectedTicker}
       />
     </section>

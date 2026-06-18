@@ -19,8 +19,15 @@ use tracing::error;
 const STREAM_BUFFER_SIZE: usize = 2;
 
 #[derive(Deserialize)]
-struct TickerRequest {
-    industry_keys: Vec<String>,
+#[serde(tag = "group_type", rename_all = "snake_case")]
+enum TickerRequest {
+    Industry {
+        keys: Vec<String>,
+    },
+    Theme {
+        ids: Vec<i64>,
+        include_unassigned: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -48,9 +55,21 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
     let relay = tokio::spawn(async move {
         let (ticker_sender, mut ticker_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
         let producer = tokio::spawn(async move {
-            ticker_catalog
-                .stream_tickers(&request.industry_keys, &ticker_sender)
-                .await
+            match request {
+                TickerRequest::Industry { keys } => {
+                    ticker_catalog
+                        .stream_industry_tickers(&keys, &ticker_sender)
+                        .await
+                }
+                TickerRequest::Theme {
+                    ids,
+                    include_unassigned,
+                } => {
+                    ticker_catalog
+                        .stream_theme_tickers(&ids, include_unassigned, &ticker_sender)
+                        .await
+                }
+            }
         });
         let _producer_guard = AbortOnDrop(producer.abort_handle());
 

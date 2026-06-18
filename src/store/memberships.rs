@@ -123,6 +123,8 @@ impl Store {
             "SELECT symbol FROM tickers
              UNION
              SELECT symbol FROM industry_membership_tickers
+             UNION
+             SELECT symbol FROM theme_stocks
              ORDER BY symbol"
         )
         .fetch_all(&self.pool)
@@ -192,6 +194,8 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::{IndustrySnapshotRow, NewIndustrySnapshot};
+    use chrono::NaiveDate;
 
     #[tokio::test]
     async fn stores_filters_and_unions_known_membership_tickers() {
@@ -233,6 +237,38 @@ mod tests {
                 .await
                 .unwrap(),
             ["AMD", "NVDA", "SMCI"]
+        );
+        store
+            .insert_industry_snapshot_if_absent(&NewIndustrySnapshot {
+                market_date: NaiveDate::from_ymd_opt(2026, 6, 17).unwrap(),
+                fetched_at: Utc::now(),
+                rows: vec![IndustrySnapshotRow {
+                    key: "semiconductors".to_owned(),
+                    name: "Semiconductors".to_owned(),
+                    performance_week: 0.0,
+                    performance_month: 0.0,
+                    performance_quarter: 0.0,
+                    performance_half_year: 0.0,
+                    performance_year: 0.0,
+                    performance_year_to_date: 0.0,
+                }],
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .industry_name_for_ticker("NVDA", &[])
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("Semiconductors")
+        );
+        assert_eq!(
+            store
+                .industry_name_for_ticker("NVDA", &["computerhardware".to_owned()])
+                .await
+                .unwrap(),
+            None
         );
     }
 }

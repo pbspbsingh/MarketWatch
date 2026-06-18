@@ -360,6 +360,7 @@ fn normalize_exchange(code: Option<&str>, name: Option<&str>) -> Option<Exchange
             Some("NYSE") => Some(Exchange::Nyse),
             Some("NYSE American" | "NYSE Arca") => Some(Exchange::Amex),
             Some(name) if name.starts_with("OTC") => Some(Exchange::Otc),
+            Some(name) if name.to_lowercase().starts_with("cboe") => Some(Exchange::Cboe),
             _ => None,
         },
     }

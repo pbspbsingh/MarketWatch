@@ -20,6 +20,15 @@ pub struct IndustryRanking {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ThemeRanking {
+    pub id: i64,
+    pub name: String,
+    pub etf_symbol: String,
+    pub performance: Option<PerformancePeriods>,
+    pub relative_strength: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerRanking {
     pub symbol: String,
     pub performance: Option<PerformancePeriods>,

@@ -47,6 +47,7 @@ struct ApplyInput {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/themes", get(themes).post(create))
+        .route("/theme-rankings", get(theme_rankings))
         .route("/themes/{id}", put(update).delete(remove))
         .route("/theme-tickers", get(tickers))
         .route("/theme-tickers", post(add_ticker))
@@ -62,6 +63,20 @@ pub fn router() -> Router<AppState> {
 
 async fn themes(State(state): State<AppState>) -> ApiResult<Vec<crate::models::Theme>> {
     state.themes.themes().await.map(Json).map_err(api_error)
+}
+
+async fn theme_rankings(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::models::ThemeRanking>>, StatusCode> {
+    state
+        .theme_analysis
+        .rankings()
+        .await
+        .map(Json)
+        .map_err(|error| {
+            error!(%error, "failed to load theme rankings");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 async fn create(

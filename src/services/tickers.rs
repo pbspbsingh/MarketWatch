@@ -43,7 +43,7 @@ impl TickerCatalogService {
         })
     }
 
-    pub async fn stream_tickers(
+    pub async fn stream_industry_tickers(
         &self,
         industry_keys: &[String],
         sender: &mpsc::Sender<TickerRanking>,
@@ -61,6 +61,34 @@ impl TickerCatalogService {
             self.refresh_membership_if_stale(industry_key).await?;
         }
         let symbols = self.store.tickers_for_industries(industry_keys).await?;
+        self.stream_symbols(symbols, !industry_keys.is_empty(), sender)
+            .await
+    }
+
+    pub async fn stream_theme_tickers(
+        &self,
+        theme_ids: &[i64],
+        include_unassigned: bool,
+        sender: &mpsc::Sender<TickerRanking>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            theme_ids.iter().all(|id| *id > 0),
+            "theme IDs must be positive"
+        );
+        let symbols = self
+            .store
+            .tickers_for_themes(theme_ids, include_unassigned)
+            .await?;
+        self.stream_symbols(symbols, !theme_ids.is_empty() || include_unassigned, sender)
+            .await
+    }
+
+    async fn stream_symbols(
+        &self,
+        symbols: Vec<String>,
+        metrics_active: bool,
+        sender: &mpsc::Sender<TickerRanking>,
+    ) -> anyhow::Result<()> {
         for symbol in &symbols {
             if sender
                 .send(TickerRanking {
@@ -74,7 +102,7 @@ impl TickerCatalogService {
                 return Ok(());
             }
         }
-        if industry_keys.is_empty() {
+        if !metrics_active {
             return Ok(());
         }
 

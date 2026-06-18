@@ -21,6 +21,7 @@ pub struct ChartService {
 pub struct ChartSummary {
     symbol: String,
     industry_name: Option<String>,
+    themes: Vec<String>,
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
@@ -54,10 +55,17 @@ impl ChartService {
             .store
             .industry_name_for_ticker(symbol, industry_keys)
             .await?;
+        let industry_name = if industry_name.is_none() && !industry_keys.is_empty() {
+            self.store.industry_name_for_ticker(symbol, &[]).await?
+        } else {
+            industry_name
+        };
+        let themes = self.store.theme_names_for_ticker(symbol).await?;
 
         Ok(ChartSummary {
             symbol: symbol.to_owned(),
             industry_name,
+            themes,
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
             adr_percent: average_daily_range(latest_sessions(&candles, self.adr_sessions)),
