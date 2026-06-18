@@ -9,14 +9,18 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::error;
+use tracing::{error, info};
 
-const STREAM_BUFFER_SIZE: usize = 2;
+const STREAM_BUFFER_SIZE: usize = 1;
+static NEXT_TICKER_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Deserialize)]
 #[serde(tag = "group_type", rename_all = "snake_case")]
@@ -38,10 +42,14 @@ enum TickerStreamEvent {
     Error { message: String },
 }
 
-struct AbortOnDrop(AbortHandle);
+struct AbortOnDrop {
+    handle: AbortHandle,
+}
 
 struct TickerBodyStream {
+    stream_id: u64,
     receiver: ReceiverStream<Result<Bytes, Infallible>>,
+    active_stream: Arc<Mutex<Option<crate::app::ActiveTickerStream>>>,
     _relay_guard: AbortOnDrop,
 }
 
@@ -50,15 +58,39 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn tickers(State(state): State<AppState>, Json(request): Json<TickerRequest>) -> Response {
+    let stream_id = NEXT_TICKER_STREAM_ID.fetch_add(1, Ordering::Relaxed);
+    match &request {
+        TickerRequest::Industry { keys } => {
+            info!(
+                stream_id,
+                group_type = "industry",
+                selected_count = keys.len(),
+                "ticker stream requested"
+            );
+        }
+        TickerRequest::Theme {
+            ids,
+            include_unassigned,
+        } => {
+            info!(
+                stream_id,
+                group_type = "theme",
+                selected_count = ids.len(),
+                include_unassigned,
+                "ticker stream requested"
+            );
+        }
+    }
     let (body_sender, body_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
     let ticker_catalog = state.ticker_catalog.clone();
+    let active_stream = state.active_ticker_stream.clone();
     let relay = tokio::spawn(async move {
         let (ticker_sender, mut ticker_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
         let producer = tokio::spawn(async move {
             match request {
                 TickerRequest::Industry { keys } => {
                     ticker_catalog
-                        .stream_industry_tickers(&keys, &ticker_sender)
+                        .stream_industry_tickers(stream_id, &keys, &ticker_sender)
                         .await
                 }
                 TickerRequest::Theme {
@@ -66,12 +98,14 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
                     include_unassigned,
                 } => {
                     ticker_catalog
-                        .stream_theme_tickers(&ids, include_unassigned, &ticker_sender)
+                        .stream_theme_tickers(stream_id, &ids, include_unassigned, &ticker_sender)
                         .await
                 }
             }
         });
-        let _producer_guard = AbortOnDrop(producer.abort_handle());
+        let _producer_guard = AbortOnDrop {
+            handle: producer.abort_handle(),
+        };
 
         while let Some(ticker) = ticker_receiver.recv().await {
             if body_sender
@@ -104,10 +138,18 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
         let _ = body_sender
             .send(Ok::<_, Infallible>(event_bytes(event)))
             .await;
+        clear_active_stream(&active_stream, stream_id);
+        info!(stream_id, "ticker stream relay finished");
     });
+    let relay_handle = relay.abort_handle();
+    replace_active_stream(&state.active_ticker_stream, stream_id, relay_handle.clone());
     let stream = TickerBodyStream {
+        stream_id,
         receiver: ReceiverStream::new(body_receiver),
-        _relay_guard: AbortOnDrop(relay.abort_handle()),
+        active_stream: state.active_ticker_stream.clone(),
+        _relay_guard: AbortOnDrop {
+            handle: relay_handle,
+        },
     };
 
     Response::builder()
@@ -123,9 +165,51 @@ fn event_bytes(event: TickerStreamEvent) -> Bytes {
     Bytes::from(bytes)
 }
 
+fn replace_active_stream(
+    active_stream: &Mutex<Option<crate::app::ActiveTickerStream>>,
+    stream_id: u64,
+    abort_handle: AbortHandle,
+) {
+    let mut active_stream = active_stream
+        .lock()
+        .expect("active ticker stream mutex is not poisoned");
+    if let Some(previous) = active_stream.replace(crate::app::ActiveTickerStream {
+        stream_id,
+        abort_handle,
+    }) {
+        info!(
+            stream_id,
+            previous_stream_id = previous.stream_id,
+            "aborting previous ticker stream on new request"
+        );
+        previous.abort_handle.abort();
+    }
+}
+
+fn clear_active_stream(
+    active_stream: &Mutex<Option<crate::app::ActiveTickerStream>>,
+    stream_id: u64,
+) {
+    let mut active_stream = active_stream
+        .lock()
+        .expect("active ticker stream mutex is not poisoned");
+    if active_stream
+        .as_ref()
+        .is_some_and(|active| active.stream_id == stream_id)
+    {
+        active_stream.take();
+    }
+}
+
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
-        self.0.abort();
+        self.handle.abort();
+    }
+}
+
+impl Drop for TickerBodyStream {
+    fn drop(&mut self) {
+        clear_active_stream(&self.active_stream, self.stream_id);
     }
 }
 

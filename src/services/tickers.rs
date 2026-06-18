@@ -45,6 +45,7 @@ impl TickerCatalogService {
 
     pub async fn stream_industry_tickers(
         &self,
+        stream_id: u64,
         industry_keys: &[String],
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
@@ -61,12 +62,13 @@ impl TickerCatalogService {
             self.refresh_membership_if_stale(industry_key).await?;
         }
         let symbols = self.store.tickers_for_industries(industry_keys).await?;
-        self.stream_symbols(symbols, !industry_keys.is_empty(), sender)
+        self.stream_symbols(stream_id, symbols, !industry_keys.is_empty(), sender)
             .await
     }
 
     pub async fn stream_theme_tickers(
         &self,
+        stream_id: u64,
         theme_ids: &[i64],
         include_unassigned: bool,
         sender: &mpsc::Sender<TickerRanking>,
@@ -79,12 +81,18 @@ impl TickerCatalogService {
             .store
             .tickers_for_themes(theme_ids, include_unassigned)
             .await?;
-        self.stream_symbols(symbols, !theme_ids.is_empty() || include_unassigned, sender)
-            .await
+        self.stream_symbols(
+            stream_id,
+            symbols,
+            !theme_ids.is_empty() || include_unassigned,
+            sender,
+        )
+        .await
     }
 
     async fn stream_symbols(
         &self,
+        stream_id: u64,
         symbols: Vec<String>,
         metrics_active: bool,
         sender: &mpsc::Sender<TickerRanking>,
@@ -103,6 +111,11 @@ impl TickerCatalogService {
             }
         }
         if !metrics_active {
+            info!(
+                stream_id,
+                symbol_count = symbols.len(),
+                "ticker stream completed"
+            );
             return Ok(());
         }
 
@@ -127,7 +140,7 @@ impl TickerCatalogService {
                     }
                 }
                 Err(error) => {
-                    warn!(symbol, %error, "failed to load Yahoo ticker performance");
+                    warn!(stream_id, symbol, %error, "failed to load Yahoo ticker performance");
                     TickerRanking {
                         symbol,
                         performance: None,
@@ -139,6 +152,7 @@ impl TickerCatalogService {
                 return Ok(());
             }
         }
+        info!(stream_id, "ticker stream completed with performance");
         Ok(())
     }
 

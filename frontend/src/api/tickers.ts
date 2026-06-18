@@ -34,20 +34,32 @@ export async function streamTickers(
   }
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const cancelReader = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", cancelReader, { once: true });
   let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += value ?? "";
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (line.length === 0) continue;
-      const event = JSON.parse(line) as TickerStreamEvent;
-      if (event.type === "ticker") onTicker(event.ticker);
-      if (event.type === "error") throw new Error(event.message);
-      if (event.type === "complete") return;
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const { value, done } = await reader.read();
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      buffer += value ?? "";
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.length === 0) continue;
+        const event = JSON.parse(line) as TickerStreamEvent;
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        if (event.type === "ticker") onTicker(event.ticker);
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "complete") return;
+      }
+      if (done) break;
     }
-    if (done) break;
+  } finally {
+    signal?.removeEventListener("abort", cancelReader);
+    reader.releaseLock();
   }
   throw new Error("Ticker stream ended before completion");
 }

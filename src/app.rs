@@ -12,8 +12,15 @@ use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use axum::Router;
 use std::sync::Arc;
+use std::sync::Mutex;
+use tokio::task::AbortHandle;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
+
+pub struct ActiveTickerStream {
+    pub stream_id: u64,
+    pub abort_handle: AbortHandle,
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -21,6 +28,7 @@ pub struct AppState {
     pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
+    pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
 }
@@ -70,6 +78,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         details,
         industry_analysis,
         ticker_catalog,
+        active_ticker_stream: Arc::new(Mutex::new(None)),
         themes,
         theme_analysis,
     };
