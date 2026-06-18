@@ -70,6 +70,7 @@ const groupModeKey = "market-watch.group-mode";
 const tickerSortSettingKey = "market-watch.ticker-sort";
 const chartSplitKey = "market-watch.chart-split";
 const chartIntervalKey = "market-watch.chart-interval";
+const chartThemeEtfKey = "market-watch.theme-etf-chart";
 const defaultSortSetting: SortSetting = { key: "relative_strength", direction: "desc" };
 
 function readSortSetting(): SortSetting {
@@ -719,6 +720,10 @@ function readChartInterval(): "D" | "W" {
   return localStorage.getItem(chartIntervalKey) === "W" ? "W" : "D";
 }
 
+function readThemeEtfChart() {
+  return localStorage.getItem(chartThemeEtfKey) === "1";
+}
+
 function ChartPanel({
   industryKeys,
   selectedTicker,
@@ -729,7 +734,9 @@ function ChartPanel({
   onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
 }) {
   const [summary, setSummary] = useState<ChartSummary>();
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const [interval, setInterval] = useState<"D" | "W">(readChartInterval);
+  const [showThemeEtfChart, setShowThemeEtfChart] = useState(readThemeEtfChart);
   const [split, setSplit] = useState(readChartSplit);
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
@@ -737,6 +744,10 @@ function ChartPanel({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef(split);
   const selectedIndustry = summary?.industry?.name ?? "All industries";
+  const bottomChartSymbol =
+    showThemeEtfChart && summary?.theme_benchmark !== null
+      ? summary?.theme_benchmark?.tradingview_symbol
+      : summary?.benchmark_symbol;
 
   useEffect(() => {
     if (selectedTicker === undefined) {
@@ -779,15 +790,18 @@ function ChartPanel({
     setError(undefined);
     if (selectedTicker === undefined) {
       setSummary(undefined);
+      setSummaryLoading(false);
       onSelectedTickerContext(undefined);
       return;
     }
 
     const controller = new AbortController();
+    setSummaryLoading(true);
     onSelectedTickerContext(undefined);
     fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
       .then((chartSummary) => {
         setSummary(chartSummary);
+        setSummaryLoading(false);
         onSelectedTickerContext({
           industry: chartSummary.industry,
           themeNames: chartSummary.themes,
@@ -796,6 +810,7 @@ function ChartPanel({
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
           setSummary(undefined);
+          setSummaryLoading(false);
           onSelectedTickerContext(undefined);
           setError(requestError.message);
         }
@@ -869,7 +884,13 @@ function ChartPanel({
           </IconButton>
         </div>
         <div className="chart-header-controls">
-          {summary !== undefined && (
+          {summaryLoading && (
+            <div className="chart-header-loading">
+              <CircularProgress size="0.75rem" />
+              <Typography color="text.secondary">Loading</Typography>
+            </div>
+          )}
+          {!summaryLoading && summary !== undefined && (
             <>
               {summary.themes.length > 0 && (
                 <div className="chart-theme-chips">
@@ -921,6 +942,20 @@ function ChartPanel({
             <ToggleButton value="D">Daily</ToggleButton>
             <ToggleButton value="W">Weekly</ToggleButton>
           </ToggleButtonGroup>
+          <ToggleButton
+            size="small"
+            value="theme-etf"
+            selected={showThemeEtfChart}
+            aria-label="Toggle theme ETF bottom chart"
+            onChange={() =>
+              setShowThemeEtfChart((enabled) => {
+                localStorage.setItem(chartThemeEtfKey, enabled ? "0" : "1");
+                return !enabled;
+              })
+            }
+          >
+            Theme ETF
+          </ToggleButton>
         </div>
       </header>
       {selectedTicker === undefined && (
@@ -958,7 +993,7 @@ function ChartPanel({
             onPointerCancel={handleDividerPointerUp}
           />
           <TradingViewChart
-            symbol={summary.benchmark_symbol}
+            symbol={bottomChartSymbol ?? summary.benchmark_symbol}
             interval={interval}
             onError={setError}
           />

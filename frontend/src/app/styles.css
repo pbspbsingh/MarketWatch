@@ -636,6 +636,16 @@ body,
   gap: 0.75rem;
 }
 
+.chart-header-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chart-header-loading p {
+  font-size: 0.625rem;
+}
+
 .chart-header-identity h2 {
   min-width: 0;
   overflow: hidden;

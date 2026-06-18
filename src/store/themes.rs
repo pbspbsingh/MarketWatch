@@ -40,6 +40,11 @@ struct StoredThemeAiJobSummary {
     updated_at: NaiveDateTime,
 }
 
+pub struct TickerThemeEtf {
+    pub name: String,
+    pub etf_symbol: String,
+}
+
 impl Store {
     pub async fn theme_names_for_ticker(&self, symbol: &str) -> anyhow::Result<Vec<String>> {
         sqlx::query_scalar!(
@@ -53,6 +58,25 @@ impl Store {
         .fetch_all(&self.pool)
         .await
         .context("failed to load ticker theme names")
+    }
+
+    pub async fn first_theme_etf_for_ticker(
+        &self,
+        symbol: &str,
+    ) -> anyhow::Result<Option<TickerThemeEtf>> {
+        sqlx::query_as!(
+            TickerThemeEtf,
+            r#"SELECT themes.name, themes.etf_symbol
+               FROM theme_stocks
+               JOIN themes ON themes.id = theme_stocks.theme_id
+               WHERE theme_stocks.symbol = ?
+               ORDER BY themes.name COLLATE NOCASE
+               LIMIT 1"#,
+            symbol,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load ticker theme ETF")
     }
 
     pub async fn themes_with_assignments(&self) -> anyhow::Result<Vec<Theme>> {

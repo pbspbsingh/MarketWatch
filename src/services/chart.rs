@@ -5,6 +5,7 @@ use crate::store::Store;
 use chrono::{TimeDelta, Utc};
 use serde::Serialize;
 use std::sync::Arc;
+use tracing::warn;
 
 const HISTORY_CALENDAR_DAY_MULTIPLIER: i64 = 2;
 
@@ -22,6 +23,7 @@ pub struct ChartSummary {
     symbol: String,
     industry: Option<ChartIndustry>,
     themes: Vec<String>,
+    theme_benchmark: Option<ChartThemeBenchmark>,
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
@@ -32,6 +34,13 @@ pub struct ChartSummary {
 pub struct ChartIndustry {
     key: String,
     name: String,
+}
+
+#[derive(Serialize)]
+pub struct ChartThemeBenchmark {
+    theme_name: String,
+    etf_symbol: String,
+    tradingview_symbol: String,
 }
 
 impl ChartService {
@@ -67,11 +76,32 @@ impl ChartService {
             industry
         };
         let themes = self.store.theme_names_for_ticker(symbol).await?;
+        let theme_benchmark = match self.store.first_theme_etf_for_ticker(symbol).await? {
+            Some(theme) => match self.yahoo.profile(&theme.etf_symbol).await {
+                Ok(profile) => Some(ChartThemeBenchmark {
+                    theme_name: theme.name,
+                    etf_symbol: theme.etf_symbol.clone(),
+                    tradingview_symbol: format!("{}:{}", profile.exchange, theme.etf_symbol),
+                }),
+                Err(error) => {
+                    warn!(
+                        symbol,
+                        theme_name = theme.name,
+                        etf_symbol = theme.etf_symbol,
+                        %error,
+                        "failed to load theme ETF profile"
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
 
         Ok(ChartSummary {
             symbol: symbol.to_owned(),
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
+            theme_benchmark,
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
             adr_percent: average_daily_range(latest_sessions(&candles, self.adr_sessions)),

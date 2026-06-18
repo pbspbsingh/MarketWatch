@@ -2,6 +2,11 @@ export interface ChartSummary {
   symbol: string;
   industry: { key: string; name: string } | null;
   themes: string[];
+  theme_benchmark: {
+    theme_name: string;
+    etf_symbol: string;
+    tradingview_symbol: string;
+  } | null;
   tradingview_symbol: string;
   benchmark_symbol: string;
   adr_percent: number;
