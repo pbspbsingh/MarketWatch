@@ -23,6 +23,7 @@ import {
   Select,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
@@ -741,6 +742,7 @@ function ChartPanel({
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [summaryVersion, setSummaryVersion] = useState(0);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef(split);
   const selectedIndustry = summary?.industry?.name ?? "All industries";
@@ -816,7 +818,7 @@ function ChartPanel({
         }
       });
     return () => controller.abort();
-  }, [industryKeys, onSelectedTickerContext, selectedTicker]);
+  }, [industryKeys, onSelectedTickerContext, selectedTicker, summaryVersion]);
 
   const updateSplit = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = workspaceRef.current?.getBoundingClientRect();
@@ -865,13 +867,36 @@ function ChartPanel({
             {summary === undefined ? (
               <span>{selectedTicker ?? "Select a ticker"}</span>
             ) : (
-              <a
-                href={tradingViewSymbolUrl(summary.tradingview_symbol)}
-                target="_blank"
-                rel="noreferrer"
+              <Tooltip
+                arrow
+                placement="bottom-start"
+                disableHoverListener={
+                  !summary.company_name && !summary.description
+                }
+                title={
+                  <div className="ticker-description-tooltip">
+                    {summary.company_name !== null ? (
+                      <Typography
+                        className="ticker-description-title"
+                        component="p"
+                      >
+                        {summary.company_name}
+                      </Typography>
+                    ) : null}
+                    {summary.description !== null ? (
+                      <Typography component="p">{summary.description}</Typography>
+                    ) : null}
+                  </div>
+                }
               >
-                {summary.symbol}
-              </a>
+                <a
+                  href={tradingViewSymbolUrl(summary.tradingview_symbol)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {summary.symbol}
+                </a>
+              </Tooltip>
             )}
           </Typography>
           <IconButton
@@ -1009,6 +1034,7 @@ function ChartPanel({
         symbol={selectedTicker}
         open={detailsOpen && selectedTicker !== undefined}
         onClose={() => setDetailsOpen(false)}
+        onThemeChanged={() => setSummaryVersion((version) => version + 1)}
       />
     </section>
   );

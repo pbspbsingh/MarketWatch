@@ -51,10 +51,14 @@ pub fn router() -> Router<AppState> {
         .route("/themes/{id}", put(update).delete(remove))
         .route("/theme-tickers", get(tickers))
         .route("/theme-tickers", post(add_ticker))
-        .route("/theme-tickers/{symbol}", put(replace_assignments))
+        .route(
+            "/theme-tickers/{symbol}",
+            get(ticker).put(replace_assignments),
+        )
         .route("/theme-ai/capability", get(ai_capability))
         .route("/theme-ai/prompt", post(prompt))
         .route("/theme-ai/parse", post(parse))
+        .route("/theme-ai/suggest", post(suggest))
         .route("/theme-ai/jobs", get(ai_jobs).post(create_ai_jobs))
         .route("/theme-ai/jobs/{id}", get(ai_job).delete(delete_ai_job))
         .route("/theme-ai/jobs/{id}/apply", post(apply_ai_job))
@@ -125,6 +129,18 @@ async fn tickers(State(state): State<AppState>) -> ApiResult<Vec<crate::models::
     state.themes.tickers().await.map(Json).map_err(api_error)
 }
 
+async fn ticker(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> ApiResult<crate::models::ThemeTicker> {
+    state
+        .themes
+        .ticker(&symbol)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
 async fn add_ticker(
     State(state): State<AppState>,
     Json(input): Json<TickerInput>,
@@ -173,6 +189,18 @@ async fn parse(
     state
         .themes
         .parse_suggestions(&input.response)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn suggest(
+    State(state): State<AppState>,
+    Json(input): Json<SymbolsInput>,
+) -> ApiResult<Vec<ThemeSuggestion>> {
+    state
+        .themes
+        .suggest(&input.symbols)
         .await
         .map(Json)
         .map_err(api_error)

@@ -224,39 +224,37 @@ impl Store {
         .await
         .context("failed to load theme tickers")?;
 
-        let mut tickers = Vec::<ThemeTicker>::new();
-        for row in rows {
-            if tickers
-                .last()
-                .is_none_or(|ticker| ticker.symbol != row.symbol)
-            {
-                tickers.push(ThemeTicker {
-                    symbol: row.symbol.clone(),
-                    name: row.name,
-                    description: row.description,
-                    assignments: Vec::new(),
-                });
-            }
-            let Some(theme_id) = row.theme_id else {
-                continue;
-            };
-            tickers
-                .last_mut()
-                .expect("ticker inserted")
-                .assignments
-                .push(ThemeAssignment {
-                    theme_id,
-                    theme_name: row.theme_name.context("assigned theme has no name")?,
-                    source: parse_source(row.source.as_deref())?,
-                    reasoning: row.reasoning,
-                    model: row.model,
-                    assigned_at: row
-                        .assigned_at
-                        .context("assigned theme has no timestamp")?
-                        .and_utc(),
-                });
-        }
-        Ok(tickers)
+        theme_tickers_from_rows(rows)
+    }
+
+    pub async fn theme_ticker(&self, symbol: &str) -> anyhow::Result<Option<ThemeTicker>> {
+        let rows = sqlx::query_as!(
+            StoredThemeTicker,
+            r#"WITH known_symbols AS (
+                   SELECT symbol FROM tickers WHERE symbol = ?
+                   UNION
+                   SELECT symbol FROM industry_membership_tickers WHERE symbol = ?
+                   UNION
+                   SELECT symbol FROM theme_stocks WHERE symbol = ?
+               )
+               SELECT known_symbols.symbol, tickers.name, tickers.description,
+                      themes.id AS theme_id, themes.name AS theme_name,
+                      theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,
+                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime"
+               FROM known_symbols
+               LEFT JOIN tickers ON tickers.symbol = known_symbols.symbol
+               LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
+               LEFT JOIN themes ON themes.id = theme_stocks.theme_id
+               ORDER BY known_symbols.symbol, themes.name COLLATE NOCASE"#,
+            symbol,
+            symbol,
+            symbol,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load theme ticker")?;
+
+        Ok(theme_tickers_from_rows(rows)?.into_iter().next())
     }
 
     pub async fn replace_theme_assignments(
@@ -567,6 +565,42 @@ fn parse_source(source: Option<&str>) -> anyhow::Result<AssignmentSource> {
         Some("automatic_ai") => Ok(AssignmentSource::AutomaticAi),
         _ => anyhow::bail!("invalid stored assignment source"),
     }
+}
+
+fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<ThemeTicker>> {
+    let mut tickers = Vec::<ThemeTicker>::new();
+    for row in rows {
+        if tickers
+            .last()
+            .is_none_or(|ticker| ticker.symbol != row.symbol)
+        {
+            tickers.push(ThemeTicker {
+                symbol: row.symbol.clone(),
+                name: row.name,
+                description: row.description,
+                assignments: Vec::new(),
+            });
+        }
+        let Some(theme_id) = row.theme_id else {
+            continue;
+        };
+        tickers
+            .last_mut()
+            .expect("ticker inserted")
+            .assignments
+            .push(ThemeAssignment {
+                theme_id,
+                theme_name: row.theme_name.context("assigned theme has no name")?,
+                source: parse_source(row.source.as_deref())?,
+                reasoning: row.reasoning,
+                model: row.model,
+                assigned_at: row
+                    .assigned_at
+                    .context("assigned theme has no timestamp")?
+                    .and_utc(),
+            });
+    }
+    Ok(tickers)
 }
 
 #[cfg(test)]

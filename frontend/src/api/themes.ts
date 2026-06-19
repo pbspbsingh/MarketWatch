@@ -77,6 +77,8 @@ const json = (body: unknown): RequestInit => ({
 
 export const fetchThemes = () => request<Theme[]>("/api/themes");
 export const fetchThemeTickers = () => request<ThemeTicker[]>("/api/theme-tickers");
+export const fetchThemeTicker = (symbol: string) =>
+  request<ThemeTicker>(`/api/theme-tickers/${encodeURIComponent(symbol)}`);
 export const fetchAiCapability = () => request<AiCapability>("/api/theme-ai/capability");
 
 export const addThemeTicker = (symbol: string) =>
@@ -110,6 +112,12 @@ export const parseThemeSuggestions = (response: string) =>
   request<ThemeSuggestion[]>("/api/theme-ai/parse", {
     method: "POST",
     ...json({ response }),
+  });
+
+export const suggestThemeAssignments = (symbols: string[]) =>
+  request<ThemeSuggestion[]>("/api/theme-ai/suggest", {
+    method: "POST",
+    ...json({ symbols }),
   });
 
 export const createAutomaticJobs = (symbols: string[]) =>

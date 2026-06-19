@@ -133,6 +133,17 @@ impl ThemeService {
             .map_err(ThemeServiceError::Persistence)
     }
 
+    pub async fn ticker(&self, symbol: &str) -> Result<ThemeTicker, ThemeServiceError> {
+        let symbol = symbol.trim().to_uppercase();
+        validate_symbol(&symbol)?;
+        self.ensure_ticker(&symbol).await?;
+        self.store
+            .theme_ticker(&symbol)
+            .await
+            .map_err(ThemeServiceError::Persistence)?
+            .ok_or_else(|| ThemeServiceError::Validation(format!("ticker {symbol} does not exist")))
+    }
+
     pub async fn replace_manual(
         &self,
         symbol: &str,
@@ -182,6 +193,27 @@ impl ThemeService {
         let suggestions: Vec<ThemeSuggestion> = serde_json::from_str(strip_code_fence(response))
             .map_err(ThemeServiceError::InvalidAiResponse)?;
         self.validate_suggestions(suggestions).await
+    }
+
+    pub async fn suggest(
+        &self,
+        symbols: &[String],
+    ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
+        let ai = self.ai.as_ref().ok_or_else(|| {
+            ThemeServiceError::Validation("AI theme suggestion is disabled".into())
+        })?;
+        let themes = self.themes().await?;
+        let tickers = self.selected_tickers(symbols).await?;
+        let prompt = build_prompt(&themes, &tickers);
+        let response = ai.complete(&prompt).await?;
+        let suggestions: Vec<ThemeSuggestion> = serde_json::from_str(strip_code_fence(&response))
+            .map_err(ThemeServiceError::InvalidAiResponse)?;
+        let symbols = tickers
+            .iter()
+            .map(|ticker| ticker.symbol.clone())
+            .collect::<Vec<_>>();
+        self.validate_automatic_suggestions(suggestions, &symbols)
+            .await
     }
 
     pub async fn create_automatic_jobs(

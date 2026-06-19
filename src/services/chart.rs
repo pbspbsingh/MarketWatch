@@ -21,6 +21,8 @@ pub struct ChartService {
 #[derive(Serialize)]
 pub struct ChartSummary {
     symbol: String,
+    company_name: Option<String>,
+    description: Option<String>,
     industry: Option<ChartIndustry>,
     themes: Vec<String>,
     theme_benchmark: Option<ChartThemeBenchmark>,
@@ -99,6 +101,8 @@ impl ChartService {
 
         Ok(ChartSummary {
             symbol: symbol.to_owned(),
+            company_name: profile.name.clone(),
+            description: profile.description.clone(),
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
             theme_benchmark,

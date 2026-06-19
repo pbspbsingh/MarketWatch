@@ -1,5 +1,7 @@
 export interface ChartSummary {
   symbol: string;
+  company_name: string | null;
+  description: string | null;
   industry: { key: string; name: string } | null;
   themes: string[];
   theme_benchmark: {
