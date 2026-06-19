@@ -1,22 +1,48 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
-import { CsvAnalyzerPage } from "../features/csv-analyzer/CsvAnalyzerPage";
-import { FavouritesPage } from "../features/favourites/FavouritesPage";
-import { MarketWatchPage } from "../features/market-watch/MarketWatchPage";
-import { ThemeManagementPage } from "../features/theme-management/ThemeManagementPage";
-import { TopStocksPage } from "../features/top-stocks/TopStocksPage";
+
+const CsvAnalyzerPage = lazy(() =>
+  import("../features/csv-analyzer/CsvAnalyzerPage").then(({ CsvAnalyzerPage }) => ({
+    default: CsvAnalyzerPage,
+  })),
+);
+const FavouritesPage = lazy(() =>
+  import("../features/favourites/FavouritesPage").then(({ FavouritesPage }) => ({
+    default: FavouritesPage,
+  })),
+);
+const MarketWatchPage = lazy(() =>
+  import("../features/market-watch/MarketWatchPage").then(({ MarketWatchPage }) => ({
+    default: MarketWatchPage,
+  })),
+);
+const ThemeManagementPage = lazy(() =>
+  import("../features/theme-management/ThemeManagementPage").then(({ ThemeManagementPage }) => ({
+    default: ThemeManagementPage,
+  })),
+);
+const TopStocksPage = lazy(() =>
+  import("../features/top-stocks/TopStocksPage").then(({ TopStocksPage }) => ({
+    default: TopStocksPage,
+  })),
+);
 
 export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/market-watch" replace />} />
-        <Route path="/market-watch" element={<MarketWatchPage />} />
-        <Route path="/favourites" element={<FavouritesPage />} />
-        <Route path="/top-stocks" element={<TopStocksPage />} />
-        <Route path="/csv-analyzer" element={<CsvAnalyzerPage />} />
-        <Route path="/theme-management" element={<ThemeManagementPage />} />
+        <Route path="/market-watch" element={<Page><MarketWatchPage /></Page>} />
+        <Route path="/favourites" element={<Page><FavouritesPage /></Page>} />
+        <Route path="/top-stocks" element={<Page><TopStocksPage /></Page>} />
+        <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
+        <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />
       </Route>
     </Routes>
   );
+}
+
+function Page({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
 }
