@@ -1,5 +1,5 @@
 use crate::models::{CompanyProfile, Fundamentals};
-use crate::providers::{TradingViewClient, TradingViewError};
+use crate::providers::FinvizClient;
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use crate::utils::KeyedLock;
@@ -17,7 +17,7 @@ const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub struct TickerDetailsService {
     store: Store,
-    tradingview: Arc<TradingViewClient>,
+    finviz: Arc<FinvizClient>,
     yahoo: Arc<YahooService>,
     fundamentals_locks: KeyedLock,
 }
@@ -42,22 +42,18 @@ pub enum TickerDetailsError {
     #[error(transparent)]
     Yahoo(#[from] YahooServiceError),
 
-    #[error(transparent)]
-    TradingView(#[from] TradingViewError),
+    #[error("Finviz fundamentals failed: {0}")]
+    Finviz(#[source] anyhow::Error),
 
     #[error("ticker details persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
 }
 
 impl TickerDetailsService {
-    pub fn new(
-        store: Store,
-        tradingview: Arc<TradingViewClient>,
-        yahoo: Arc<YahooService>,
-    ) -> Self {
+    pub fn new(store: Store, finviz: Arc<FinvizClient>, yahoo: Arc<YahooService>) -> Self {
         Self {
             store,
-            tradingview,
+            finviz,
             yahoo,
             fundamentals_locks: KeyedLock::new(),
         }
@@ -82,8 +78,7 @@ impl TickerDetailsService {
         let (fundamentals, stale_fundamentals) = if !force_refresh && is_fresh {
             (cached.expect("fresh cache exists"), false)
         } else {
-            let tradingview_symbol = format!("{}:{symbol}", profile.exchange);
-            match self.fetch_fundamentals(&tradingview_symbol).await {
+            match self.fetch_fundamentals(symbol).await {
                 Ok(fundamentals) => {
                     self.store
                         .upsert_fundamentals(&fundamentals)
@@ -92,10 +87,10 @@ impl TickerDetailsService {
                     (fundamentals, false)
                 }
                 Err(error) if !force_refresh && cached.is_some() => {
-                    warn!(symbol, %error, "using stale TradingView fundamentals");
+                    warn!(symbol, %error, "using stale Finviz fundamentals");
                     (cached.expect("cache checked"), true)
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(TickerDetailsError::Finviz(error)),
             }
         };
 
@@ -106,30 +101,29 @@ impl TickerDetailsService {
         })
     }
 
-    async fn fetch_fundamentals(
-        &self,
-        tradingview_symbol: &str,
-    ) -> Result<Fundamentals, TradingViewError> {
+    async fn fetch_fundamentals(&self, symbol: &str) -> anyhow::Result<Fundamentals> {
         let mut delay = INITIAL_RETRY_DELAY;
+        let mut last_error = None;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
-            match self.tradingview.fundamentals(tradingview_symbol).await {
+            match self.finviz.fundamentals(symbol).await {
                 Ok(fundamentals) => return Ok(fundamentals),
-                Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
+                Err(error) if attempt < MAX_PROVIDER_ATTEMPTS => {
                     let retry_delay = jitter(delay);
                     warn!(
-                        tradingview_symbol,
+                        symbol,
                         attempt,
                         delay_ms = retry_delay.as_millis(),
                         %error,
-                        "retrying TradingView fundamentals request"
+                        "retrying Finviz fundamentals request"
                     );
+                    last_error = Some(error);
                     sleep(retry_delay).await;
                 }
                 Err(error) => return Err(error),
             }
             delay *= 2;
         }
-        unreachable!("TradingView fundamentals retry loop always returns")
+        Err(last_error.expect("Finviz fundamentals retry loop stores retryable errors"))
     }
 }
 

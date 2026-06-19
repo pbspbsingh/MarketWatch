@@ -497,6 +497,11 @@ function GrowthChart({
   const forecastValues = Array<number | null>(historical.length + 1).fill(null);
   if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
   forecastValues[historical.length] = forecastGrowth;
+  const options = chartOptions((value) => formatPercent(Number(value)));
+  if (options.plugins?.tooltip !== undefined) {
+    options.plugins.tooltip.filter = (item) =>
+      item.dataset.label !== "Forecast" || item.dataIndex === historical.length;
+  }
 
   return (
     <FundamentalChart
@@ -529,7 +534,7 @@ function GrowthChart({
             },
           ],
         },
-        options: chartOptions((value) => formatPercent(Number(value))),
+        options,
       }}
     />
   );
@@ -567,7 +572,6 @@ function EstimateChart({
       title={title}
       summary={[
         ...surprises.slice(-4).map(formatPercent),
-        `${forecast === null ? "N/A" : format(forecast)} (forecast)`,
       ]}
       configuration={{
         type: "bar",
