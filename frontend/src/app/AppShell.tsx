@@ -4,6 +4,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import StarIcon from "@mui/icons-material/Star";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TimelineIcon from "@mui/icons-material/Timeline";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import {
   Drawer,
@@ -19,6 +20,7 @@ import { NavLink, Outlet } from "react-router-dom";
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon],
   ["Favourites", "/favourites", StarIcon],
+  ["Top Stocks", "/top-stocks", TrendingUpIcon],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon],
   ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
   ["Theme Management", "/theme-management", TuneIcon],

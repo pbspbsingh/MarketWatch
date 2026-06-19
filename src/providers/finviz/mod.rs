@@ -94,43 +94,32 @@ impl FinvizClient {
             .chain(self.industry_membership_filters.iter().cloned())
             .collect::<Vec<_>>()
             .join(",");
-        let mut tickers = Vec::new();
+        let tickers = self.screener_tickers(&filters, None, usize::MAX).await?;
+        info!(
+            industry_key,
+            ticker_count = tickers.len(),
+            "fetched Finviz industry membership"
+        );
+        Ok(tickers)
+    }
 
-        loop {
-            let mut url = self.screener_url.clone();
-            {
-                let mut query = url.query_pairs_mut();
-                query
-                    .clear()
-                    .append_pair("v", SCREENER_OVERVIEW_VIEW)
-                    .append_pair("f", &filters);
-                if !tickers.is_empty() {
-                    query.append_pair("r", &(tickers.len() + 1).to_string());
-                }
-            }
+    pub async fn top_stocks(&self, sort: &str, count: usize) -> anyhow::Result<Vec<String>> {
+        anyhow::ensure!(!sort.trim().is_empty(), "Finviz sort is required");
+        anyhow::ensure!(count > 0, "top stock count must be positive");
 
-            let page = parse_screener_page(&self.get(url).await?)?;
-            debug!(
-                industry_key,
-                page_ticker_count = page.tickers.len(),
-                total_ticker_count = page.total,
-                "fetched Finviz industry membership page"
-            );
-            anyhow::ensure!(
-                !page.tickers.is_empty() || page.total == 0,
-                "Finviz screener returned an empty page before all tickers were collected"
-            );
-            tickers.extend(page.tickers);
-            if tickers.len() >= page.total {
-                tickers.truncate(page.total);
-                info!(
-                    industry_key,
-                    ticker_count = tickers.len(),
-                    "fetched Finviz industry membership"
-                );
-                return Ok(tickers);
-            }
-        }
+        let tickers = self
+            .screener_tickers(
+                &self.industry_membership_filters.join(","),
+                Some(sort),
+                count,
+            )
+            .await?;
+        info!(
+            sort,
+            ticker_count = tickers.len(),
+            "fetched Finviz top stocks"
+        );
+        Ok(tickers)
     }
 
     pub async fn ticker_industry(&self, ticker: &str) -> anyhow::Result<IndustryIdentity> {
@@ -191,6 +180,42 @@ impl FinvizClient {
             .text()
             .await
             .with_context(|| format!("failed to read Finviz response: {url}"))
+    }
+
+    async fn screener_tickers(
+        &self,
+        filters: &str,
+        sort: Option<&str>,
+        count: usize,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut tickers = Vec::new();
+        loop {
+            let mut url = self.screener_url.clone();
+            {
+                let mut query = url.query_pairs_mut();
+                query
+                    .clear()
+                    .append_pair("v", SCREENER_OVERVIEW_VIEW)
+                    .append_pair("f", filters);
+                if let Some(sort) = sort {
+                    query.append_pair("o", sort);
+                }
+                if !tickers.is_empty() {
+                    query.append_pair("r", &(tickers.len() + 1).to_string());
+                }
+            }
+
+            let page = parse_screener_page(&self.get(url).await?)?;
+            anyhow::ensure!(
+                !page.tickers.is_empty() || page.total == 0,
+                "Finviz screener returned an empty page before all requested tickers were collected"
+            );
+            tickers.extend(page.tickers);
+            if tickers.len() >= count || tickers.len() >= page.total {
+                tickers.truncate(count.min(page.total));
+                return Ok(tickers);
+            }
+        }
     }
 
     fn request_delay(&self) -> Duration {

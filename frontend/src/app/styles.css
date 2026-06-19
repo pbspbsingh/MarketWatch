@@ -487,6 +487,10 @@ body,
   border-top-color: #58a6ff;
 }
 
+.ticker-lens-accent-green {
+  border-top-color: #2fbf71;
+}
+
 .workspace-panel {
   display: flex;
   min-width: 0;
@@ -1031,6 +1035,80 @@ body,
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.top-stocks-page > .ticker-lens {
+  flex: 1;
+  min-height: 0;
+}
+
+.top-stocks-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.top-stocks-header,
+.top-stocks-actions,
+.top-stocks-controls,
+.top-stocks-period,
+.top-stocks-action-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.top-stocks-header {
+  min-height: 1.55rem;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  gap: 0.5rem;
+}
+
+.top-stocks-header h1 {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.top-stocks-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.top-stocks-controls {
+  gap: 2rem;
+}
+
+.top-stocks-period {
+  flex-shrink: 0;
+  gap: 0.125rem;
+}
+
+.top-stocks-period .MuiFormControlLabel-root {
+  margin-right: 0;
+}
+
+.top-stocks-period .MuiFormControlLabel-label {
+  font-size: 0.7rem;
+}
+
+.top-stocks-period .MuiCheckbox-root {
+  padding: 0.125rem;
+}
+
+.top-stocks-period .MuiTextField-root {
+  width: 3.7rem;
+}
+
+.top-stocks-period .MuiInputBase-input {
+  padding: 0.125rem 0.25rem;
+  font-size: 0.7rem;
+}
+
+.top-stocks-action-buttons {
+  gap: 0.4rem;
+  margin-left: -1.25rem;
 }
 
 .csv-analyzer-actions {

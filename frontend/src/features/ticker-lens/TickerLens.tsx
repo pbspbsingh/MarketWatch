@@ -28,7 +28,7 @@ import {
 interface TickerLensProps {
   universe: TickerUniverse;
   onFavouriteChange?: (symbol: string, isFavourite: boolean) => void;
-  accent?: "purple" | "yellow" | "blue";
+  accent?: "purple" | "yellow" | "blue" | "green";
 }
 
 export function TickerLens({ universe, onFavouriteChange, accent }: TickerLensProps) {
