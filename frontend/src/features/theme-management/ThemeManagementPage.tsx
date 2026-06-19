@@ -100,19 +100,12 @@ export function ThemeManagementPage() {
       <header className="theme-management-header">
         <Typography component="h1">Theme Management</Typography>
         <Tabs value={tab} onChange={(_, value: number) => setTab(value)}>
-          <Tab label="Themes" />
           <Tab label="Ticker Assignments" />
           <Tab label="Automatic" />
+          <Tab label="Themes" />
         </Tabs>
       </header>
       {tab === 0 ? (
-        <ThemesTab
-          themes={themes}
-          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
-          onError={setError}
-          onMessage={setMessage}
-        />
-      ) : tab === 1 ? (
         <AssignmentsTab
           themes={themes}
           tickers={tickers}
@@ -120,10 +113,17 @@ export function ThemeManagementPage() {
           onError={setError}
           onMessage={setMessage}
         />
-      ) : (
+      ) : tab === 1 ? (
         <AutomaticTab
           tickers={tickers}
           capability={capability}
+          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onError={setError}
+          onMessage={setMessage}
+        />
+      ) : (
+        <ThemesTab
+          themes={themes}
           onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
           onError={setError}
           onMessage={setMessage}
