@@ -17,6 +17,8 @@ mod memberships;
 mod themes;
 
 pub use industries::{IndustrySnapshotRow, NewIndustrySnapshot};
+pub use memberships::TickerIndustryMembership;
+pub use themes::TickerThemeMembership;
 
 #[derive(Clone)]
 pub struct Store {

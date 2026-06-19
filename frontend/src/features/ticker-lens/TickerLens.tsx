@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
+import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
   groupModeKey,
@@ -44,12 +45,13 @@ export function TickerLens({ universe }: TickerLensProps) {
   const [selectedGroupTickerCounts, setSelectedGroupTickerCounts] = useState(
     () => new Map<string, number>(),
   );
-  const [boundedGroups, setBoundedGroups] = useState<GroupRanking[]>();
+  const [groups, setGroups] = useState<GroupRanking[]>([]);
   const [boundedSymbolsByGroup, setBoundedSymbolsByGroup] = useState<Map<string, string[]>>(
     new Map(),
   );
-  const [boundedGroupsLoading, setBoundedGroupsLoading] = useState(false);
-  const [boundedGroupsError, setBoundedGroupsError] = useState<string>();
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsError, setGroupsError] = useState<string>();
+  const [groupsWarning, setGroupsWarning] = useState<string>();
   const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
   const requestedUnassigned = searchIncludesUnassigned(searchParams);
   const bounded = universe.type === "bounded";
@@ -57,6 +59,8 @@ export function TickerLens({ universe }: TickerLensProps) {
   const boundedSymbolsKey = boundedSymbols.join("\0");
   const marketResolveTickers =
     universe.type === "market-watch" ? universe.resolveTickers : undefined;
+  const marketResolveGroups =
+    universe.type === "market-watch" ? universe.resolveGroups : undefined;
   const marketResolveGroupCounts =
     universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
   const selectedGroupKey = [...selectedGroupKeys].sort().join(",");
@@ -88,43 +92,50 @@ export function TickerLens({ universe }: TickerLensProps) {
   );
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
   useEffect(() => {
-    if (!bounded) {
-      setBoundedGroups(undefined);
-      setBoundedSymbolsByGroup(new Map());
-      setBoundedGroupsError(undefined);
-      setBoundedGroupsLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
-    setBoundedGroupsLoading(true);
-    setBoundedGroupsError(undefined);
-    setBoundedGroups(undefined);
-    fetchBoundedTickerGroups(groupMode, boundedSymbols, controller.signal)
+    setGroupsLoading(true);
+    setGroupsError(undefined);
+    setGroupsWarning(undefined);
+    setGroups([]);
+    setBoundedSymbolsByGroup(new Map());
+
+    const request = bounded
+      ? fetchBoundedTickerGroups(groupMode, boundedSymbols, controller.signal).then(
+          ({ groups, failed_symbols }) => {
+            if (failed_symbols.length > 0) {
+              setGroupsWarning(
+                `${failed_symbols.length} ticker${failed_symbols.length === 1 ? "" : "s"} could not be enriched`,
+              );
+            }
+            setBoundedSymbolsByGroup(
+              new Map(groups.map((group) => [group.key, group.symbols])),
+            );
+            return groups.map(({ key, name, performance, relative_strength, symbols }) => ({
+              key,
+              name,
+              ticker_count: symbols.length,
+              performance,
+              relative_strength,
+            }));
+          },
+        )
+      : (marketResolveGroups?.({ mode: groupMode, signal: controller.signal }) ??
+        Promise.resolve([]));
+
+    request
       .then((groups) => {
-        setBoundedGroups(
-          groups.map(({ key, name, performance, relative_strength, symbols }) => ({
-            key,
-            name,
-            ticker_count: symbols.length,
-            performance,
-            relative_strength,
-          })),
-        );
-        setBoundedSymbolsByGroup(
-          new Map(groups.map((group) => [group.key, group.symbols])),
-        );
+        if (!controller.signal.aborted) setGroups(groups);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setBoundedGroupsError(requestError.message);
+          setGroupsError(requestError.message);
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setBoundedGroupsLoading(false);
+        if (!controller.signal.aborted) setGroupsLoading(false);
       });
     return () => controller.abort();
-  }, [bounded, boundedSymbolsKey, groupMode]);
+  }, [bounded, boundedSymbolsKey, groupMode, marketResolveGroups]);
 
   const resolveTickers = useCallback(
     (request: ResolveTickersRequest) => {
@@ -180,9 +191,9 @@ export function TickerLens({ universe }: TickerLensProps) {
         requestedThemeNames={requestedThemeNames}
         requestedUnassigned={requestedUnassigned}
         selectedGroupTickerCounts={selectedGroupTickerCounts}
-        groups={bounded ? boundedGroups : undefined}
-        loadingGroups={bounded ? boundedGroupsLoading : undefined}
-        groupError={bounded ? boundedGroupsError : undefined}
+        groups={groups}
+        loadingGroups={groupsLoading}
+        groupError={groupsError}
       />
       <TickerPanel
         mode={groupMode}
@@ -196,6 +207,12 @@ export function TickerLens({ universe }: TickerLensProps) {
         selectedTicker={selectedTicker}
         onSelectedTickerContext={handleSelectedTickerContext}
       />
+      <Toast
+        message={groupsWarning}
+        severity="warning"
+        onClose={() => setGroupsWarning(undefined)}
+      />
+      <Toast message={groupsError} onClose={() => setGroupsError(undefined)} />
     </section>
   );
 }

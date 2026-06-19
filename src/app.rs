@@ -1,6 +1,5 @@
 use crate::api;
 use crate::config::Config;
-use crate::models::TickerCollection;
 use crate::providers::{AiClient, FinvizClient, TradingViewClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::details::TickerDetailsService;
@@ -8,6 +7,7 @@ use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::themes::ThemeService;
+use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
@@ -32,7 +32,7 @@ pub struct AppState {
     pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
-    pub last_ticker_collection: Arc<Mutex<Option<TickerCollection>>>,
+    pub ticker_collections: Arc<TickerCollectionService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -71,6 +71,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     )?);
+    let ticker_collections = Arc::new(TickerCollectionService::new(
+        ticker_catalog.clone(),
+        industry_analysis.clone(),
+        theme_analysis.clone(),
+    ));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -83,7 +88,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         active_ticker_stream: Arc::new(Mutex::new(None)),
         themes,
         theme_analysis,
-        last_ticker_collection: Arc::new(Mutex::new(None)),
+        ticker_collections,
     };
 
     let frontend = ServeDir::new(&frontend_dist)

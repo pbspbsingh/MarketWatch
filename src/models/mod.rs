@@ -15,4 +15,7 @@ pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
     ThemeSuggestion, ThemeTicker,
 };
-pub use ticker_collection::{TickerCollection, TickerCollectionFile, TickerCollectionSource};
+pub use ticker_collection::{
+    TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
+    TickerCollectionSource,
+};

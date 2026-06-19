@@ -27,6 +27,11 @@ export interface BoundedTickerGroup {
   symbols: string[];
 }
 
+export interface BoundedTickerGroups {
+  groups: BoundedTickerGroup[];
+  failed_symbols: string[];
+}
+
 export async function fetchLastTickerCollection(): Promise<TickerCollection | null> {
   const response = await fetch("/api/ticker-collections/last");
   if (response.status === 204 || response.status === 404) return null;
@@ -62,7 +67,7 @@ export async function fetchBoundedTickerGroups(
   mode: "industry" | "theme",
   symbols: string[],
   signal?: AbortSignal,
-): Promise<BoundedTickerGroup[]> {
+): Promise<BoundedTickerGroups> {
   const response = await fetch("/api/ticker-collections/groups", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,5 +77,5 @@ export async function fetchBoundedTickerGroups(
   if (!response.ok) {
     throw new Error(`Failed to load ticker groups: HTTP ${response.status}`);
   }
-  return response.json() as Promise<BoundedTickerGroup[]>;
+  return response.json() as Promise<BoundedTickerGroups>;
 }

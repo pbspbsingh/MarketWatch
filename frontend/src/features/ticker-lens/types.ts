@@ -24,9 +24,15 @@ export type ResolveTickersRequest = {
   signal: AbortSignal;
 };
 
+export type ResolveGroupsRequest = {
+  mode: GroupMode;
+  signal: AbortSignal;
+};
+
 export type TickerUniverse =
   | {
       type: "market-watch";
+      resolveGroups: (request: ResolveGroupsRequest) => Promise<GroupRanking[]>;
       resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
       resolveGroupCounts: (request: ResolveTickersRequest) => Promise<Map<string, number>>;
     }

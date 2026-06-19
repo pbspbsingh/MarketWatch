@@ -20,11 +20,6 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  fetchIndustries,
-  fetchThemeRankings,
-} from "../../api/industries";
-import { Toast } from "../../components/Toast";
-import {
   sortOptions,
   sortSettingKey,
   unassignedGroupKey,
@@ -58,8 +53,8 @@ interface GroupPanelProps {
   requestedThemeNames: string[];
   requestedUnassigned: boolean;
   selectedGroupTickerCounts: Map<string, number>;
-  groups?: GroupRanking[];
-  loadingGroups?: boolean;
+  groups: GroupRanking[];
+  loadingGroups: boolean;
   groupError?: string;
 }
 
@@ -72,54 +67,12 @@ export function GroupPanel({
   requestedThemeNames,
   requestedUnassigned,
   selectedGroupTickerCounts,
-  groups: providedGroups,
+  groups,
   loadingGroups,
   groupError,
 }: GroupPanelProps) {
-  const [loadedGroups, setLoadedGroups] = useState<GroupRanking[]>([]);
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
-  const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
-  const groups = providedGroups ?? loadedGroups;
-  const effectiveLoading = loadingGroups ?? loading;
-  const effectiveError = groupError ?? error;
-
-  useEffect(() => {
-    if (providedGroups !== undefined) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError(undefined);
-    const request =
-      mode === "industry"
-        ? fetchIndustries(controller.signal).then((industries) =>
-            industries.map(({ key, name, performance, relative_strength }) => ({
-              key,
-              name,
-              performance,
-              relative_strength,
-            })),
-          )
-        : fetchThemeRankings(controller.signal).then((themes) =>
-            themes.map(({ id, name, performance, relative_strength }) => ({
-              key: String(id),
-              name,
-              performance,
-              relative_strength,
-            })),
-          );
-    request
-      .then(setLoadedGroups)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [mode, providedGroups]);
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
@@ -259,7 +212,7 @@ export function GroupPanel({
           </IconButton>
         </div>
       </header>
-      {effectiveLoading && (
+      {loadingGroups && (
         <div className="panel-status">
           <CircularProgress size="1rem" />
           <Typography color="text.secondary">
@@ -267,12 +220,12 @@ export function GroupPanel({
           </Typography>
         </div>
       )}
-      {!effectiveLoading && !effectiveError && groups.length === 0 && mode === "industry" && (
+      {!loadingGroups && !groupError && groups.length === 0 && mode === "industry" && (
         <Typography className="panel-empty" color="text.secondary">
           No {mode === "industry" ? "industry snapshot" : "theme rankings"} available
         </Typography>
       )}
-      {!effectiveLoading && !effectiveError && (groups.length > 0 || mode === "theme") && (
+      {!loadingGroups && !groupError && (groups.length > 0 || mode === "theme") && (
         <ol className="ranked-list" aria-label={`${mode} rankings`}>
           {sortedGroups.map((group) => {
             const metric = sortValue(group, sortSetting.key);
@@ -318,7 +271,6 @@ export function GroupPanel({
             );
           })}
           {mode === "theme" &&
-            providedGroups === undefined &&
             !groups.some((group) => group.key === unassignedGroupKey) && (
             <li className="unassigned-group">
               <button
@@ -354,7 +306,6 @@ export function GroupPanel({
           )}
         </ol>
       )}
-      <Toast message={effectiveError} onClose={() => setError(undefined)} />
     </section>
   );
 }

@@ -3,7 +3,7 @@ use crate::config::MarketConfig;
 use crate::models::{TickerRanking, candle_performance};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
-use crate::store::Store;
+use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{TimeDelta, Utc};
 use std::sync::Arc;
@@ -54,10 +54,6 @@ impl TickerCatalogService {
             .await
     }
 
-    pub fn store(&self) -> &Store {
-        &self.store
-    }
-
     pub async fn stream_theme_tickers(
         &self,
         stream_id: u64,
@@ -105,6 +101,20 @@ impl TickerCatalogService {
         self.store
             .tickers_for_themes(theme_ids, include_unassigned)
             .await
+    }
+
+    pub async fn industries_for_symbols(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
+        self.store.industries_for_symbols(symbols).await
+    }
+
+    pub async fn themes_for_symbols(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerThemeMembership>> {
+        self.store.themes_for_symbols(symbols).await
     }
 
     async fn stream_symbols(
