@@ -6,4 +6,5 @@ pub mod theme_analysis;
 pub mod themes;
 pub mod ticker_collections;
 pub mod tickers;
+pub mod watchlists;
 pub mod yahoo;

@@ -27,9 +27,11 @@ import {
 
 interface TickerLensProps {
   universe: TickerUniverse;
+  onFavouriteChange?: (symbol: string, isFavourite: boolean) => void;
+  accent?: "purple" | "yellow" | "blue";
 }
 
-export function TickerLens({ universe }: TickerLensProps) {
+export function TickerLens({ universe, onFavouriteChange, accent }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [groupMode, setGroupMode] = useState<GroupMode>(() => readGroupMode(searchParams));
   const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() =>
@@ -179,7 +181,13 @@ export function TickerLens({ universe }: TickerLensProps) {
 
   return (
     <section
-      className={`ticker-lens${bounded ? " ticker-lens-bounded" : ""}`}
+      className={[
+        "ticker-lens",
+        bounded ? "ticker-lens-bounded" : "",
+        accent === undefined ? "" : `ticker-lens-accent-${accent}`,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       aria-label={bounded ? "Ticker collection" : "Market Watch"}
     >
       <GroupPanel
@@ -201,6 +209,7 @@ export function TickerLens({ universe }: TickerLensProps) {
         selectedTicker={selectedTicker}
         setSelectedTicker={setSelectedTicker}
         resolveTickers={resolveTickers}
+        onFavouriteChange={onFavouriteChange}
       />
       <ChartPanel
         industryKeys={industryKeys}

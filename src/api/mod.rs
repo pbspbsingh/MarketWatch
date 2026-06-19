@@ -4,6 +4,7 @@ mod industries;
 mod themes;
 mod ticker_collections;
 mod tickers;
+mod watchlists;
 
 use crate::app::AppState;
 use axum::Router;
@@ -16,4 +17,5 @@ pub fn router() -> Router<AppState> {
         .merge(tickers::router())
         .merge(ticker_collections::router())
         .merge(themes::router())
+        .merge(watchlists::router())
 }

@@ -15,6 +15,7 @@ mod industries;
 mod market_data;
 mod memberships;
 mod themes;
+mod watchlists;
 
 pub use industries::{IndustrySnapshotRow, NewIndustrySnapshot};
 pub use memberships::TickerIndustryMembership;

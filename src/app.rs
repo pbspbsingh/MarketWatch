@@ -9,6 +9,7 @@ use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::tickers::TickerCatalogService;
+use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use axum::Router;
@@ -33,6 +34,7 @@ pub struct AppState {
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
     pub ticker_collections: Arc<TickerCollectionService>,
+    pub watchlists: Arc<WatchlistService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -76,6 +78,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         industry_analysis.clone(),
         theme_analysis.clone(),
     ));
+    let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -89,6 +92,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         themes,
         theme_analysis,
         ticker_collections,
+        watchlists,
     };
 
     let frontend = ServeDir::new(&frontend_dist)

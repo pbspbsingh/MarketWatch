@@ -8,6 +8,8 @@ import {
 } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import StarIcon from "@mui/icons-material/Star";
+import StarBorderIcon from "@mui/icons-material/StarBorder";
 import {
   CircularProgress,
   IconButton,
@@ -19,6 +21,7 @@ import {
   streamTickerSymbols,
   type TickerRanking,
 } from "../../api/tickers";
+import { addFavourite, fetchFavourites, removeFavourite } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import {
   defaultSortSetting,
@@ -45,6 +48,7 @@ interface TickerPanelProps {
   selectedTicker: string | undefined;
   setSelectedTicker: Dispatch<SetStateAction<string | undefined>>;
   resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
+  onFavouriteChange?: (symbol: string, isFavourite: boolean) => void;
 }
 
 export function TickerPanel({
@@ -53,9 +57,11 @@ export function TickerPanel({
   selectedTicker,
   setSelectedTicker,
   resolveTickers,
+  onFavouriteChange,
 }: TickerPanelProps) {
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
   const tickerElements = useRef(new Map<string, HTMLButtonElement>());
+  const favouriteClickTimer = useRef<number | undefined>(undefined);
   const [sortSetting, setSortSetting] = useState(() =>
     readSortSetting(tickerSortSettingKey),
   );
@@ -72,12 +78,22 @@ export function TickerPanel({
     setSelectedTicker(undefined);
 
     resolveTickers({ mode, groupKeys, signal: controller.signal })
-      .then((symbols) => {
+      .then(async (symbols) => {
         if (controller.signal.aborted) return;
         if (!metricsActive) {
+          let favouriteSymbols = new Set<string>();
+          try {
+            favouriteSymbols = new Set(await fetchFavourites(controller.signal));
+          } catch (requestError: unknown) {
+            if (requestError instanceof Error && requestError.name !== "AbortError") {
+              setError(requestError.message);
+            }
+          }
+          if (controller.signal.aborted) return;
           setTickers(
             symbols.map((symbol) => ({
               symbol,
+              is_favourite: favouriteSymbols.has(symbol),
               performance: null,
               relative_strength: null,
             })),
@@ -181,6 +197,50 @@ export function TickerPanel({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedTicker, setSelectedTicker, sortedTickers]);
 
+  useEffect(
+    () => () => {
+      if (favouriteClickTimer.current !== undefined) {
+        window.clearTimeout(favouriteClickTimer.current);
+      }
+    },
+    [],
+  );
+
+  const setTickerFavourite = (symbol: string, isFavourite: boolean) => {
+    setTickers((current) =>
+      current.map((ticker) =>
+        ticker.symbol === symbol ? { ...ticker, is_favourite: isFavourite } : ticker,
+      ),
+    );
+    onFavouriteChange?.(symbol, isFavourite);
+  };
+
+  const handleFavouriteClick = (symbol: string) => {
+    if (favouriteClickTimer.current !== undefined) {
+      window.clearTimeout(favouriteClickTimer.current);
+    }
+    favouriteClickTimer.current = window.setTimeout(() => {
+      favouriteClickTimer.current = undefined;
+      addFavourite(symbol)
+        .then(() => setTickerFavourite(symbol, true))
+        .catch((requestError: unknown) => {
+          if (requestError instanceof Error) setError(requestError.message);
+        });
+    }, 180);
+  };
+
+  const handleFavouriteDoubleClick = (symbol: string) => {
+    if (favouriteClickTimer.current !== undefined) {
+      window.clearTimeout(favouriteClickTimer.current);
+      favouriteClickTimer.current = undefined;
+    }
+    removeFavourite(symbol)
+      .then(() => setTickerFavourite(symbol, false))
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error) setError(requestError.message);
+      });
+  };
+
   return (
     <section className="workspace-panel">
       <header className="panel-header panel-list-header">
@@ -244,7 +304,7 @@ export function TickerPanel({
             return (
               <li key={ticker.symbol}>
                 <button
-                  className="ranked-list-item"
+                  className="ranked-list-item ticker-list-item"
                   type="button"
                   ref={(element) => {
                     if (element === null) tickerElements.current.delete(ticker.symbol);
@@ -257,6 +317,28 @@ export function TickerPanel({
                     )
                   }
                 >
+                  <span
+                    className={`ticker-favourite${ticker.is_favourite ? " ticker-favourite-active" : ""}`}
+                    title={
+                      ticker.is_favourite
+                        ? "Double click to remove from favourites"
+                        : "Click to add to favourites"
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleFavouriteClick(ticker.symbol);
+                    }}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      handleFavouriteDoubleClick(ticker.symbol);
+                    }}
+                  >
+                    {ticker.is_favourite ? (
+                      <StarIcon fontSize="inherit" />
+                    ) : (
+                      <StarBorderIcon fontSize="inherit" />
+                    )}
+                  </span>
                   <span className="ranked-name">{ticker.symbol}</span>
                   {metricsActive && metric !== undefined && (
                     <span

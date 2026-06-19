@@ -2,6 +2,7 @@ import type { PerformancePeriods } from "./industries";
 
 export interface TickerRanking {
   symbol: string;
+  is_favourite: boolean;
   performance: PerformancePeriods | null;
   relative_strength: number | null;
 }

@@ -6,6 +6,7 @@ use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{TimeDelta, Utc};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -124,10 +125,17 @@ impl TickerCatalogService {
         metrics_active: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
+        let favourite_symbols = self
+            .store
+            .favourite_symbol_set(&symbols)
+            .await?
+            .into_iter()
+            .collect::<HashSet<_>>();
         for symbol in &symbols {
             if sender
                 .send(TickerRanking {
                     symbol: symbol.clone(),
+                    is_favourite: favourite_symbols.contains(symbol),
                     performance: None,
                     relative_strength: None,
                 })
@@ -162,6 +170,7 @@ impl TickerCatalogService {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
                     TickerRanking {
+                        is_favourite: favourite_symbols.contains(&symbol),
                         symbol,
                         relative_strength: Some(candle_relative_strength(
                             &candles,
@@ -173,6 +182,7 @@ impl TickerCatalogService {
                 Err(error) => {
                     warn!(stream_id, symbol, %error, "failed to load Yahoo ticker performance");
                     TickerRanking {
+                        is_favourite: favourite_symbols.contains(&symbol),
                         symbol,
                         performance: None,
                         relative_strength: None,
@@ -244,6 +254,18 @@ impl TickerCatalogService {
     }
 }
 
+pub fn normalize_symbol(symbol: &str) -> anyhow::Result<String> {
+    let symbol = symbol.trim().to_uppercase();
+    anyhow::ensure!(
+        !symbol.is_empty()
+            && symbol.chars().all(
+                |character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
+            ),
+        "invalid ticker symbol"
+    );
+    Ok(symbol)
+}
+
 fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
     anyhow::ensure!(
         industry_keys.iter().all(|key| {
@@ -260,15 +282,7 @@ fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
 fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<String>> {
     let mut normalized = Vec::with_capacity(symbols.len());
     for symbol in symbols {
-        let symbol = symbol.trim().to_uppercase();
-        anyhow::ensure!(
-            !symbol.is_empty()
-                && symbol
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric()
-                        || matches!(character, '.' | '-')),
-            "invalid ticker symbol"
-        );
+        let symbol = normalize_symbol(symbol)?;
         if !normalized.contains(&symbol) {
             normalized.push(symbol);
         }

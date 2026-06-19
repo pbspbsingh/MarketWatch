@@ -63,6 +63,7 @@ export function MarketWatchPage() {
 
   return (
     <TickerLens
+      accent="purple"
       universe={{ type: "market-watch", resolveGroups, resolveTickers, resolveGroupCounts }}
     />
   );

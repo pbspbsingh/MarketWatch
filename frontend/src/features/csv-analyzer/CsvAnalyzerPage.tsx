@@ -119,7 +119,7 @@ export function CsvAnalyzerPage() {
             </Typography>
           </div>
         ) : (
-          <TickerLens universe={{ type: "bounded", symbols: collection.symbols }} />
+          <TickerLens accent="blue" universe={{ type: "bounded", symbols: collection.symbols }} />
         )}
       </section>
       <CollectionDetailsDialog
