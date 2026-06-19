@@ -96,7 +96,7 @@ impl<D: Datelike> TradingDay for D {
     }
 }
 
-fn previous_trading_day(today: NaiveDate) -> NaiveDate {
+pub fn previous_trading_day(today: NaiveDate) -> NaiveDate {
     let mut previous = today;
     loop {
         previous -= TimeDelta::days(1);
@@ -106,10 +106,30 @@ fn previous_trading_day(today: NaiveDate) -> NaiveDate {
     }
 }
 
+pub fn previous_trading_days(mut date: NaiveDate, count: usize) -> NaiveDate {
+    for _ in 0..count {
+        date = previous_trading_day(date);
+    }
+    date
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDate;
     use tokio::time::timeout;
+
+    #[test]
+    fn previous_trading_day_skips_weekends() {
+        assert_eq!(
+            previous_trading_day(NaiveDate::from_ymd_opt(2026, 6, 22).unwrap()),
+            NaiveDate::from_ymd_opt(2026, 6, 19).unwrap(),
+        );
+        assert_eq!(
+            previous_trading_days(NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(), 2),
+            NaiveDate::from_ymd_opt(2026, 6, 19).unwrap(),
+        );
+    }
 
     #[tokio::test]
     async fn keyed_lock_serializes_same_key_only() {

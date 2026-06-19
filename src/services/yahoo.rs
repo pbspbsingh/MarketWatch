@@ -2,24 +2,33 @@ use crate::config::MarketConfig;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
 use crate::store::Store;
-use crate::utils::{KeyedLock, MarketSchedule};
-use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
+use crate::utils::{KeyedLock, MarketSchedule, previous_trading_day, previous_trading_days};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
 use tracing::warn;
 
-const REFRESH_OVERLAP_DAYS: i64 = 7;
+const REFRESH_OVERLAP_SESSIONS: usize = 7;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
+const INCOMPLETE_CURRENT_DAY_REFRESH_TTL: Duration = Duration::from_secs(15 * 60);
 
 pub struct YahooService {
     store: Store,
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock,
+    incomplete_refreshes: Mutex<HashMap<String, IncompleteRefresh>>,
+}
+
+struct IncompleteRefresh {
+    requested_last_date: NaiveDate,
+    attempted_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +60,7 @@ impl YahooService {
             yahoo,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             daily_candle_locks: KeyedLock::new(),
+            incomplete_refreshes: Mutex::new(HashMap::new()),
         })
     }
 
@@ -98,19 +108,23 @@ impl YahooService {
             .latest_daily_candle_date(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?;
-        let eligible_end = self
-            .market_schedule
-            .recent_trading_day(Utc::now())
+        let recent_trading_day = self.market_schedule.recent_trading_day(Utc::now());
+        let eligible_end = recent_trading_day
             .succ_opt()
             .ok_or(YahooServiceError::InvalidRange)?;
         let fetch_end_date = end.min(eligible_end);
-        let requested_last_date = fetch_end_date
-            .pred_opt()
-            .ok_or(YahooServiceError::InvalidRange)?;
+        let requested_last_date = previous_trading_day(fetch_end_date);
 
-        if start < fetch_end_date && latest.is_none_or(|latest| latest < requested_last_date) {
+        if start < fetch_end_date
+            && latest.is_none_or(|latest| latest < requested_last_date)
+            && !self.recently_attempted_incomplete_current_day_refresh(
+                symbol,
+                requested_last_date,
+                recent_trading_day,
+            )
+        {
             let fetch_start = latest
-                .map(|latest| latest - TimeDelta::days(REFRESH_OVERLAP_DAYS))
+                .map(|latest| previous_trading_days(latest, REFRESH_OVERLAP_SESSIONS))
                 .map_or(start, |overlap_start| overlap_start.max(start));
             let fetch_start = Utc.from_utc_datetime(
                 &fetch_start
@@ -149,6 +163,20 @@ impl YahooService {
                 .upsert_daily_candles(&candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
+            let latest_after_fetch = self
+                .store
+                .latest_daily_candle_date(symbol)
+                .await
+                .map_err(YahooServiceError::Persistence)?;
+            if latest_after_fetch.is_some_and(|latest| latest >= requested_last_date) {
+                self.clear_incomplete_refresh(symbol);
+            } else {
+                self.remember_incomplete_current_day_refresh(
+                    symbol,
+                    requested_last_date,
+                    recent_trading_day,
+                );
+            }
         }
 
         self.store
@@ -198,6 +226,61 @@ impl YahooService {
             delay *= 2;
         }
         unreachable!("Yahoo chart retry loop always returns")
+    }
+
+    fn recently_attempted_incomplete_current_day_refresh(
+        &self,
+        symbol: &str,
+        requested_last_date: NaiveDate,
+        recent_trading_day: NaiveDate,
+    ) -> bool {
+        if requested_last_date != recent_trading_day {
+            return false;
+        }
+
+        let now = Utc::now();
+        let mut refreshes = self
+            .incomplete_refreshes
+            .lock()
+            .expect("incomplete refresh mutex is not poisoned");
+        refreshes.retain(|_, refresh| {
+            (now - refresh.attempted_at)
+                .to_std()
+                .is_ok_and(|age| age < INCOMPLETE_CURRENT_DAY_REFRESH_TTL)
+        });
+
+        refreshes
+            .get(symbol)
+            .is_some_and(|refresh| refresh.requested_last_date >= requested_last_date)
+    }
+
+    fn remember_incomplete_current_day_refresh(
+        &self,
+        symbol: &str,
+        requested_last_date: NaiveDate,
+        recent_trading_day: NaiveDate,
+    ) {
+        if requested_last_date != recent_trading_day {
+            return;
+        }
+
+        self.incomplete_refreshes
+            .lock()
+            .expect("incomplete refresh mutex is not poisoned")
+            .insert(
+                symbol.to_owned(),
+                IncompleteRefresh {
+                    requested_last_date,
+                    attempted_at: Utc::now(),
+                },
+            );
+    }
+
+    fn clear_incomplete_refresh(&self, symbol: &str) {
+        self.incomplete_refreshes
+            .lock()
+            .expect("incomplete refresh mutex is not poisoned")
+            .remove(symbol);
     }
 }
 
