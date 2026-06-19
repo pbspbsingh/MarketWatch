@@ -1,6 +1,6 @@
 use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
-use crate::models::{TickerRanking, candle_performance};
+use crate::models::{TickerRanking, candle_performance, candle_relative_strength};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
@@ -157,16 +157,16 @@ impl TickerCatalogService {
             .yahoo
             .daily_candles(&self.benchmark, start, end)
             .await?;
-        let benchmark = candle_performance(&benchmark_candles, as_of);
         for symbol in symbols {
             let ranking = match self.yahoo.daily_candles(&symbol, start, end).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
                     TickerRanking {
                         symbol,
-                        relative_strength: Some(
-                            performance.relative_to(benchmark).relative_strength(),
-                        ),
+                        relative_strength: Some(candle_relative_strength(
+                            &candles,
+                            &benchmark_candles,
+                        )),
                         performance: Some(performance),
                     }
                 }

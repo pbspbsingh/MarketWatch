@@ -260,7 +260,12 @@ export function GroupPanel({
                     <span
                       className="ranked-metric"
                       style={{
-                        color: metricColor(metric, metricRange.minimum, metricRange.maximum),
+                        color: metricColor(
+                          metric,
+                          metricRange.minimum,
+                          metricRange.maximum,
+                          sortSetting.key,
+                        ),
                       }}
                     >
                       {formatMetric(metric, sortSetting.key)}

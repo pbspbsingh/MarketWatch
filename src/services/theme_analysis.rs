@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::{ThemeRanking, candle_performance};
+use crate::models::{ThemeRanking, candle_performance, candle_relative_strength};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
@@ -49,7 +49,7 @@ impl ThemeAnalysisService {
         let start = as_of - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
         let end = as_of + TimeDelta::days(1);
         let benchmark = match self.yahoo.daily_candles(&self.benchmark, start, end).await {
-            Ok(candles) => Some(candle_performance(&candles, as_of)),
+            Ok(candles) => Some(candles),
             Err(error) => {
                 warn!(
                     benchmark = self.benchmark,
@@ -62,7 +62,7 @@ impl ThemeAnalysisService {
         let mut rankings = Vec::with_capacity(themes.len());
 
         for theme in themes {
-            let Some(benchmark) = benchmark else {
+            let Some(benchmark) = benchmark.as_ref() else {
                 rankings.push(ThemeRanking {
                     id: theme.id,
                     name: theme.name,
@@ -83,9 +83,7 @@ impl ThemeAnalysisService {
                         id: theme.id,
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
-                        relative_strength: Some(
-                            performance.relative_to(benchmark).relative_strength(),
-                        ),
+                        relative_strength: Some(candle_relative_strength(&candles, benchmark)),
                         performance: Some(performance),
                     });
                 }

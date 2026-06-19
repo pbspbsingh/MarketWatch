@@ -10,6 +10,7 @@ pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use performance::{
     IndustryRanking, PerformancePeriods, ThemeRanking, TickerRanking, candle_performance,
+    candle_relative_strength,
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,

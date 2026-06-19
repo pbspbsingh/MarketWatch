@@ -62,7 +62,7 @@ impl IndustryAnalysisService {
                 IndustryRanking {
                     key: industry.key,
                     name: industry.name,
-                    relative_strength: performance.relative_to(benchmark).relative_strength(),
+                    relative_strength: performance.relative_strength_against(benchmark),
                     performance,
                 }
             })

@@ -33,10 +33,32 @@ export function formatMetric(value: number, key: SortKey) {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
+export function metricColor(value: number, minimum: number, maximum: number, key: SortKey) {
+  if (key === "relative_strength") return rsColor(value).fg;
+  if (minimum === maximum) return metricColors[2];
+  return rangedMetricColor(value, minimum, maximum);
+}
+
+function rsColor(rs: number) {
+  if (rs <= 0.85) return { fg: "rgb(180,30,30)" };
+  if (rs < 1.0) {
+    const t = (rs - 0.85) / 0.15;
+    return {
+      fg: `rgb(${Math.round(180 + t * 40)},${Math.round(30 + t * 170)},20)`,
+    };
+  }
+  if (rs <= 1.3) {
+    const t = (rs - 1.0) / 0.3;
+    return {
+      fg: `rgb(${Math.round(220 - t * 180)},${Math.round(200 + t * 10)},${Math.round(20 + t * 60)})`,
+    };
+  }
+  return { fg: "rgb(40,210,80)" };
+}
+
 const metricColors = ["#ff3b3b", "#ff7a2f", "#e6c84f", "#9ba5b0", "#45d06f", "#00b83f"];
 
-export function metricColor(value: number, minimum: number, maximum: number) {
-  if (minimum === maximum) return metricColors[2];
+function rangedMetricColor(value: number, minimum: number, maximum: number) {
   const normalized = (value - minimum) / (maximum - minimum);
   const index = Math.min(
     metricColors.length - 1,
