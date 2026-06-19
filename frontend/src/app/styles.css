@@ -732,7 +732,14 @@ body,
   gap: 0.5rem;
 }
 
-.ticker-details-title h2 {
+.ticker-details-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ticker-details-heading h2 {
   overflow: hidden;
   margin: 0;
   font-size: 1rem;
@@ -740,13 +747,15 @@ body,
   white-space: nowrap;
 }
 
-.ticker-details-title h2 a {
-  color: #f0f4f8;
+.ticker-details-heading a {
+  color: #58a6ff;
+  flex-shrink: 0;
+  font-size: 0.7rem;
   text-decoration: none;
 }
 
-.ticker-details-title h2 a:hover {
-  color: #58a6ff;
+.ticker-details-heading a:hover {
+  color: #79c0ff;
 }
 
 .ticker-details-actions p {

@@ -255,19 +255,28 @@ export function TickerDetailsDialog({
         slotProps={{ paper: { className: "ticker-details-dialog" } }}
       >
         <DialogTitle className="ticker-details-title">
-          <Typography component="h2">
-            {details === undefined ? (
-              symbol ?? "Ticker details"
-            ) : (
-              <a
-                href={financialsUrl(details)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {details.profile.name != null ? `${details.profile.symbol} - ${details.profile.name}` : details.profile.symbol}
-              </a>
+          <div className="ticker-details-heading">
+            <Typography component="h2">
+              {details === undefined ? (
+                symbol ?? "Ticker details"
+              ) : (
+                details.profile.name != null
+                  ? `${details.profile.symbol} - ${details.profile.name}`
+                  : details.profile.symbol
+              )}
+            </Typography>
+            {details !== undefined && (
+              <>
+                <a href={tradingViewFinancialsUrl(details)} target="_blank" rel="noreferrer">
+                  TradingView
+                </a>
+                <span aria-hidden="true">|</span>
+                <a href={finvizFinancialsUrl(details)} target="_blank" rel="noreferrer">
+                  Finviz
+                </a>
+              </>
             )}
-          </Typography>
+          </div>
           <div className="ticker-details-actions">
             {details !== undefined && (
               <Typography color={details.stale_fundamentals ? "warning.main" : "text.secondary"}>
@@ -472,8 +481,12 @@ function ProfileThemesTab({
   );
 }
 
-function financialsUrl(details: TickerDetails) {
+function tradingViewFinancialsUrl(details: TickerDetails) {
   return `https://www.tradingview.com/symbols/${details.profile.exchange}-${details.profile.symbol}/financials-income-statement/?statements-period=FQ`;
+}
+
+function finvizFinancialsUrl(details: TickerDetails) {
+  return `https://finviz.com/stock?t=${encodeURIComponent(details.profile.symbol)}&ty=ea&p=d&b=1`;
 }
 
 function GrowthChart({
