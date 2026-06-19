@@ -81,9 +81,12 @@ export function CsvAnalyzerPage() {
         onDrop={handleDrop}
       >
         <header className="panel-header csv-analyzer-header">
-          <Typography component="h1">{summary(collection)}</Typography>
+          <Typography component="h1">CSV Analyzer</Typography>
           <div className="csv-analyzer-actions">
             {loading && <CircularProgress size="0.85rem" />}
+            {collection !== null && (
+              <Typography className="csv-analyzer-summary">{summary(collection)}</Typography>
+            )}
             <input
               ref={inputRef}
               hidden
@@ -159,11 +162,10 @@ function CollectionDetailsDialog({
   );
 }
 
-function summary(collection: TickerCollection | null) {
-  if (collection === null) return "CSV Analyzer";
+function summary(collection: TickerCollection) {
   const fileCount = collection.source.files.length;
   const skipped = collection.skipped_rows > 0 ? ` · ${collection.skipped_rows} skipped` : "";
-  return `CSV Analyzer · ${collection.symbols.length} tickers · ${fileCount} files${skipped}`;
+  return `${collection.symbols.length} tickers · ${fileCount} files${skipped}`;
 }
 
 function isTickerFile(file: File) {

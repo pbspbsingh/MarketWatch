@@ -1128,6 +1128,12 @@ body,
   padding: 0.0625rem;
 }
 
+.panel-header .MuiTypography-root.csv-analyzer-summary {
+  font-size: 0.625rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .csv-analyzer-drop-target {
   flex: 1;
   justify-content: center;
@@ -1162,6 +1168,22 @@ body,
 .navigation-drawer .MuiListItemIcon-root {
   min-width: 2rem;
   color: inherit;
+}
+
+.navigation-drawer .navigation-icon-purple {
+  color: #8b5cf6;
+}
+
+.navigation-drawer .navigation-icon-yellow {
+  color: #f2c94c;
+}
+
+.navigation-drawer .navigation-icon-green {
+  color: #2fbf71;
+}
+
+.navigation-drawer .navigation-icon-blue {
+  color: #58a6ff;
 }
 
 .navigation-drawer .MuiListItemButton-root:hover,

@@ -18,10 +18,10 @@ import {
 import { NavLink, Outlet } from "react-router-dom";
 
 const destinations = [
-  ["Market Watch", "/market-watch", CandlestickChartIcon],
-  ["Favourites", "/favourites", StarIcon],
-  ["Top Stocks", "/top-stocks", TrendingUpIcon],
-  ["CSV Analyzer", "/csv-analyzer", TableViewIcon],
+  ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
+  ["Favourites", "/favourites", StarIcon, "yellow"],
+  ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
+  ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "blue"],
   ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
   ["Theme Management", "/theme-management", TuneIcon],
 ] as const;
@@ -138,14 +138,14 @@ export function AppShell() {
         slotProps={{ paper: { className: "navigation-drawer" } }}
       >
         <List dense disablePadding component="nav" aria-label="Primary navigation">
-          {destinations.map(([label, path, DestinationIcon]) => (
+          {destinations.map(([label, path, DestinationIcon, accent]) => (
             <ListItemButton
               component={NavLink}
               key={path}
               to={path}
               onClick={() => setDrawerOpen(false)}
             >
-              <ListItemIcon>
+              <ListItemIcon className={accent === undefined ? undefined : `navigation-icon-${accent}`}>
                 <DestinationIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText primary={label} />
