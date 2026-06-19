@@ -45,6 +45,12 @@ pub struct TickerThemeEtf {
     pub etf_symbol: String,
 }
 
+pub struct TickerThemeMembership {
+    pub theme_id: i64,
+    pub theme_name: String,
+    pub symbol: String,
+}
+
 impl Store {
     pub async fn theme_names_for_ticker(&self, symbol: &str) -> anyhow::Result<Vec<String>> {
         sqlx::query_scalar!(
@@ -137,6 +143,43 @@ impl Store {
             .fetch_all(&self.pool)
             .await
             .context("failed to load tickers for themes")
+    }
+
+    pub async fn themes_for_symbols(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerThemeMembership>> {
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT themes.id, themes.name, theme_stocks.symbol
+             FROM theme_stocks
+             JOIN themes ON themes.id = theme_stocks.theme_id
+             WHERE theme_stocks.symbol IN (",
+        );
+        {
+            let mut separated = query.separated(", ");
+            for symbol in symbols {
+                separated.push_bind(symbol);
+            }
+        }
+        query.push(") ORDER BY themes.name COLLATE NOCASE, theme_stocks.symbol");
+        query
+            .build_query_as::<(i64, String, String)>()
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load themes for symbols")
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(theme_id, theme_name, symbol)| TickerThemeMembership {
+                        theme_id,
+                        theme_name,
+                        symbol,
+                    })
+                    .collect()
+            })
     }
 
     pub async fn themes(&self) -> anyhow::Result<Vec<Theme>> {

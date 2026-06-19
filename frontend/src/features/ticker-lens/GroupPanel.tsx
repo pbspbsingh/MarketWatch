@@ -42,6 +42,13 @@ import {
   sortValue,
 } from "./utils";
 
+const unassignedGroup: GroupRanking = {
+  key: unassignedGroupKey,
+  name: "Unassigned",
+  performance: null,
+  relative_strength: null,
+};
+
 interface GroupPanelProps {
   mode: GroupMode;
   setMode: (mode: GroupMode) => void;
@@ -50,6 +57,10 @@ interface GroupPanelProps {
   selectedTickerContext: SelectedTickerContext | undefined;
   requestedThemeNames: string[];
   requestedUnassigned: boolean;
+  selectedGroupTickerCounts: Map<string, number>;
+  groups?: GroupRanking[];
+  loadingGroups?: boolean;
+  groupError?: string;
 }
 
 export function GroupPanel({
@@ -60,14 +71,22 @@ export function GroupPanel({
   selectedTickerContext,
   requestedThemeNames,
   requestedUnassigned,
+  selectedGroupTickerCounts,
+  groups: providedGroups,
+  loadingGroups,
+  groupError,
 }: GroupPanelProps) {
-  const [groups, setGroups] = useState<GroupRanking[]>([]);
+  const [loadedGroups, setLoadedGroups] = useState<GroupRanking[]>([]);
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const groups = providedGroups ?? loadedGroups;
+  const effectiveLoading = loadingGroups ?? loading;
+  const effectiveError = groupError ?? error;
 
   useEffect(() => {
+    if (providedGroups !== undefined) return;
     const controller = new AbortController();
     setLoading(true);
     setError(undefined);
@@ -90,7 +109,7 @@ export function GroupPanel({
             })),
           );
     request
-      .then(setGroups)
+      .then(setLoadedGroups)
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
           setError(requestError.message);
@@ -100,7 +119,7 @@ export function GroupPanel({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [mode]);
+  }, [mode, providedGroups]);
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
@@ -240,7 +259,7 @@ export function GroupPanel({
           </IconButton>
         </div>
       </header>
-      {loading && (
+      {effectiveLoading && (
         <div className="panel-status">
           <CircularProgress size="1rem" />
           <Typography color="text.secondary">
@@ -248,12 +267,12 @@ export function GroupPanel({
           </Typography>
         </div>
       )}
-      {!loading && !error && groups.length === 0 && mode === "industry" && (
+      {!effectiveLoading && !effectiveError && groups.length === 0 && mode === "industry" && (
         <Typography className="panel-empty" color="text.secondary">
           No {mode === "industry" ? "industry snapshot" : "theme rankings"} available
         </Typography>
       )}
-      {!loading && !error && (groups.length > 0 || mode === "theme") && (
+      {!effectiveLoading && !effectiveError && (groups.length > 0 || mode === "theme") && (
         <ol className="ranked-list" aria-label={`${mode} rankings`}>
           {sortedGroups.map((group) => {
             const metric = sortValue(group, sortSetting.key);
@@ -277,7 +296,13 @@ export function GroupPanel({
                     })
                   }
                 >
-                  <span className="ranked-name">{group.name}</span>
+                  <span
+                    className="ranked-name"
+                    title={`${group.name}${countLabel(group, selectedGroupTickerCounts)}`}
+                  >
+                    {group.name}
+                    {countLabel(group, selectedGroupTickerCounts)}
+                  </span>
                   {metric !== undefined && (
                     <span
                       className="ranked-metric"
@@ -292,7 +317,9 @@ export function GroupPanel({
               </li>
             );
           })}
-          {mode === "theme" && (
+          {mode === "theme" &&
+            providedGroups === undefined &&
+            !groups.some((group) => group.key === unassignedGroupKey) && (
             <li className="unassigned-group">
               <button
                 className={`ranked-list-item${
@@ -315,14 +342,29 @@ export function GroupPanel({
                   })
                 }
               >
-                <span className="ranked-name">Unassigned</span>
+                <span
+                  className="ranked-name"
+                  title={`Unassigned${countLabel(unassignedGroup, selectedGroupTickerCounts)}`}
+                >
+                  Unassigned
+                  {countLabel(unassignedGroup, selectedGroupTickerCounts)}
+                </span>
               </button>
             </li>
           )}
         </ol>
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast message={effectiveError} onClose={() => setError(undefined)} />
     </section>
   );
 }
 
+function countLabel(
+  group: GroupRanking,
+  selectedGroupTickerCounts: Map<string, number>,
+) {
+  const count =
+    group.ticker_count ??
+    selectedGroupTickerCounts.get(group.key);
+  return count === undefined ? "" : ` (${count})`;
+}

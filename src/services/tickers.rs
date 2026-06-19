@@ -54,6 +54,10 @@ impl TickerCatalogService {
             .await
     }
 
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
     pub async fn stream_theme_tickers(
         &self,
         stream_id: u64,

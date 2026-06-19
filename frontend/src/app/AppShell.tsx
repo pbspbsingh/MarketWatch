@@ -17,8 +17,8 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon],
-  ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon],
+  ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
   ["Theme Management", "/theme-management", TuneIcon],
 ] as const;
 

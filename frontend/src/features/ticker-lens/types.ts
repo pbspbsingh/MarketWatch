@@ -8,6 +8,7 @@ export type GroupMode = "industry" | "theme";
 export type GroupRanking = {
   key: string;
   name: string;
+  ticker_count?: number;
   performance: PerformancePeriods | null;
   relative_strength: number | null;
 };
@@ -23,8 +24,13 @@ export type ResolveTickersRequest = {
   signal: AbortSignal;
 };
 
-export type TickerUniverse = {
-  type: "market-watch";
-  resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
-};
-
+export type TickerUniverse =
+  | {
+      type: "market-watch";
+      resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
+      resolveGroupCounts: (request: ResolveTickersRequest) => Promise<Map<string, number>>;
+    }
+  | {
+      type: "bounded";
+      symbols: string[];
+    };

@@ -3,6 +3,12 @@ use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
 
+pub struct TickerIndustryMembership {
+    pub industry_key: String,
+    pub industry_name: String,
+    pub symbol: String,
+}
+
 impl Store {
     pub async fn ticker_has_industry(&self, symbol: &str) -> anyhow::Result<bool> {
         sqlx::query_scalar!(
@@ -188,6 +194,55 @@ impl Store {
             .fetch_optional(&self.pool)
             .await
             .context("failed to load ticker industry")
+    }
+
+    pub async fn industries_for_symbols(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT industry_membership_tickers.industry_key,
+                    industry_snapshot_rows.industry_name,
+                    industry_membership_tickers.symbol
+             FROM industry_membership_tickers
+             JOIN industry_snapshot_rows
+               ON industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
+             JOIN industry_snapshots
+               ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
+             WHERE industry_snapshots.market_date = (
+                   SELECT MAX(market_date) FROM industry_snapshots
+             )
+               AND industry_membership_tickers.symbol IN (",
+        );
+        {
+            let mut separated = query.separated(", ");
+            for symbol in symbols {
+                separated.push_bind(symbol);
+            }
+        }
+        query.push(
+            ") ORDER BY industry_snapshot_rows.industry_name, industry_membership_tickers.symbol",
+        );
+        query
+            .build_query_as::<(String, String, String)>()
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load industries for symbols")
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(industry_key, industry_name, symbol)| TickerIndustryMembership {
+                            industry_key,
+                            industry_name,
+                            symbol,
+                        },
+                    )
+                    .collect()
+            })
     }
 }
 

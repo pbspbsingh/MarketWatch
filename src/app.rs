@@ -1,5 +1,6 @@
 use crate::api;
 use crate::config::Config;
+use crate::models::TickerCollection;
 use crate::providers::{AiClient, FinvizClient, TradingViewClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::details::TickerDetailsService;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
+    pub last_ticker_collection: Arc<Mutex<Option<TickerCollection>>>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -81,6 +83,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         active_ticker_stream: Arc::new(Mutex::new(None)),
         themes,
         theme_analysis,
+        last_ticker_collection: Arc::new(Mutex::new(None)),
     };
 
     let frontend = ServeDir::new(&frontend_dist)
