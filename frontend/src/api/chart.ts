@@ -12,6 +12,7 @@ export interface ChartSummary {
   tradingview_symbol: string;
   benchmark_symbol: string;
   adr_percent: number;
+  extension_from_50_sma: number | null;
   average_volume: number;
 }
 
