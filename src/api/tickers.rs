@@ -32,6 +32,21 @@ enum TickerRequest {
         ids: Vec<i64>,
         include_unassigned: bool,
     },
+    Symbols {
+        symbols: Vec<String>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "group_type", rename_all = "snake_case")]
+enum MembershipRequest {
+    Industry {
+        keys: Vec<String>,
+    },
+    Theme {
+        ids: Vec<i64>,
+        include_unassigned: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -54,7 +69,9 @@ struct TickerBodyStream {
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/tickers", post(tickers))
+    Router::new()
+        .route("/tickers", post(tickers))
+        .route("/ticker-membership", post(membership))
 }
 
 async fn tickers(State(state): State<AppState>, Json(request): Json<TickerRequest>) -> Response {
@@ -80,6 +97,14 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
                 "ticker stream requested"
             );
         }
+        TickerRequest::Symbols { symbols } => {
+            info!(
+                stream_id,
+                group_type = "symbols",
+                selected_count = symbols.len(),
+                "ticker stream requested"
+            );
+        }
     }
     let (body_sender, body_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
     let ticker_catalog = state.ticker_catalog.clone();
@@ -99,6 +124,11 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
                 } => {
                     ticker_catalog
                         .stream_theme_tickers(stream_id, &ids, include_unassigned, &ticker_sender)
+                        .await
+                }
+                TickerRequest::Symbols { symbols } => {
+                    ticker_catalog
+                        .stream_ranked_symbols(stream_id, &symbols, &ticker_sender)
                         .await
                 }
             }
@@ -157,6 +187,28 @@ async fn tickers(State(state): State<AppState>, Json(request): Json<TickerReques
         .header(header::CONTENT_TYPE, "application/x-ndjson")
         .body(Body::from_stream(stream))
         .expect("ticker stream response is valid")
+}
+
+async fn membership(
+    State(state): State<AppState>,
+    Json(request): Json<MembershipRequest>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let result = match request {
+        MembershipRequest::Industry { keys } => state.ticker_catalog.industry_tickers(&keys).await,
+        MembershipRequest::Theme {
+            ids,
+            include_unassigned,
+        } => {
+            state
+                .ticker_catalog
+                .theme_tickers(&ids, include_unassigned)
+                .await
+        }
+    };
+    result.map(Json).map_err(|error| {
+        error!(%error, "failed to resolve ticker membership");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }
 
 fn event_bytes(event: TickerStreamEvent) -> Bytes {

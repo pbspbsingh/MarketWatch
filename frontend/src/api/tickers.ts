@@ -10,13 +10,17 @@ export type TickerGroupSelection =
   | { group_type: "industry"; keys: string[] }
   | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
 
+export type TickerStreamSelection =
+  | TickerGroupSelection
+  | { group_type: "symbols"; symbols: string[] };
+
 type TickerStreamEvent =
   | { type: "ticker"; ticker: TickerRanking }
   | { type: "complete" }
   | { type: "error"; message: string };
 
 export async function streamTickers(
-  selection: TickerGroupSelection,
+  selection: TickerStreamSelection,
   onTicker: (ticker: TickerRanking) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -62,4 +66,28 @@ export async function streamTickers(
     reader.releaseLock();
   }
   throw new Error("Ticker stream ended before completion");
+}
+
+export async function resolveTickerMembership(
+  selection: TickerGroupSelection,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const response = await fetch("/api/ticker-membership", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(selection),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to resolve ticker membership: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<string[]>;
+}
+
+export function streamTickerSymbols(
+  symbols: string[],
+  onTicker: (ticker: TickerRanking) => void,
+  signal?: AbortSignal,
+) {
+  return streamTickers({ group_type: "symbols", symbols }, onTicker, signal);
 }

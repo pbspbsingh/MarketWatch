@@ -49,19 +49,7 @@ impl TickerCatalogService {
         industry_keys: &[String],
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            industry_keys.iter().all(|key| {
-                !key.is_empty()
-                    && key
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric())
-            }),
-            "industry keys must be non-empty ASCII alphanumeric values"
-        );
-        for industry_key in industry_keys {
-            self.refresh_membership_if_stale(industry_key).await?;
-        }
-        let symbols = self.store.tickers_for_industries(industry_keys).await?;
+        let symbols = self.industry_tickers(industry_keys).await?;
         self.stream_symbols(stream_id, symbols, !industry_keys.is_empty(), sender)
             .await
     }
@@ -73,14 +61,7 @@ impl TickerCatalogService {
         include_unassigned: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            theme_ids.iter().all(|id| *id > 0),
-            "theme IDs must be positive"
-        );
-        let symbols = self
-            .store
-            .tickers_for_themes(theme_ids, include_unassigned)
-            .await?;
+        let symbols = self.theme_tickers(theme_ids, include_unassigned).await?;
         self.stream_symbols(
             stream_id,
             symbols,
@@ -88,6 +69,38 @@ impl TickerCatalogService {
             sender,
         )
         .await
+    }
+
+    pub async fn stream_ranked_symbols(
+        &self,
+        stream_id: u64,
+        symbols: &[String],
+        sender: &mpsc::Sender<TickerRanking>,
+    ) -> anyhow::Result<()> {
+        let symbols = normalize_symbols(symbols)?;
+        self.stream_symbols(stream_id, symbols, true, sender).await
+    }
+
+    pub async fn industry_tickers(&self, industry_keys: &[String]) -> anyhow::Result<Vec<String>> {
+        validate_industry_keys(industry_keys)?;
+        for industry_key in industry_keys {
+            self.refresh_membership_if_stale(industry_key).await?;
+        }
+        self.store.tickers_for_industries(industry_keys).await
+    }
+
+    pub async fn theme_tickers(
+        &self,
+        theme_ids: &[i64],
+        include_unassigned: bool,
+    ) -> anyhow::Result<Vec<String>> {
+        anyhow::ensure!(
+            theme_ids.iter().all(|id| *id > 0),
+            "theme IDs must be positive"
+        );
+        self.store
+            .tickers_for_themes(theme_ids, include_unassigned)
+            .await
     }
 
     async fn stream_symbols(
@@ -116,6 +129,10 @@ impl TickerCatalogService {
                 symbol_count = symbols.len(),
                 "ticker stream completed"
             );
+            return Ok(());
+        }
+        if symbols.is_empty() {
+            info!(stream_id, "ticker stream completed with no symbols");
             return Ok(());
         }
 
@@ -211,4 +228,36 @@ impl TickerCatalogService {
         );
         Ok(())
     }
+}
+
+fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        industry_keys.iter().all(|key| {
+            !key.is_empty()
+                && key
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric())
+        }),
+        "industry keys must be non-empty ASCII alphanumeric values"
+    );
+    Ok(())
+}
+
+fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<String>> {
+    let mut normalized = Vec::with_capacity(symbols.len());
+    for symbol in symbols {
+        let symbol = symbol.trim().to_uppercase();
+        anyhow::ensure!(
+            !symbol.is_empty()
+                && symbol
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric()
+                        || matches!(character, '.' | '-')),
+            "invalid ticker symbol"
+        );
+        if !normalized.contains(&symbol) {
+            normalized.push(symbol);
+        }
+    }
+    Ok(normalized)
 }
