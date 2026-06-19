@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import {
+  fetchTickerRanking,
   streamTickerSymbols,
   type TickerRanking,
 } from "../../api/tickers";
@@ -62,6 +63,7 @@ export function TickerPanel({
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
   const tickerElements = useRef(new Map<string, HTMLButtonElement>());
   const favouriteClickTimer = useRef<number | undefined>(undefined);
+  const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState(() =>
     readSortSetting(tickerSortSettingKey),
   );
@@ -160,6 +162,47 @@ export function TickerPanel({
   }, [sortSetting.key, tickers]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
+
+  useEffect(() => {
+    if (selectedTicker === undefined) return;
+    const ticker = tickers.find((ticker) => ticker.symbol === selectedTicker);
+    if (
+      ticker === undefined ||
+      ticker.performance !== null ||
+      ticker.relative_strength !== null ||
+      rankingRequests.current.has(selectedTicker)
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    rankingRequests.current.add(selectedTicker);
+    fetchTickerRanking(selectedTicker, controller.signal)
+      .then((ranking) => {
+        setTickers((current) =>
+          current.map((currentTicker) =>
+            currentTicker.symbol === ranking.symbol
+              ? {
+                  ...ranking,
+                  is_favourite: currentTicker.is_favourite,
+                }
+              : currentTicker,
+          ),
+        );
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setError(requestError.message);
+        }
+      })
+      .finally(() => {
+        rankingRequests.current.delete(selectedTicker);
+      });
+    return () => {
+      controller.abort();
+      rankingRequests.current.delete(selectedTicker);
+    };
+  }, [selectedTicker, tickers]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -340,7 +383,7 @@ export function TickerPanel({
                     )}
                   </span>
                   <span className="ranked-name">{ticker.symbol}</span>
-                  {metricsActive && metric !== undefined && (
+                  {metric !== undefined && (
                     <span
                       className="ranked-metric"
                       style={{

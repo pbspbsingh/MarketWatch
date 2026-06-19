@@ -49,6 +49,11 @@ enum MembershipRequest {
     },
 }
 
+#[derive(Deserialize)]
+struct TickerRankingRequest {
+    symbol: String,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum TickerStreamEvent {
@@ -71,6 +76,7 @@ struct TickerBodyStream {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/tickers", post(tickers))
+        .route("/ticker-ranking", post(ticker_ranking))
         .route("/ticker-membership", post(membership))
 }
 
@@ -209,6 +215,21 @@ async fn membership(
         error!(%error, "failed to resolve ticker membership");
         StatusCode::INTERNAL_SERVER_ERROR
     })
+}
+
+async fn ticker_ranking(
+    State(state): State<AppState>,
+    Json(request): Json<TickerRankingRequest>,
+) -> Result<Json<TickerRanking>, StatusCode> {
+    state
+        .ticker_catalog
+        .ticker_ranking(&request.symbol)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            error!(symbol = request.symbol, %error, "failed to load ticker ranking");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 fn event_bytes(event: TickerStreamEvent) -> Bytes {

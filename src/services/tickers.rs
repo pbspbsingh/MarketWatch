@@ -82,6 +82,31 @@ impl TickerCatalogService {
         self.stream_symbols(stream_id, symbols, true, sender).await
     }
 
+    pub async fn ticker_ranking(&self, symbol: &str) -> anyhow::Result<TickerRanking> {
+        let symbol = normalize_symbol(symbol)?;
+        let is_favourite = self
+            .store
+            .favourite_symbol_set(std::slice::from_ref(&symbol))
+            .await?
+            .iter()
+            .any(|favourite| favourite == &symbol);
+        let as_of = self.market_schedule.recent_trading_day(Utc::now());
+        let start = as_of - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
+        let end = as_of + TimeDelta::days(1);
+        let benchmark_candles = self
+            .yahoo
+            .daily_candles(&self.benchmark, start, end)
+            .await?;
+        let candles = self.yahoo.daily_candles(&symbol, start, end).await?;
+        let performance = candle_performance(&candles, as_of);
+        Ok(TickerRanking {
+            symbol,
+            is_favourite,
+            relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
+            performance: Some(performance),
+        })
+    }
+
     pub async fn industry_tickers(&self, industry_keys: &[String]) -> anyhow::Result<Vec<String>> {
         validate_industry_keys(industry_keys)?;
         for industry_key in industry_keys {

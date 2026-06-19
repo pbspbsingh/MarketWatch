@@ -85,6 +85,22 @@ export async function resolveTickerMembership(
   return response.json() as Promise<string[]>;
 }
 
+export async function fetchTickerRanking(
+  symbol: string,
+  signal?: AbortSignal,
+): Promise<TickerRanking> {
+  const response = await fetch("/api/ticker-ranking", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol }),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load ticker ranking: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<TickerRanking>;
+}
+
 export function streamTickerSymbols(
   symbols: string[],
   onTicker: (ticker: TickerRanking) => void,
