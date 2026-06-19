@@ -1,8 +1,11 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
+use crate::models::{Forecast, Fundamentals, QuarterFundamentals};
 use anyhow::Context;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
+use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
@@ -11,15 +14,18 @@ use tracing::{debug, info};
 const INDUSTRY_URL: &str = "https://finviz.com/groups?g=industry&v=140&o=-perf1w&st=d1";
 const SCREENER_URL: &str = "https://finviz.com/screener";
 const QUOTE_URL: &str = "https://finviz.com/quote";
+const STOCK_URL: &str = "https://finviz.com/stock";
 const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
 const MAX_CONCURRENT_REQUESTS: usize = 1;
+const FUNDAMENTAL_QUARTERS: usize = 8;
 
 pub struct FinvizClient {
     http: Client,
     industry_url: Url,
     screener_url: Url,
     quote_url: Url,
+    stock_url: Url,
     industry_membership_filters: Vec<String>,
     min_delay: Duration,
     max_delay: Duration,
@@ -63,6 +69,7 @@ impl FinvizClient {
             industry_url: Url::parse(INDUSTRY_URL).context("invalid Finviz industry URL")?,
             screener_url: Url::parse(SCREENER_URL).context("invalid Finviz screener URL")?,
             quote_url: Url::parse(QUOTE_URL).context("invalid Finviz quote URL")?,
+            stock_url: Url::parse(STOCK_URL).context("invalid Finviz stock URL")?,
             industry_membership_filters: finviz.industry_membership_filters.clone(),
             min_delay: Duration::from_millis(provider.min_delay_ms),
             max_delay: Duration::from_millis(provider.max_delay_ms),
@@ -142,6 +149,22 @@ impl FinvizClient {
             "fetched Finviz ticker industry"
         );
         Ok(industry)
+    }
+
+    pub async fn fundamentals(&self, ticker: &str) -> anyhow::Result<Fundamentals> {
+        let ticker = ticker.trim();
+        anyhow::ensure!(!ticker.is_empty(), "ticker is required");
+
+        let mut url = self.stock_url.clone();
+        url.query_pairs_mut()
+            .clear()
+            .append_pair("t", ticker)
+            .append_pair("ty", "ea")
+            .append_pair("p", "d")
+            .append_pair("b", "1");
+        let fundamentals = parse_fundamentals(ticker, &self.get(url).await?)?;
+        info!(ticker, "fetched Finviz fundamentals");
+        Ok(fundamentals)
     }
 
     async fn get(&self, url: Url) -> anyhow::Result<String> {
@@ -261,6 +284,88 @@ fn parse_ticker_industry(html: &str) -> anyhow::Result<IndustryIdentity> {
     })
 }
 
+fn parse_fundamentals(symbol: &str, html: &str) -> anyhow::Result<Fundamentals> {
+    let document = Html::parse_document(html);
+    let route_data_selector = selector("script#route-init-data")?;
+    let route_data = document
+        .select(&route_data_selector)
+        .next()
+        .map(text)
+        .context("Finviz earnings route data was not found")?;
+    let route_data: EarningsRouteData =
+        serde_json::from_str(&route_data).context("Finviz earnings route data is invalid")?;
+
+    let mut reported = route_data
+        .earnings_data
+        .iter()
+        .filter(|period| period.eps_reported_actual.is_some() || period.sales_actual.is_some())
+        .collect::<Vec<_>>();
+    reported.sort_unstable_by(|left, right| right.fiscal_period.cmp(&left.fiscal_period));
+
+    let quarters = reported
+        .into_iter()
+        .take(FUNDAMENTAL_QUARTERS)
+        .map(|period| QuarterFundamentals {
+            fiscal_period: period.fiscal_period.clone(),
+            earnings_release_date: period
+                .earnings_date
+                .as_deref()
+                .and_then(parse_finviz_datetime),
+            earnings_per_share: period.eps_reported_actual,
+            earnings_per_share_estimate: period.eps_reported_estimate,
+            revenue: period.sales_actual.map(millions),
+            revenue_estimate: period.sales_estimate.map(millions),
+        })
+        .collect::<Vec<_>>();
+
+    let forecast_period = route_data
+        .earnings_data
+        .iter()
+        .filter(|period| period.eps_reported_actual.is_none() && period.sales_actual.is_none())
+        .filter(|period| period.eps_reported_estimate.is_some() || period.sales_estimate.is_some())
+        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+
+    Ok(Fundamentals {
+        symbol: symbol.trim().to_uppercase(),
+        currency: None,
+        quarters,
+        next_quarter: Forecast {
+            earnings_per_share: forecast_period.and_then(|period| period.eps_reported_estimate),
+            revenue: forecast_period
+                .and_then(|period| period.sales_estimate)
+                .map(millions),
+        },
+        fetched_at: Utc::now(),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EarningsRouteData {
+    earnings_data: Vec<EarningsPeriod>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EarningsPeriod {
+    fiscal_period: String,
+    earnings_date: Option<String>,
+    eps_reported_actual: Option<f64>,
+    eps_reported_estimate: Option<f64>,
+    sales_actual: Option<f64>,
+    sales_estimate: Option<f64>,
+}
+
+fn parse_finviz_datetime(value: &str) -> Option<DateTime<Utc>> {
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .map(|date| date.and_utc())
+}
+
+fn millions(value: f64) -> f64 {
+    value * 1_000_000.0
+}
+
 fn industry_key(link: ElementRef<'_>) -> anyhow::Result<String> {
     let href = link
         .value()
@@ -373,6 +478,46 @@ mod tests {
         let ticker_industry = client.ticker_industry(ticker).await?;
         println!("{ticker} maps to industry: {ticker_industry:?}");
         assert_eq!(ticker_industry, semiconductors.industry);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Finviz endpoints"]
+    async fn live_fetches_fundamentals() -> anyhow::Result<()> {
+        let config = Config::load("config.toml")?;
+        let client = FinvizClient::new(&config.finviz, &config.providers)?;
+
+        let fundamentals = client.fundamentals("TSLA").await?;
+
+        assert_eq!(fundamentals.symbol, "TSLA");
+        println!("symbol: {}", fundamentals.symbol);
+        for quarter in &fundamentals.quarters {
+            println!(
+                "{} eps={:?} eps_est={:?} revenue={:?} revenue_est={:?}",
+                quarter.fiscal_period,
+                quarter.earnings_per_share,
+                quarter.earnings_per_share_estimate,
+                quarter.revenue,
+                quarter.revenue_estimate
+            );
+        }
+        println!(
+            "forecast eps={:?} revenue={:?}",
+            fundamentals.next_quarter.earnings_per_share, fundamentals.next_quarter.revenue
+        );
+        assert_eq!(fundamentals.quarters.len(), FUNDAMENTAL_QUARTERS);
+        assert!(
+            fundamentals
+                .quarters
+                .iter()
+                .all(|quarter| quarter.earnings_per_share.is_some()
+                    && quarter.earnings_per_share_estimate.is_some()
+                    && quarter.revenue.is_some()
+                    && quarter.revenue_estimate.is_some())
+        );
+        assert!(fundamentals.next_quarter.earnings_per_share.is_some());
+        assert!(fundamentals.next_quarter.revenue.is_some());
 
         Ok(())
     }
