@@ -3,7 +3,7 @@ use chrono::NaiveTime;
 use chrono_tz::Tz;
 use serde::Deserialize;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -19,7 +19,6 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct ServerConfig {
     pub address: SocketAddr,
-    pub frontend_dist: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize)]

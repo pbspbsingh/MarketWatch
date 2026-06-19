@@ -22,8 +22,8 @@ const destinations = [
   ["Favourites", "/favourites", StarIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "blue"],
-  ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
   ["Theme Management", "/theme-management", TuneIcon],
+  ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
 ] as const;
 
 const navigationTriggerInset = 4;

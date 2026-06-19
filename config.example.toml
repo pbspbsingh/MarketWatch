@@ -1,0 +1,22 @@
+[server]
+address = "127.0.0.1:8080"
+
+[database]
+url = "sqlite://market_watch.db?mode=rwc"
+
+[market]
+timezone = "America/Los_Angeles"
+benchmark = "QQQ"
+market_hours = ["6:30:00", "13:00:00"]
+adr_sessions = 20
+average_volume_sessions = 50
+
+[providers]
+connect_timeout_secs = 10
+request_timeout_secs = 30
+min_delay_ms = 10
+max_delay_ms = 1000
+
+[finviz]
+industry_membership_filters = ["cap_smallover", "sh_avgvol_o400", "sh_price_o3"]
+membership_fresh_days = 15

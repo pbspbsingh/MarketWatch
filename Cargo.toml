@@ -21,7 +21,7 @@ thiserror = "2.0.18"
 
 # Web
 axum = { version = "0.8.9", features = ["multipart"] }
-tower-http = { version = "0.6.11", features = ["fs", "trace"] }
+include_dir = "0.7.4"
 
 # Persistence
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }

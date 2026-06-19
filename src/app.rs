@@ -14,11 +14,21 @@ use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use axum::Router;
+#[cfg(not(debug_assertions))]
+use axum::body::Body;
+use axum::http::StatusCode;
+#[cfg(not(debug_assertions))]
+use axum::http::{Uri, header};
+#[cfg(not(debug_assertions))]
+use axum::response::{IntoResponse, Response};
+#[cfg(not(debug_assertions))]
+use include_dir::{Dir, include_dir};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::task::AbortHandle;
-use tower_http::services::{ServeDir, ServeFile};
-use tower_http::trace::TraceLayer;
+
+#[cfg(not(debug_assertions))]
+static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
 
 pub struct ActiveTickerStream {
     pub stream_id: u64,
@@ -84,7 +94,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
-    let frontend_dist = config.server.frontend_dist.clone();
     let state = AppState {
         chart,
         details,
@@ -98,12 +107,46 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         watchlists,
     };
 
-    let frontend = ServeDir::new(&frontend_dist)
-        .not_found_service(ServeFile::new(frontend_dist.join("index.html")));
+    let router = Router::new()
+        .nest("/api", api::router());
+    #[cfg(not(debug_assertions))]
+    let router = router.fallback(frontend);
+    #[cfg(debug_assertions)]
+    let router = router.fallback(debug_frontend);
+    Ok(router.with_state(state))
+}
 
-    Ok(Router::new()
-        .nest("/api", api::router())
-        .fallback_service(frontend)
-        .layer(TraceLayer::new_for_http())
-        .with_state(state))
+#[cfg(debug_assertions)]
+async fn debug_frontend() -> (StatusCode, &'static str) {
+    (StatusCode::NOT_FOUND, "Use `npm run dev` in debug mode")
+}
+
+#[cfg(not(debug_assertions))]
+async fn frontend(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let file = FRONTEND_DIST
+        .get_file(path)
+        .or_else(|| FRONTEND_DIST.get_file("index.html"));
+    let Some(file) = file else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    Response::builder()
+        .header(header::CONTENT_TYPE, content_type(path))
+        .body(Body::from(file.contents()))
+        .expect("embedded frontend response is valid")
+}
+
+#[cfg(not(debug_assertions))]
+fn content_type(path: &str) -> &'static str {
+    if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".js") {
+        "text/javascript"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else {
+        "text/html; charset=utf-8"
+    }
 }

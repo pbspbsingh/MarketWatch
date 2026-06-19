@@ -10,13 +10,25 @@ mod utils;
 
 use anyhow::Context;
 use config::Config;
+use std::path::Path;
 use tracing::info;
 
 #[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 
-    let config = Config::load("config.toml").context("failed to load configuration")?;
+    let config_path = Path::new("config.toml");
+    if !config_path
+        .try_exists()
+        .context("failed to check for config.toml")?
+    {
+        eprintln!(
+            "config.toml is missing. Create it with:\n\n{}",
+            include_str!("../config.example.toml")
+        );
+        anyhow::bail!("config.toml is required");
+    }
+    let config = Config::load(config_path).context("failed to load configuration")?;
     let address = config.server.address;
     let app = app::build(config).await?;
     let listener = tokio::net::TcpListener::bind(address)
