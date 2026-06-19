@@ -3,13 +3,12 @@ use crate::models::{ThemeRanking, candle_performance, candle_relative_strength};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
-use chrono::{TimeDelta, Utc};
+use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::warn;
 
-const BENCHMARK_HISTORY_DAYS: i64 = 380;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 
 pub struct ThemeAnalysisService {
@@ -46,9 +45,7 @@ impl ThemeAnalysisService {
             .await
             .map_err(ThemeAnalysisError::Persistence)?;
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let start = as_of - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
-        let end = as_of + TimeDelta::days(1);
-        let benchmark = match self.yahoo.daily_candles(&self.benchmark, start, end).await {
+        let benchmark = match self.yahoo.daily_candles_for_year(&self.benchmark).await {
             Ok(candles) => Some(candles),
             Err(error) => {
                 warn!(
@@ -72,11 +69,7 @@ impl ThemeAnalysisService {
                 });
                 continue;
             };
-            match self
-                .yahoo
-                .daily_candles(&theme.etf_symbol, start, end)
-                .await
-            {
+            match self.yahoo.daily_candles_for_year(&theme.etf_symbol).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
                     rankings.push(ThemeRanking {

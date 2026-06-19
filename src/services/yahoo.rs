@@ -3,7 +3,7 @@ use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule, previous_trading_day, previous_trading_days};
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -17,6 +17,7 @@ const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const INCOMPLETE_CURRENT_DAY_REFRESH_TTL: Duration = Duration::from_secs(15 * 60);
+const ONE_YEAR_CALENDAR_DAYS: i64 = 380;
 
 pub struct YahooService {
     store: Store,
@@ -80,6 +81,19 @@ impl YahooService {
             .await
             .map_err(YahooServiceError::Persistence)?;
         Ok(profile)
+    }
+
+    pub async fn daily_candles_for_year(
+        &self,
+        symbol: &str,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        let end = self
+            .market_schedule
+            .recent_trading_day(Utc::now())
+            .succ_opt()
+            .ok_or(YahooServiceError::InvalidRange)?;
+        self.daily_candles(symbol, end - TimeDelta::days(ONE_YEAR_CALENDAR_DAYS), end)
+            .await
     }
 
     pub async fn daily_candles(

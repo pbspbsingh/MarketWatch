@@ -2,12 +2,10 @@ use crate::config::MarketConfig;
 use crate::models::DailyCandle;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
-use chrono::{TimeDelta, Utc};
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::warn;
 
-const ONE_YEAR_CALENDAR_DAYS: i64 = 380;
 const FIFTY_SESSION_SMA: usize = 50;
 
 pub struct ChartService {
@@ -16,7 +14,6 @@ pub struct ChartService {
     benchmark: String,
     adr_sessions: usize,
     average_volume_sessions: usize,
-    history_days: i64,
 }
 
 #[derive(Serialize)]
@@ -55,7 +52,6 @@ impl ChartService {
             benchmark: market.benchmark.clone(),
             adr_sessions: usize::from(market.adr_sessions),
             average_volume_sessions: usize::from(market.average_volume_sessions),
-            history_days: ONE_YEAR_CALENDAR_DAYS,
         }
     }
 
@@ -64,11 +60,9 @@ impl ChartService {
         symbol: &str,
         industry_keys: &[String],
     ) -> anyhow::Result<ChartSummary> {
-        let end = Utc::now().date_naive() + TimeDelta::days(1);
-        let start = end - TimeDelta::days(self.history_days);
         let profile = self.yahoo.profile(symbol).await?;
         let benchmark_profile = self.yahoo.profile(&self.benchmark).await?;
-        let candles = self.yahoo.daily_candles(symbol, start, end).await?;
+        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
         let industry = self
             .store
             .industry_for_ticker(symbol, industry_keys)

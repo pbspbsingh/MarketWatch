@@ -12,7 +12,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-const BENCHMARK_HISTORY_DAYS: i64 = 380;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 
 pub struct TickerCatalogService {
@@ -91,13 +90,8 @@ impl TickerCatalogService {
             .iter()
             .any(|favourite| favourite == &symbol);
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let start = as_of - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
-        let end = as_of + TimeDelta::days(1);
-        let benchmark_candles = self
-            .yahoo
-            .daily_candles(&self.benchmark, start, end)
-            .await?;
-        let candles = self.yahoo.daily_candles(&symbol, start, end).await?;
+        let benchmark_candles = self.yahoo.daily_candles_for_year(&self.benchmark).await?;
+        let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
         let performance = candle_performance(&candles, as_of);
         Ok(TickerRanking {
             symbol,
@@ -184,14 +178,9 @@ impl TickerCatalogService {
         }
 
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let start = as_of - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
-        let end = as_of + TimeDelta::days(1);
-        let benchmark_candles = self
-            .yahoo
-            .daily_candles(&self.benchmark, start, end)
-            .await?;
+        let benchmark_candles = self.yahoo.daily_candles_for_year(&self.benchmark).await?;
         for symbol in symbols {
-            let ranking = match self.yahoo.daily_candles(&symbol, start, end).await {
+            let ranking = match self.yahoo.daily_candles_for_year(&symbol).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
                     TickerRanking {
