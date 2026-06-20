@@ -224,20 +224,19 @@ impl TickerCatalogService {
         self.yahoo.profile(&symbol).await?;
         if !self.store.ticker_has_industry(&symbol).await? {
             let industry = self.finviz.ticker_industry(&symbol).await?;
-            if self
+            let present_in_latest_snapshot = self
                 .store
                 .latest_snapshot_has_industry(&industry.key)
-                .await?
-            {
-                self.store
-                    .add_ticker_industry(&industry.key, &symbol)
-                    .await?;
-            } else {
-                info!(
+                .await?;
+            self.store
+                .add_ticker_industry(&industry.key, &symbol)
+                .await?;
+            if !present_in_latest_snapshot {
+                warn!(
                     symbol,
                     industry_key = industry.key,
                     industry_name = industry.name,
-                    "skipping industry absent from latest snapshot"
+                    "stored ticker industry absent from latest snapshot"
                 );
             }
         }

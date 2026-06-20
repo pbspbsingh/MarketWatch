@@ -322,4 +322,17 @@ mod tests {
             None
         );
     }
+
+    #[tokio::test]
+    async fn stores_ticker_industry_without_snapshot_row() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+
+        store
+            .add_ticker_industry("unknownindustry", "TICKER")
+            .await
+            .unwrap();
+
+        assert!(store.ticker_has_industry("TICKER").await.unwrap());
+        assert_eq!(store.known_tickers().await.unwrap(), ["TICKER"]);
+    }
 }
