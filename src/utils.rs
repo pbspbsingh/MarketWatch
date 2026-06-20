@@ -11,6 +11,7 @@ use tokio::sync::Notify;
 pub struct MarketSchedule {
     timezone: Tz,
     refresh_time: NaiveTime,
+    holidays: HashSet<NaiveDate>,
 }
 
 pub struct KeyedLock {
@@ -25,22 +26,51 @@ pub struct KeyedLockGuard<'a> {
 
 impl MarketSchedule {
     pub fn new(config: &MarketConfig, post_close_delay: Duration) -> anyhow::Result<Self> {
+        Self::with_holidays(config, post_close_delay, HashSet::new())
+    }
+
+    pub fn with_holidays(
+        config: &MarketConfig,
+        post_close_delay: Duration,
+        holidays: HashSet<NaiveDate>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             timezone: config
                 .timezone
                 .parse()
                 .context("market.timezone must be a valid IANA timezone")?,
             refresh_time: config.market_hours.1 + post_close_delay,
+            holidays,
         })
     }
 
     pub fn recent_trading_day(&self, now: DateTime<Utc>) -> NaiveDate {
         let market_now = now.with_timezone(&self.timezone);
-        if market_now.is_weekend() || market_now.time() < self.refresh_time {
-            previous_trading_day(market_now.date_naive())
+        if market_now.is_weekend()
+            || self.holidays.contains(&market_now.date_naive())
+            || market_now.time() < self.refresh_time
+        {
+            self.previous_trading_day(market_now.date_naive())
         } else {
             market_now.date_naive()
         }
+    }
+
+    pub fn previous_trading_day(&self, date: NaiveDate) -> NaiveDate {
+        let mut previous = date;
+        loop {
+            previous -= TimeDelta::days(1);
+            if !previous.is_weekend() && !self.holidays.contains(&previous) {
+                break previous;
+            }
+        }
+    }
+
+    pub fn previous_trading_days(&self, mut date: NaiveDate, count: usize) -> NaiveDate {
+        for _ in 0..count {
+            date = self.previous_trading_day(date);
+        }
+        date
     }
 }
 
@@ -96,38 +126,38 @@ impl<D: Datelike> TradingDay for D {
     }
 }
 
-pub fn previous_trading_day(today: NaiveDate) -> NaiveDate {
-    let mut previous = today;
-    loop {
-        previous -= TimeDelta::days(1);
-        if !previous.is_weekend() {
-            break previous;
-        }
-    }
-}
-
-pub fn previous_trading_days(mut date: NaiveDate, count: usize) -> NaiveDate {
-    for _ in 0..count {
-        date = previous_trading_day(date);
-    }
-    date
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MarketConfig;
     use chrono::NaiveDate;
     use tokio::time::timeout;
 
     #[test]
-    fn previous_trading_day_skips_weekends() {
+    fn previous_trading_day_skips_weekends_and_holidays() {
+        let holiday = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let schedule = MarketSchedule::with_holidays(
+            &MarketConfig {
+                timezone: "America/Los_Angeles".to_owned(),
+                benchmark: "QQQ".to_owned(),
+                market_hours: (
+                    NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
+                    NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
+                ),
+                adr_sessions: 20,
+                average_volume_sessions: 50,
+            },
+            Duration::ZERO,
+            HashSet::from([holiday]),
+        )
+        .unwrap();
         assert_eq!(
-            previous_trading_day(NaiveDate::from_ymd_opt(2026, 6, 22).unwrap()),
-            NaiveDate::from_ymd_opt(2026, 6, 19).unwrap(),
+            schedule.previous_trading_day(NaiveDate::from_ymd_opt(2026, 6, 22).unwrap()),
+            NaiveDate::from_ymd_opt(2026, 6, 18).unwrap(),
         );
         assert_eq!(
-            previous_trading_days(NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(), 2),
-            NaiveDate::from_ymd_opt(2026, 6, 19).unwrap(),
+            schedule.previous_trading_days(NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(), 2),
+            NaiveDate::from_ymd_opt(2026, 6, 18).unwrap(),
         );
     }
 

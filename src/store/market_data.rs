@@ -12,6 +12,51 @@ struct StoredProfile {
 }
 
 impl Store {
+    pub async fn has_nyse_holidays_for_year(&self, year: i32) -> anyhow::Result<bool> {
+        let start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid calendar year");
+        let end = NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid calendar year");
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM nyse_holidays WHERE market_date >= ? AND market_date < ?",
+        )
+        .bind(start)
+        .bind(end)
+        .fetch_one(&self.pool)
+        .await
+        .context("failed to check NYSE holiday calendar")?;
+        Ok(count > 0)
+    }
+
+    pub async fn nyse_holidays(&self) -> anyhow::Result<Vec<NaiveDate>> {
+        sqlx::query_scalar("SELECT market_date FROM nyse_holidays ORDER BY market_date")
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load NYSE holiday calendar")
+    }
+
+    pub async fn upsert_nyse_holidays(&self, holidays: &[NaiveDate]) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin NYSE holiday calendar transaction")?;
+        let fetched_at = chrono::Utc::now().naive_utc();
+        for market_date in holidays {
+            sqlx::query(
+                "INSERT INTO nyse_holidays (market_date, fetched_at) VALUES (?, ?) \
+                 ON CONFLICT (market_date) DO UPDATE SET fetched_at = excluded.fetched_at",
+            )
+            .bind(market_date)
+            .bind(fetched_at)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to store NYSE holiday")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit NYSE holiday calendar")
+    }
+
     pub async fn company_profile(&self, symbol: &str) -> anyhow::Result<Option<CompanyProfile>> {
         let profile = sqlx::query_as!(
             StoredProfile,
@@ -149,5 +194,25 @@ impl Store {
             .await
             .context("failed to commit daily candles")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stores_nyse_holidays_by_year() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let holidays = [
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+        ];
+
+        store.upsert_nyse_holidays(&holidays).await.unwrap();
+
+        assert!(store.has_nyse_holidays_for_year(2026).await.unwrap());
+        assert!(!store.has_nyse_holidays_for_year(2028).await.unwrap());
+        assert_eq!(store.nyse_holidays().await.unwrap(), holidays);
     }
 }

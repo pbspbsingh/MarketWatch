@@ -2,9 +2,9 @@ use crate::config::MarketConfig;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
 use crate::store::Store;
-use crate::utils::{KeyedLock, MarketSchedule, previous_trading_day, previous_trading_days};
+use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -55,11 +55,12 @@ impl YahooService {
         store: Store,
         yahoo: Arc<YahooClient>,
         market: &MarketConfig,
+        holidays: HashSet<NaiveDate>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             store,
             yahoo,
-            market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
+            market_schedule: MarketSchedule::with_holidays(market, POST_CLOSE_DELAY, holidays)?,
             daily_candle_locks: KeyedLock::new(),
             incomplete_refreshes: Mutex::new(HashMap::new()),
         })
@@ -127,7 +128,7 @@ impl YahooService {
             .succ_opt()
             .ok_or(YahooServiceError::InvalidRange)?;
         let fetch_end_date = end.min(eligible_end);
-        let requested_last_date = previous_trading_day(fetch_end_date);
+        let requested_last_date = self.market_schedule.previous_trading_day(fetch_end_date);
 
         if start < fetch_end_date
             && latest.is_none_or(|latest| latest < requested_last_date)
@@ -138,7 +139,10 @@ impl YahooService {
             )
         {
             let fetch_start = latest
-                .map(|latest| previous_trading_days(latest, REFRESH_OVERLAP_SESSIONS))
+                .map(|latest| {
+                    self.market_schedule
+                        .previous_trading_days(latest, REFRESH_OVERLAP_SESSIONS)
+                })
                 .map_or(start, |overlap_start| overlap_start.max(start));
             let fetch_start = Utc.from_utc_datetime(
                 &fetch_start

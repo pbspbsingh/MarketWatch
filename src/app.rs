@@ -5,6 +5,7 @@ use crate::services::chart::ChartService;
 use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::nyse_calendar;
 use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
@@ -52,10 +53,16 @@ pub struct AppState {
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
     store.fail_interrupted_theme_ai_jobs().await?;
+    let nyse_holidays = nyse_calendar::load_holidays(&store, &config.providers).await?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
-    let yahoo = Arc::new(YahooService::new(store.clone(), yahoo, &config.market)?);
+    let yahoo = Arc::new(YahooService::new(
+        store.clone(),
+        yahoo,
+        &config.market,
+        nyse_holidays,
+    )?);
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
         finviz.clone(),

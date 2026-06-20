@@ -2,6 +2,7 @@ pub mod chart;
 pub mod details;
 pub mod industries;
 pub mod industry_analysis;
+pub mod nyse_calendar;
 pub mod theme_analysis;
 pub mod themes;
 pub mod ticker_collections;
