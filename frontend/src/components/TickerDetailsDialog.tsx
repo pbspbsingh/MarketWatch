@@ -594,7 +594,7 @@ function EstimateChart({
             {
               label: "Estimate / Forecast",
               data: [...estimates, forecast],
-              backgroundColor: "#777",
+              backgroundColor: "rgba(119, 119, 119, 0.30)",
             },
             {
               label: "Actual",
