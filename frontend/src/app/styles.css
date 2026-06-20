@@ -509,6 +509,10 @@ body,
   border-top-color: #2fbf71;
 }
 
+.ticker-lens-accent-coral {
+  border-top-color: #fb7185;
+}
+
 .workspace-panel {
   display: flex;
   min-width: 0;
@@ -1202,6 +1206,10 @@ body,
 
 .navigation-drawer .navigation-icon-blue {
   color: #58a6ff;
+}
+
+.navigation-drawer .navigation-icon-coral {
+  color: #fb7185;
 }
 
 .navigation-drawer .MuiListItemButton-root:hover,

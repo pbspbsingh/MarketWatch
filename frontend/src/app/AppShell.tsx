@@ -21,7 +21,7 @@ const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Favourites", "/favourites", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
-  ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "blue"],
+  ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon],
   ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
 ] as const;

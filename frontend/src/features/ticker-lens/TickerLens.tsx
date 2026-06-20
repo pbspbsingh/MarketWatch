@@ -29,7 +29,7 @@ interface TickerLensProps {
   universe: TickerUniverse;
   onFavouriteChange?: (symbol: string, isFavourite: boolean) => void;
   onBoundedResolution?: (failedCount: number) => void;
-  accent?: "purple" | "yellow" | "blue" | "green";
+  accent?: "purple" | "yellow" | "blue" | "green" | "coral";
 }
 
 export function TickerLens({

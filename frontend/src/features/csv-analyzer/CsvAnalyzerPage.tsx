@@ -127,7 +127,7 @@ export function CsvAnalyzerPage() {
           </div>
         ) : (
           <TickerLens
-            accent="blue"
+            accent="coral"
             universe={{ type: "bounded", symbols: collection.symbols }}
             onBoundedResolution={setFailedResolutionCount}
           />
