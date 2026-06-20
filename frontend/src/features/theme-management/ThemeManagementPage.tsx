@@ -7,6 +7,7 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  ListSubheader,
   Menu,
   MenuItem,
   Tab,
@@ -69,6 +70,28 @@ function matchesIndustryFilter(ticker: ThemeTicker, selectedIndustryKeys: Set<st
     : ticker.industries.some((industry) => selectedIndustryKeys.has(industry.key));
 }
 
+function sameData(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameData(value, right[index]))
+    );
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  return (
+    leftKeys.length === Object.keys(rightRecord).length &&
+    leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(rightRecord, key) && sameData(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
+
 function enrichTickers(symbols: string[], onError: (message: string) => void) {
   if (symbols.length === 0) return;
   void Promise.all(symbols.map(addThemeTicker)).catch((error: unknown) =>
@@ -110,10 +133,10 @@ export function ThemeManagementPage() {
       fetchThemeIndustries(),
       fetchAiCapability(),
     ]);
-    setThemes(nextThemes);
-    setTickers(nextTickers);
-    setThemeIndustries(nextIndustries);
-    setCapability(nextCapability);
+    setThemes((current) => (sameData(current, nextThemes) ? current : nextThemes));
+    setTickers((current) => (sameData(current, nextTickers) ? current : nextTickers));
+    setThemeIndustries((current) => (sameData(current, nextIndustries) ? current : nextIndustries));
+    setCapability((current) => (sameData(current, nextCapability) ? current : nextCapability));
   };
 
   useEffect(() => {
@@ -709,7 +732,11 @@ function IndustryFilter({
   setSelectedIndustryKeys: Dispatch<SetStateAction<Set<string> | undefined>>;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [search, setSearch] = useState("");
   const allSelected = selectedIndustryKeys.size === industries.length;
+  const filteredIndustries = industries.filter((industry) =>
+    industry.name.toLowerCase().includes(search.trim().toLowerCase()),
+  );
 
   const toggleIndustry = (key: string) => {
     setSelectedIndustryKeys((current) => {
@@ -725,17 +752,42 @@ function IndustryFilter({
       <Button size="small" disabled={industries.length === 0} onClick={(event) => setAnchor(event.currentTarget)}>
         Industries ({selectedIndustryKeys.size}/{industries.length})
       </Button>
-      <Menu anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
-        <MenuItem
-          disabled={allSelected}
-          onClick={() => setSelectedIndustryKeys(new Set(industries.map((industry) => industry.key)))}
-        >
-          Check all
-        </MenuItem>
-        <MenuItem disabled={selectedIndustryKeys.size === 0} onClick={() => setSelectedIndustryKeys(new Set())}>
-          Uncheck all
-        </MenuItem>
-        {industries.map((industry) => (
+      <Menu
+        anchorEl={anchor}
+        open={anchor !== null}
+        disableAutoFocusItem
+        onClose={() => {
+          setAnchor(null);
+          setSearch("");
+        }}
+      >
+        <ListSubheader className="industry-filter-search">
+          <TextField
+            autoFocus
+            size="small"
+            placeholder="Search industries"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
+          />
+          <div className="industry-filter-actions">
+            <Button
+              size="small"
+              disabled={allSelected}
+              onClick={() => setSelectedIndustryKeys(new Set(industries.map((industry) => industry.key)))}
+            >
+              Check all
+            </Button>
+            <Button
+              size="small"
+              disabled={selectedIndustryKeys.size === 0}
+              onClick={() => setSelectedIndustryKeys(new Set())}
+            >
+              Uncheck all
+            </Button>
+          </div>
+        </ListSubheader>
+        {filteredIndustries.map((industry) => (
           <MenuItem key={industry.key} onClick={() => toggleIndustry(industry.key)}>
             <Checkbox size="small" checked={selectedIndustryKeys.has(industry.key)} />
             {industry.name}
@@ -794,14 +846,17 @@ function AutomaticTab({
     });
   }, [filtered]);
 
-  const reloadJobs = async () => setJobs(await fetchThemeAiJobs());
+  const reloadJobs = async () => {
+    const next = await fetchThemeAiJobs();
+    setJobs((current) => (sameData(current, next) ? current : next));
+  };
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
         const next = await fetchThemeAiJobs();
         if (!active) return;
-        setJobs(next);
+        setJobs((current) => (sameData(current, next) ? current : next));
       } catch (loadError) {
         if (active) onError(errorMessage(loadError));
       }

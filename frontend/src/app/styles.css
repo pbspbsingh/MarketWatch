@@ -233,6 +233,24 @@ body,
   gap: 0.25rem;
 }
 
+.industry-filter-search {
+  z-index: 1 !important;
+  padding: 0.5rem !important;
+  color: inherit !important;
+  background: #191e24 !important;
+  line-height: normal !important;
+}
+
+.industry-filter-search .MuiTextField-root {
+  width: 100%;
+}
+
+.industry-filter-actions {
+  display: flex;
+  margin-top: 0.25rem;
+  gap: 0.25rem;
+}
+
 .ticker-assignment-row > .MuiCheckbox-root {
   padding: 0.25rem;
 }
