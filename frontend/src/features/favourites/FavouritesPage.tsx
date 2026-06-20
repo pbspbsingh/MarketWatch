@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
-import { fetchTickerDetails } from "../../api/details";
+import { fetchThemeTicker } from "../../api/themes";
 import { fetchFavourites } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
@@ -99,13 +99,22 @@ export function FavouritesPage() {
     setDownloadProgress(0);
     setError(undefined);
     try {
-      const rows: [string, string][] = [];
+      const rows: [string, string, string][] = [];
       for (const [index, symbol] of symbols.entries()) {
-        const details = await fetchTickerDetails(symbol);
-        rows.push([symbol, details.profile.name ?? ""]);
+        const ticker = await fetchThemeTicker(symbol);
+        rows.push([
+          symbol,
+          ticker.name ?? "",
+          ticker.industries.map((industry) => industry.name).join("; "),
+        ]);
         setDownloadProgress(((index + 1) / symbols.length) * 100);
       }
-      const csv = ["symbol,name", ...rows.map(([symbol, name]) => `${csvCell(symbol)},${csvCell(name)}`)].join("\n");
+      const csv = [
+        "symbol,name,industries",
+        ...rows.map(([symbol, name, industries]) =>
+          `${csvCell(symbol)},${csvCell(name)},${csvCell(industries)}`,
+        ),
+      ].join("\n");
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
