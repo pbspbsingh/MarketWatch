@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Semaphore;
+use tracing::info;
 
 pub struct AiClient {
     http: Client,
@@ -134,6 +135,11 @@ impl AiClient {
             }],
             stream: false,
         };
+        let provider = match &self.provider {
+            Provider::Ollama { .. } => "ollama",
+            Provider::DeepSeek { .. } => "deepseek",
+        };
+        info!(provider, model = self.model, "requesting AI completion");
         let content = match &self.provider {
             Provider::Ollama { endpoint } => {
                 self.http

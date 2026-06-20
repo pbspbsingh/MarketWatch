@@ -167,6 +167,7 @@ impl FinvizClient {
         debug!(%url, delay_ms = delay.as_millis(), "delaying Finviz request");
         sleep(delay).await;
 
+        info!(%url, "requesting Finviz API");
         let response = self
             .http
             .get(url.clone())

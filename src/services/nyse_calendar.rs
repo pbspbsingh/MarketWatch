@@ -40,6 +40,7 @@ async fn fetch_holidays(providers: &ProviderConfig) -> anyhow::Result<Vec<NaiveD
         .user_agent("MarketWatch/1.0")
         .build()
         .context("failed to build NYSE calendar client")?;
+    info!(url = NYSE_CALENDAR_URL, "requesting NYSE holiday calendar");
     let html = client
         .get(NYSE_CALENDAR_URL)
         .send()

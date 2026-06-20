@@ -157,6 +157,7 @@ impl YahooClient {
             .await
             .map_err(|_| YahooError::RequestQueueClosed)?;
         sleep(self.request_delay()).await;
+        info!(endpoint = %url.path(), "requesting Yahoo API");
         let response = self
             .http
             .get(url)
@@ -208,6 +209,7 @@ impl YahooClient {
         debug!(%url, delay_ms = delay.as_millis(), "delaying Yahoo request");
         sleep(delay).await;
 
+        info!(symbol, endpoint = %url.path(), "requesting Yahoo API");
         let response = self
             .http
             .get(url.clone())
