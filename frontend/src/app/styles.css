@@ -243,11 +243,11 @@ body,
 }
 
 .assignment-layout {
-  grid-template-columns: 22rem minmax(0, 1fr);
+  grid-template-columns: 28rem minmax(0, 1fr);
 }
 
 .automatic-layout {
-  grid-template-columns: 22rem minmax(0, 1fr);
+  grid-template-columns: 28rem minmax(0, 1fr);
 }
 
 .automatic-workspace {

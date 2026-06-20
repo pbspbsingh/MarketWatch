@@ -19,7 +19,13 @@ export interface ThemeTicker {
   symbol: string;
   name: string | null;
   description: string | null;
+  industries: ThemeTickerIndustry[];
   assignments: ThemeAssignment[];
+}
+
+export interface ThemeTickerIndustry {
+  key: string;
+  name: string;
 }
 
 export interface ThemeSuggestion {
@@ -77,6 +83,7 @@ const json = (body: unknown): RequestInit => ({
 
 export const fetchThemes = () => request<Theme[]>("/api/themes");
 export const fetchThemeTickers = () => request<ThemeTicker[]>("/api/theme-tickers");
+export const fetchThemeIndustries = () => request<ThemeTickerIndustry[]>("/api/theme-industries");
 export const fetchThemeTicker = (symbol: string) =>
   request<ThemeTicker>(`/api/theme-tickers/${encodeURIComponent(symbol)}`);
 export const fetchAiCapability = () => request<AiCapability>("/api/theme-ai/capability");
@@ -100,6 +107,11 @@ export const replaceTickerThemes = (symbol: string, themeIds: number[]) =>
   request<{ ok: boolean }>(`/api/theme-tickers/${encodeURIComponent(symbol)}`, {
     method: "PUT",
     ...json({ theme_ids: themeIds }),
+  });
+
+export const deleteThemeTicker = (symbol: string) =>
+  request<{ ok: boolean }>(`/api/theme-tickers/${encodeURIComponent(symbol)}`, {
+    method: "DELETE",
   });
 
 export const generateThemePrompt = (symbols: string[]) =>

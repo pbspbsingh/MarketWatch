@@ -14,7 +14,7 @@ pub use performance::{
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
-    ThemeSuggestion, ThemeTicker,
+    ThemeSuggestion, ThemeTicker, ThemeTickerIndustry,
 };
 pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,

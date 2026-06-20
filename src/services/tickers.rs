@@ -229,7 +229,7 @@ impl TickerCatalogService {
                 .latest_snapshot_has_industry(&industry.key)
                 .await?;
             self.store
-                .add_ticker_industry(&industry.key, &symbol)
+                .add_ticker_industry(&industry.key, &industry.name, &symbol)
                 .await?;
             if !present_in_latest_snapshot {
                 warn!(

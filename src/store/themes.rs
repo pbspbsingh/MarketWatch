@@ -1,7 +1,7 @@
 use super::Store;
 use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
-    ThemeSuggestion, ThemeTicker,
+    ThemeSuggestion, ThemeTicker, ThemeTickerIndustry,
 };
 use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
@@ -52,6 +52,58 @@ pub struct TickerThemeMembership {
 }
 
 impl Store {
+    pub async fn delete_ticker(&self, symbol: &str) -> anyhow::Result<bool> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin ticker deletion transaction")?;
+        let mut deleted = 0;
+        deleted += sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to delete ticker theme assignments")?
+            .rows_affected();
+        deleted += sqlx::query!(
+            "DELETE FROM industry_membership_tickers WHERE symbol = ?",
+            symbol,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete ticker industry memberships")?
+        .rows_affected();
+        deleted += sqlx::query!("DELETE FROM tickers WHERE symbol = ?", symbol)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to delete ticker market data")?
+            .rows_affected();
+        deleted += sqlx::query!(
+            "DELETE FROM theme_ai_jobs
+             WHERE EXISTS (SELECT 1 FROM json_each(symbols) WHERE value = ?)",
+            symbol,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete ticker AI jobs")?
+        .rows_affected();
+        sqlx::query!(
+            "DELETE FROM industry_memberships
+             WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM industry_membership_tickers
+                 WHERE industry_membership_tickers.industry_key = industry_memberships.industry_key
+             )",
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to remove empty industry memberships")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit ticker deletion")?;
+        Ok(deleted > 0)
+    }
+
     pub async fn theme_names_for_ticker(&self, symbol: &str) -> anyhow::Result<Vec<String>> {
         sqlx::query_scalar!(
             r#"SELECT themes.name
@@ -267,7 +319,53 @@ impl Store {
         .await
         .context("failed to load theme tickers")?;
 
-        theme_tickers_from_rows(rows)
+        self.with_ticker_industries(theme_tickers_from_rows(rows)?)
+            .await
+    }
+
+    pub async fn theme_filter_industries(&self) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
+        sqlx::query!(
+            r#"WITH latest_snapshot AS (
+                   SELECT id FROM industry_snapshots ORDER BY market_date DESC LIMIT 1
+               ),
+               latest_snapshot_industries AS (
+                   SELECT industry_key, industry_name
+                   FROM industry_snapshot_rows
+                   WHERE snapshot_id = (SELECT id FROM latest_snapshot)
+               ),
+               membership_industries AS (
+                   SELECT industry_memberships.industry_key,
+                          COALESCE(
+                              latest_snapshot_industries.industry_name,
+                              industry_memberships.industry_name,
+                              industry_memberships.industry_key
+                          ) AS industry_name
+                   FROM industry_memberships
+                   LEFT JOIN latest_snapshot_industries
+                     ON latest_snapshot_industries.industry_key = industry_memberships.industry_key
+               ),
+               all_industries AS (
+                   SELECT industry_key, industry_name
+                   FROM latest_snapshot_industries
+                   UNION
+                   SELECT industry_key, industry_name
+                   FROM membership_industries
+               )
+               SELECT industry_key AS "key!: String", industry_name AS "name!: String"
+               FROM all_industries
+               ORDER BY industry_name COLLATE NOCASE"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load theme filter industries")
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| ThemeTickerIndustry {
+                    key: row.key,
+                    name: row.name,
+                })
+                .collect()
+        })
     }
 
     pub async fn theme_ticker(&self, symbol: &str) -> anyhow::Result<Option<ThemeTicker>> {
@@ -297,7 +395,31 @@ impl Store {
         .await
         .context("failed to load theme ticker")?;
 
-        Ok(theme_tickers_from_rows(rows)?.into_iter().next())
+        self.with_ticker_industries(theme_tickers_from_rows(rows)?)
+            .await
+            .map(|tickers| tickers.into_iter().next())
+    }
+
+    async fn with_ticker_industries(
+        &self,
+        mut tickers: Vec<ThemeTicker>,
+    ) -> anyhow::Result<Vec<ThemeTicker>> {
+        let symbols = tickers
+            .iter()
+            .map(|ticker| ticker.symbol.clone())
+            .collect::<Vec<_>>();
+        let industries = self.all_industries_for_symbols(&symbols).await?;
+        for ticker in &mut tickers {
+            ticker.industries = industries
+                .iter()
+                .filter(|industry| industry.symbol == ticker.symbol)
+                .map(|industry| ThemeTickerIndustry {
+                    key: industry.industry_key.clone(),
+                    name: industry.industry_name.clone(),
+                })
+                .collect();
+        }
+        Ok(tickers)
     }
 
     pub async fn replace_theme_assignments(
@@ -621,6 +743,7 @@ fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<T
                 symbol: row.symbol.clone(),
                 name: row.name,
                 description: row.description,
+                industries: Vec::new(),
                 assignments: Vec::new(),
             });
         }
@@ -732,5 +855,51 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["AI"]
         );
+    }
+
+    #[tokio::test]
+    async fn theme_filter_industries_includes_hidden_memberships() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .add_ticker_industry("hiddenindustry", "Hidden Industry", "HIDDEN")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.theme_filter_industries().await.unwrap(),
+            [ThemeTickerIndustry {
+                key: "hiddenindustry".to_owned(),
+                name: "Hidden Industry".to_owned(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn deletes_ticker_and_all_catalog_memberships() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: "DELETE".to_owned(),
+                name: None,
+                exchange: Exchange::Nasdaq,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        store
+            .add_ticker_industry("hiddenindustry", "Hidden Industry", "DELETE")
+            .await
+            .unwrap();
+        let theme_id = store.create_theme("Delete", "DELE", None).await.unwrap();
+        store
+            .replace_theme_assignments("DELETE", &[theme_id], AssignmentSource::Manual, None, None)
+            .await
+            .unwrap();
+
+        assert!(store.delete_ticker("DELETE").await.unwrap());
+        assert!(store.company_profile("DELETE").await.unwrap().is_none());
+        assert!(store.theme_tickers().await.unwrap().is_empty());
+        assert!(store.theme_filter_industries().await.unwrap().is_empty());
     }
 }

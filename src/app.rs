@@ -107,8 +107,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         watchlists,
     };
 
-    let router = Router::new()
-        .nest("/api", api::router());
+    let router = Router::new().nest("/api", api::router());
     #[cfg(not(debug_assertions))]
     let router = router.fallback(frontend);
     #[cfg(debug_assertions)]

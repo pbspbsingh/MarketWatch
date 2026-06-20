@@ -133,6 +133,26 @@ impl ThemeService {
             .map_err(ThemeServiceError::Persistence)
     }
 
+    pub async fn filter_industries(
+        &self,
+    ) -> Result<Vec<crate::models::ThemeTickerIndustry>, ThemeServiceError> {
+        self.store
+            .theme_filter_industries()
+            .await
+            .map_err(ThemeServiceError::Persistence)
+    }
+
+    pub async fn delete_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {
+        let symbol = symbol.trim().to_uppercase();
+        validate_symbol(&symbol)?;
+        self.store
+            .delete_ticker(&symbol)
+            .await
+            .map_err(ThemeServiceError::Persistence)?
+            .then_some(())
+            .ok_or_else(|| ThemeServiceError::Validation("ticker does not exist".to_owned()))
+    }
+
     pub async fn ticker(&self, symbol: &str) -> Result<ThemeTicker, ThemeServiceError> {
         let symbol = symbol.trim().to_uppercase();
         validate_symbol(&symbol)?;

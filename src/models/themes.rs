@@ -15,7 +15,14 @@ pub struct ThemeTicker {
     pub symbol: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub industries: Vec<ThemeTickerIndustry>,
     pub assignments: Vec<ThemeAssignment>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ThemeTickerIndustry {
+    pub key: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

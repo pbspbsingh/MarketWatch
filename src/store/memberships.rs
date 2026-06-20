@@ -3,6 +3,7 @@ use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
 
+#[derive(Debug, PartialEq)]
 pub struct TickerIndustryMembership {
     pub industry_key: String,
     pub industry_name: String,
@@ -25,6 +26,7 @@ impl Store {
     pub async fn add_ticker_industry(
         &self,
         industry_key: &str,
+        industry_name: &str,
         symbol: &str,
     ) -> anyhow::Result<()> {
         let mut transaction = self
@@ -34,10 +36,11 @@ impl Store {
             .context("failed to begin ticker industry transaction")?;
         let stale_fetched_at = DateTime::<Utc>::UNIX_EPOCH.naive_utc();
         sqlx::query!(
-            "INSERT INTO industry_memberships (industry_key, fetched_at)
-             VALUES (?, ?)
-             ON CONFLICT (industry_key) DO NOTHING",
+            "INSERT INTO industry_memberships (industry_key, industry_name, fetched_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT (industry_key) DO UPDATE SET industry_name = excluded.industry_name",
             industry_key,
+            industry_name,
             stale_fetched_at,
         )
         .execute(&mut *transaction)
@@ -244,6 +247,60 @@ impl Store {
                     .collect()
             })
     }
+
+    pub async fn all_industries_for_symbols(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT industry_membership_tickers.industry_key,
+                    COALESCE(
+                        (
+                            SELECT industry_snapshot_rows.industry_name
+                            FROM industry_snapshot_rows
+                            JOIN industry_snapshots
+                              ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
+                            WHERE industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
+                            ORDER BY industry_snapshots.market_date DESC
+                            LIMIT 1
+                        ),
+                        industry_memberships.industry_name,
+                        industry_membership_tickers.industry_key
+                    ) AS industry_name,
+                    industry_membership_tickers.symbol
+             FROM industry_membership_tickers
+             JOIN industry_memberships
+               ON industry_memberships.industry_key = industry_membership_tickers.industry_key
+             WHERE industry_membership_tickers.symbol IN (",
+        );
+        {
+            let mut separated = query.separated(", ");
+            for symbol in symbols {
+                separated.push_bind(symbol);
+            }
+        }
+        query.push(" ) ORDER BY industry_name, industry_membership_tickers.symbol");
+        query
+            .build_query_as::<(String, String, String)>()
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load all ticker industries")
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(industry_key, industry_name, symbol)| TickerIndustryMembership {
+                            industry_key,
+                            industry_name,
+                            symbol,
+                        },
+                    )
+                    .collect()
+            })
+    }
 }
 
 #[cfg(test)]
@@ -328,11 +385,22 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
 
         store
-            .add_ticker_industry("unknownindustry", "TICKER")
+            .add_ticker_industry("unknownindustry", "Unknown Industry", "TICKER")
             .await
             .unwrap();
 
         assert!(store.ticker_has_industry("TICKER").await.unwrap());
         assert_eq!(store.known_tickers().await.unwrap(), ["TICKER"]);
+        assert_eq!(
+            store
+                .all_industries_for_symbols(&["TICKER".to_owned()])
+                .await
+                .unwrap(),
+            [TickerIndustryMembership {
+                industry_key: "unknownindustry".to_owned(),
+                industry_name: "Unknown Industry".to_owned(),
+                symbol: "TICKER".to_owned(),
+            }]
+        );
     }
 }

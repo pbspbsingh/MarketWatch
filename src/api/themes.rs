@@ -50,10 +50,11 @@ pub fn router() -> Router<AppState> {
         .route("/theme-rankings", get(theme_rankings))
         .route("/themes/{id}", put(update).delete(remove))
         .route("/theme-tickers", get(tickers))
+        .route("/theme-industries", get(filter_industries))
         .route("/theme-tickers", post(add_ticker))
         .route(
             "/theme-tickers/{symbol}",
-            get(ticker).put(replace_assignments),
+            get(ticker).put(replace_assignments).delete(delete_ticker),
         )
         .route("/theme-ai/capability", get(ai_capability))
         .route("/theme-ai/prompt", post(prompt))
@@ -129,6 +130,17 @@ async fn tickers(State(state): State<AppState>) -> ApiResult<Vec<crate::models::
     state.themes.tickers().await.map(Json).map_err(api_error)
 }
 
+async fn filter_industries(
+    State(state): State<AppState>,
+) -> ApiResult<Vec<crate::models::ThemeTickerIndustry>> {
+    state
+        .themes
+        .filter_industries()
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
 async fn ticker(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
@@ -138,6 +150,18 @@ async fn ticker(
         .ticker(&symbol)
         .await
         .map(Json)
+        .map_err(api_error)
+}
+
+async fn delete_ticker(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    state
+        .themes
+        .delete_ticker(&symbol)
+        .await
+        .map(|()| Json(json!({ "ok": true })))
         .map_err(api_error)
 }
 
