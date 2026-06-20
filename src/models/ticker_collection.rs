@@ -37,6 +37,7 @@ pub struct TickerCollectionGroup {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TickerCollectionGroups {
+    pub symbols: Vec<String>,
     pub groups: Vec<TickerCollectionGroup>,
     pub failed_symbols: Vec<String>,
 }

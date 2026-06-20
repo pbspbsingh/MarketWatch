@@ -23,6 +23,7 @@ export function CsvAnalyzerPage() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [failedResolutionCount, setFailedResolutionCount] = useState(0);
   const [error, setError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +44,7 @@ export function CsvAnalyzerPage() {
     setLoading(true);
     try {
       setCollection(await uploadTickerCollection(selectedFiles));
+      setFailedResolutionCount(0);
     } catch (uploadError) {
       setError(errorMessage(uploadError));
     } finally {
@@ -85,7 +87,9 @@ export function CsvAnalyzerPage() {
           <div className="csv-analyzer-actions">
             {loading && <CircularProgress size="0.85rem" />}
             {collection !== null && (
-              <Typography className="csv-analyzer-summary">{summary(collection)}</Typography>
+              <Typography className="csv-analyzer-summary">
+                {summary(collection, failedResolutionCount)}
+              </Typography>
             )}
             <input
               ref={inputRef}
@@ -122,7 +126,11 @@ export function CsvAnalyzerPage() {
             </Typography>
           </div>
         ) : (
-          <TickerLens accent="blue" universe={{ type: "bounded", symbols: collection.symbols }} />
+          <TickerLens
+            accent="blue"
+            universe={{ type: "bounded", symbols: collection.symbols }}
+            onBoundedResolution={setFailedResolutionCount}
+          />
         )}
       </section>
       <CollectionDetailsDialog
@@ -162,10 +170,14 @@ function CollectionDetailsDialog({
   );
 }
 
-function summary(collection: TickerCollection) {
+function summary(collection: TickerCollection, failedResolutionCount: number) {
   const fileCount = collection.source.files.length;
   const skipped = collection.skipped_rows > 0 ? ` · ${collection.skipped_rows} skipped` : "";
-  return `${collection.symbols.length} tickers · ${fileCount} files${skipped}`;
+  const failed =
+    failedResolutionCount > 0
+      ? ` · ${failedResolutionCount} resolution${failedResolutionCount === 1 ? "" : "s"} failed`
+      : "";
+  return `${collection.symbols.length} tickers · ${fileCount} files${skipped}${failed}`;
 }
 
 function isTickerFile(file: File) {

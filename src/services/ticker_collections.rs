@@ -103,12 +103,17 @@ impl TickerCollectionService {
                 failed_symbols.push(symbol.clone());
             }
         }
+        let symbols = symbols
+            .into_iter()
+            .filter(|symbol| !failed_symbols.contains(symbol))
+            .collect::<Vec<_>>();
 
         let groups = match mode {
             TickerCollectionGroupMode::Industry => self.industry_groups(&symbols).await,
             TickerCollectionGroupMode::Theme => self.theme_groups(&symbols).await,
         }?;
         Ok(TickerCollectionGroups {
+            symbols,
             groups,
             failed_symbols,
         })

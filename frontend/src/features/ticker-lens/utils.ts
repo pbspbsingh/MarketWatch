@@ -69,8 +69,8 @@ function performanceColor(value: number, key: Exclude<SortKey, "relative_strengt
 
   const intensity = Math.min(value / cap, 1);
   return intensity <= 0.5
-    ? interpolateColor([230, 200, 79], [69, 208, 111], intensity * 2)
-    : interpolateColor([69, 208, 111], [0, 184, 63], (intensity - 0.5) * 2);
+    ? interpolateColor([230, 200, 79], [139, 220, 50], intensity * 2)
+    : interpolateColor([139, 220, 50], [0, 184, 63], (intensity - 0.5) * 2);
 }
 
 function interpolateColor(start: number[], end: number[], amount: number) {

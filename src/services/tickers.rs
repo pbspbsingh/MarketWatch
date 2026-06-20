@@ -221,9 +221,9 @@ impl TickerCatalogService {
                         || matches!(character, '.' | '-')),
             "invalid ticker symbol"
         );
-        self.yahoo.profile(&symbol).await?;
         if !self.store.ticker_has_industry(&symbol).await? {
             let industry = self.finviz.ticker_industry(&symbol).await?;
+            self.yahoo.profile(&symbol).await?;
             let present_in_latest_snapshot = self
                 .store
                 .latest_snapshot_has_industry(&industry.key)
@@ -239,6 +239,8 @@ impl TickerCatalogService {
                     "stored ticker industry absent from latest snapshot"
                 );
             }
+        } else {
+            self.yahoo.profile(&symbol).await?;
         }
         Ok(())
     }

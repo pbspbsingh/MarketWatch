@@ -28,6 +28,7 @@ export interface BoundedTickerGroup {
 }
 
 export interface BoundedTickerGroups {
+  symbols: string[];
   groups: BoundedTickerGroup[];
   failed_symbols: string[];
 }
