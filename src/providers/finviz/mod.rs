@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 const INDUSTRY_URL: &str = "https://finviz.com/groups?g=industry&v=140&o=-perf1w&st=d1";
 const SCREENER_URL: &str = "https://finviz.com/screener";
@@ -206,10 +206,6 @@ impl FinvizClient {
             }
 
             let page = parse_screener_page(&self.get(url).await?)?;
-            anyhow::ensure!(
-                !page.tickers.is_empty() || page.total == 0,
-                "Finviz screener returned an empty page before all requested tickers were collected"
-            );
             tickers.extend(page.tickers);
             if tickers.len() >= count || tickers.len() >= page.total {
                 tickers.truncate(count.min(page.total));
@@ -263,13 +259,15 @@ fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
 
 fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
     let document = Html::parse_document(html);
-    let ticker_selector = selector("table.screener_table td[data-boxover-ticker]")?;
+
     let total_selector = selector("#screener-total")?;
-    let total_text = document
-        .select(&total_selector)
-        .next()
-        .map(text)
-        .context("Finviz screener total was not found")?;
+    let Some(total_text) = document.select(&total_selector).next().map(text) else {
+        warn!("Finviz screener total was not found");
+        return Ok(ScreenerPage {
+            tickers: Vec::new(),
+            total: 0,
+        });
+    };
     let total = total_text
         .split(|character: char| !character.is_ascii_digit())
         .rfind(|part| !part.is_empty())
@@ -278,6 +276,7 @@ fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
         .context("Finviz screener total is invalid")?;
     let mut tickers = Vec::new();
 
+    let ticker_selector = selector("table.screener_table td[data-boxover-ticker]")?;
     for cell in document.select(&ticker_selector) {
         let ticker = cell
             .value()

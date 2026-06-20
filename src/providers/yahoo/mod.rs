@@ -23,6 +23,7 @@ const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const COOKIE_FALLBACK_URL: &str = "https://finance.yahoo.com/";
 const CRUMB_FALLBACK_URL: &str = "https://query1.finance.yahoo.com/v1/test/getcrumb";
 const MAX_CONCURRENT_REQUESTS: usize = 1;
+const TIME_FORMAT: &str = "%Y/%m/%d %H:%M";
 
 pub struct YahooClient {
     http: Client,
@@ -99,7 +100,13 @@ impl YahooClient {
             .append_pair("includeAdjustedClose", "false");
         let response: ChartResponse = self.get_json(url, symbol).await?;
         let candles = parse_chart(response, symbol, start, end)?;
-        info!(symbol, candle_count = candles.len(), "fetched Yahoo chart");
+        info!(
+            "Fetched Yahoo chart, symbol={:?}, candles={}, range=[{:?}->{:?}]",
+            symbol,
+            candles.len(),
+            start.format(TIME_FORMAT).to_string(),
+            end.format(TIME_FORMAT).to_string()
+        );
         Ok(candles)
     }
 
