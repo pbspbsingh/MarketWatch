@@ -10,8 +10,8 @@ import {
 } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import StarIcon from "@mui/icons-material/Star";
-import StarBorderIcon from "@mui/icons-material/StarBorder";
+import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
+import BookmarkIcon from "@mui/icons-material/Bookmark";
 import {
   CircularProgress,
   IconButton,
@@ -104,9 +104,9 @@ const TickerRow = memo(function TickerRow({
           }}
         >
           {ticker.is_favourite ? (
-            <StarIcon fontSize="inherit" />
+            <BookmarkIcon fontSize="inherit" />
           ) : (
-            <StarBorderIcon fontSize="inherit" />
+            <BookmarkBorderIcon fontSize="inherit" />
           )}
         </span>
         <span className="ranked-name">{ticker.symbol}</span>

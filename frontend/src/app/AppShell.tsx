@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
+import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
-import StarIcon from "@mui/icons-material/Star";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -19,7 +19,7 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
-  ["Favourites", "/favourites", StarIcon, "yellow"],
+  ["Favourites", "/favourites", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "blue"],
   ["Theme Management", "/theme-management", TuneIcon],
