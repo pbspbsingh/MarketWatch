@@ -33,10 +33,9 @@ export function formatMetric(value: number, key: SortKey) {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
-export function metricColor(value: number, minimum: number, maximum: number, key: SortKey) {
+export function metricColor(value: number, key: SortKey) {
   if (key === "relative_strength") return rsColor(value).fg;
-  if (minimum === maximum) return metricColors[2];
-  return rangedMetricColor(value, minimum, maximum);
+  return performanceColor(value, key);
 }
 
 function rsColor(rs: number) {
@@ -56,15 +55,27 @@ function rsColor(rs: number) {
   return { fg: "rgb(40,210,80)" };
 }
 
-const metricColors = ["#ff3b3b", "#ff7a2f", "#e6c84f", "#9ba5b0", "#45d06f", "#00b83f"];
+const performanceCaps: Record<Exclude<SortKey, "relative_strength">, number> = {
+  week: 0.05,
+  month: 0.1,
+  quarter: 0.2,
+  half_year: 0.3,
+  year: 0.4,
+};
 
-function rangedMetricColor(value: number, minimum: number, maximum: number) {
-  const normalized = (value - minimum) / (maximum - minimum);
-  const index = Math.min(
-    metricColors.length - 1,
-    Math.floor(normalized * metricColors.length),
-  );
-  return metricColors[index];
+function performanceColor(value: number, key: Exclude<SortKey, "relative_strength">) {
+  const cap = performanceCaps[key];
+  if (value < 0) return interpolateColor([255, 126, 126], [180, 30, 30], -value / cap);
+
+  const intensity = Math.min(value / cap, 1);
+  return intensity <= 0.5
+    ? interpolateColor([230, 200, 79], [69, 208, 111], intensity * 2)
+    : interpolateColor([69, 208, 111], [0, 184, 63], (intensity - 0.5) * 2);
+}
+
+function interpolateColor(start: number[], end: number[], amount: number) {
+  const t = Math.min(amount, 1);
+  return `rgb(${start.map((component, index) => Math.round(component + t * (end[index] - component))).join(",")})`;
 }
 
 export function isArrowKeyControl(target: EventTarget | null) {

@@ -115,15 +115,6 @@ export function GroupPanel({
       }),
     [groups, sortSetting],
   );
-  const metricRange = useMemo(() => {
-    const values = groups
-      .map((group) => sortValue(group, sortSetting.key))
-      .filter((value): value is number => value !== undefined);
-    return {
-      minimum: values.length > 0 ? Math.min(...values) : 0,
-      maximum: values.length > 0 ? Math.max(...values) : 0,
-    };
-  }, [groups, sortSetting.key]);
   const highlightedGroupKeys = useMemo(() => {
     if (selectedTickerContext === undefined) return new Set<string>();
     if (mode === "industry") {
@@ -260,12 +251,7 @@ export function GroupPanel({
                     <span
                       className="ranked-metric"
                       style={{
-                        color: metricColor(
-                          metric,
-                          metricRange.minimum,
-                          metricRange.maximum,
-                          sortSetting.key,
-                        ),
+                        color: metricColor(metric, sortSetting.key),
                       }}
                     >
                       {formatMetric(metric, sortSetting.key)}

@@ -151,15 +151,6 @@ export function TickerPanel({
       }),
     [metricsActive, sortSetting, tickers],
   );
-  const metricRange = useMemo(() => {
-    const values = tickers
-      .map((ticker) => tickerSortValue(ticker, sortSetting.key))
-      .filter((value): value is number => value !== undefined);
-    return {
-      minimum: values.length > 0 ? Math.min(...values) : 0,
-      maximum: values.length > 0 ? Math.max(...values) : 0,
-    };
-  }, [sortSetting.key, tickers]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
@@ -387,12 +378,7 @@ export function TickerPanel({
                     <span
                       className="ranked-metric"
                       style={{
-                        color: metricColor(
-                          metric,
-                          metricRange.minimum,
-                          metricRange.maximum,
-                          sortSetting.key,
-                        ),
+                        color: metricColor(metric, sortSetting.key),
                       }}
                     >
                       {formatMetric(metric, sortSetting.key)}
