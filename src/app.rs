@@ -14,6 +14,7 @@ use crate::services::top_stocks::TopStocksService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
+use crate::utils::MarketSchedule;
 use axum::Router;
 #[cfg(not(debug_assertions))]
 use axum::body::Body;
@@ -26,6 +27,7 @@ use axum::response::{IntoResponse, Response};
 use include_dir::{Dir, include_dir};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 use tokio::task::AbortHandle;
 
 #[cfg(not(debug_assertions))]
@@ -42,6 +44,7 @@ pub struct AppState {
     pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
+    pub market_schedule: MarketSchedule,
     pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
@@ -54,6 +57,8 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
     store.fail_interrupted_theme_ai_jobs().await?;
     let nyse_holidays = nyse_calendar::load_holidays(&store, &config.providers).await?;
+    let market_schedule =
+        MarketSchedule::with_holidays(&config.market, Duration::ZERO, nyse_holidays.clone())?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
@@ -106,6 +111,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         details,
         industry_analysis,
         ticker_catalog,
+        market_schedule,
         active_ticker_stream: Arc::new(Mutex::new(None)),
         themes,
         theme_analysis,

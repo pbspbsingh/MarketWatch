@@ -1,6 +1,7 @@
 mod chart;
 mod details;
 mod industries;
+mod market;
 mod themes;
 mod ticker_collections;
 mod tickers;
@@ -15,6 +16,7 @@ pub fn router() -> Router<AppState> {
         .merge(chart::router())
         .merge(details::router())
         .merge(industries::router())
+        .merge(market::router())
         .merge(tickers::router())
         .merge(ticker_collections::router())
         .merge(themes::router())

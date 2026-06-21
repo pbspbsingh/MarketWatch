@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
+import { fetchNextTradingDay } from "../../api/market";
 import { fetchThemeTicker } from "../../api/themes";
 import { fetchFavourites } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
@@ -27,13 +28,6 @@ function initialDownloadButtonPosition(): FloatingPosition {
     }
   }
   return { left: window.innerWidth - 48, top: window.innerHeight - 48 };
-}
-
-function localDateFileName() {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}.csv`;
 }
 
 function csvCell(value: string) {
@@ -99,6 +93,7 @@ export function FavouritesPage() {
     setDownloadProgress(0);
     setError(undefined);
     try {
+      const filename = `${await fetchNextTradingDay()}.csv`;
       const rows: [string, string, string][] = [];
       for (const [index, symbol] of symbols.entries()) {
         const ticker = await fetchThemeTicker(symbol);
@@ -118,7 +113,7 @@ export function FavouritesPage() {
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = localDateFileName();
+      link.download = filename;
       document.body.append(link);
       link.click();
       link.remove();

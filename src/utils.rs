@@ -66,6 +66,20 @@ impl MarketSchedule {
         }
     }
 
+    pub fn next_trading_day_from_now(&self, now: DateTime<Utc>) -> NaiveDate {
+        self.next_trading_day(now.with_timezone(&self.timezone).date_naive())
+    }
+
+    fn next_trading_day(&self, date: NaiveDate) -> NaiveDate {
+        let mut next = date;
+        loop {
+            next += TimeDelta::days(1);
+            if !next.is_weekend() && !self.holidays.contains(&next) {
+                break next;
+            }
+        }
+    }
+
     pub fn previous_trading_days(&self, mut date: NaiveDate, count: usize) -> NaiveDate {
         for _ in 0..count {
             date = self.previous_trading_day(date);
@@ -134,7 +148,7 @@ mod tests {
     use tokio::time::timeout;
 
     #[test]
-    fn previous_trading_day_skips_weekends_and_holidays() {
+    fn trading_day_navigation_skips_weekends_and_holidays() {
         let holiday = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let schedule = MarketSchedule::with_holidays(
             &MarketConfig {
@@ -158,6 +172,10 @@ mod tests {
         assert_eq!(
             schedule.previous_trading_days(NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(), 2),
             NaiveDate::from_ymd_opt(2026, 6, 18).unwrap(),
+        );
+        assert_eq!(
+            schedule.next_trading_day(NaiveDate::from_ymd_opt(2026, 6, 18).unwrap()),
+            NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
         );
     }
 
