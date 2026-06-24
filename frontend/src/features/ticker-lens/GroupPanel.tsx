@@ -8,6 +8,7 @@ import {
 } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import DoneAllIcon from "@mui/icons-material/DoneAll";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,
@@ -158,7 +159,7 @@ export function GroupPanel({
             <ToggleButton value="industry">Industry</ToggleButton>
             <ToggleButton value="theme">Theme</ToggleButton>
           </ToggleButtonGroup>
-          {selectedGroupKeys.size > 0 && (
+          {selectedGroupKeys.size > 0 ? (
             <IconButton
               size="small"
               aria-label={`Unselect ${selectedGroupKeys.size} groups`}
@@ -167,6 +168,20 @@ export function GroupPanel({
               <Badge badgeContent={selectedGroupKeys.size} color="primary">
                 <RemoveDoneIcon fontSize="small" />
               </Badge>
+            </IconButton>
+          ) : (
+            <IconButton
+              size="small"
+              aria-label="Select all groups"
+              onClick={() => {
+                const allKeys = groups.map((group) => group.key);
+                if (mode === "theme") {
+                  allKeys.push(unassignedGroupKey);
+                }
+                setSelectedGroupKeys(new Set(allKeys));
+              }}
+            >
+              <DoneAllIcon fontSize="small" />
             </IconButton>
           )}
         </div>
