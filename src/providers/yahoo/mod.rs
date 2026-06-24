@@ -6,6 +6,7 @@ pub use error::YahooError;
 use crate::config::ProviderConfig;
 use crate::constants::BROWSER_USER_AGENT;
 use crate::models::{CompanyProfile, Exchange};
+use chrono::Timelike;
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
 use reqwest::{Client, StatusCode, Url, header};
@@ -23,7 +24,6 @@ const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const COOKIE_FALLBACK_URL: &str = "https://finance.yahoo.com/";
 const CRUMB_FALLBACK_URL: &str = "https://query1.finance.yahoo.com/v1/test/getcrumb";
 const MAX_CONCURRENT_REQUESTS: usize = 1;
-const TIME_FORMAT: &str = "%Y/%m/%d %H:%M";
 
 pub struct YahooClient {
     http: Client,
@@ -101,11 +101,11 @@ impl YahooClient {
         let response: ChartResponse = self.get_json(url, symbol).await?;
         let candles = parse_chart(response, symbol, start, end)?;
         info!(
-            "Fetched Yahoo chart, symbol={:?}, candles={}, range=[{:?}->{:?}]",
+            "Fetched Yahoo chart, symbol={:?}, candles={}, range=[{}->{}]",
             symbol,
             candles.len(),
-            start.format(TIME_FORMAT).to_string(),
-            end.format(TIME_FORMAT).to_string()
+            format_chart_ts(start),
+            format_chart_ts(end),
         );
         Ok(candles)
     }
@@ -384,6 +384,18 @@ fn api_error(code: String, description: String, symbol: &str) -> YahooError {
         YahooError::Api {
             message: format!("{code}: {description}"),
         }
+    }
+}
+
+fn format_chart_ts(ts: DateTime<Utc>) -> String {
+    const TIME_FORMAT: &str = "%Y/%m/%d %H:%M";
+    const DATE_FORMAT: &str = "%Y/%m/%d";
+
+    let time = ts.time();
+    if time.hour() == 0 && time.minute() == 0 {
+        ts.format(DATE_FORMAT).to_string()
+    } else {
+        ts.format(TIME_FORMAT).to_string()
     }
 }
 
