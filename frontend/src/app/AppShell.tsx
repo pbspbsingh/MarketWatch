@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import BubbleChartIcon from "@mui/icons-material/BubbleChart";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -23,6 +24,7 @@ const destinations = [
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon],
+  ["RRG", "/rrg", BubbleChartIcon],
   ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
 ] as const;
 

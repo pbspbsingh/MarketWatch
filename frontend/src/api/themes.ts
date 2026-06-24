@@ -156,3 +156,28 @@ export const applyThemeSuggestions = (
     method: "POST",
     ...json({ suggestions, source }),
   });
+
+export interface RrgPoint {
+  date: string;
+  rs_ratio: number;
+  rs_momentum: number;
+}
+
+export interface ThemeRrgSeries {
+  theme_id: number;
+  theme_name: string;
+  etf_symbol: string;
+  points: RrgPoint[];
+}
+
+export const fetchThemeRrg = (
+  interval: "daily" | "weekly",
+  lookback: number,
+  tail: number,
+  normalize: boolean,
+  signal?: AbortSignal,
+) =>
+  request<ThemeRrgSeries[]>(
+    `/api/theme-rrg?interval=${encodeURIComponent(interval)}&lookback=${lookback}&tail=${tail}&normalize=${normalize}`,
+    signal ? { signal } : undefined,
+  );

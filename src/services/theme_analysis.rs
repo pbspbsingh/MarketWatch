@@ -1,5 +1,8 @@
 use crate::config::MarketConfig;
-use crate::models::{ThemeRanking, candle_performance, candle_relative_strength};
+use crate::models::{
+    RrgInterval, ThemeRanking, ThemeRrgSeries, aggregate_weekly, candle_performance,
+    candle_relative_strength, compute_rrg_series, normalize_universe,
+};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
@@ -22,6 +25,8 @@ pub struct ThemeAnalysisService {
 pub enum ThemeAnalysisError {
     #[error("theme persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
+    #[error("invalid rrg parameters: {0}")]
+    InvalidInput(String),
 }
 
 impl ThemeAnalysisService {
@@ -98,5 +103,63 @@ impl ThemeAnalysisService {
             }
         }
         Ok(rankings)
+    }
+
+    pub async fn rrg(
+        &self,
+        interval: RrgInterval,
+        lookback: usize,
+        tail: usize,
+        normalize: bool,
+    ) -> Result<Vec<ThemeRrgSeries>, ThemeAnalysisError> {
+        if lookback == 0 {
+            return Err(ThemeAnalysisError::InvalidInput(
+                "lookback must be > 0".into(),
+            ));
+        }
+        let themes = self
+            .store
+            .themes()
+            .await
+            .map_err(ThemeAnalysisError::Persistence)?;
+
+        let mut benchmark = self
+            .yahoo
+            .daily_candles_for_year(&self.benchmark)
+            .await
+            .map_err(|e| ThemeAnalysisError::Persistence(anyhow::anyhow!(e)))?;
+        if interval == RrgInterval::Weekly {
+            benchmark = aggregate_weekly(&benchmark);
+        }
+
+        let mut series = Vec::with_capacity(themes.len());
+        for theme in themes {
+            let mut candles = match self.yahoo.daily_candles_for_year(&theme.etf_symbol).await {
+                Ok(c) => c,
+                Err(error) => {
+                    warn!(theme_id = theme.id, etf_symbol = theme.etf_symbol, %error, "failed to load theme ETF candles for RRG");
+                    continue;
+                }
+            };
+            if interval == RrgInterval::Weekly {
+                candles = aggregate_weekly(&candles);
+            }
+            let mut points = compute_rrg_series(&candles, &benchmark, lookback);
+            if tail > 0 && points.len() > tail {
+                points = points[points.len() - tail..].to_vec();
+            }
+            if !points.is_empty() {
+                series.push(ThemeRrgSeries {
+                    theme_id: theme.id,
+                    theme_name: theme.name,
+                    etf_symbol: theme.etf_symbol,
+                    points,
+                });
+            }
+        }
+        if normalize {
+            normalize_universe(&mut series);
+        }
+        Ok(series)
     }
 }

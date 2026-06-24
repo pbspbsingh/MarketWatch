@@ -1,7 +1,7 @@
 use crate::app::AppState;
-use crate::models::{AssignmentSource, ThemeSuggestion};
+use crate::models::{AssignmentSource, RrgInterval, ThemeSuggestion};
 use crate::services::themes::{AiCapability, ThemeServiceError};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -48,6 +48,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/themes", get(themes).post(create))
         .route("/theme-rankings", get(theme_rankings))
+        .route("/theme-rrg", get(theme_rrg))
         .route("/themes/{id}", put(update).delete(remove))
         .route("/theme-tickers", get(tickers))
         .route("/theme-industries", get(filter_industries))
@@ -80,6 +81,48 @@ async fn theme_rankings(
         .map(Json)
         .map_err(|error| {
             error!(%error, "failed to load theme rankings");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+#[derive(Deserialize)]
+struct RrgQuery {
+    #[serde(default = "default_interval")]
+    interval: RrgInterval,
+    #[serde(default = "default_lookback")]
+    lookback: usize,
+    #[serde(default = "default_tail")]
+    tail: usize,
+    #[serde(default = "default_normalize")]
+    normalize: bool,
+}
+
+fn default_interval() -> RrgInterval {
+    RrgInterval::Daily
+}
+fn default_lookback() -> usize {
+    10
+}
+fn default_tail() -> usize {
+    10
+}
+fn default_normalize() -> bool {
+    false
+}
+
+async fn theme_rrg(
+    State(state): State<AppState>,
+    Query(query): Query<RrgQuery>,
+) -> Result<Json<Vec<crate::models::ThemeRrgSeries>>, StatusCode> {
+    let lookback = query.lookback.clamp(2, 200);
+    let tail = query.tail.clamp(1, 100);
+    state
+        .theme_analysis
+        .rrg(query.interval, lookback, tail, query.normalize)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            error!(%error, "failed to compute theme RRG");
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }

@@ -22,6 +22,9 @@ const ThemeManagementPage = lazy(() =>
     default: ThemeManagementPage,
   })),
 );
+const RrgPage = lazy(() =>
+  import("../features/rrg/RrgPage").then(({ RrgPage }) => ({ default: RrgPage })),
+);
 const TopStocksPage = lazy(() =>
   import("../features/top-stocks/TopStocksPage").then(({ TopStocksPage }) => ({
     default: TopStocksPage,
@@ -38,6 +41,7 @@ export function App() {
         <Route path="/top-stocks" element={<Page><TopStocksPage /></Page>} />
         <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />
+        <Route path="/rrg" element={<Page><RrgPage /></Page>} />
         <Route path="/trend-analyzer" element={<TrendAnalyzerPlaceholder />} />
       </Route>
     </Routes>
