@@ -225,8 +225,11 @@ export function TickerLens({
         onFavouriteChange={onFavouriteChange}
       />
       <ChartPanel
+        mode={groupMode}
+        groupKeys={selectedGroupKeys}
         industryKeys={industryKeys}
         selectedTicker={selectedTicker}
+        symbols={bounded ? boundedSymbols : undefined}
         onSelectedTickerContext={handleSelectedTickerContext}
       />
       <Toast

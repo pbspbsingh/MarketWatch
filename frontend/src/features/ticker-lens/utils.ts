@@ -122,7 +122,14 @@ export function searchIncludesUnassigned(searchParams: URLSearchParams) {
 }
 
 export function industryMarketWatchUrl(industryKey: string) {
-  const params = new URLSearchParams({ mode: "industry", groups: industryKey });
+  return industriesMarketWatchUrl([industryKey]);
+}
+
+export function industriesMarketWatchUrl(industryKeys: string[]) {
+  const params = new URLSearchParams({
+    mode: "industry",
+    groups: industryKeys.join(","),
+  });
   return `/market-watch?${params.toString()}`;
 }
 
@@ -134,6 +141,18 @@ export function themesMarketWatchUrl(themeNames: string[]) {
   const params = new URLSearchParams({ mode: "theme" });
   for (const themeName of themeNames) {
     params.append("themes", themeName);
+  }
+  return `/market-watch?${params.toString()}`;
+}
+
+export function themeGroupsMarketWatchUrl(groups: Array<{ key: string; name: string }>) {
+  const params = new URLSearchParams({ mode: "theme" });
+  for (const group of groups) {
+    if (group.key === "unassigned") {
+      params.set("unassigned", "1");
+    } else {
+      params.append("themes", group.name);
+    }
   }
   return `/market-watch?${params.toString()}`;
 }

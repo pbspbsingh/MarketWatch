@@ -7,6 +7,17 @@ export interface TickerRanking {
   relative_strength: number | null;
 }
 
+export interface TickerGroupSummaryItem {
+  key: string;
+  name: string;
+  ticker_count: number;
+}
+
+export interface TickerGroupSummary {
+  selected_groups: TickerGroupSummaryItem[];
+  related_groups: TickerGroupSummaryItem[];
+}
+
 export type TickerGroupSelection =
   | { group_type: "industry"; keys: string[] }
   | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
@@ -99,6 +110,28 @@ export async function fetchTickerRanking(
     throw new Error(`Failed to load ticker ranking: HTTP ${response.status}`);
   }
   return response.json() as Promise<TickerRanking>;
+}
+
+export async function fetchTickerGroupSummary(
+  mode: "industry" | "theme",
+  groupKeys: string[],
+  symbols?: string[],
+  signal?: AbortSignal,
+): Promise<TickerGroupSummary> {
+  const response = await fetch("/api/ticker-group-summary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode,
+      group_keys: groupKeys,
+      symbols,
+    }),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load ticker group summary: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<TickerGroupSummary>;
 }
 
 export function streamTickerSymbols(

@@ -1052,6 +1052,130 @@ body,
   overflow: hidden;
 }
 
+.group-summary {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.5rem;
+  overflow: auto;
+  align-content: start;
+  background: #111418;
+}
+
+.group-summary-section {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(100vh - 5rem);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background: #151a20;
+}
+
+.group-summary-section header {
+  display: flex;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: #20262e;
+}
+
+.group-summary-section h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.group-summary-section header p {
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
+.group-summary-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0.35rem;
+  overflow: auto;
+  list-style: none;
+}
+
+.group-summary-list li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem;
+  border-radius: 0.2rem;
+  align-items: center;
+  transition: background-color 120ms ease;
+}
+
+.group-summary-list li:hover,
+.group-summary-list li:focus-within {
+  background: #1d2530;
+}
+
+.group-summary-list span,
+.group-summary-list a {
+  overflow: hidden;
+  color: #d6dde6;
+  font-size: 0.78rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-summary-list a:hover,
+.group-summary-list a:focus-visible {
+  color: #58a6ff;
+  text-decoration: underline;
+}
+
+.group-summary-list strong {
+  min-width: 1.8rem;
+  padding: 0.075rem 0.3rem;
+  border-radius: 999rem;
+  color: #f0f4f8;
+  background: #2f3b4a;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.group-summary-empty {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.72rem !important;
+}
+
+.group-summary-all-link {
+  display: block;
+  flex-shrink: 0;
+  padding: 0.4rem 0.6rem;
+  border-top: 0.0625rem solid #252d36;
+  color: #58a6ff;
+  background: #151a20;
+  font-size: 0.68rem;
+  font-weight: 650;
+  text-align: right;
+  text-decoration: none;
+}
+
+.group-summary-all-link:hover,
+.group-summary-all-link:focus-visible {
+  color: #79c0ff;
+  background: #1d2530;
+  text-decoration: underline;
+}
+
 .tradingview-chart {
   min-width: 0;
   min-height: 0;

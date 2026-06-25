@@ -7,6 +7,7 @@ use axum::response::Response;
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -54,6 +55,33 @@ struct TickerRankingRequest {
     symbol: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GroupSummaryMode {
+    Industry,
+    Theme,
+}
+
+#[derive(Deserialize)]
+struct GroupSummaryRequest {
+    mode: GroupSummaryMode,
+    group_keys: Vec<String>,
+    symbols: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct GroupSummary {
+    selected_groups: Vec<GroupSummaryItem>,
+    related_groups: Vec<GroupSummaryItem>,
+}
+
+#[derive(Clone, Serialize)]
+struct GroupSummaryItem {
+    key: String,
+    name: String,
+    ticker_count: usize,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum TickerStreamEvent {
@@ -78,6 +106,7 @@ pub fn router() -> Router<AppState> {
         .route("/tickers", post(tickers))
         .route("/ticker-ranking", post(ticker_ranking))
         .route("/ticker-membership", post(membership))
+        .route("/ticker-group-summary", post(group_summary))
 }
 
 async fn tickers(State(state): State<AppState>, Json(request): Json<TickerRequest>) -> Response {
@@ -230,6 +259,218 @@ async fn ticker_ranking(
             error!(symbol = request.symbol, %error, "failed to load ticker ranking");
             StatusCode::INTERNAL_SERVER_ERROR
         })
+}
+
+async fn group_summary(
+    State(state): State<AppState>,
+    Json(request): Json<GroupSummaryRequest>,
+) -> Result<Json<GroupSummary>, StatusCode> {
+    let symbols = summary_symbols(&state, &request).await.map_err(|error| {
+        error!(%error, "failed to resolve ticker group summary symbols");
+        StatusCode::BAD_REQUEST
+    })?;
+    let mut summary = match request.mode {
+        GroupSummaryMode::Industry => industry_summary(&state, &symbols).await,
+        GroupSummaryMode::Theme => theme_summary(&state, &symbols).await,
+    }
+    .map_err(|error| {
+        error!(%error, "failed to load ticker group summary");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    if !request.group_keys.is_empty() {
+        let requested_keys = request.group_keys.iter().collect::<HashSet<_>>();
+        summary
+            .selected_groups
+            .retain(|group| requested_keys.contains(&group.key));
+    }
+    Ok(Json(summary))
+}
+
+async fn summary_symbols(
+    state: &AppState,
+    request: &GroupSummaryRequest,
+) -> anyhow::Result<Vec<String>> {
+    let base_symbols = match &request.symbols {
+        Some(symbols) => unique_sorted(symbols.iter().cloned()),
+        None => state.ticker_catalog.industry_tickers(&[]).await?,
+    };
+    if request.group_keys.is_empty() {
+        return Ok(base_symbols);
+    }
+    if request.symbols.is_some() {
+        return selected_base_symbols(state, request, base_symbols).await;
+    }
+
+    let selected_symbols = match request.mode {
+        GroupSummaryMode::Industry => {
+            state
+                .ticker_catalog
+                .industry_tickers(&request.group_keys)
+                .await?
+        }
+        GroupSummaryMode::Theme => {
+            let theme_ids = request
+                .group_keys
+                .iter()
+                .filter(|key| key.as_str() != "unassigned")
+                .map(|key| key.parse::<i64>())
+                .collect::<Result<Vec<_>, _>>()?;
+            state
+                .ticker_catalog
+                .theme_tickers(
+                    &theme_ids,
+                    request.group_keys.iter().any(|key| key == "unassigned"),
+                )
+                .await?
+        }
+    };
+    let selected_symbols = selected_symbols.into_iter().collect::<HashSet<_>>();
+    Ok(base_symbols
+        .into_iter()
+        .filter(|symbol| selected_symbols.contains(symbol))
+        .collect())
+}
+
+async fn selected_base_symbols(
+    state: &AppState,
+    request: &GroupSummaryRequest,
+    base_symbols: Vec<String>,
+) -> anyhow::Result<Vec<String>> {
+    let base_symbol_set = base_symbols.iter().cloned().collect::<HashSet<_>>();
+    let selected_symbol_set = match request.mode {
+        GroupSummaryMode::Industry => state
+            .ticker_catalog
+            .industries_for_symbols(&base_symbols)
+            .await?
+            .into_iter()
+            .filter(|membership| request.group_keys.contains(&membership.industry_key))
+            .map(|membership| membership.symbol)
+            .collect::<HashSet<_>>(),
+        GroupSummaryMode::Theme => {
+            let selected_theme_ids = request
+                .group_keys
+                .iter()
+                .filter(|key| key.as_str() != "unassigned")
+                .map(|key| key.parse::<i64>())
+                .collect::<Result<HashSet<_>, _>>()?;
+            let include_unassigned = request.group_keys.iter().any(|key| key == "unassigned");
+            let memberships = state
+                .ticker_catalog
+                .themes_for_symbols(&base_symbols)
+                .await?;
+            let assigned_symbols = memberships
+                .iter()
+                .map(|membership| membership.symbol.clone())
+                .collect::<HashSet<_>>();
+            let mut symbols = memberships
+                .into_iter()
+                .filter(|membership| selected_theme_ids.contains(&membership.theme_id))
+                .map(|membership| membership.symbol)
+                .collect::<HashSet<_>>();
+            if include_unassigned {
+                symbols.extend(
+                    base_symbol_set
+                        .iter()
+                        .filter(|symbol| !assigned_symbols.contains(*symbol))
+                        .cloned(),
+                );
+            }
+            symbols
+        }
+    };
+    Ok(base_symbols
+        .into_iter()
+        .filter(|symbol| selected_symbol_set.contains(symbol))
+        .collect())
+}
+
+async fn industry_summary(state: &AppState, symbols: &[String]) -> anyhow::Result<GroupSummary> {
+    let industries = state.ticker_catalog.industries_for_symbols(symbols).await?;
+    let themes = state.ticker_catalog.themes_for_symbols(symbols).await?;
+    Ok(GroupSummary {
+        selected_groups: industry_counts(industries),
+        related_groups: theme_counts(symbols, themes),
+    })
+}
+
+async fn theme_summary(state: &AppState, symbols: &[String]) -> anyhow::Result<GroupSummary> {
+    let themes = state.ticker_catalog.themes_for_symbols(symbols).await?;
+    let industries = state.ticker_catalog.industries_for_symbols(symbols).await?;
+    Ok(GroupSummary {
+        selected_groups: theme_counts(symbols, themes),
+        related_groups: industry_counts(industries),
+    })
+}
+
+fn industry_counts(
+    memberships: Vec<crate::store::TickerIndustryMembership>,
+) -> Vec<GroupSummaryItem> {
+    let mut counts = HashMap::<String, (String, HashSet<String>)>::new();
+    for membership in memberships {
+        counts
+            .entry(membership.industry_key)
+            .or_insert((membership.industry_name, HashSet::new()))
+            .1
+            .insert(membership.symbol);
+    }
+    sorted_summary_items(counts)
+}
+
+fn theme_counts(
+    symbols: &[String],
+    memberships: Vec<crate::store::TickerThemeMembership>,
+) -> Vec<GroupSummaryItem> {
+    let mut assigned_symbols = HashSet::new();
+    let mut counts = HashMap::<String, (String, HashSet<String>)>::new();
+    for membership in memberships {
+        assigned_symbols.insert(membership.symbol.clone());
+        counts
+            .entry(membership.theme_id.to_string())
+            .or_insert((membership.theme_name, HashSet::new()))
+            .1
+            .insert(membership.symbol);
+    }
+    let unassigned = symbols
+        .iter()
+        .filter(|symbol| !assigned_symbols.contains(*symbol))
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !unassigned.is_empty() {
+        counts.insert(
+            "unassigned".to_owned(),
+            ("Unassigned".to_owned(), unassigned),
+        );
+    }
+    sorted_summary_items(counts)
+}
+
+fn sorted_summary_items(
+    counts: HashMap<String, (String, HashSet<String>)>,
+) -> Vec<GroupSummaryItem> {
+    let mut items = counts
+        .into_iter()
+        .map(|(key, (name, symbols))| GroupSummaryItem {
+            key,
+            name,
+            ticker_count: symbols.len(),
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        right
+            .ticker_count
+            .cmp(&left.ticker_count)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    items
+}
+
+fn unique_sorted(symbols: impl Iterator<Item = String>) -> Vec<String> {
+    let mut symbols = symbols
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    symbols.sort();
+    symbols
 }
 
 fn event_bytes(event: TickerStreamEvent) -> Bytes {
