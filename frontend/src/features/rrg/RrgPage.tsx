@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Button,
   Checkbox,
   CircularProgress,
   FormControlLabel,
+  IconButton,
   Slider,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { fetchThemeRrg, type ThemeRrgSeries, type RrgPoint } from "../../api/themes";
 
 type Quadrant = "leading" | "weakening" | "lagging" | "improving";
@@ -196,7 +199,6 @@ export function RrgPage() {
   const rsMax = rsValues.length ? Math.ceil(Math.max(...rsValues) * 2) / 2 : 120;
   const rsSliderMin = Math.min(80, rsMin);
   const rsSliderMax = Math.max(120, rsMax);
-
   useEffect(() => {
     if (minRs !== null) {
       if (minRs < rsSliderMin || minRs > rsSliderMax) setMinRs(null);
@@ -458,111 +460,96 @@ export function RrgPage() {
 
   return (
     <section className="theme-management-page">
-      <style>{`
-        #rrg-tooltip {
-          position: absolute; pointer-events: none;
-          background: rgba(20,20,20,0.92); border: 1px solid #3a3a3a;
-          border-radius: 6px; padding: 8px 12px; font-size: 12px;
-          color: #e0e0e0; display: none; white-space: nowrap; z-index: 10; line-height: 1.7;
-        }
-        #rrg-tooltip .tt-name { font-weight: 700; color: #fff; font-size: 13px; }
-        #rrg-tooltip .tt-etf  { font-size: 10px; color: #666; }
-        #rrg-tooltip .tt-quad { font-size: 11px; margin-top: 2px; }
-        #rrg-tooltip .tt-row  { display: flex; justify-content: space-between; gap: 16px; }
-        #rrg-tooltip .tt-val  { color: #4a9eff; font-weight: 600; }
-        .rrg-canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
-        .rrg-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
-      `}</style>
       <header className="theme-management-header">
         <Typography component="h1">Relative Rotation Graph</Typography>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto", flexWrap: "wrap" }}>
+        <div className="rrg-controls">
           <ToggleButtonGroup value={interval} exclusive size="small" onChange={(_, v) => v && setInterval(v)}>
-            <ToggleButton value="daily" style={{ fontSize: "0.65rem", padding: "0.2rem 0.6rem" }}>Daily</ToggleButton>
-            <ToggleButton value="weekly" style={{ fontSize: "0.65rem", padding: "0.2rem 0.6rem" }}>Weekly</ToggleButton>
+            <ToggleButton value="daily">Daily</ToggleButton>
+            <ToggleButton value="weekly">Weekly</ToggleButton>
           </ToggleButtonGroup>
-          <div style={{ width: 120 }}>
-            <Typography variant="caption" sx={{ fontSize: "0.6rem", textTransform: "uppercase", color: "#8f9aa7" }}>
+          <div className="rrg-slider-control rrg-slider-control-wide">
+            <Typography variant="caption">
               Lookback: {lookback}
             </Typography>
-            <Slider min={lookbackMin} max={lookbackMax} value={lookback} onChange={(_, v) => setLookback(v as number)} size="small" sx={{ padding: "6px 0" }} />
+            <Slider min={lookbackMin} max={lookbackMax} value={lookback} onChange={(_, v) => setLookback(v as number)} size="small" />
           </div>
-          <div style={{ width: 100 }}>
-            <Typography variant="caption" sx={{ fontSize: "0.6rem", textTransform: "uppercase", color: "#8f9aa7" }}>
+          <div className="rrg-slider-control">
+            <Typography variant="caption">
               Tail: {tail}
             </Typography>
-            <Slider min={1} max={50} value={tail} onChange={(_, v) => setTail(v as number)} size="small" sx={{ padding: "6px 0" }} />
+            <Slider min={1} max={50} value={tail} onChange={(_, v) => setTail(v as number)} size="small" />
           </div>
-          <div style={{ width: 110 }}>
-            <Typography variant="caption" sx={{ fontSize: "0.6rem", textTransform: "uppercase", color: "#8f9aa7" }}>
+          <div className="rrg-slider-control rrg-slider-control-rs">
+            <Typography variant="caption">
               RS ≥ {minRs === null ? "—" : minRs.toFixed(1)}
             </Typography>
             <Slider
               min={rsSliderMin} max={rsSliderMax} step={0.5}
               value={minRs ?? rsSliderMin}
               onChange={(_, v) => setMinRs(v as number)}
-              size="small" sx={{ padding: "6px 0" }}
+              size="small"
             />
           </div>
           <FormControlLabel
+            className="rrg-normalize-control"
             control={
               <Checkbox
                 size="small"
                 checked={normalize}
                 onChange={(e) => setNormalize(e.target.checked)}
-                sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }}
               />
             }
-            label={<span style={{ fontSize: "0.65rem", color: "#aeb7c2" }}>Normalize</span>}
-            sx={{ margin: 0, marginRight: 1 }}
+            label="Normalize"
           />
-          <div style={{ display: "flex", gap: "0.3rem", alignItems: "center" }}>
+          <div className="rrg-quadrant-controls">
             {(["leading", "improving", "lagging", "weakening"] as Quadrant[]).map((q) => {
               const active = quadrants[q];
               return (
-                <button
+                <ToggleButton
                   key={q}
+                  className="rrg-quadrant-toggle"
+                  value={q}
+                  selected={active}
                   onClick={() => setQuadrants({ ...quadrants, [q]: !active })}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: "4px",
-                    padding: "3px 7px", border: "1px solid #333", borderRadius: "4px",
-                    background: "#1a1a1a", color: active ? "#ccc" : "#777",
-                    fontSize: "11px", fontWeight: 600, cursor: "pointer",
-                    opacity: active ? 1 : 0.35,
-                    textDecoration: active ? "none" : "line-through",
-                  }}
                 >
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: QUADRANTS[q].dot, flexShrink: 0 }} />
+                  <span
+                    className="rrg-quadrant-dot"
+                    style={{ background: QUADRANTS[q].dot }}
+                  />
                   {q.charAt(0).toUpperCase() + q.slice(1)}
-                </button>
+                </ToggleButton>
               );
             })}
-            <button
+            <IconButton
+              className="rrg-reset-button"
+              size="small"
               onClick={() => { setMinRs(null); setSelectedId(null); }}
-              style={{
-                padding: "3px 8px", border: "1px solid #3a3a3a", background: "transparent",
-                color: "#666", fontSize: "11px", cursor: "pointer", borderRadius: "3px",
-              }}
+              aria-label="Reset RRG filters"
               title="Reset filters"
-            >↺</button>
+            >
+              <RestartAltIcon fontSize="small" />
+            </IconButton>
           </div>
         </div>
       </header>
 
-      <div className="theme-management-body" style={{ gridTemplateColumns: "20rem minmax(0, 1fr)" }}>
+      <div className="theme-management-body rrg-body">
         <aside className="theme-list-pane">
           <div className="theme-pane-header">
             <Typography component="h2">Themes ({items.length}/{series.length})</Typography>
-            <button
+            <Button
+              size="small"
+              variant="text"
               onClick={toggleAll}
-              style={{ background: "transparent", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: "0.65rem" }}
             >
               {allVisible ? "None" : "All"}
-            </button>
+            </Button>
           </div>
-          <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
+          <div className="rrg-theme-list">
             {series.map((s) => (
               <FormControlLabel
                 key={s.theme_id}
+                className="rrg-theme-row"
                 control={
                   <Checkbox
                     size="small"
@@ -571,36 +558,28 @@ export function RrgPage() {
                   />
                 }
                 label={
-                  <span style={{ fontSize: "0.72rem" }}>
-                    {s.theme_name} <span style={{ color: "#8f9aa7", fontSize: "0.625rem" }}>· {s.etf_symbol}</span>
+                  <span className="rrg-theme-label">
+                    {s.theme_name} <span>· {s.etf_symbol}</span>
                   </span>
                 }
-                sx={{ display: "flex", margin: 0, padding: "0.15rem 0" }}
               />
             ))}
           </div>
         </aside>
 
-        <main style={{ padding: "0.75rem", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
+        <main className="rrg-main">
           <div className="rrg-canvas-wrap" ref={wrapRef}>
             <canvas ref={canvasRef} />
             <div id="rrg-tooltip" ref={tooltipRef} />
             {loading && (
-              <div style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                gap: "0.5rem", background: "rgba(17,20,24,0.7)", zIndex: 5,
-              }}>
+              <div className="rrg-overlay">
                 <CircularProgress size="1rem" />
-                <Typography color="text.secondary" sx={{ fontSize: "0.75rem" }}>Loading RRG</Typography>
+                <Typography color="text.secondary">Loading RRG</Typography>
               </div>
             )}
             {error && (
-              <div style={{
-                position: "absolute", top: "0.5rem", left: "0.5rem", right: "0.5rem",
-                zIndex: 5,
-              }}>
-                <Typography color="error" sx={{ fontSize: "0.75rem" }}>{error}</Typography>
+              <div className="rrg-error">
+                <Typography color="error">{error}</Typography>
               </div>
             )}
           </div>

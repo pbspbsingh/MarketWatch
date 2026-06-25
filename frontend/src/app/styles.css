@@ -138,10 +138,125 @@ body,
   font-size: 0.7rem;
 }
 
+.rrg-controls {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.rrg-controls .MuiToggleButton-root {
+  min-height: 1.55rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.rrg-slider-control {
+  width: 6.25rem;
+}
+
+.rrg-slider-control-wide {
+  width: 7.5rem;
+}
+
+.rrg-slider-control-rs {
+  width: 6.875rem;
+}
+
+.rrg-slider-control .MuiTypography-root {
+  color: #8f9aa7;
+  font-size: 0.6rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.rrg-slider-control .MuiSlider-root {
+  padding: 0.375rem 0;
+}
+
+.rrg-normalize-control {
+  margin: 0 !important;
+}
+
+.rrg-normalize-control .MuiCheckbox-root {
+  padding: 0.125rem;
+  color: #8f9aa7;
+}
+
+.rrg-normalize-control .MuiCheckbox-root.Mui-checked {
+  color: #58a6ff;
+}
+
+.rrg-normalize-control .MuiFormControlLabel-label {
+  color: #aeb7c2;
+  font-size: 0.65rem;
+}
+
+.rrg-quadrant-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.rrg-quadrant-toggle.MuiToggleButton-root {
+  display: inline-flex;
+  min-height: 1.45rem;
+  padding: 0.18rem 0.45rem;
+  border-color: #343b45;
+  border-radius: 0.25rem !important;
+  color: #777;
+  background: #151a20;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  opacity: 0.38;
+  text-transform: none;
+}
+
+.rrg-quadrant-toggle.Mui-selected {
+  color: #d6dde6;
+  background: #1b222a;
+  opacity: 1;
+}
+
+.rrg-quadrant-toggle.Mui-selected:hover,
+.rrg-quadrant-toggle:hover {
+  background: #253140;
+}
+
+.rrg-quadrant-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999rem;
+  flex-shrink: 0;
+}
+
+.rrg-reset-button {
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0.125rem !important;
+  border: 0.0625rem solid #343b45 !important;
+  border-radius: 0.25rem !important;
+  color: #8f9aa7 !important;
+}
+
+.rrg-reset-button:hover,
+.rrg-reset-button:focus-visible {
+  color: #f0f4f8 !important;
+  background: #253140 !important;
+}
+
 .theme-management-body {
   display: grid;
   min-height: 0;
   flex: 1;
+  grid-template-columns: 20rem minmax(0, 1fr);
+}
+
+.rrg-body {
   grid-template-columns: 20rem minmax(0, 1fr);
 }
 
@@ -153,6 +268,125 @@ body,
   background: #151a20;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.rrg-theme-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.rrg-theme-row {
+  display: flex !important;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0.15rem 0;
+}
+
+.rrg-theme-row .MuiCheckbox-root {
+  padding: 0.25rem;
+}
+
+.rrg-theme-label {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rrg-theme-label span {
+  color: #8f9aa7;
+  font-size: 0.625rem;
+}
+
+.rrg-main {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.75rem;
+  position: relative;
+  flex-direction: column;
+}
+
+.rrg-canvas-wrap {
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  flex: 1;
+}
+
+.rrg-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#rrg-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  color: #d6dde6;
+  background: rgb(21 26 32 / 94%);
+  font-size: 0.72rem;
+  line-height: 1.7;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#rrg-tooltip .tt-name {
+  color: #f0f4f8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+#rrg-tooltip .tt-etf {
+  color: #8f9aa7;
+  font-size: 0.62rem;
+}
+
+#rrg-tooltip .tt-quad {
+  margin-top: 0.125rem;
+  font-size: 0.68rem;
+}
+
+#rrg-tooltip .tt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+#rrg-tooltip .tt-val {
+  color: #58a6ff;
+  font-weight: 650;
+}
+
+.rrg-overlay {
+  display: flex;
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgb(17 20 24 / 70%);
+}
+
+.rrg-overlay p,
+.rrg-error p {
+  font-size: 0.75rem;
+}
+
+.rrg-error {
+  position: absolute;
+  z-index: 5;
+  top: 0.5rem;
+  right: 0.5rem;
+  left: 0.5rem;
 }
 
 .theme-pane-header,
