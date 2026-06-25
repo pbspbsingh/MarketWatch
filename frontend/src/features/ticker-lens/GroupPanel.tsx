@@ -9,6 +9,7 @@ import {
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
+import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,
@@ -74,10 +75,15 @@ export function GroupPanel({
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
+  const [exploredGroupKeys, setExploredGroupKeys] = useState(() => new Set<string>());
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
+
+  useEffect(() => {
+    setExploredGroupKeys(new Set());
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "theme") return;
@@ -143,6 +149,15 @@ export function GroupPanel({
     groupElements.current.get(highlightedKey)?.scrollIntoView({ block: "nearest" });
   }, [highlightedGroupKeys, sortedGroups]);
 
+  const markExplored = (groupKey: string) => {
+    setExploredGroupKeys((current) => {
+      const next = new Set(current);
+      const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
+      keys.forEach((key) => next.add(key));
+      return next;
+    });
+  };
+
   return (
     <section className="workspace-panel industries-panel">
       <header className="panel-header panel-list-header">
@@ -184,6 +199,16 @@ export function GroupPanel({
               <DoneAllIcon fontSize="small" />
             </IconButton>
           )}
+          <IconButton
+            size="small"
+            aria-label={`Clear ${exploredGroupKeys.size} explored groups`}
+            disabled={exploredGroupKeys.size === 0}
+            onClick={() => setExploredGroupKeys(new Set())}
+          >
+            <Badge badgeContent={exploredGroupKeys.size} color="secondary">
+              <RemoveCircleOutlineIcon fontSize="small" />
+            </Badge>
+          </IconButton>
         </div>
         <div className="metric-sort-controls">
           <Select
@@ -239,7 +264,13 @@ export function GroupPanel({
             return (
               <li key={group.key}>
                 <button
-                  className={`ranked-list-item${highlighted ? " ranked-list-item-context" : ""}`}
+                  className={[
+                    "ranked-list-item",
+                    highlighted ? "ranked-list-item-context" : "",
+                    exploredGroupKeys.has(group.key) ? "ranked-list-item-explored" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   type="button"
                   ref={(element) => {
                     if (element === null) groupElements.current.delete(group.key);
@@ -254,6 +285,10 @@ export function GroupPanel({
                       return next;
                     })
                   }
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    markExplored(group.key);
+                  }}
                 >
                   <span
                     className="ranked-name"
@@ -280,11 +315,17 @@ export function GroupPanel({
             !groups.some((group) => group.key === unassignedGroupKey) && (
             <li className="unassigned-group">
               <button
-                className={`ranked-list-item${
+                className={[
+                  "ranked-list-item",
                   highlightedGroupKeys.has(unassignedGroupKey)
-                    ? " ranked-list-item-context"
-                    : ""
-                }`}
+                    ? "ranked-list-item-context"
+                    : "",
+                  exploredGroupKeys.has(unassignedGroupKey)
+                    ? "ranked-list-item-explored"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 type="button"
                 ref={(element) => {
                   if (element === null) groupElements.current.delete(unassignedGroupKey);
@@ -299,6 +340,10 @@ export function GroupPanel({
                     return next;
                   })
                 }
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  markExplored(unassignedGroupKey);
+                }}
               >
                 <span
                   className="ranked-name"

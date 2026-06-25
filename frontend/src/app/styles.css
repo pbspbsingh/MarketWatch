@@ -706,6 +706,16 @@ body,
     #253140;
 }
 
+.ranked-list-item-explored {
+  opacity: 0.38;
+}
+
+.ranked-list-item-explored:hover,
+.ranked-list-item-explored:focus-visible,
+.ranked-list-item-explored[aria-pressed="true"] {
+  opacity: 0.62;
+}
+
 .ranked-list-item:focus-visible {
   outline: 0.0625rem solid #58a6ff;
   outline-offset: -0.0625rem;
