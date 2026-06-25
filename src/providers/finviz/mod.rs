@@ -297,7 +297,7 @@ fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
 
 fn parse_ticker_industry(html: &str) -> anyhow::Result<IndustryIdentity> {
     let document = Html::parse_document(html);
-    let industry_selector = selector(".quote-links a[href*=\"f=ind_\"]")?;
+    let industry_selector = selector(r#".quote-header_meta a[href*="f=ind_"]"#)?;
     let link = document
         .select(&industry_selector)
         .next()
