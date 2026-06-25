@@ -643,42 +643,54 @@ export function RrgPage() {
             )}
           </div>
 
-          <div className="rrg-right-section">
+          <div className="rrg-right-section" style={{ flex: 1, minHeight: 0 }}>
             <h3>Explored ({exploredCount})</h3>
             {exploredThemes.length === 0 ? (
               <span style={{ fontSize: "0.7rem", color: "#8f9aa7" }}>None yet.</span>
             ) : (
-              <>
-                <div className="rrg-mini-list">
-                  {exploredThemes.map(t => (
-                    <div key={t.theme_id} className="rrg-mini-row">
-                      <span style={{ flex: 1 }}>{t.theme_name}</span>
-                      <button onClick={() => markExplored([t.theme_id], false)} title="Unexplore">↺</button>
-                    </div>
-                  ))}
-                </div>
-                <Button size="small" onClick={() => setExploredIds(new Set())}
-                  sx={{ fontSize: "0.68rem", color: "#8f9aa7" }}>
-                  Clear all explored
-                </Button>
-              </>
+              <div className="rrg-mini-list" style={{ maxHeight: "none", flex: 1 }}>
+                {exploredThemes.map(t => (
+                  <div key={t.theme_id} className="rrg-mini-row">
+                    <span style={{ flex: 1 }}>{t.theme_name}</span>
+                    <button onClick={() => markExplored([t.theme_id], false)} title="Unexplore">↺</button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
-          <div className="rrg-right-section">
-            <h3>Filter</h3>
-            <FormControlLabel
-              control={
-                <Checkbox size="small" checked={exploreFilter === "unexplored"}
-                  onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
-                  sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }} />
-              }
-              label={<span style={{ fontSize: "0.7rem" }}>Hide explored</span>}
-              sx={{ margin: 0 }}
-            />
-            <span style={{ fontSize: "0.65rem", color: "#8f9aa7" }}>
-              {items.length} / {totalCount} visible
-            </span>
+          <div className="rrg-right-section" style={{ marginTop: "auto" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <h3>Filter</h3>
+              <span style={{ fontSize: "0.62rem", color: "#8f9aa7" }}>
+                {items.length}/{totalCount}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <FormControlLabel
+                control={
+                  <Checkbox size="small" checked={exploreFilter === "unexplored"}
+                    onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
+                    sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }} />
+                }
+                label={<span style={{ fontSize: "0.7rem" }}>Hide explored</span>}
+                sx={{ margin: 0 }}
+              />
+              <button
+                onClick={() => setExploredIds(new Set())}
+                disabled={exploredCount === 0}
+                style={{
+                  background: "transparent", border: "none",
+                  color: exploredCount === 0 ? "#444" : "#8f9aa7",
+                  opacity: exploredCount === 0 ? 0.4 : 1,
+                  fontSize: "0.62rem", cursor: exploredCount === 0 ? "default" : "pointer",
+                  padding: "2px 4px",
+                }}
+                title="Clear all explored"
+              >
+                🗑 Clear
+              </button>
+            </div>
           </div>
         </aside>
       </div>
