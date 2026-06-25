@@ -10,6 +10,10 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import CloseIcon from "@mui/icons-material/Close";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
 import { themesMarketWatchUrl } from "../ticker-lens/utils";
@@ -22,6 +26,7 @@ const QUADRANTS = {
   lagging:    { label: "Lagging",    color: "rgba(220,50,50,0.09)",  dot: "#e74c3c", text: "#e74c3c" },
   improving:  { label: "Improving",  color: "rgba(74,158,255,0.09)", dot: "#4a9eff", text: "#4a9eff" },
 } as const;
+const QUADRANT_ORDER: Quadrant[] = ["leading", "improving", "weakening", "lagging"];
 
 function getQuadrant(rsRatio: number, rsMomentum: number): Quadrant {
   if (rsRatio >= 100 && rsMomentum >= 100) return "leading";
@@ -57,19 +62,6 @@ export function RrgPage() {
   const [visible, setVisible] = useState<Record<number, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("rrg_visible") || "{}"); } catch { return {}; }
   });
-  const [quadrants, setQuadrants] = useState<Record<Quadrant, boolean>>(() => {
-    try {
-      const hidden: Quadrant[] = JSON.parse(localStorage.getItem("rrg_hidden_quads") || "[]");
-      return {
-        leading: !hidden.includes("leading"),
-        weakening: !hidden.includes("weakening"),
-        lagging: !hidden.includes("lagging"),
-        improving: !hidden.includes("improving"),
-      };
-    } catch {
-      return { leading: true, weakening: true, lagging: true, improving: true };
-    }
-  });
   const [minRs, setMinRs] = useState<number | null>(() => {
     const v = localStorage.getItem("rrg_min_rs");
     return v === null ? null : parseFloat(v);
@@ -78,6 +70,7 @@ export function RrgPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [exploredIds, setExploredIds] = useState<Set<number>>(new Set());
   const [exploreFilter, setExploreFilter] = useState<ExploreFilter>("unexplored");
+  const [showExplored, setShowExplored] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -99,13 +92,6 @@ export function RrgPage() {
       else localStorage.setItem("rrg_min_rs", String(minRs));
     } catch {}
   }, [minRs]);
-  useEffect(() => {
-    try {
-      const hidden = (Object.entries(quadrants) as [Quadrant, boolean][])
-        .filter(([, v]) => !v).map(([k]) => k);
-      localStorage.setItem("rrg_hidden_quads", JSON.stringify(hidden));
-    } catch {}
-  }, [quadrants]);
   useEffect(() => {
     try { localStorage.setItem("rrg_visible", JSON.stringify(visible)); } catch {}
   }, [visible]);
@@ -155,10 +141,9 @@ export function RrgPage() {
         return { ...s, quadrant: getQuadrant(last.rs_ratio, last.rs_momentum), rsRatio: last.rs_ratio, rsMomentum: last.rs_momentum };
       })
       .filter((s): s is RrgItem => !!s)
-      .filter((s) => quadrants[s.quadrant])
       .filter((s) => minRs === null || s.rsRatio >= minRs)
       .filter((s) => exploreFilter === "all" || !exploredIds.has(s.theme_id));
-  }, [series, visible, quadrants, minRs, exploredIds, exploreFilter]);
+  }, [series, visible, minRs, exploredIds, exploreFilter]);
 
   const rsValues = useMemo(() => items.map(i => i.rsRatio), [items]);
   const rsMin = rsValues.length ? Math.floor(Math.min(...rsValues) * 2) / 2 : 80;
@@ -448,6 +433,12 @@ export function RrgPage() {
     window.open(themesMarketWatchUrl(selectedThemes.map(s => s.theme_name)), "_blank", "noopener,noreferrer");
   };
 
+  const openAndMarkExplored = () => {
+    if (!selectedThemes.length) return;
+    openInMarketWatch();
+    markExplored(selectedIds, true);
+  };
+
   const listItems = useMemo(() => {
     return series
       .map((s) => {
@@ -458,11 +449,20 @@ export function RrgPage() {
         return { ...s, quadrant, rsRatio };
       })
       .filter((s): s is ThemeRrgSeries & { quadrant: Quadrant; rsRatio: number } => !!s)
-      .filter((s) => quadrants[s.quadrant])
       .filter((s) => minRs === null || s.rsRatio >= minRs)
-      .filter((s) => exploreFilter === "all" || !exploredIds.has(s.theme_id))
-      .sort((a, b) => a.theme_name.localeCompare(b.theme_name));
-  }, [series, quadrants, minRs, exploredIds, exploreFilter]);
+      .filter((s) => exploreFilter === "all" || !exploredIds.has(s.theme_id));
+  }, [series, minRs, exploredIds, exploreFilter]);
+
+  const groupedListItems = useMemo(() => {
+    return QUADRANT_ORDER
+      .map((quadrant) => ({
+        quadrant,
+        themes: listItems
+          .filter((s) => s.quadrant === quadrant)
+          .sort((a, b) => b.rsRatio - a.rsRatio || a.theme_name.localeCompare(b.theme_name)),
+      }))
+      .filter((group) => group.themes.length > 0);
+  }, [listItems]);
 
   const allVisible = series.every((s) => visible[s.theme_id] !== false);
   const toggleAllVisible = () => {
@@ -471,46 +471,25 @@ export function RrgPage() {
     for (const s of series) next[s.theme_id] = nextVal;
     setVisible(next);
   };
+  const isQuadrantVisible = (quadrant: Quadrant) => {
+    const themes = listItems.filter((s) => s.quadrant === quadrant);
+    return themes.length > 0 && themes.every((s) => visible[s.theme_id] !== false);
+  };
+  const toggleQuadrantVisible = (quadrant: Quadrant) => {
+    const themes = listItems.filter((s) => s.quadrant === quadrant);
+    const nextVal = !themes.every((s) => visible[s.theme_id] !== false);
+    setVisible((prev) => {
+      const next = { ...prev };
+      for (const s of themes) next[s.theme_id] = nextVal;
+      return next;
+    });
+  };
 
   const exploredCount = exploredIds.size;
   const totalCount = series.length;
 
   return (
     <section className="theme-management-page">
-      <style>{`
-        #rrg-tooltip { position: absolute; pointer-events: none; background: rgba(20,20,20,0.92); border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e0e0e0; display: none; white-space: nowrap; z-index: 10; line-height: 1.7; }
-        #rrg-tooltip .tt-name { font-weight: 700; color: #fff; font-size: 13px; }
-        #rrg-tooltip .tt-etf  { font-size: 10px; color: #666; }
-        #rrg-tooltip .tt-quad { font-size: 11px; margin-top: 2px; }
-        #rrg-tooltip .tt-row  { display: flex; justify-content: space-between; gap: 16px; }
-        #rrg-tooltip .tt-val  { color: #4a9eff; font-weight: 600; }
-        .rrg-canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
-        .rrg-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
-        .rrg-right-pane {
-          display: flex; flex-direction: column; gap: 0.75rem;
-          padding: 0.5rem; border-left: 1px solid #2a3038; background: #151a20;
-          overflow: hidden;
-        }
-        .rrg-right-pane h3 {
-          margin: 0; font-size: 0.68rem; text-transform: uppercase; color: #8f9aa7; letter-spacing: 0.04em;
-        }
-        .rrg-right-section {
-          display: flex; flex-direction: column; gap: 0.35rem;
-          padding-bottom: 0.75rem; border-bottom: 1px solid #2a3038;
-        }
-        .rrg-right-section:last-child { border-bottom: none; }
-        .rrg-mini-list { max-height: 14rem; overflow: auto; font-size: 0.7rem; }
-        .rrg-mini-row { display: flex; align-items: center; gap: 0.35rem; padding: 2px 0; color: #aeb7c2; }
-        .rrg-mini-row button { border: none; background: transparent; color: #8f9aa7; cursor: pointer; font-size: 0.65rem; }
-        .rrg-mini-row button:hover { color: #d7dce2; }
-        /* Match TickerLens ranked-list-item-context */
-        .rrg-list-row { border-radius: 3px; }
-        .rrg-list-row.selected { box-shadow: inset 0.1875rem 0 0 #f5a524; background: rgba(245,165,36,0.10); }
-        @keyframes rrg-flash-bg { 0% { background: rgba(245,165,36,0.25); } 100% { background: rgba(245,165,36,0.10); } }
-        .rrg-flash { animation: rrg-flash-bg 0.9s ease-out; }
-        .rrg-flash.selected { box-shadow: inset 0.1875rem 0 0 #f5a524; }
-      `}</style>
-
       <header className="theme-management-header">
         <Typography component="h1">Relative Rotation Graph</Typography>
         <div className="rrg-controls">
@@ -528,7 +507,7 @@ export function RrgPage() {
           </div>
           <div className="rrg-slider-control rrg-slider-control-rs">
             <Typography variant="caption">RS ≥ {minRs === null ? "—" : minRs.toFixed(1)}</Typography>
-            <Slider min={rsSliderMin} max={rsSliderMax} step={0.5} value={minRs ?? rsSliderMin} onChange={(_, v) => setMinRs(v as number)} size="small" sx={{ padding: "6px 0" }} />
+            <Slider min={rsSliderMin} max={rsSliderMax} step={0.5} value={minRs ?? rsSliderMin} onChange={(_, v) => setMinRs(v as number)} size="small" />
           </div>
           <FormControlLabel
             className="rrg-normalize-control"
@@ -537,14 +516,14 @@ export function RrgPage() {
           />
           <div className="rrg-quadrant-controls">
             {(["leading", "improving", "lagging", "weakening"] as Quadrant[]).map((q) => {
-              const active = quadrants[q];
+              const active = isQuadrantVisible(q);
               return (
                 <ToggleButton
                   key={q}
                   className="rrg-quadrant-toggle"
                   value={q}
                   selected={active}
-                  onClick={() => setQuadrants({ ...quadrants, [q]: !active })}
+                  onClick={() => toggleQuadrantVisible(q)}
                 >
                   <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[q].dot }} />
                   {q.charAt(0).toUpperCase() + q.slice(1)}
@@ -564,49 +543,68 @@ export function RrgPage() {
         </div>
       </header>
 
-      <div className="theme-management-body rrg-body" style={{ gridTemplateColumns: "20rem minmax(0, 1fr) 18rem" }}>
+      <div className="theme-management-body rrg-body">
         {/* Left: visibility list */}
         <aside className="theme-list-pane">
           <div className="theme-pane-header">
             <Typography component="h2">Themes ({items.length}/{totalCount})</Typography>
-            <button onClick={toggleAllVisible} style={{ background: "transparent", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: "0.65rem" }}>
-              {allVisible ? "None" : "All"}
-            </button>
+            <div className="rrg-theme-header-actions">
+              <FormControlLabel
+                className="rrg-filter-control"
+                control={
+                  <Checkbox size="small" checked={exploreFilter === "unexplored"}
+                    onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
+                  />
+                }
+                label="Hide explored"
+              />
+              <Button size="small" variant="text" onClick={toggleAllVisible}>
+                {allVisible ? "None" : "All"}
+              </Button>
+            </div>
           </div>
-          <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
-            {listItems.map((s) => {
-              const isVisible = visible[s.theme_id] !== false;
-              const isExplored = exploredIds.has(s.theme_id);
-              const isSelected = selectedIds.has(s.theme_id);
-              return (
-                <div
-                  key={s.theme_id}
-                  ref={(el) => {
-                    if (el) themeElements.current.set(s.theme_id, el);
-                    else themeElements.current.delete(s.theme_id);
-                  }}
-                  className={`rrg-list-row${isSelected ? " selected" : ""}`}
-                >
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={isVisible}
-                      onChange={(e) => toggleVisible(s.theme_id, e.target.checked)}
-                      sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }}
-                    />
-                  }
-                  label={
-                    <span style={{ fontSize: "0.72rem", opacity: isExplored ? 0.5 : 1, color: isSelected ? "#f0f4f8" : undefined }}>
-                      {s.theme_name} <span style={{ color: "#8f9aa7", fontSize: "0.625rem" }}>· {s.etf_symbol}</span>
-                      {isExplored && <span style={{ marginLeft: 4, fontSize: "0.6rem", color: "#8f9aa7" }}>✓</span>}
-                    </span>
-                  }
-                  sx={{ display: "flex", margin: 0, padding: "0.15rem 0" }}
-                />
+          <div className="rrg-theme-list">
+            {groupedListItems.map(({ quadrant, themes }) => (
+              <section key={quadrant} className="rrg-theme-group">
+                <div className="rrg-theme-group-header">
+                  <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[quadrant].dot }} />
+                  <span>{QUADRANTS[quadrant].label}</span>
+                  <small>{themes.length}</small>
                 </div>
-              );
-            })}
+                {themes.map((s) => {
+                  const isVisible = visible[s.theme_id] !== false;
+                  const isExplored = exploredIds.has(s.theme_id);
+                  const isSelected = selectedIds.has(s.theme_id);
+                  return (
+                    <div
+                      key={s.theme_id}
+                      ref={(el) => {
+                        if (el) themeElements.current.set(s.theme_id, el);
+                        else themeElements.current.delete(s.theme_id);
+                      }}
+                      className={`rrg-list-row${isSelected ? " selected" : ""}`}
+                    >
+                      <FormControlLabel
+                        className="rrg-theme-row"
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={isVisible}
+                            onChange={(e) => toggleVisible(s.theme_id, e.target.checked)}
+                          />
+                        }
+                        label={
+                          <span className={`rrg-theme-label${isExplored ? " explored" : ""}${isSelected ? " selected" : ""}`}>
+                            {s.theme_name} <span>- {s.etf_symbol} ({s.rsRatio.toFixed(1)})</span>
+                            {isExplored && <span className="rrg-explored-marker">✓</span>}
+                          </span>
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </section>
+            ))}
           </div>
         </aside>
 
@@ -633,83 +631,76 @@ export function RrgPage() {
         <aside className="rrg-right-pane">
           <div className="rrg-right-section">
             <h3>Selected ({selectedIds.size})</h3>
+            <Button size="small" variant="contained" className="rrg-action-button" onClick={openAndMarkExplored} disabled={selectedThemes.length === 0}>
+              Open + Mark Explored
+            </Button>
+            <div className="rrg-selected-secondary-actions">
+              <Button size="small" variant="outlined" className="rrg-secondary-button" onClick={openInMarketWatch} disabled={selectedThemes.length === 0}>
+                Open Only
+              </Button>
+              <Button size="small" variant="outlined" className="rrg-secondary-button" onClick={() => markExplored(selectedIds, true)} disabled={selectedThemes.length === 0}>
+                Mark Only
+              </Button>
+              <Button size="small" className="rrg-muted-button" onClick={() => setSelectedIds(new Set())} disabled={selectedThemes.length === 0}>
+                Clear
+              </Button>
+            </div>
             {selectedThemes.length === 0 ? (
-              <span style={{ fontSize: "0.7rem", color: "#8f9aa7" }}>Click dots in the chart to select.</span>
+              <span className="rrg-empty-note">Click dots in the chart to select.</span>
             ) : (
-              <>
                 <div className="rrg-mini-list">
                   {selectedThemes.map(t => (
                     <div key={t.theme_id} className="rrg-mini-row">
-                      <span style={{ flex: 1 }}>{t.theme_name} <span style={{ color: "#8f9aa7" }}>· {t.etf_symbol}</span></span>
-                      <button onClick={() => toggleSelected(t.theme_id)}>✕</button>
+                      <span className="rrg-mini-name">{t.theme_name} <span>· {t.etf_symbol}</span></span>
+                      <IconButton size="small" onClick={() => toggleSelected(t.theme_id)} aria-label={`Remove ${t.theme_name}`}>
+                        <CloseIcon fontSize="inherit" />
+                      </IconButton>
                     </div>
                   ))}
                 </div>
-                <Button size="small" variant="contained" onClick={openInMarketWatch}
-                  sx={{ fontSize: "0.68rem", backgroundColor: "#8b5cf6", "&:hover": { backgroundColor: "#7c3aed" } }}>
-                  Open in Market Watch
-                </Button>
-                <Button size="small" variant="outlined"
-                  onClick={() => markExplored(selectedIds, true)}
-                  sx={{ fontSize: "0.68rem", color: "#aeb7c2", borderColor: "#3a3a3a" }}>
-                  Mark explored
-                </Button>
-                <Button size="small" onClick={() => setSelectedIds(new Set())}
-                  sx={{ fontSize: "0.68rem", color: "#8f9aa7" }}>
-                  Clear selection
-                </Button>
-              </>
             )}
           </div>
 
-          <div className="rrg-right-section" style={{ flex: 1, minHeight: 0 }}>
-            <h3>Explored ({exploredCount})</h3>
-            {exploredThemes.length === 0 ? (
-              <span style={{ fontSize: "0.7rem", color: "#8f9aa7" }}>None yet.</span>
-            ) : (
-              <div className="rrg-mini-list" style={{ maxHeight: "none", flex: 1 }}>
-                {exploredThemes.map(t => (
-                  <div key={t.theme_id} className="rrg-mini-row">
-                    <span style={{ flex: 1 }}>{t.theme_name}</span>
-                    <button onClick={() => markExplored([t.theme_id], false)} title="Unexplore">↺</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rrg-right-section" style={{ marginTop: "auto" }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <h3>Filter</h3>
-              <span style={{ fontSize: "0.62rem", color: "#8f9aa7" }}>
-                {items.length}/{totalCount}
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <FormControlLabel
-                control={
-                  <Checkbox size="small" checked={exploreFilter === "unexplored"}
-                    onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
-                    sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }} />
-                }
-                label={<span style={{ fontSize: "0.7rem" }}>Hide explored</span>}
-                sx={{ margin: 0 }}
-              />
+          <div className="rrg-right-section rrg-right-section-grow">
+            <div className="rrg-accordion-header">
               <button
+                type="button"
+                className="rrg-accordion-trigger"
+                onClick={() => exploredCount > 0 && setShowExplored((v) => !v)}
+                disabled={exploredCount === 0}
+                aria-expanded={showExplored}
+              >
+                {showExplored ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                <h3>Explored</h3>
+                <span className="rrg-section-count">{exploredCount}/{totalCount}</span>
+              </button>
+              <Button
+                size="small"
+                className="rrg-clear-explored-button"
                 onClick={() => setExploredIds(new Set())}
                 disabled={exploredCount === 0}
-                style={{
-                  background: "transparent", border: "none",
-                  color: exploredCount === 0 ? "#444" : "#8f9aa7",
-                  opacity: exploredCount === 0 ? 0.4 : 1,
-                  fontSize: "0.62rem", cursor: exploredCount === 0 ? "default" : "pointer",
-                  padding: "2px 4px",
-                }}
                 title="Clear all explored"
+                aria-label="Clear all explored"
               >
-                🗑 Clear
-              </button>
+                <DeleteOutlineIcon fontSize="small" />
+              </Button>
             </div>
+            {showExplored && (
+              exploredThemes.length === 0 ? (
+                <span className="rrg-empty-note">None yet.</span>
+              ) : (
+                <div className="rrg-mini-list rrg-mini-list-grow">
+                  {exploredThemes.map(t => (
+                    <div key={t.theme_id} className="rrg-mini-row">
+                      <span className="rrg-mini-name">{t.theme_name}</span>
+                      <IconButton size="small" onClick={() => markExplored([t.theme_id], false)} aria-label={`Unexplore ${t.theme_name}`} title="Unexplore">
+                        <CloseIcon fontSize="inherit" />
+                      </IconButton>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
         </aside>
       </div>

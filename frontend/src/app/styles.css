@@ -257,7 +257,7 @@ body,
 }
 
 .rrg-body {
-  grid-template-columns: 20rem minmax(0, 1fr);
+  grid-template-columns: 20rem minmax(0, 1fr) 18rem;
 }
 
 .theme-list-pane {
@@ -276,6 +276,39 @@ body,
   overflow: auto;
 }
 
+.rrg-theme-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rrg-theme-group {
+  padding-bottom: 0.4rem;
+}
+
+.rrg-theme-group + .rrg-theme-group {
+  padding-top: 0.45rem;
+  border-top: 0.0625rem solid #20262e;
+}
+
+.rrg-theme-group-header {
+  display: flex;
+  padding: 0.25rem 0.25rem 0.2rem;
+  color: #8f9aa7;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rrg-theme-group-header small {
+  margin-left: auto;
+  color: #65758a;
+  font-size: 0.6rem;
+}
+
 .rrg-theme-row {
   display: flex !important;
   min-width: 0;
@@ -285,6 +318,11 @@ body,
 
 .rrg-theme-row .MuiCheckbox-root {
   padding: 0.25rem;
+  color: #8f9aa7;
+}
+
+.rrg-theme-row .MuiCheckbox-root.Mui-checked {
+  color: #58a6ff;
 }
 
 .rrg-theme-label {
@@ -294,9 +332,21 @@ body,
   white-space: nowrap;
 }
 
+.rrg-theme-label.explored {
+  opacity: 0.5;
+}
+
+.rrg-theme-label.selected {
+  color: #f0f4f8;
+}
+
 .rrg-theme-label span {
   color: #8f9aa7;
   font-size: 0.625rem;
+}
+
+.rrg-explored-marker {
+  margin-left: 0.25rem;
 }
 
 .rrg-main {
@@ -387,6 +437,222 @@ body,
   top: 0.5rem;
   right: 0.5rem;
   left: 0.5rem;
+}
+
+.rrg-right-pane {
+  display: flex;
+  min-height: 0;
+  padding: 0.5rem;
+  border-left: 0.0625rem solid #2a3038;
+  background: #151a20;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.rrg-right-pane h3 {
+  margin: 0;
+  color: #8f9aa7;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rrg-right-section {
+  display: flex;
+  padding-bottom: 0.75rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rrg-right-section:last-child {
+  border-bottom: 0;
+}
+
+.rrg-right-section-grow {
+  min-height: 0;
+  flex: 1;
+}
+
+.rrg-empty-note {
+  color: #8f9aa7;
+  font-size: 0.7rem;
+}
+
+.rrg-mini-list {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.7rem;
+}
+
+.rrg-mini-list-grow {
+  max-height: none;
+  flex: 1;
+}
+
+.rrg-mini-row {
+  display: flex;
+  padding: 0.125rem 0;
+  color: #aeb7c2;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rrg-mini-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.rrg-mini-name span {
+  color: #8f9aa7;
+}
+
+.rrg-mini-row .MuiIconButton-root {
+  width: 1.3rem;
+  height: 1.3rem;
+  padding: 0.125rem;
+  color: #8f9aa7;
+  font-size: 0.85rem;
+}
+
+.rrg-mini-row .MuiIconButton-root:hover,
+.rrg-mini-row .MuiIconButton-root:focus-visible {
+  color: #d7dce2;
+}
+
+.rrg-list-row {
+  border-radius: 0.1875rem;
+}
+
+.rrg-list-row.selected {
+  background: rgb(245 165 36 / 10%);
+  box-shadow: inset 0.1875rem 0 0 #f5a524;
+}
+
+.rrg-flash {
+  animation: rrg-flash-bg 0.9s ease-out;
+}
+
+.rrg-flash.selected {
+  box-shadow: inset 0.1875rem 0 0 #f5a524;
+}
+
+@keyframes rrg-flash-bg {
+  0% {
+    background: rgb(245 165 36 / 25%);
+  }
+
+  100% {
+    background: rgb(245 165 36 / 10%);
+  }
+}
+
+.rrg-action-button.MuiButton-root,
+.rrg-secondary-button.MuiButton-root {
+  font-size: 0.68rem;
+}
+
+.rrg-action-button.MuiButton-root {
+  width: 100%;
+}
+
+.rrg-secondary-button.MuiButton-root {
+  border-color: #3a3a3a;
+  color: #aeb7c2;
+}
+
+.rrg-muted-button.MuiButton-root {
+  color: #8f9aa7;
+  font-size: 0.68rem;
+}
+
+.rrg-selected-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.rrg-selected-secondary-actions .MuiButton-root {
+  min-width: 0;
+  padding-right: 0.25rem;
+  padding-left: 0.25rem;
+}
+
+.rrg-section-header-row,
+.rrg-accordion-header,
+.rrg-accordion-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rrg-section-header-row {
+  align-items: baseline;
+}
+
+.rrg-section-count {
+  color: #8f9aa7;
+  font-size: 0.62rem;
+}
+
+.rrg-accordion-header {
+  gap: 0.35rem;
+}
+
+.rrg-accordion-trigger {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  flex: 1;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.rrg-accordion-trigger:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rrg-accordion-trigger h3 {
+  flex: 1;
+}
+
+.rrg-accordion-trigger .MuiSvgIcon-root {
+  color: #8f9aa7;
+}
+
+.rrg-filter-control {
+  margin: 0 !important;
+}
+
+.rrg-filter-control .MuiCheckbox-root {
+  padding: 0.125rem;
+  color: #8f9aa7;
+}
+
+.rrg-filter-control .MuiCheckbox-root.Mui-checked {
+  color: #58a6ff;
+}
+
+.rrg-filter-control .MuiFormControlLabel-label {
+  font-size: 0.7rem;
+}
+
+.rrg-clear-explored-button.MuiButton-root {
+  width: 1.5rem;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0.125rem;
+  color: #8f9aa7;
+  font-size: 0.62rem;
+}
+
+.rrg-clear-explored-button.Mui-disabled {
+  color: #444;
+  opacity: 0.4;
 }
 
 .theme-pane-header,
