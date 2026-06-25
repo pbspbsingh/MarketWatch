@@ -11,7 +11,8 @@ import {
   Typography,
 } from "@mui/material";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
-import { fetchThemeRrg, type ThemeRrgSeries, type RrgPoint } from "../../api/themes";
+import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
+import { themesMarketWatchUrl } from "../ticker-lens/utils";
 
 type Quadrant = "leading" | "weakening" | "lagging" | "improving";
 
@@ -29,41 +30,8 @@ function getQuadrant(rsRatio: number, rsMomentum: number): Quadrant {
   return "improving";
 }
 
-const colorFor = (id: number) => {
-  const hues = [210, 120, 30, 280, 170, 0, 260, 80, 340, 190, 45, 300];
-  return `hsl(${hues[id % hues.length]}, 70%, 55%)`;
-};
-
 type RrgItem = ThemeRrgSeries & { quadrant: Quadrant; rsRatio: number; rsMomentum: number };
-
-function computeViewport(items: RrgItem[]) {
-  let xMin = 95, xMax = 105, yMin = 95, yMax = 105;
-  if (items.length) {
-    const xs = items.flatMap(d => d.points.map(p => p.rs_ratio));
-    const ys = items.flatMap(d => d.points.map(p => p.rs_momentum));
-    const allX = [...xs, 100], allY = [...ys, 100];
-    xMin = Math.min(...allX); xMax = Math.max(...allX);
-    yMin = Math.min(...allY); yMax = Math.max(...allY);
-    const padX = Math.max((xMax - xMin) * 0.1, 1.5);
-    const padY = Math.max((yMax - yMin) * 0.1, 1.5);
-    xMin -= padX; xMax += padX; yMin -= padY; yMax += padY;
-    if (xMin > 100) xMin = 99; if (xMax < 100) xMax = 101;
-    if (yMin > 100) yMin = 99; if (yMax < 100) yMax = 101;
-  }
-  return { xMin, xMax, yMin, yMax };
-}
-
-function getPlotTransform(
-  W: number, H: number,
-  xMin: number, xMax: number, yMin: number, yMax: number
-) {
-  const M = { top: 36, right: 36, bottom: 44, left: 52 };
-  const plotW = W - M.left - M.right;
-  const plotH = H - M.top - M.bottom;
-  const toX = (v: number) => M.left + ((v - xMin) / (xMax - xMin)) * plotW;
-  const toY = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
-  return { M, plotW, plotH, toX, toY };
-}
+type ExploreFilter = "unexplored" | "all";
 
 export function RrgPage() {
   const [interval, setInterval] = useState<"daily" | "weekly">(
@@ -107,17 +75,17 @@ export function RrgPage() {
     return v === null ? null : parseFloat(v);
   });
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [exploredIds, setExploredIds] = useState<Set<number>>(new Set());
+  const [exploreFilter, setExploreFilter] = useState<ExploreFilter>("unexplored");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const themeElements = useRef(new Map<number, HTMLElement>());
 
-  // Refs to avoid rebinding hit-test handlers on hover/selection change
   const hoverIdxRef = useRef<number | null>(null);
-  const selectedIdRef = useRef<number | null>(null);
   useEffect(() => { hoverIdxRef.current = hoverIdx; }, [hoverIdx]);
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
   // Persist
   useEffect(() => { try { localStorage.setItem("rrg_interval", interval); } catch {} }, [interval]);
@@ -144,22 +112,15 @@ export function RrgPage() {
 
   const lookbackMin = interval === "daily" ? 5 : 5;
   const lookbackMax = interval === "daily" ? 60 : 20;
-
   useEffect(() => {
     setLookback((l) => Math.min(Math.max(l, lookbackMin), lookbackMax));
   }, [lookbackMin, lookbackMax]);
 
-  // Debounced fetch with AbortController
+  // Debounced fetch
   const [debouncedLookback, setDebouncedLookback] = useState(lookback);
   const [debouncedTail, setDebouncedTail] = useState(tail);
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedLookback(lookback), 250);
-    return () => clearTimeout(t);
-  }, [lookback]);
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedTail(tail), 250);
-    return () => clearTimeout(t);
-  }, [tail]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedLookback(lookback), 250); return () => clearTimeout(t); }, [lookback]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedTail(tail), 250); return () => clearTimeout(t); }, [tail]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -174,38 +135,40 @@ export function RrgPage() {
         });
         setError(undefined);
       })
-      .catch((e) => {
-        if ((e as Error).name === "AbortError") return;
-        setError(String(e));
-      })
+      .catch((e) => { if ((e as Error).name !== "AbortError") setError(String(e)); })
       .finally(() => setLoading(false));
     return () => controller.abort();
   }, [interval, debouncedLookback, debouncedTail, normalize]);
 
+  const seriesById = useMemo(() => {
+    const m = new Map<number, ThemeRrgSeries>();
+    for (const s of series) m.set(s.theme_id, s);
+    return m;
+  }, [series]);
+
   const items: RrgItem[] = useMemo(() => {
     return series
-      .filter((s) => visible[s.theme_id] !== false && s.points.length > 0)
+      .filter((s) => visible[s.theme_id] !== false)
       .map((s) => {
         const last = s.points[s.points.length - 1];
+        if (!last) return null;
         return { ...s, quadrant: getQuadrant(last.rs_ratio, last.rs_momentum), rsRatio: last.rs_ratio, rsMomentum: last.rs_momentum };
       })
+      .filter((s): s is RrgItem => !!s)
       .filter((s) => quadrants[s.quadrant])
-      .filter((s) => minRs === null || s.rsRatio >= minRs);
-  }, [series, visible, quadrants, minRs]);
+      .filter((s) => minRs === null || s.rsRatio >= minRs)
+      .filter((s) => exploreFilter === "all" || !exploredIds.has(s.theme_id));
+  }, [series, visible, quadrants, minRs, exploredIds, exploreFilter]);
 
-  // RS slider range
   const rsValues = useMemo(() => items.map(i => i.rsRatio), [items]);
   const rsMin = rsValues.length ? Math.floor(Math.min(...rsValues) * 2) / 2 : 80;
   const rsMax = rsValues.length ? Math.ceil(Math.max(...rsValues) * 2) / 2 : 120;
   const rsSliderMin = Math.min(80, rsMin);
   const rsSliderMax = Math.max(120, rsMax);
   useEffect(() => {
-    if (minRs !== null) {
-      if (minRs < rsSliderMin || minRs > rsSliderMax) setMinRs(null);
-    }
+    if (minRs !== null && (minRs < rsSliderMin || minRs > rsSliderMax)) setMinRs(null);
   }, [rsSliderMin, rsSliderMax, minRs]);
 
-  // Viewport helper (shared between draw and hit-test)
   const getViewport = (width: number, height: number) => {
     const M = { top: 36, right: 36, bottom: 44, left: 52 };
     const plotW = width - M.left - M.right;
@@ -228,7 +191,7 @@ export function RrgPage() {
     return { M, plotW, plotH, xMin, xMax, yMin, yMax, toX, toY };
   };
 
-  // Draw RRG
+  // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -251,11 +214,8 @@ export function RrgPage() {
     if (plotW <= 0 || plotH <= 0) return;
     const cx = toX(100), cy = toY(100);
 
-    // BG
-    ctx.fillStyle = "#111418";
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#111418"; ctx.fillRect(0, 0, W, H);
 
-    // Quadrants
     const qFills = [
       { x: cx, y: M.top, w: M.left + plotW - cx, h: cy - M.top, q: QUADRANTS.leading },
       { x: M.left, y: M.top, w: cx - M.left, h: cy - M.top, q: QUADRANTS.improving },
@@ -264,12 +224,9 @@ export function RrgPage() {
     ];
     qFills.forEach(({ x, y, w, h, q }) => { ctx.fillStyle = q.color; ctx.fillRect(x, y, w, h); });
 
-    // Grid
     const span = Math.max(xMax - xMin, yMax - yMin);
     const gridStep = span > 30 ? 5 : span > 15 ? 2 : span > 6 ? 1 : 0.5;
-    ctx.strokeStyle = "#2a3038";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
+    ctx.strokeStyle = "#2a3038"; ctx.lineWidth = 1; ctx.beginPath();
     for (let v = Math.ceil(xMin / gridStep) * gridStep; v <= xMax; v += gridStep) {
       const px = toX(v); ctx.moveTo(px, M.top); ctx.lineTo(px, M.top + plotH);
     }
@@ -278,29 +235,23 @@ export function RrgPage() {
     }
     ctx.stroke();
 
-    // Axes at 100
-    ctx.strokeStyle = "#4a5563";
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
+    ctx.strokeStyle = "#4a5563"; ctx.setLineDash([4, 4]); ctx.beginPath();
     ctx.moveTo(cx, M.top); ctx.lineTo(cx, M.top + plotH);
     ctx.moveTo(M.left, cy); ctx.lineTo(M.left + plotW, cy);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]);
 
-    // Quadrant labels
     ctx.font = "600 10px -apple-system, sans-serif";
     const qLabels = [
-      { text: "LEADING",    x: M.left + plotW - 8, y: M.top + 8,          align: "right" as const, color: QUADRANTS.leading.text,    baseline: "top" as const },
-      { text: "IMPROVING",  x: M.left + 8,         y: M.top + 8,          align: "left" as const,  color: QUADRANTS.improving.text,  baseline: "top" as const },
-      { text: "LAGGING",    x: M.left + 8,         y: M.top + plotH - 8,  align: "left" as const,  color: QUADRANTS.lagging.text,    baseline: "bottom" as const },
-      { text: "WEAKENING",  x: M.left + plotW - 8, y: M.top + plotH - 8,  align: "right" as const, color: QUADRANTS.weakening.text,  baseline: "bottom" as const },
+      { text: "LEADING",   x: M.left + plotW - 8, y: M.top + 8,         align: "right" as const, color: QUADRANTS.leading.text,    baseline: "top" as const },
+      { text: "IMPROVING", x: M.left + 8,         y: M.top + 8,         align: "left" as const,  color: QUADRANTS.improving.text,  baseline: "top" as const },
+      { text: "LAGGING",   x: M.left + 8,         y: M.top + plotH - 8, align: "left" as const,  color: QUADRANTS.lagging.text,    baseline: "bottom" as const },
+      { text: "WEAKENING", x: M.left + plotW - 8, y: M.top + plotH - 8, align: "right" as const, color: QUADRANTS.weakening.text,  baseline: "bottom" as const },
     ];
     qLabels.forEach(({ text, x, y, align, color, baseline }) => {
       ctx.textAlign = align; ctx.textBaseline = baseline; ctx.fillStyle = color; ctx.globalAlpha = 0.5;
       ctx.fillText(text, Math.round(x), Math.round(y)); ctx.globalAlpha = 1;
     });
 
-    // Axis ticks
     ctx.fillStyle = "#8f9aa7"; ctx.font = "10px -apple-system, sans-serif"; ctx.textBaseline = "top";
     for (let v = Math.ceil(xMin / gridStep) * gridStep; v <= xMax; v += gridStep) {
       const px = Math.round(toX(v)); ctx.textAlign = "center";
@@ -311,14 +262,12 @@ export function RrgPage() {
       const py = Math.round(toY(v)); ctx.textBaseline = "middle";
       ctx.fillText(v.toFixed(1), Math.round(M.left - 5), py);
     }
-    // Axis titles
     ctx.fillStyle = "#8f9aa7"; ctx.font = "11px -apple-system, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     ctx.fillText("RS-Ratio →", Math.round(M.left + plotW / 2), Math.round(H - 2));
     ctx.save(); ctx.translate(Math.round(12), Math.round(M.top + plotH / 2)); ctx.rotate(-Math.PI / 2);
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     ctx.fillText("RS-Momentum →", 0, 0); ctx.restore();
 
-    // Benchmark marker
     ctx.beginPath(); ctx.arc(Math.round(cx), Math.round(cy), 4, 0, Math.PI * 2);
     ctx.fillStyle = "#444"; ctx.fill();
     ctx.fillStyle = "#8f9aa7"; ctx.font = "10px -apple-system, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
@@ -326,42 +275,35 @@ export function RrgPage() {
 
     if (!items.length) {
       ctx.fillStyle = "#444"; ctx.font = "14px -apple-system, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(loading ? "Loading…" : "No data", W / 2, H / 2);
+      ctx.fillText(loading ? "Loading…" : "No themes", W / 2, H / 2);
       return;
     }
 
-    // Draw tails
     items.forEach((d, idx) => {
       const isHovered = idx === hoverIdx;
+      const isSelected = selectedIds.has(d.theme_id);
       const q = QUADRANTS[d.quadrant];
-      const pts = [...d.points.map(p => ({ x: toX(p.rs_ratio), y: toY(p.rs_momentum) }))];
+      const pts = d.points.map(p => ({ x: toX(p.rs_ratio), y: toY(p.rs_momentum) }));
       if (pts.length < 2) return;
       for (let i = 1; i < pts.length; i++) {
         const t = i / pts.length;
-        const alpha = t * (isHovered ? 0.85 : 0.5);
-        const lw = 1 + t * (isHovered ? 2.5 : 1.5);
-        ctx.beginPath();
-        ctx.strokeStyle = q.dot;
-        ctx.lineWidth = lw;
-        ctx.globalAlpha = alpha;
-        ctx.lineCap = "round";
-        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.stroke();
+        const alpha = t * (isHovered || isSelected ? 0.85 : 0.45);
+        const lw = 1 + t * (isHovered || isSelected ? 2.5 : 1.5);
+        ctx.beginPath(); ctx.strokeStyle = q.dot; ctx.lineWidth = lw; ctx.globalAlpha = alpha; ctx.lineCap = "round";
+        ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
       }
       ctx.globalAlpha = 1;
     });
 
-    // Draw dots + labels
     items.forEach((d, idx) => {
       const isHovered = idx === hoverIdx;
-      const isSelected = selectedId === d.theme_id;
+      const isSelected = selectedIds.has(d.theme_id);
       const q = QUADRANTS[d.quadrant];
       const x = toX(d.rsRatio), y = toY(d.rsMomentum);
       const r = isHovered || isSelected ? 5 : 3.5;
       if (isHovered || isSelected) {
         ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2);
-        ctx.fillStyle = q.dot; ctx.globalAlpha = 0.15; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.fillStyle = q.dot; ctx.globalAlpha = 0.18; ctx.fill(); ctx.globalAlpha = 1;
       }
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = q.dot; ctx.fill();
@@ -370,9 +312,9 @@ export function RrgPage() {
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.fillText(d.etf_symbol, Math.round(x + r + 3), Math.round(y));
     });
-  }, [items, hoverIdx, selectedId, loading]);
+  }, [items, hoverIdx, selectedIds, loading]);
 
-  // Hit test / hover – uses refs to avoid rebinding
+  // Hit test
   const itemsRef = useRef<RrgItem[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
@@ -437,7 +379,11 @@ export function RrgPage() {
       const items = itemsRef.current;
       if (hoverIdx !== null && items[hoverIdx]) {
         const id = items[hoverIdx].theme_id;
-        setSelectedId((prev) => (prev === id ? null : id));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
       }
     };
     canvas.addEventListener("mousemove", handleMove);
@@ -450,16 +396,121 @@ export function RrgPage() {
     };
   }, [items]);
 
+  const toggleVisible = (id: number, v: boolean) => setVisible((prev) => ({ ...prev, [id]: v }));
+  const toggleSelected = (id: number) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // Scroll selected theme into view in left list + flash highlight
+  const prevSelectedRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    const added = [...selectedIds].filter(id => !prev.has(id));
+    prevSelectedRef.current = new Set(selectedIds);
+    if (added.length === 0) return;
+    const lastId = added[added.length - 1];
+    const el = themeElements.current.get(lastId);
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      el.classList.add("rrg-flash");
+      const t = setTimeout(() => el.classList.remove("rrg-flash"), 900);
+      return () => clearTimeout(t);
+    }
+  }, [selectedIds]);
+
+  // Clear stale selections when series changes
+  useEffect(() => {
+    const validIds = new Set(series.map(s => s.theme_id));
+    setSelectedIds(prev => {
+      const next = new Set([...prev].filter(id => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setExploredIds(prev => {
+      const next = new Set([...prev].filter(id => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [series]);
+
+  const markExplored = (ids: Iterable<number>, explored: boolean) => {
+    setExploredIds((prev) => { const n = new Set(prev); for (const id of ids) { if (explored) n.add(id); else n.delete(id); } return n; });
+    if (explored) setSelectedIds((prev) => { const n = new Set(prev); for (const id of ids) n.delete(id); return n; });
+  };
+
+  const selectedThemes = [...selectedIds]
+    .map(id => seriesById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => a!.theme_name.localeCompare(b!.theme_name)) as ThemeRrgSeries[];
+  const exploredThemes = [...exploredIds]
+    .map(id => seriesById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => a!.theme_name.localeCompare(b!.theme_name)) as ThemeRrgSeries[];
+
+  const openInMarketWatch = () => {
+    if (!selectedThemes.length) return;
+    window.open(themesMarketWatchUrl(selectedThemes.map(s => s.theme_name)), "_blank", "noopener,noreferrer");
+  };
+
+  const listItems = useMemo(() => {
+    return series
+      .map((s) => {
+        const last = s.points[s.points.length - 1];
+        if (!last) return null;
+        const quadrant = getQuadrant(last.rs_ratio, last.rs_momentum);
+        const rsRatio = last.rs_ratio;
+        return { ...s, quadrant, rsRatio };
+      })
+      .filter((s): s is ThemeRrgSeries & { quadrant: Quadrant; rsRatio: number } => !!s)
+      .filter((s) => quadrants[s.quadrant])
+      .filter((s) => minRs === null || s.rsRatio >= minRs)
+      .filter((s) => exploreFilter === "all" || !exploredIds.has(s.theme_id))
+      .sort((a, b) => a.theme_name.localeCompare(b.theme_name));
+  }, [series, quadrants, minRs, exploredIds, exploreFilter]);
+
   const allVisible = series.every((s) => visible[s.theme_id] !== false);
-  const toggleAll = () => {
+  const toggleAllVisible = () => {
     const nextVal = !allVisible;
     const next: Record<number, boolean> = {};
     for (const s of series) next[s.theme_id] = nextVal;
     setVisible(next);
   };
 
+  const exploredCount = exploredIds.size;
+  const totalCount = series.length;
+
   return (
     <section className="theme-management-page">
+      <style>{`
+        #rrg-tooltip { position: absolute; pointer-events: none; background: rgba(20,20,20,0.92); border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e0e0e0; display: none; white-space: nowrap; z-index: 10; line-height: 1.7; }
+        #rrg-tooltip .tt-name { font-weight: 700; color: #fff; font-size: 13px; }
+        #rrg-tooltip .tt-etf  { font-size: 10px; color: #666; }
+        #rrg-tooltip .tt-quad { font-size: 11px; margin-top: 2px; }
+        #rrg-tooltip .tt-row  { display: flex; justify-content: space-between; gap: 16px; }
+        #rrg-tooltip .tt-val  { color: #4a9eff; font-weight: 600; }
+        .rrg-canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+        .rrg-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+        .rrg-right-pane {
+          display: flex; flex-direction: column; gap: 0.75rem;
+          padding: 0.5rem; border-left: 1px solid #2a3038; background: #151a20;
+          overflow: hidden;
+        }
+        .rrg-right-pane h3 {
+          margin: 0; font-size: 0.68rem; text-transform: uppercase; color: #8f9aa7; letter-spacing: 0.04em;
+        }
+        .rrg-right-section {
+          display: flex; flex-direction: column; gap: 0.35rem;
+          padding-bottom: 0.75rem; border-bottom: 1px solid #2a3038;
+        }
+        .rrg-right-section:last-child { border-bottom: none; }
+        .rrg-mini-list { max-height: 14rem; overflow: auto; font-size: 0.7rem; }
+        .rrg-mini-row { display: flex; align-items: center; gap: 0.35rem; padding: 2px 0; color: #aeb7c2; }
+        .rrg-mini-row button { border: none; background: transparent; color: #8f9aa7; cursor: pointer; font-size: 0.65rem; }
+        .rrg-mini-row button:hover { color: #d7dce2; }
+        /* Match TickerLens ranked-list-item-context */
+        .rrg-list-row { border-radius: 3px; }
+        .rrg-list-row.selected { box-shadow: inset 0.1875rem 0 0 #f5a524; background: rgba(245,165,36,0.10); }
+        @keyframes rrg-flash-bg { 0% { background: rgba(245,165,36,0.25); } 100% { background: rgba(245,165,36,0.10); } }
+        .rrg-flash { animation: rrg-flash-bg 0.9s ease-out; }
+        .rrg-flash.selected { box-shadow: inset 0.1875rem 0 0 #f5a524; }
+      `}</style>
+
       <header className="theme-management-header">
         <Typography component="h1">Relative Rotation Graph</Typography>
         <div className="rrg-controls">
@@ -468,37 +519,20 @@ export function RrgPage() {
             <ToggleButton value="weekly">Weekly</ToggleButton>
           </ToggleButtonGroup>
           <div className="rrg-slider-control rrg-slider-control-wide">
-            <Typography variant="caption">
-              Lookback: {lookback}
-            </Typography>
+            <Typography variant="caption">Lookback: {lookback}</Typography>
             <Slider min={lookbackMin} max={lookbackMax} value={lookback} onChange={(_, v) => setLookback(v as number)} size="small" />
           </div>
           <div className="rrg-slider-control">
-            <Typography variant="caption">
-              Tail: {tail}
-            </Typography>
+            <Typography variant="caption">Tail: {tail}</Typography>
             <Slider min={1} max={50} value={tail} onChange={(_, v) => setTail(v as number)} size="small" />
           </div>
           <div className="rrg-slider-control rrg-slider-control-rs">
-            <Typography variant="caption">
-              RS ≥ {minRs === null ? "—" : minRs.toFixed(1)}
-            </Typography>
-            <Slider
-              min={rsSliderMin} max={rsSliderMax} step={0.5}
-              value={minRs ?? rsSliderMin}
-              onChange={(_, v) => setMinRs(v as number)}
-              size="small"
-            />
+            <Typography variant="caption">RS ≥ {minRs === null ? "—" : minRs.toFixed(1)}</Typography>
+            <Slider min={rsSliderMin} max={rsSliderMax} step={0.5} value={minRs ?? rsSliderMin} onChange={(_, v) => setMinRs(v as number)} size="small" sx={{ padding: "6px 0" }} />
           </div>
           <FormControlLabel
             className="rrg-normalize-control"
-            control={
-              <Checkbox
-                size="small"
-                checked={normalize}
-                onChange={(e) => setNormalize(e.target.checked)}
-              />
-            }
+            control={<Checkbox size="small" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />}
             label="Normalize"
           />
           <div className="rrg-quadrant-controls">
@@ -512,10 +546,7 @@ export function RrgPage() {
                   selected={active}
                   onClick={() => setQuadrants({ ...quadrants, [q]: !active })}
                 >
-                  <span
-                    className="rrg-quadrant-dot"
-                    style={{ background: QUADRANTS[q].dot }}
-                  />
+                  <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[q].dot }} />
                   {q.charAt(0).toUpperCase() + q.slice(1)}
                 </ToggleButton>
               );
@@ -523,7 +554,7 @@ export function RrgPage() {
             <IconButton
               className="rrg-reset-button"
               size="small"
-              onClick={() => { setMinRs(null); setSelectedId(null); }}
+              onClick={() => { setMinRs(null); setSelectedIds(new Set()); }}
               aria-label="Reset RRG filters"
               title="Reset filters"
             >
@@ -533,40 +564,53 @@ export function RrgPage() {
         </div>
       </header>
 
-      <div className="theme-management-body rrg-body">
+      <div className="theme-management-body rrg-body" style={{ gridTemplateColumns: "20rem minmax(0, 1fr) 18rem" }}>
+        {/* Left: visibility list */}
         <aside className="theme-list-pane">
           <div className="theme-pane-header">
-            <Typography component="h2">Themes ({items.length}/{series.length})</Typography>
-            <Button
-              size="small"
-              variant="text"
-              onClick={toggleAll}
-            >
+            <Typography component="h2">Themes ({items.length}/{totalCount})</Typography>
+            <button onClick={toggleAllVisible} style={{ background: "transparent", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: "0.65rem" }}>
               {allVisible ? "None" : "All"}
-            </Button>
+            </button>
           </div>
-          <div className="rrg-theme-list">
-            {series.map((s) => (
-              <FormControlLabel
-                key={s.theme_id}
-                className="rrg-theme-row"
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={visible[s.theme_id] !== false}
-                    onChange={(e) => setVisible({ ...visible, [s.theme_id]: e.target.checked })}
-                  />
-                }
-                label={
-                  <span className="rrg-theme-label">
-                    {s.theme_name} <span>· {s.etf_symbol}</span>
-                  </span>
-                }
-              />
-            ))}
+          <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
+            {listItems.map((s) => {
+              const isVisible = visible[s.theme_id] !== false;
+              const isExplored = exploredIds.has(s.theme_id);
+              const isSelected = selectedIds.has(s.theme_id);
+              return (
+                <div
+                  key={s.theme_id}
+                  ref={(el) => {
+                    if (el) themeElements.current.set(s.theme_id, el);
+                    else themeElements.current.delete(s.theme_id);
+                  }}
+                  className={`rrg-list-row${isSelected ? " selected" : ""}`}
+                >
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={isVisible}
+                      onChange={(e) => toggleVisible(s.theme_id, e.target.checked)}
+                      sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }}
+                    />
+                  }
+                  label={
+                    <span style={{ fontSize: "0.72rem", opacity: isExplored ? 0.5 : 1, color: isSelected ? "#f0f4f8" : undefined }}>
+                      {s.theme_name} <span style={{ color: "#8f9aa7", fontSize: "0.625rem" }}>· {s.etf_symbol}</span>
+                      {isExplored && <span style={{ marginLeft: 4, fontSize: "0.6rem", color: "#8f9aa7" }}>✓</span>}
+                    </span>
+                  }
+                  sx={{ display: "flex", margin: 0, padding: "0.15rem 0" }}
+                />
+                </div>
+              );
+            })}
           </div>
         </aside>
 
+        {/* Center: chart */}
         <main className="rrg-main">
           <div className="rrg-canvas-wrap" ref={wrapRef}>
             <canvas ref={canvasRef} />
@@ -584,6 +628,90 @@ export function RrgPage() {
             )}
           </div>
         </main>
+
+        {/* Right: selection / explored */}
+        <aside className="rrg-right-pane">
+          <div className="rrg-right-section">
+            <h3>Selected ({selectedIds.size})</h3>
+            {selectedThemes.length === 0 ? (
+              <span style={{ fontSize: "0.7rem", color: "#8f9aa7" }}>Click dots in the chart to select.</span>
+            ) : (
+              <>
+                <div className="rrg-mini-list">
+                  {selectedThemes.map(t => (
+                    <div key={t.theme_id} className="rrg-mini-row">
+                      <span style={{ flex: 1 }}>{t.theme_name} <span style={{ color: "#8f9aa7" }}>· {t.etf_symbol}</span></span>
+                      <button onClick={() => toggleSelected(t.theme_id)}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                <Button size="small" variant="contained" onClick={openInMarketWatch}
+                  sx={{ fontSize: "0.68rem", backgroundColor: "#8b5cf6", "&:hover": { backgroundColor: "#7c3aed" } }}>
+                  Open in Market Watch
+                </Button>
+                <Button size="small" variant="outlined"
+                  onClick={() => markExplored(selectedIds, true)}
+                  sx={{ fontSize: "0.68rem", color: "#aeb7c2", borderColor: "#3a3a3a" }}>
+                  Mark explored
+                </Button>
+                <Button size="small" onClick={() => setSelectedIds(new Set())}
+                  sx={{ fontSize: "0.68rem", color: "#8f9aa7" }}>
+                  Clear selection
+                </Button>
+              </>
+            )}
+          </div>
+
+          <div className="rrg-right-section" style={{ flex: 1, minHeight: 0 }}>
+            <h3>Explored ({exploredCount})</h3>
+            {exploredThemes.length === 0 ? (
+              <span style={{ fontSize: "0.7rem", color: "#8f9aa7" }}>None yet.</span>
+            ) : (
+              <div className="rrg-mini-list" style={{ maxHeight: "none", flex: 1 }}>
+                {exploredThemes.map(t => (
+                  <div key={t.theme_id} className="rrg-mini-row">
+                    <span style={{ flex: 1 }}>{t.theme_name}</span>
+                    <button onClick={() => markExplored([t.theme_id], false)} title="Unexplore">↺</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rrg-right-section" style={{ marginTop: "auto" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <h3>Filter</h3>
+              <span style={{ fontSize: "0.62rem", color: "#8f9aa7" }}>
+                {items.length}/{totalCount}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <FormControlLabel
+                control={
+                  <Checkbox size="small" checked={exploreFilter === "unexplored"}
+                    onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
+                    sx={{ padding: "2px", color: "#8f9aa7", "&.Mui-checked": { color: "#58a6ff" } }} />
+                }
+                label={<span style={{ fontSize: "0.7rem" }}>Hide explored</span>}
+                sx={{ margin: 0 }}
+              />
+              <button
+                onClick={() => setExploredIds(new Set())}
+                disabled={exploredCount === 0}
+                style={{
+                  background: "transparent", border: "none",
+                  color: exploredCount === 0 ? "#444" : "#8f9aa7",
+                  opacity: exploredCount === 0 ? 0.4 : 1,
+                  fontSize: "0.62rem", cursor: exploredCount === 0 ? "default" : "pointer",
+                  padding: "2px 4px",
+                }}
+                title="Clear all explored"
+              >
+                🗑 Clear
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
   );
