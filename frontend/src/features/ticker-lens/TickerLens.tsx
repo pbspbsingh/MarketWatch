@@ -24,6 +24,7 @@ import {
   searchIndustryKeys,
   searchThemeNames,
 } from "./utils";
+import "./ticker-lens.css";
 
 interface TickerLensProps {
   universe: TickerUniverse;
