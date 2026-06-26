@@ -17,6 +17,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
 import { themesMarketWatchUrl } from "../ticker-lens/utils";
+import "./rrg.css";
 
 type Quadrant = "leading" | "weakening" | "lagging" | "improving";
 
