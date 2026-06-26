@@ -1,0 +1,73 @@
+.top-stocks-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+
+  & > .ticker-lens {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.top-stocks-header,
+.top-stocks-actions,
+.top-stocks-controls,
+.top-stocks-period,
+.top-stocks-action-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.top-stocks-header {
+  min-height: 1.55rem;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  gap: 0.5rem;
+
+  & h1 {
+    flex-shrink: 0;
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+}
+
+.top-stocks-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.top-stocks-controls {
+  gap: 2rem;
+}
+
+.top-stocks-period {
+  flex-shrink: 0;
+  gap: 0.125rem;
+
+  & .MuiFormControlLabel-root {
+    margin-right: 0;
+  }
+
+  & .MuiFormControlLabel-label {
+    font-size: 0.7rem;
+  }
+
+  & .MuiCheckbox-root {
+    padding: 0.125rem;
+  }
+
+  & .MuiTextField-root {
+    width: 3.7rem;
+  }
+
+  & .MuiInputBase-input {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.7rem;
+  }
+}
+
+.top-stocks-action-buttons {
+  gap: 0.4rem;
+  margin-left: -1.25rem;
+}

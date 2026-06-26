@@ -17,6 +17,7 @@ import {
 } from "../../api/tickerCollections";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
+import "./csv-analyzer.css";
 
 export function CsvAnalyzerPage() {
   const [collection, setCollection] = useState<TickerCollection | null>(null);

@@ -21,6 +21,7 @@ import {
 } from "../../api/topStocks";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
+import "./top-stocks.css";
 
 const periods: { period: TopStocksPeriod; label: string }[] = [
   { period: "week1", label: "1 Week" },
