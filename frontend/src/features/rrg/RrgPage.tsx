@@ -1,43 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Button,
-  Checkbox,
   CircularProgress,
-  FormControlLabel,
-  IconButton,
-  Slider,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import CloseIcon from "@mui/icons-material/Close";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
 import { themesMarketWatchUrl } from "../ticker-lens/utils";
+import { RrgControls } from "./RrgControls";
+import { RrgSidePanel } from "./RrgSidePanel";
+import { RrgThemeList } from "./RrgThemeList";
+import {
+  QUADRANTS,
+  QUADRANT_ORDER,
+  getQuadrant,
+  type ExploreFilter,
+  type Quadrant,
+  type RrgItem,
+} from "./rrgTypes";
 import "./rrg.css";
-
-type Quadrant = "leading" | "weakening" | "lagging" | "improving";
-
-const QUADRANTS = {
-  leading:    { label: "Leading",    color: "rgba(40,180,80,0.09)",  dot: "#2ecc71", text: "#2ecc71" },
-  weakening:  { label: "Weakening",  color: "rgba(243,156,18,0.09)", dot: "#f39c12", text: "#f39c12" },
-  lagging:    { label: "Lagging",    color: "rgba(220,50,50,0.09)",  dot: "#e74c3c", text: "#e74c3c" },
-  improving:  { label: "Improving",  color: "rgba(74,158,255,0.09)", dot: "#4a9eff", text: "#4a9eff" },
-} as const;
-const QUADRANT_ORDER: Quadrant[] = ["leading", "improving", "weakening", "lagging"];
-
-function getQuadrant(rsRatio: number, rsMomentum: number): Quadrant {
-  if (rsRatio >= 100 && rsMomentum >= 100) return "leading";
-  if (rsRatio >= 100 && rsMomentum <  100) return "weakening";
-  if (rsRatio <  100 && rsMomentum <  100) return "lagging";
-  return "improving";
-}
-
-type RrgItem = ThemeRrgSeries & { quadrant: Quadrant; rsRatio: number; rsMomentum: number };
-type ExploreFilter = "unexplored" | "all";
 
 export function RrgPage() {
   const [interval, setInterval] = useState<"daily" | "weekly">(
@@ -493,121 +472,48 @@ export function RrgPage() {
     <section className="theme-management-page">
       <header className="theme-management-header">
         <Typography component="h1">Relative Rotation Graph</Typography>
-        <div className="rrg-controls">
-          <ToggleButtonGroup value={interval} exclusive size="small" onChange={(_, v) => v && setInterval(v)}>
-            <ToggleButton value="daily">Daily</ToggleButton>
-            <ToggleButton value="weekly">Weekly</ToggleButton>
-          </ToggleButtonGroup>
-          <div className="rrg-slider-control rrg-slider-control-wide">
-            <Typography variant="caption">Lookback: {lookback}</Typography>
-            <Slider min={lookbackMin} max={lookbackMax} value={lookback} onChange={(_, v) => setLookback(v as number)} size="small" />
-          </div>
-          <div className="rrg-slider-control">
-            <Typography variant="caption">Tail: {tail}</Typography>
-            <Slider min={1} max={50} value={tail} onChange={(_, v) => setTail(v as number)} size="small" />
-          </div>
-          <div className="rrg-slider-control rrg-slider-control-rs">
-            <Typography variant="caption">RS ≥ {minRs === null ? "—" : minRs.toFixed(1)}</Typography>
-            <Slider min={rsSliderMin} max={rsSliderMax} step={0.5} value={minRs ?? rsSliderMin} onChange={(_, v) => setMinRs(v as number)} size="small" />
-          </div>
-          <FormControlLabel
-            className="rrg-normalize-control"
-            control={<Checkbox size="small" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />}
-            label="Normalize"
-          />
-          <div className="rrg-quadrant-controls">
-            {(["leading", "improving", "lagging", "weakening"] as Quadrant[]).map((q) => {
-              const active = isQuadrantVisible(q);
-              return (
-                <ToggleButton
-                  key={q}
-                  className="rrg-quadrant-toggle"
-                  value={q}
-                  selected={active}
-                  onClick={() => toggleQuadrantVisible(q)}
-                >
-                  <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[q].dot }} />
-                  {q.charAt(0).toUpperCase() + q.slice(1)}
-                </ToggleButton>
-              );
-            })}
-            <IconButton
-              className="rrg-reset-button"
-              size="small"
-              onClick={() => { setMinRs(null); setSelectedIds(new Set()); }}
-              aria-label="Reset Relative Rotation Graph filters"
-              title="Reset filters"
-            >
-              <RestartAltIcon fontSize="small" />
-            </IconButton>
-          </div>
-        </div>
+        <RrgControls
+          interval={interval}
+          lookback={lookback}
+          lookbackMin={lookbackMin}
+          lookbackMax={lookbackMax}
+          tail={tail}
+          minRs={minRs}
+          rsSliderMin={rsSliderMin}
+          rsSliderMax={rsSliderMax}
+          normalize={normalize}
+          onIntervalChange={setInterval}
+          onLookbackChange={setLookback}
+          onTailChange={setTail}
+          onMinRsChange={setMinRs}
+          onNormalizeChange={setNormalize}
+          isQuadrantVisible={isQuadrantVisible}
+          onToggleQuadrantVisible={toggleQuadrantVisible}
+          onResetFilters={() => {
+            setMinRs(null);
+            setSelectedIds(new Set());
+          }}
+        />
       </header>
 
       <div className="theme-management-body rrg-body">
-        {/* Left: visibility list */}
-        <aside className="theme-list-pane">
-          <div className="theme-pane-header">
-            <Typography component="h2">Themes ({items.length}/{totalCount})</Typography>
-            <div className="rrg-theme-header-actions">
-              <FormControlLabel
-                className="rrg-filter-control"
-                control={
-                  <Checkbox size="small" checked={exploreFilter === "unexplored"}
-                    onChange={(e) => setExploreFilter(e.target.checked ? "unexplored" : "all")}
-                  />
-                }
-                label="Hide explored"
-              />
-              <Button size="small" variant="text" onClick={toggleAllVisible}>
-                {allVisible ? "None" : "All"}
-              </Button>
-            </div>
-          </div>
-          <div className="rrg-theme-list">
-            {groupedListItems.map(({ quadrant, themes }) => (
-              <section key={quadrant} className="rrg-theme-group">
-                <div className="rrg-theme-group-header">
-                  <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[quadrant].dot }} />
-                  <span>{QUADRANTS[quadrant].label}</span>
-                  <small>{themes.length}</small>
-                </div>
-                {themes.map((s) => {
-                  const isVisible = visible[s.theme_id] !== false;
-                  const isExplored = exploredIds.has(s.theme_id);
-                  const isSelected = selectedIds.has(s.theme_id);
-                  return (
-                    <div
-                      key={s.theme_id}
-                      ref={(el) => {
-                        if (el) themeElements.current.set(s.theme_id, el);
-                        else themeElements.current.delete(s.theme_id);
-                      }}
-                      className={`rrg-list-row${isSelected ? " selected" : ""}`}
-                    >
-                      <FormControlLabel
-                        className="rrg-theme-row"
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={isVisible}
-                            onChange={(e) => toggleVisible(s.theme_id, e.target.checked)}
-                          />
-                        }
-                        label={
-                          <span className={`rrg-theme-label${isExplored ? " explored" : ""}${isSelected ? " selected" : ""}`}>
-                            {s.theme_name} <span>- {s.etf_symbol} ({s.rsRatio.toFixed(1)})</span>
-                            {isExplored && <span className="rrg-explored-marker">✓</span>}
-                          </span>
-                        }
-                      />
-                    </div>
-                  );
-                })}
-              </section>
-            ))}
-          </div>
-        </aside>
+        <RrgThemeList
+          groups={groupedListItems}
+          visible={visible}
+          selectedIds={selectedIds}
+          exploredIds={exploredIds}
+          exploreFilter={exploreFilter}
+          itemCount={items.length}
+          totalCount={totalCount}
+          allVisible={allVisible}
+          onExploreFilterChange={setExploreFilter}
+          onToggleAllVisible={toggleAllVisible}
+          onToggleVisible={toggleVisible}
+          onThemeElement={(themeId, element) => {
+            if (element) themeElements.current.set(themeId, element);
+            else themeElements.current.delete(themeId);
+          }}
+        />
 
         {/* Center: chart */}
         <main className="rrg-main">
@@ -628,82 +534,22 @@ export function RrgPage() {
           </div>
         </main>
 
-        {/* Right: selection / explored */}
-        <aside className="rrg-right-pane">
-          <div className="rrg-right-section">
-            <h3>Selected ({selectedIds.size})</h3>
-            <Button size="small" variant="contained" className="rrg-action-button" onClick={openAndMarkExplored} disabled={selectedThemes.length === 0}>
-              Open + Mark Explored
-            </Button>
-            <div className="rrg-selected-secondary-actions">
-              <Button size="small" variant="outlined" className="rrg-secondary-button" onClick={openInMarketWatch} disabled={selectedThemes.length === 0}>
-                Open Only
-              </Button>
-              <Button size="small" variant="outlined" className="rrg-secondary-button" onClick={() => markExplored(selectedIds, true)} disabled={selectedThemes.length === 0}>
-                Mark Only
-              </Button>
-              <Button size="small" className="rrg-muted-button" onClick={() => setSelectedIds(new Set())} disabled={selectedThemes.length === 0}>
-                Clear
-              </Button>
-            </div>
-            {selectedThemes.length === 0 ? (
-              <span className="rrg-empty-note">Click dots in the chart to select.</span>
-            ) : (
-                <div className="rrg-mini-list">
-                  {selectedThemes.map(t => (
-                    <div key={t.theme_id} className="rrg-mini-row">
-                      <span className="rrg-mini-name">{t.theme_name} <span>· {t.etf_symbol}</span></span>
-                      <IconButton size="small" onClick={() => toggleSelected(t.theme_id)} aria-label={`Remove ${t.theme_name}`}>
-                        <CloseIcon fontSize="inherit" />
-                      </IconButton>
-                    </div>
-                  ))}
-                </div>
-            )}
-          </div>
-
-          <div className="rrg-right-section rrg-right-section-grow">
-            <div className="rrg-accordion-header">
-              <button
-                type="button"
-                className="rrg-accordion-trigger"
-                onClick={() => exploredCount > 0 && setShowExplored((v) => !v)}
-                disabled={exploredCount === 0}
-                aria-expanded={showExplored}
-              >
-                {showExplored ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                <h3>Explored</h3>
-                <span className="rrg-section-count">{exploredCount}/{totalCount}</span>
-              </button>
-              <Button
-                size="small"
-                className="rrg-clear-explored-button"
-                onClick={() => setExploredIds(new Set())}
-                disabled={exploredCount === 0}
-                title="Clear all explored"
-                aria-label="Clear all explored"
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </Button>
-            </div>
-            {showExplored && (
-              exploredThemes.length === 0 ? (
-                <span className="rrg-empty-note">None yet.</span>
-              ) : (
-                <div className="rrg-mini-list rrg-mini-list-grow">
-                  {exploredThemes.map(t => (
-                    <div key={t.theme_id} className="rrg-mini-row">
-                      <span className="rrg-mini-name">{t.theme_name}</span>
-                      <IconButton size="small" onClick={() => markExplored([t.theme_id], false)} aria-label={`Unexplore ${t.theme_name}`} title="Unexplore">
-                        <CloseIcon fontSize="inherit" />
-                      </IconButton>
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
-          </div>
-        </aside>
+        <RrgSidePanel
+          selectedIds={selectedIds}
+          selectedThemes={selectedThemes}
+          exploredThemes={exploredThemes}
+          exploredCount={exploredCount}
+          totalCount={totalCount}
+          showExplored={showExplored}
+          onOpenAndMarkExplored={openAndMarkExplored}
+          onOpenSelected={openInMarketWatch}
+          onMarkSelectedExplored={() => markExplored(selectedIds, true)}
+          onClearSelected={() => setSelectedIds(new Set())}
+          onToggleSelected={toggleSelected}
+          onShowExploredChange={setShowExplored}
+          onClearExplored={() => setExploredIds(new Set())}
+          onUnmarkExplored={(themeId) => markExplored([themeId], false)}
+        />
       </div>
     </section>
   );
