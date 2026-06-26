@@ -1,6 +1,6 @@
 import type { TickerRanking } from "../../api/tickers";
 import { defaultSortSetting, sortOptions } from "./constants";
-import type { GroupMode, GroupRanking, SortKey, SortSetting } from "./types";
+import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting } from "./types";
 
 export function readSortSetting(storageKey: string): SortSetting {
   const value = localStorage.getItem(storageKey);
@@ -26,6 +26,62 @@ export function sortValue(group: GroupRanking, key: SortKey) {
 export function tickerSortValue(ticker: TickerRanking, key: SortKey) {
   if (key === "relative_strength") return ticker.relative_strength ?? undefined;
   return ticker.performance?.[key] ?? undefined;
+}
+
+export function sortGroups(groups: GroupRanking[], sortSetting: SortSetting) {
+  return [...groups].sort((left, right) => {
+    const leftValue = sortValue(left, sortSetting.key);
+    const rightValue = sortValue(right, sortSetting.key);
+    if (leftValue === undefined && rightValue === undefined) {
+      return left.name.localeCompare(right.name);
+    }
+    if (leftValue === undefined) return 1;
+    if (rightValue === undefined) return -1;
+    const comparison = leftValue - rightValue;
+    return sortSetting.direction === "desc" ? -comparison : comparison;
+  });
+}
+
+export function highlightedGroups({
+  groups,
+  mode,
+  selectedTickerContext,
+  unassignedGroupKey,
+}: {
+  groups: GroupRanking[];
+  mode: GroupMode;
+  selectedTickerContext: SelectedTickerContext | undefined;
+  unassignedGroupKey: string;
+}) {
+  if (selectedTickerContext === undefined) return new Set<string>();
+  if (mode === "industry") {
+    const industry = selectedTickerContext.industry;
+    if (industry === null) return new Set<string>();
+    return new Set(groups.filter((group) => group.key === industry.key).map((group) => group.key));
+  }
+
+  if (selectedTickerContext.themeNames.length === 0) return new Set([unassignedGroupKey]);
+  const themeNames = new Set(selectedTickerContext.themeNames);
+  return new Set(groups.filter((group) => themeNames.has(group.name)).map((group) => group.key));
+}
+
+export function sortTickers(tickers: TickerRanking[], sortSetting: SortSetting, metricsActive: boolean) {
+  return [...tickers].sort((left, right) => {
+    if (!metricsActive) return left.symbol.localeCompare(right.symbol);
+    const leftValue = tickerSortValue(left, sortSetting.key);
+    const rightValue = tickerSortValue(right, sortSetting.key);
+    if (leftValue === undefined && rightValue === undefined) {
+      return left.symbol.localeCompare(right.symbol);
+    }
+    if (leftValue === undefined) return 1;
+    if (rightValue === undefined) return -1;
+    const comparison = leftValue - rightValue;
+    return comparison === 0
+      ? left.symbol.localeCompare(right.symbol)
+      : sortSetting.direction === "desc"
+        ? -comparison
+        : comparison;
+  });
 }
 
 export function formatMetric(value: number, key: SortKey) {

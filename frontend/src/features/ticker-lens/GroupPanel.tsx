@@ -34,8 +34,10 @@ import type {
 } from "./types";
 import {
   formatMetric,
+  highlightedGroups,
   metricColor,
   readSortSetting,
+  sortGroups,
   sortValue,
 } from "./utils";
 
@@ -107,38 +109,9 @@ export function GroupPanel({
     setSelectedGroupKeys,
   ]);
 
-  const sortedGroups = useMemo(
-    () =>
-      [...groups].sort((left, right) => {
-        const leftValue = sortValue(left, sortSetting.key);
-        const rightValue = sortValue(right, sortSetting.key);
-        if (leftValue === undefined && rightValue === undefined) {
-          return left.name.localeCompare(right.name);
-        }
-        if (leftValue === undefined) return 1;
-        if (rightValue === undefined) return -1;
-        const comparison = leftValue - rightValue;
-        return sortSetting.direction === "desc" ? -comparison : comparison;
-      }),
-    [groups, sortSetting],
-  );
+  const sortedGroups = useMemo(() => sortGroups(groups, sortSetting), [groups, sortSetting]);
   const highlightedGroupKeys = useMemo(() => {
-    if (selectedTickerContext === undefined) return new Set<string>();
-    if (mode === "industry") {
-      const industry = selectedTickerContext.industry;
-      if (industry === null) return new Set<string>();
-      return new Set(
-        groups.filter((group) => group.key === industry.key).map((group) => group.key),
-      );
-    }
-
-    if (selectedTickerContext.themeNames.length === 0) {
-      return new Set([unassignedGroupKey]);
-    }
-    const themeNames = new Set(selectedTickerContext.themeNames);
-    return new Set(
-      groups.filter((group) => themeNames.has(group.name)).map((group) => group.key),
-    );
+    return highlightedGroups({ groups, mode, selectedTickerContext, unassignedGroupKey });
   }, [groups, mode, selectedTickerContext]);
 
   useEffect(() => {
@@ -150,13 +123,25 @@ export function GroupPanel({
   }, [highlightedGroupKeys, sortedGroups]);
 
   const markExplored = (groupKey: string) => {
+    const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
     setExploredGroupKeys((current) => {
       const next = new Set(current);
-      const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
       keys.forEach((key) => next.add(key));
       return next;
     });
+    setSelectedGroupKeys((current) => {
+      const next = new Set(current);
+      keys.forEach((key) => next.delete(key));
+      return next.size === current.size ? current : next;
+    });
   };
+
+  useEffect(() => {
+    setSelectedGroupKeys((current) => {
+      const next = new Set([...current].filter((key) => !exploredGroupKeys.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [exploredGroupKeys, setSelectedGroupKeys]);
 
   return (
     <section className="workspace-panel industries-panel">
@@ -189,8 +174,10 @@ export function GroupPanel({
               size="small"
               aria-label="Select all groups"
               onClick={() => {
-                const allKeys = groups.map((group) => group.key);
-                if (mode === "theme") {
+                const allKeys = groups
+                  .map((group) => group.key)
+                  .filter((key) => !exploredGroupKeys.has(key));
+                if (mode === "theme" && !exploredGroupKeys.has(unassignedGroupKey)) {
                   allKeys.push(unassignedGroupKey);
                 }
                 setSelectedGroupKeys(new Set(allKeys));
@@ -261,24 +248,27 @@ export function GroupPanel({
           {sortedGroups.map((group) => {
             const metric = sortValue(group, sortSetting.key);
             const highlighted = highlightedGroupKeys.has(group.key);
+            const explored = exploredGroupKeys.has(group.key);
             return (
               <li key={group.key}>
                 <button
                   className={[
                     "ranked-list-item",
                     highlighted ? "ranked-list-item-context" : "",
-                    exploredGroupKeys.has(group.key) ? "ranked-list-item-explored" : "",
+                    explored ? "ranked-list-item-explored" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
                   type="button"
+                  disabled={explored}
                   ref={(element) => {
                     if (element === null) groupElements.current.delete(group.key);
                     else groupElements.current.set(group.key, element);
                   }}
-                  aria-pressed={selectedGroupKeys.has(group.key)}
+                  aria-pressed={!explored && selectedGroupKeys.has(group.key)}
                   onClick={() =>
                     setSelectedGroupKeys((selected) => {
+                      if (explored) return selected;
                       const next = new Set(selected);
                       if (next.has(group.key)) next.delete(group.key);
                       else next.add(group.key);
@@ -327,13 +317,15 @@ export function GroupPanel({
                   .filter(Boolean)
                   .join(" ")}
                 type="button"
+                disabled={exploredGroupKeys.has(unassignedGroupKey)}
                 ref={(element) => {
                   if (element === null) groupElements.current.delete(unassignedGroupKey);
                   else groupElements.current.set(unassignedGroupKey, element);
                 }}
-                aria-pressed={selectedGroupKeys.has(unassignedGroupKey)}
+                aria-pressed={!exploredGroupKeys.has(unassignedGroupKey) && selectedGroupKeys.has(unassignedGroupKey)}
                 onClick={() =>
                   setSelectedGroupKeys((selected) => {
+                    if (exploredGroupKeys.has(unassignedGroupKey)) return selected;
                     const next = new Set(selected);
                     if (next.has(unassignedGroupKey)) next.delete(unassignedGroupKey);
                     else next.add(unassignedGroupKey);

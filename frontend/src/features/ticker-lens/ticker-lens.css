@@ -202,6 +202,11 @@
 .ranked-list-item-explored {
   opacity: 0.38;
 
+  &:disabled {
+    color: inherit;
+    cursor: default;
+  }
+
   &:hover,
   &:focus-visible,
   &[aria-pressed="true"] {

@@ -42,6 +42,7 @@ import {
   isArrowKeyControl,
   metricColor,
   readSortSetting,
+  sortTickers,
   tickerSortValue,
 } from "./utils";
 
@@ -212,23 +213,7 @@ export function TickerPanel({
   }, [sortSetting]);
 
   const sortedTickers = useMemo(
-    () =>
-      [...tickers].sort((left, right) => {
-        if (!metricsActive) return left.symbol.localeCompare(right.symbol);
-        const leftValue = tickerSortValue(left, sortSetting.key);
-        const rightValue = tickerSortValue(right, sortSetting.key);
-        if (leftValue === undefined && rightValue === undefined) {
-          return left.symbol.localeCompare(right.symbol);
-        }
-        if (leftValue === undefined) return 1;
-        if (rightValue === undefined) return -1;
-        const comparison = leftValue - rightValue;
-        return comparison === 0
-          ? left.symbol.localeCompare(right.symbol)
-          : sortSetting.direction === "desc"
-            ? -comparison
-            : comparison;
-      }),
+    () => sortTickers(tickers, sortSetting, metricsActive),
     [metricsActive, sortSetting, tickers],
   );
   const selectedTickerPosition =
