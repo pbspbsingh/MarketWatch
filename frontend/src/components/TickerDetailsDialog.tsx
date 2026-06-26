@@ -30,6 +30,7 @@ import {
   type ThemeTicker,
 } from "../api/themes";
 import { Toast } from "./Toast";
+import "./ticker-details-dialog.css";
 
 interface TickerDetailsDialogProps {
   symbol?: string;
@@ -405,7 +406,7 @@ function ProfileThemesTab({
 
   return (
     <div className="profile-themes-tab">
-      <section className="ticker-profile">
+      <section className="ticker-details-profile">
         <Typography component="h3">
           {details.profile.name ?? details.profile.symbol}
         </Typography>

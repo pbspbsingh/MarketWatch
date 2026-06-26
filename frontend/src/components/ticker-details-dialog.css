@@ -1,0 +1,198 @@
+.ticker-details-dialog {
+  width: 80vw;
+  height: 88vh;
+  max-height: 88vh;
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.ticker-details-title {
+  display: flex;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ticker-details-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+
+  & h2 {
+    overflow: hidden;
+    margin: 0;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & a {
+    color: #58a6ff;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    text-decoration: none;
+  }
+
+  & a:hover {
+    color: #79c0ff;
+  }
+}
+
+.ticker-details-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.125rem;
+  white-space: nowrap;
+
+  & p {
+    font-size: 0.7rem;
+  }
+
+  & .MuiIconButton-root {
+    width: 2rem;
+    height: 2rem;
+    padding: 0.25rem;
+  }
+}
+
+.ticker-details-content {
+  display: flex;
+  min-height: 0;
+  padding: 0.5rem 1.2rem !important;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  & .MuiTabs-root {
+    min-height: 2rem;
+  }
+
+  & .MuiTab-root {
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.7rem;
+  }
+}
+
+.company-description {
+  font-size: 0.85rem !important;
+  line-height: 1.5 !important;
+}
+
+.profile-themes-tab {
+  display: flex;
+  min-height: 0;
+  overflow: auto;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ticker-details-profile {
+  display: flex;
+  padding-bottom: 0.75rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  & p {
+    margin: 0;
+  }
+}
+
+.ticker-details-profile h3,
+.ticker-theme-panel h3,
+.ticker-ai-preview h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ticker-theme-panel {
+  display: flex;
+  padding: 0.75rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  background: #151a20;
+  flex-direction: column;
+  gap: 0.625rem;
+
+  & p {
+    font-size: 0.7rem;
+  }
+}
+
+.ticker-theme-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ticker-ai-preview {
+  display: flex;
+  max-height: 8rem;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.fundamentals-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.fundamentals-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.5rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  background: #151a20;
+  flex-direction: column;
+
+  & h3 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+}
+
+.fundamentals-canvas-wrap {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+
+.fundamentals-summary {
+  display: flex;
+  min-height: 1rem;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+
+  & p {
+    font-size: 0.625rem;
+    white-space: nowrap;
+  }
+
+  & p + p::before {
+    margin-right: 0.375rem;
+    color: #4a5563;
+    content: "|";
+  }
+}
