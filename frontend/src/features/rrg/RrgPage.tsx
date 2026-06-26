@@ -534,7 +534,7 @@ export function RrgPage() {
               className="rrg-reset-button"
               size="small"
               onClick={() => { setMinRs(null); setSelectedIds(new Set()); }}
-              aria-label="Reset RRG filters"
+              aria-label="Reset Relative Rotation Graph filters"
               title="Reset filters"
             >
               <RestartAltIcon fontSize="small" />
@@ -616,7 +616,7 @@ export function RrgPage() {
             {loading && (
               <div className="rrg-overlay">
                 <CircularProgress size="1rem" />
-                <Typography color="text.secondary">Loading RRG</Typography>
+                <Typography color="text.secondary">Loading Relative Rotation Graph</Typography>
               </div>
             )}
             {error && (

@@ -42,7 +42,6 @@ export function App() {
         <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />
         <Route path="/rrg" element={<Page><RrgPage /></Page>} />
-        <Route path="/trend-analyzer" element={<TrendAnalyzerPlaceholder />} />
       </Route>
     </Routes>
   );
@@ -50,12 +49,4 @@ export function App() {
 
 function Page({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
-}
-
-function TrendAnalyzerPlaceholder() {
-  return (
-    <section className="bounded-empty-page" aria-label="Trend Analyzer">
-      <span>Work in progress</span>
-    </section>
-  );
 }

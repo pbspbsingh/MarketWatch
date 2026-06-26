@@ -4,7 +4,6 @@ import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
 import TableViewIcon from "@mui/icons-material/TableView";
-import TimelineIcon from "@mui/icons-material/Timeline";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import {
@@ -24,8 +23,7 @@ const destinations = [
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon],
-  ["RRG", "/rrg", BubbleChartIcon],
-  ["Trend Analyzer", "/trend-analyzer", TimelineIcon],
+  ["Relative Rotation Graph", "/rrg", BubbleChartIcon],
 ] as const;
 
 const navigationTriggerInset = 4;
