@@ -58,7 +58,7 @@
 ## TODO
 
 - [x] Split `app/styles.css` by ownership.
-- [ ] Add shared local storage/debounce/request helper hooks where reuse is clear.
+- [x] Add shared local storage/debounce/request helper hooks where reuse is clear.
 - [x] Break `RrgPage.tsx` into medium-sized components and canvas helpers.
 - [ ] Break `TickerDetailsDialog.tsx` into focused tab/chart components.
 - [ ] Break `ThemeManagementPage.tsx` into tab-level files and shared utilities.
@@ -72,3 +72,4 @@
 
 - CSS ownership split is complete. `app/styles.css` now contains app shell, navigation, and shared primitives only.
 - RRG decomposition is complete for the current phase: controls, theme list, right pane, shared RRG types/constants, and shared viewport calculation have been extracted. Canvas drawing and event wiring remain in `RrgPage.tsx` as page-owned behavior.
+- Shared `useLocalStorageState` and `useDebouncedValue` hooks are in place and used by RRG. A shared request helper is deferred until another feature needs the same abstraction.

@@ -4,6 +4,8 @@ import {
   Typography,
 } from "@mui/material";
 import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
+import { useDebouncedValue } from "../../shared/useDebouncedValue";
+import { useLocalStorageState } from "../../shared/useLocalStorageState";
 import { themesMarketWatchUrl } from "../ticker-lens/utils";
 import { RrgControls } from "./RrgControls";
 import { RrgSidePanel } from "./RrgSidePanel";
@@ -19,34 +21,58 @@ import {
 } from "./rrgTypes";
 import "./rrg.css";
 
+const serializeString = (value: string) => value;
+const serializeNumber = String;
+const serializeBoolean = String;
+const parseRrgInterval = (value: string): "daily" | "weekly" => value === "weekly" ? "weekly" : "daily";
+const parseStoredNumber = (fallback: number) => (value: string) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const parseNullableStoredNumber = (value: string) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const parseStoredBoolean = (value: string) => value === "true";
+const serializeNullableNumber = (value: number | null) => value === null ? null : String(value);
+
 export function RrgPage() {
-  const [interval, setInterval] = useState<"daily" | "weekly">(
-    () => (localStorage.getItem("rrg_interval") as "daily" | "weekly") || "daily"
+  const [interval, setInterval] = useLocalStorageState<"daily" | "weekly">(
+    "rrg_interval",
+    "daily",
+    { serialize: serializeString, deserialize: parseRrgInterval },
   );
-  const [lookbackDaily, setLookbackDaily] = useState(() =>
-    parseInt(localStorage.getItem("rrg_lookback_daily") ?? "10", 10)
+  const [lookbackDaily, setLookbackDaily] = useLocalStorageState(
+    "rrg_lookback_daily",
+    10,
+    { serialize: serializeNumber, deserialize: parseStoredNumber(10) },
   );
-  const [lookbackWeekly, setLookbackWeekly] = useState(() =>
-    parseInt(localStorage.getItem("rrg_lookback_weekly") ?? "10", 10)
+  const [lookbackWeekly, setLookbackWeekly] = useLocalStorageState(
+    "rrg_lookback_weekly",
+    10,
+    { serialize: serializeNumber, deserialize: parseStoredNumber(10) },
   );
   const lookback = interval === "daily" ? lookbackDaily : lookbackWeekly;
   const setLookback = interval === "daily" ? setLookbackDaily : setLookbackWeekly;
-  const [tail, setTail] = useState(() =>
-    parseInt(localStorage.getItem("rrg_tail") ?? "10", 10)
+  const [tail, setTail] = useLocalStorageState(
+    "rrg_tail",
+    10,
+    { serialize: serializeNumber, deserialize: parseStoredNumber(10) },
   );
-  const [normalize, setNormalize] = useState(() =>
-    localStorage.getItem("rrg_normalize") === "true"
+  const [normalize, setNormalize] = useLocalStorageState(
+    "rrg_normalize",
+    false,
+    { serialize: serializeBoolean, deserialize: parseStoredBoolean },
   );
   const [series, setSeries] = useState<ThemeRrgSeries[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const [visible, setVisible] = useState<Record<number, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem("rrg_visible") || "{}"); } catch { return {}; }
-  });
-  const [minRs, setMinRs] = useState<number | null>(() => {
-    const v = localStorage.getItem("rrg_min_rs");
-    return v === null ? null : parseFloat(v);
-  });
+  const [visible, setVisible] = useLocalStorageState<Record<number, boolean>>("rrg_visible", {});
+  const [minRs, setMinRs] = useLocalStorageState<number | null>(
+    "rrg_min_rs",
+    null,
+    { serialize: serializeNullableNumber, deserialize: parseNullableStoredNumber },
+  );
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [exploredIds, setExploredIds] = useState<Set<number>>(new Set());
@@ -61,33 +87,14 @@ export function RrgPage() {
   const hoverIdxRef = useRef<number | null>(null);
   useEffect(() => { hoverIdxRef.current = hoverIdx; }, [hoverIdx]);
 
-  // Persist
-  useEffect(() => { try { localStorage.setItem("rrg_interval", interval); } catch {} }, [interval]);
-  useEffect(() => { try { localStorage.setItem("rrg_lookback_daily", String(lookbackDaily)); } catch {} }, [lookbackDaily]);
-  useEffect(() => { try { localStorage.setItem("rrg_lookback_weekly", String(lookbackWeekly)); } catch {} }, [lookbackWeekly]);
-  useEffect(() => { try { localStorage.setItem("rrg_tail", String(tail)); } catch {} }, [tail]);
-  useEffect(() => { try { localStorage.setItem("rrg_normalize", String(normalize)); } catch {} }, [normalize]);
-  useEffect(() => {
-    try {
-      if (minRs === null) localStorage.removeItem("rrg_min_rs");
-      else localStorage.setItem("rrg_min_rs", String(minRs));
-    } catch {}
-  }, [minRs]);
-  useEffect(() => {
-    try { localStorage.setItem("rrg_visible", JSON.stringify(visible)); } catch {}
-  }, [visible]);
-
   const lookbackMin = interval === "daily" ? 5 : 5;
   const lookbackMax = interval === "daily" ? 60 : 20;
   useEffect(() => {
     setLookback((l) => Math.min(Math.max(l, lookbackMin), lookbackMax));
   }, [lookbackMin, lookbackMax]);
 
-  // Debounced fetch
-  const [debouncedLookback, setDebouncedLookback] = useState(lookback);
-  const [debouncedTail, setDebouncedTail] = useState(tail);
-  useEffect(() => { const t = setTimeout(() => setDebouncedLookback(lookback), 250); return () => clearTimeout(t); }, [lookback]);
-  useEffect(() => { const t = setTimeout(() => setDebouncedTail(tail), 250); return () => clearTimeout(t); }, [tail]);
+  const debouncedLookback = useDebouncedValue(lookback, 250);
+  const debouncedTail = useDebouncedValue(tail, 250);
 
   useEffect(() => {
     const controller = new AbortController();
