@@ -59,11 +59,11 @@
 
 - [x] Split `app/styles.css` by ownership.
 - [ ] Add shared local storage/debounce/request helper hooks where reuse is clear.
-- [ ] Break `RrgPage.tsx` into medium-sized components and canvas helpers.
+- [x] Break `RrgPage.tsx` into medium-sized components and canvas helpers.
 - [ ] Break `TickerDetailsDialog.tsx` into focused tab/chart components.
 - [ ] Break `ThemeManagementPage.tsx` into tab-level files and shared utilities.
 - [ ] Move pure sorting/filtering/transforms into feature `utils.ts` files.
-- [ ] Share RRG viewport calculation between draw and hit-test.
+- [x] Share RRG viewport calculation between draw and hit-test.
 - [ ] Review Theme Management polling scope.
 - [ ] Remove avoidable static inline styles.
 - [ ] Run `npm run check` and `git diff --check` after each completed phase.
@@ -71,4 +71,4 @@
 ## Progress Notes
 
 - CSS ownership split is complete. `app/styles.css` now contains app shell, navigation, and shared primitives only.
-- RRG decomposition is in progress: controls, theme list, right pane, and shared RRG types/constants have been extracted. Canvas draw and hit-test logic still remain in `RrgPage.tsx`.
+- RRG decomposition is complete for the current phase: controls, theme list, right pane, shared RRG types/constants, and shared viewport calculation have been extracted. Canvas drawing and event wiring remain in `RrgPage.tsx` as page-owned behavior.

@@ -8,6 +8,7 @@ import { themesMarketWatchUrl } from "../ticker-lens/utils";
 import { RrgControls } from "./RrgControls";
 import { RrgSidePanel } from "./RrgSidePanel";
 import { RrgThemeList } from "./RrgThemeList";
+import { getRrgViewport } from "./rrgChart";
 import {
   QUADRANTS,
   QUADRANT_ORDER,
@@ -134,28 +135,6 @@ export function RrgPage() {
     if (minRs !== null && (minRs < rsSliderMin || minRs > rsSliderMax)) setMinRs(null);
   }, [rsSliderMin, rsSliderMax, minRs]);
 
-  const getViewport = (width: number, height: number) => {
-    const M = { top: 36, right: 36, bottom: 44, left: 52 };
-    const plotW = width - M.left - M.right;
-    const plotH = height - M.top - M.bottom;
-    let xMin = 95, xMax = 105, yMin = 95, yMax = 105;
-    if (items.length) {
-      const xs = items.flatMap(d => d.points.map(p => p.rs_ratio));
-      const ys = items.flatMap(d => d.points.map(p => p.rs_momentum));
-      const allX = [...xs, 100], allY = [...ys, 100];
-      xMin = Math.min(...allX); xMax = Math.max(...allX);
-      yMin = Math.min(...allY); yMax = Math.max(...allY);
-      const padX = Math.max((xMax - xMin) * 0.1, 1.5);
-      const padY = Math.max((yMax - yMin) * 0.1, 1.5);
-      xMin -= padX; xMax += padX; yMin -= padY; yMax += padY;
-      if (xMin > 100) xMin = 99; if (xMax < 100) xMax = 101;
-      if (yMin > 100) yMin = 99; if (yMax < 100) yMax = 101;
-    }
-    const toX = (v: number) => M.left + ((v - xMin) / (xMax - xMin)) * plotW;
-    const toY = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
-    return { M, plotW, plotH, xMin, xMax, yMin, yMax, toX, toY };
-  };
-
   // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -175,7 +154,7 @@ export function RrgPage() {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const { M, plotW, plotH, xMin, xMax, yMin, yMax, toX, toY } = getViewport(W, H);
+    const { M, plotW, plotH, xMin, xMax, yMin, yMax, toX, toY } = getRrgViewport(items, W, H);
     if (plotW <= 0 || plotH <= 0) return;
     const cx = toX(100), cy = toY(100);
 
@@ -295,23 +274,7 @@ export function RrgPage() {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const W = wrap.clientWidth, H = wrap.clientHeight;
-      const M = { top: 36, right: 36, bottom: 44, left: 52 };
-      const plotW = W - M.left - M.right, plotH = H - M.top - M.bottom;
-      let xMin = 95, xMax = 105, yMin = 95, yMax = 105;
-      if (items.length) {
-        const xs = items.flatMap(d => d.points.map(p => p.rs_ratio));
-        const ys = items.flatMap(d => d.points.map(p => p.rs_momentum));
-        const allX = [...xs, 100], allY = [...ys, 100];
-        xMin = Math.min(...allX); xMax = Math.max(...allX);
-        yMin = Math.min(...allY); yMax = Math.max(...allY);
-        const padX = Math.max((xMax - xMin) * 0.1, 1.5);
-        const padY = Math.max((yMax - yMin) * 0.1, 1.5);
-        xMin -= padX; xMax += padX; yMin -= padY; yMax += padY;
-        if (xMin > 100) xMin = 99; if (xMax < 100) xMax = 101;
-        if (yMin > 100) yMin = 99; if (yMax < 100) yMax = 101;
-      }
-      const toX = (v: number) => M.left + ((v - xMin) / (xMax - xMin)) * plotW;
-      const toY = (v: number) => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+      const { toX, toY } = getRrgViewport(items, W, H);
 
       let hitIdx: number | null = null, hitDist = 12;
       items.forEach((d, idx) => {
