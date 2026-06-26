@@ -46,7 +46,10 @@ export function AutomaticTab({
   const [jobs, setJobs] = useState<ThemeAiJobSummary[]>([]);
   const [selectedJob, setSelectedJob] = useState<ThemeAiJob>();
   const [selectedId, setSelectedId] = useState<number>();
+  const [showAppliedJobs, setShowAppliedJobs] = useState(false);
   const [busy, setBusy] = useState(false);
+  const appliedJobCount = jobs.filter((job) => job.status === "applied").length;
+  const visibleJobs = showAppliedJobs ? jobs : jobs.filter((job) => job.status !== "applied");
   const selectedSummary = jobs.find((job) => job.id === selectedId);
   const selected = selectedJob?.id === selectedSummary?.id ? selectedJob : undefined;
   const filtered = useMemo(() => {
@@ -68,6 +71,12 @@ export function AutomaticTab({
       return next.size === current.size ? current : next;
     });
   }, [filtered]);
+
+  useEffect(() => {
+    if (!showAppliedJobs && selectedSummary?.status === "applied") {
+      setSelectedId(undefined);
+    }
+  }, [selectedSummary?.status, showAppliedJobs]);
 
   const reloadJobs = async () => {
     const next = await fetchThemeAiJobs();
@@ -223,10 +232,15 @@ export function AutomaticTab({
         <section className="automatic-job-review">
           <aside className="automatic-job-list">
             <div className="theme-pane-header">
-              <Typography component="h2">Jobs ({jobs.length})</Typography>
+              <Typography component="h2">Jobs ({visibleJobs.length})</Typography>
+              {appliedJobCount > 0 && (
+                <Button size="small" onClick={() => setShowAppliedJobs((current) => !current)}>
+                  {showAppliedJobs ? "Hide Applied" : `Show Applied (${appliedJobCount})`}
+                </Button>
+              )}
             </div>
             <ol className="theme-management-list">
-              {jobs.map((job) => (
+              {visibleJobs.map((job) => (
                 <li key={job.id}>
                   <button
                     className="theme-management-list-item"
