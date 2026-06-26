@@ -43,6 +43,7 @@ import {
   type ThemeTickerIndustry,
 } from "../../api/themes";
 import { Toast } from "../../components/Toast";
+import "./theme-management.css";
 
 const unclassifiedIndustryKey = "__unclassified__";
 
