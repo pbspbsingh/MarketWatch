@@ -1,10 +1,11 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent,
 } from "react";
-import { CircularProgress, Typography } from "@mui/material";
+import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import {
   fetchTickerGroupSummary,
@@ -280,6 +281,30 @@ function GroupSummaryPanel({
   relatedGroupLabel: string;
   relatedGroupMode: GroupMode;
 }) {
+  const [selectedRelatedGroupKeys, setSelectedRelatedGroupKeys] = useState<Set<string>>(
+    new Set(),
+  );
+
+  useEffect(() => {
+    if (summary === undefined) {
+      setSelectedRelatedGroupKeys(new Set());
+      return;
+    }
+    setSelectedRelatedGroupKeys(new Set(summary.related_groups.map((group) => group.key)));
+  }, [summary]);
+
+  const selectedRelatedGroups = useMemo(() => {
+    if (summary === undefined) return [];
+    return summary.related_groups.filter((group) => selectedRelatedGroupKeys.has(group.key));
+  }, [selectedRelatedGroupKeys, summary]);
+
+  const selectedRelatedUrl = useMemo(() => {
+    if (selectedRelatedGroups.length === 0) return undefined;
+    return relatedGroupMode === "industry"
+      ? industriesMarketWatchUrl(selectedRelatedGroups.map((group) => group.key))
+      : themeGroupsMarketWatchUrl(selectedRelatedGroups);
+  }, [relatedGroupMode, selectedRelatedGroups]);
+
   if (loading && summary === undefined) {
     return (
       <div className="panel-status">
@@ -313,20 +338,24 @@ function GroupSummaryPanel({
           <Typography component="h3">{relatedGroupLabel}</Typography>
           <Typography color="text.secondary">Related</Typography>
         </header>
-        <SummaryList groups={summary.related_groups} linkMode={relatedGroupMode} />
+        <SummaryList
+          groups={summary.related_groups}
+          linkMode={relatedGroupMode}
+          selectedKeys={selectedRelatedGroupKeys}
+          onSelectedKeysChange={setSelectedRelatedGroupKeys}
+        />
         {summary.related_groups.length > 0 && (
-          <a
+          <Button
+            component="a"
+            size="small"
             className="group-summary-all-link"
-            href={
-              relatedGroupMode === "industry"
-                ? industriesMarketWatchUrl(summary.related_groups.map((group) => group.key))
-                : themeGroupsMarketWatchUrl(summary.related_groups)
-            }
+            href={selectedRelatedUrl}
+            disabled={selectedRelatedUrl === undefined}
             target="_blank"
             rel="noreferrer"
           >
-            Open all {relatedGroupLabel.toLowerCase()}
-          </a>
+            Open selected {relatedGroupLabel.toLowerCase()}
+          </Button>
         )}
       </section>
     </div>
@@ -336,9 +365,13 @@ function GroupSummaryPanel({
 function SummaryList({
   groups,
   linkMode,
+  selectedKeys,
+  onSelectedKeysChange,
 }: {
   groups: TickerGroupSummaryItem[];
   linkMode?: GroupMode;
+  selectedKeys?: Set<string>;
+  onSelectedKeysChange?: (selectedKeys: Set<string>) => void;
 }) {
   if (groups.length === 0) {
     return (
@@ -349,9 +382,21 @@ function SummaryList({
   }
 
   return (
-    <ol className="group-summary-list">
+    <ol className={`group-summary-list${selectedKeys !== undefined ? " selectable" : ""}`}>
       {groups.map((group) => (
         <li key={group.key}>
+          {selectedKeys !== undefined && onSelectedKeysChange !== undefined ? (
+            <Checkbox
+              size="small"
+              checked={selectedKeys.has(group.key)}
+              onChange={(event) => {
+                const next = new Set(selectedKeys);
+                if (event.target.checked) next.add(group.key);
+                else next.delete(group.key);
+                onSelectedKeysChange(next);
+              }}
+            />
+          ) : null}
           {linkMode === undefined ? (
             <span>{group.name}</span>
           ) : (

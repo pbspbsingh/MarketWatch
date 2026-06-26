@@ -1619,6 +1619,19 @@ body,
   transition: background-color 120ms ease;
 }
 
+.group-summary-list.selectable li {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.group-summary-list .MuiCheckbox-root {
+  padding: 0.125rem;
+  color: #8f9aa7;
+}
+
+.group-summary-list .MuiCheckbox-root.Mui-checked {
+  color: #58a6ff;
+}
+
 .group-summary-list li:hover,
 .group-summary-list li:focus-within {
   background: #1d2530;
@@ -1656,8 +1669,8 @@ body,
   font-size: 0.72rem !important;
 }
 
-.group-summary-all-link {
-  display: block;
+.group-summary-all-link.MuiButton-root {
+  display: flex;
   flex-shrink: 0;
   padding: 0.4rem 0.6rem;
   border-top: 0.0625rem solid #252d36;
@@ -1665,15 +1678,20 @@ body,
   background: #151a20;
   font-size: 0.68rem;
   font-weight: 650;
-  text-align: right;
+  justify-content: flex-end;
   text-decoration: none;
 }
 
-.group-summary-all-link:hover,
-.group-summary-all-link:focus-visible {
+.group-summary-all-link.MuiButton-root:hover,
+.group-summary-all-link.MuiButton-root:focus-visible {
   color: #79c0ff;
   background: #1d2530;
   text-decoration: underline;
+}
+
+.group-summary-all-link.Mui-disabled {
+  color: #65758a;
+  opacity: 0.55;
 }
 
 .tradingview-chart {
