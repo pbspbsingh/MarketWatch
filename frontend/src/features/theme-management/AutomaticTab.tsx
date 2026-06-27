@@ -44,7 +44,7 @@ export function AutomaticTab({
   onMessage: (message: string) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [unassignedOnly, setUnassignedOnly] = useState(true);
   const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<ThemeAiJobSummary[]>([]);

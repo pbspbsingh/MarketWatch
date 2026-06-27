@@ -23,11 +23,11 @@ export function TickerFilters({
       <Menu anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
         <MenuItem onClick={() => setUnprocessedOnly((current) => !current)}>
           <Checkbox size="small" checked={unprocessedOnly} />
-          Unprocessed only
+          Unprocessed
         </MenuItem>
         <MenuItem onClick={() => setUnassignedOnly((current) => !current)}>
           <Checkbox size="small" checked={unassignedOnly} />
-          Unassigned only
+          Unassigned
         </MenuItem>
       </Menu>
     </div>

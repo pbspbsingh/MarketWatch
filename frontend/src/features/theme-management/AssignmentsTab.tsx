@@ -43,7 +43,7 @@ export function AssignmentsTab({
 }) {
   const [search, setSearch] = useState("");
   const [newSymbol, setNewSymbol] = useState("");
-  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [unassignedOnly, setUnassignedOnly] = useState(true);
   const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbol, setSelectedSymbol] = useState<string>();
   const [batchSymbols, setBatchSymbols] = useState<Set<string>>(new Set());
