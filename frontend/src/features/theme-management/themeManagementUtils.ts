@@ -55,10 +55,13 @@ export function enrichTickers(symbols: string[], onError: (message: string) => v
   );
 }
 
-export function jobStatusColor(status: ThemeAiJob["status"]): "default" | "info" | "success" | "error" {
+export function jobStatusColor(
+  status: ThemeAiJob["status"],
+): "default" | "info" | "success" | "warning" | "error" {
   if (status === "pending" || status === "running") return "info";
   if (status === "completed" || status === "applied") return "success";
   if (status === "failed") return "error";
+  if (status === "partially_failed") return "warning";
   return "default";
 }
 

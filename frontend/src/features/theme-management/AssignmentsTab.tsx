@@ -12,6 +12,7 @@ import {
   type ThemeSuggestion,
   type ThemeTicker,
 } from "../../api/themes";
+import { TickerFilters, TickerSelectionHeader } from "./TickerListControls";
 import { IndustryFilter } from "./IndustryFilter";
 import {
   enrichTickers,
@@ -42,6 +43,7 @@ export function AssignmentsTab({
   const [search, setSearch] = useState("");
   const [newSymbol, setNewSymbol] = useState("");
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbol, setSelectedSymbol] = useState<string>();
   const [batchSymbols, setBatchSymbols] = useState<Set<string>>(new Set());
   const [draftThemeIds, setDraftThemeIds] = useState<number[]>([]);
@@ -61,12 +63,13 @@ export function AssignmentsTab({
     return tickers.filter(
       (ticker) =>
         (!unassignedOnly || ticker.assignments.length === 0) &&
+        (!unprocessedOnly || !ticker.automatic_processed) &&
         matchesIndustryFilter(ticker, selectedIndustryKeys) &&
         (!query ||
           ticker.symbol.toLowerCase().includes(query) ||
           ticker.name?.toLowerCase().includes(query)),
     );
-  }, [search, selectedIndustryKeys, tickers, unassignedOnly]);
+  }, [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly]);
   const promptFingerprint = useMemo(
     () =>
       JSON.stringify({
@@ -167,80 +170,37 @@ export function AssignmentsTab({
     <div className="theme-management-body assignment-layout">
       <aside className="theme-list-pane">
         <div className="ticker-search-row">
+          <IndustryFilter
+            industries={industries}
+            selectedIndustryKeys={selectedIndustryKeys}
+            setSelectedIndustryKeys={setSelectedIndustryKeys}
+          />
           <TextField
             size="small"
             placeholder="Search tickers"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-          <TextField
-            size="small"
-            placeholder="Add symbol"
-            value={newSymbol}
-            onChange={(event) => setNewSymbol(event.target.value.toUpperCase())}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && newSymbol.trim()) {
-                run(async () => {
-                  await addThemeTicker(newSymbol);
-                  setBatchSymbols(new Set());
-                  setSelectedSymbol(newSymbol.trim().toUpperCase());
-                  setNewSymbol("");
-                  onMessage("Ticker added with Yahoo profile and Finviz industry");
-                  onChanged();
-                });
-              }
-            }}
+          <TickerFilters
+            unprocessedOnly={unprocessedOnly}
+            setUnprocessedOnly={setUnprocessedOnly}
+            unassignedOnly={unassignedOnly}
+            setUnassignedOnly={setUnassignedOnly}
           />
-          <IconButton
-            size="small"
-            aria-label="Add ticker"
-            disabled={busy || !newSymbol.trim()}
-            onClick={() =>
-              run(async () => {
-                await addThemeTicker(newSymbol);
-                setBatchSymbols(new Set());
-                setSelectedSymbol(newSymbol.trim().toUpperCase());
-                setNewSymbol("");
-                onMessage("Ticker added with Yahoo profile and Finviz industry");
-                onChanged();
-              })
+        </div>
+        <TickerSelectionHeader
+          selectedCount={batchSymbols.size}
+          visibleCount={filtered.length}
+          onChange={(selectAll) => {
+            if (!selectAll) {
+              setBatchSymbols(new Set());
+              return;
             }
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
-        </div>
-        <div className="ticker-selection-controls">
-          <IndustryFilter
-            industries={industries}
-            selectedIndustryKeys={selectedIndustryKeys}
-            setSelectedIndustryKeys={setSelectedIndustryKeys}
-          />
-          <Button
-            size="small"
-            variant={unassignedOnly ? "contained" : "text"}
-            onClick={() => setUnassignedOnly((current) => !current)}
-          >
-            Unassigned
-          </Button>
-          <Button
-            size="small"
-            disabled={filtered.length === 0}
-            onClick={() => {
-              const symbols = filtered.map((ticker) => ticker.symbol);
-              enrichTickers(symbols.filter((symbol) => !batchSymbols.has(symbol)), onError);
-              setBatchSymbols(new Set(symbols));
-            }}
-          >
-            Select all
-          </Button>
-          <Button
-            size="small"
-            disabled={batchSymbols.size === 0}
-            onClick={() => setBatchSymbols(new Set())}
-          >
-            Select none
-          </Button>
-        </div>
+            const symbols = filtered.map((ticker) => ticker.symbol);
+            enrichTickers(symbols.filter((symbol) => !batchSymbols.has(symbol)), onError);
+            setBatchSymbols(new Set(symbols));
+          }}
+        />
         <ol className="theme-management-list">
           {filtered.map((ticker) => (
             <li key={ticker.symbol}>
@@ -277,6 +237,43 @@ export function AssignmentsTab({
             </li>
           ))}
         </ol>
+        <div className="ticker-add-row">
+          <TextField
+            size="small"
+            placeholder="Add symbol"
+            value={newSymbol}
+            onChange={(event) => setNewSymbol(event.target.value.toUpperCase())}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && newSymbol.trim()) {
+                run(async () => {
+                  await addThemeTicker(newSymbol);
+                  setBatchSymbols(new Set());
+                  setSelectedSymbol(newSymbol.trim().toUpperCase());
+                  setNewSymbol("");
+                  onMessage("Ticker added with Yahoo profile and Finviz industry");
+                  onChanged();
+                });
+              }
+            }}
+          />
+          <IconButton
+            size="small"
+            aria-label="Add ticker"
+            disabled={busy || !newSymbol.trim()}
+            onClick={() =>
+              run(async () => {
+                await addThemeTicker(newSymbol);
+                setBatchSymbols(new Set());
+                setSelectedSymbol(newSymbol.trim().toUpperCase());
+                setNewSymbol("");
+                onMessage("Ticker added with Yahoo profile and Finviz industry");
+                onChanged();
+              })
+            }
+          >
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </div>
       </aside>
       <main className="assignment-workspace">
         {editedTicker !== undefined && (

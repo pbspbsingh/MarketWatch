@@ -1,7 +1,7 @@
 use super::Store;
 use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
-    ThemeSuggestion, ThemeTicker, ThemeTickerIndustry,
+    ThemeSuggestion, ThemeSuggestionError, ThemeTicker, ThemeTickerIndustry,
 };
 use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
@@ -17,6 +17,7 @@ struct StoredThemeTicker {
     reasoning: Option<String>,
     model: Option<String>,
     assigned_at: Option<NaiveDateTime>,
+    automatic_processed: bool,
 }
 
 struct StoredThemeAiJob {
@@ -27,7 +28,9 @@ struct StoredThemeAiJob {
     prompt: String,
     response: Option<String>,
     suggestions: Option<String>,
+    validation_errors: Option<String>,
     error: Option<String>,
+    retry_of_job_id: Option<i64>,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
 }
@@ -76,6 +79,12 @@ impl Store {
             .execute(&mut *transaction)
             .await
             .context("failed to delete ticker market data")?
+            .rows_affected();
+        deleted += sqlx::query("DELETE FROM theme_ai_processed_symbols WHERE symbol = ?")
+            .bind(symbol)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to delete ticker automatic processing outcome")?
             .rows_affected();
         deleted += sqlx::query!(
             "DELETE FROM theme_ai_jobs
@@ -308,7 +317,11 @@ impl Store {
                SELECT known_symbols.symbol, tickers.name, tickers.description,
                       themes.id AS theme_id, themes.name AS theme_name,
                       theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,
-                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime"
+                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime",
+                      EXISTS (
+                          SELECT 1 FROM theme_ai_processed_symbols
+                          WHERE theme_ai_processed_symbols.symbol = known_symbols.symbol
+                      ) AS "automatic_processed!: bool"
                FROM known_symbols
                LEFT JOIN tickers ON tickers.symbol = known_symbols.symbol
                LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
@@ -381,7 +394,11 @@ impl Store {
                SELECT known_symbols.symbol, tickers.name, tickers.description,
                       themes.id AS theme_id, themes.name AS theme_name,
                       theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,
-                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime"
+                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime",
+                      EXISTS (
+                          SELECT 1 FROM theme_ai_processed_symbols
+                          WHERE theme_ai_processed_symbols.symbol = known_symbols.symbol
+                      ) AS "automatic_processed!: bool"
                FROM known_symbols
                LEFT JOIN tickers ON tickers.symbol = known_symbols.symbol
                LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
@@ -525,6 +542,7 @@ impl Store {
         &self,
         model: &str,
         batches: &[(Vec<String>, String)],
+        retry_of_job_id: Option<i64>,
     ) -> anyhow::Result<Vec<i64>> {
         let now = Utc::now().naive_utc();
         let mut transaction = self
@@ -536,16 +554,17 @@ impl Store {
         for (symbols, prompt) in batches {
             let symbols =
                 serde_json::to_string(symbols).context("failed to serialize job symbols")?;
-            let result = sqlx::query!(
+            let result = sqlx::query(
                 r#"INSERT INTO theme_ai_jobs (
-                       status, symbols, model, prompt, created_at, updated_at
-                   ) VALUES ('pending', ?, ?, ?, ?, ?)"#,
-                symbols,
-                model,
-                prompt,
-                now,
-                now,
+                       status, symbols, model, prompt, retry_of_job_id, created_at, updated_at
+                   ) VALUES ('pending', ?, ?, ?, ?, ?, ?)"#,
             )
+            .bind(symbols)
+            .bind(model)
+            .bind(prompt)
+            .bind(retry_of_job_id)
+            .bind(now)
+            .bind(now)
             .execute(&mut *transaction)
             .await
             .context("failed to create theme AI job")?;
@@ -585,28 +604,71 @@ impl Store {
         Ok(())
     }
 
-    pub async fn complete_theme_ai_job(
+    pub async fn finish_theme_ai_job(
         &self,
         id: i64,
         response: &str,
         suggestions: &[ThemeSuggestion],
+        validation_errors: &[ThemeSuggestionError],
     ) -> anyhow::Result<()> {
-        let suggestions =
+        let status = if validation_errors.is_empty() {
+            "completed"
+        } else if suggestions.is_empty() {
+            "failed"
+        } else {
+            "partially_failed"
+        };
+        let suggestions_json =
             serde_json::to_string(suggestions).context("failed to serialize batch suggestions")?;
+        let validation_errors_json = serde_json::to_string(validation_errors)
+            .context("failed to serialize suggestion validation errors")?;
         let now = Utc::now().naive_utc();
-        sqlx::query!(
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin theme AI job completion")?;
+        sqlx::query(
             r#"UPDATE theme_ai_jobs
-               SET status = 'completed', response = ?, suggestions = ?, error = NULL, updated_at = ?
+               SET status = ?, response = ?, suggestions = ?, validation_errors = ?,
+                   error = NULL, updated_at = ?
                WHERE id = ?"#,
-            response,
-            suggestions,
-            now,
-            id,
         )
-        .execute(&self.pool)
+        .bind(status)
+        .bind(response)
+        .bind(suggestions_json)
+        .bind(validation_errors_json)
+        .bind(now)
+        .bind(id)
+        .execute(&mut *transaction)
         .await
         .context("failed to complete theme AI job")?;
-        Ok(())
+        for suggestion in suggestions {
+            let outcome = if suggestion.themes.is_empty() {
+                "no_theme"
+            } else {
+                "assigned"
+            };
+            sqlx::query(
+                r#"INSERT INTO theme_ai_processed_symbols (symbol, job_id, outcome, processed_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(symbol) DO UPDATE SET
+                       job_id = excluded.job_id,
+                       outcome = excluded.outcome,
+                       processed_at = excluded.processed_at"#,
+            )
+            .bind(&suggestion.symbol)
+            .bind(id)
+            .bind(outcome)
+            .bind(now)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to mark automatically processed ticker")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit theme AI job completion")
     }
 
     pub async fn fail_theme_ai_job(&self, id: i64, error: &str) -> anyhow::Result<()> {
@@ -625,13 +687,13 @@ impl Store {
 
     pub async fn mark_theme_ai_job_applied(&self, id: i64) -> anyhow::Result<()> {
         let now = Utc::now().naive_utc();
-        sqlx::query!(
+        sqlx::query(
             r#"UPDATE theme_ai_jobs
                SET status = 'applied', updated_at = ?
-               WHERE id = ? AND status = 'completed'"#,
-            now,
-            id,
+               WHERE id = ? AND status IN ('completed', 'partially_failed')"#,
         )
+        .bind(now)
+        .bind(id)
         .execute(&self.pool)
         .await
         .context("failed to mark theme AI job applied")?;
@@ -669,7 +731,8 @@ impl Store {
         sqlx::query_as!(
             StoredThemeAiJob,
             r#"SELECT id, status, symbols AS "symbols: String", model,
-                      prompt, response, suggestions AS "suggestions: String", error,
+                      prompt, response, suggestions AS "suggestions: String",
+                      validation_errors AS "validation_errors: String", error, retry_of_job_id,
                       created_at AS "created_at: NaiveDateTime",
                       updated_at AS "updated_at: NaiveDateTime"
                FROM theme_ai_jobs
@@ -706,7 +769,13 @@ fn parse_theme_ai_job(job: StoredThemeAiJob) -> anyhow::Result<ThemeAiJob> {
             .suggestions
             .map(|value| serde_json::from_str(&value).context("invalid stored job suggestions"))
             .transpose()?,
+        validation_errors: job
+            .validation_errors
+            .map(|value| serde_json::from_str(&value).context("invalid stored validation errors"))
+            .transpose()?
+            .unwrap_or_default(),
         error: job.error,
+        retry_of_job_id: job.retry_of_job_id,
         created_at: job.created_at.and_utc(),
         updated_at: job.updated_at.and_utc(),
     })
@@ -717,6 +786,7 @@ fn parse_job_status(status: &str) -> anyhow::Result<ThemeAiJobStatus> {
         "pending" => Ok(ThemeAiJobStatus::Pending),
         "running" => Ok(ThemeAiJobStatus::Running),
         "completed" => Ok(ThemeAiJobStatus::Completed),
+        "partially_failed" => Ok(ThemeAiJobStatus::PartiallyFailed),
         "failed" => Ok(ThemeAiJobStatus::Failed),
         "applied" => Ok(ThemeAiJobStatus::Applied),
         _ => anyhow::bail!("invalid stored theme AI job status"),
@@ -745,6 +815,7 @@ fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<T
                 description: row.description,
                 industries: Vec::new(),
                 assignments: Vec::new(),
+                automatic_processed: row.automatic_processed,
             });
         }
         let Some(theme_id) = row.theme_id else {
@@ -871,6 +942,87 @@ mod tests {
                 key: "hiddenindustry".to_owned(),
                 name: "Hidden Industry".to_owned(),
             }]
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_ai_job_marks_only_valid_suggestions_as_processed() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        for symbol in ["EMPTY", "ASSIGNED", "INVALID"] {
+            store
+                .upsert_company_profile(&CompanyProfile {
+                    symbol: symbol.to_owned(),
+                    name: None,
+                    exchange: Exchange::Nasdaq,
+                    description: None,
+                    fetched_at: Utc::now(),
+                })
+                .await
+                .unwrap();
+        }
+        let ids = store
+            .create_theme_ai_jobs(
+                "test-model",
+                &[(
+                    vec![
+                        "EMPTY".to_owned(),
+                        "ASSIGNED".to_owned(),
+                        "INVALID".to_owned(),
+                    ],
+                    "prompt".to_owned(),
+                )],
+                None,
+            )
+            .await
+            .unwrap();
+        store
+            .finish_theme_ai_job(
+                ids[0],
+                "response",
+                &[
+                    ThemeSuggestion {
+                        symbol: "EMPTY".to_owned(),
+                        themes: Vec::new(),
+                        reasoning: None,
+                    },
+                    ThemeSuggestion {
+                        symbol: "ASSIGNED".to_owned(),
+                        themes: vec!["AI".to_owned()],
+                        reasoning: None,
+                    },
+                ],
+                &[ThemeSuggestionError {
+                    symbol: Some("INVALID".to_owned()),
+                    error: "unknown theme".to_owned(),
+                }],
+            )
+            .await
+            .unwrap();
+
+        let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
+        assert!(matches!(job.status, ThemeAiJobStatus::PartiallyFailed));
+        assert_eq!(job.validation_errors.len(), 1);
+        let tickers = store.theme_tickers().await.unwrap();
+        assert!(
+            tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "EMPTY")
+                .unwrap()
+                .automatic_processed
+        );
+        assert!(
+            tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "ASSIGNED")
+                .unwrap()
+                .automatic_processed
+        );
+        assert!(
+            !tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "INVALID")
+                .unwrap()
+                .automatic_processed
         );
     }
 

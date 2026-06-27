@@ -100,13 +100,35 @@
 
 .ticker-search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7rem auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.25rem;
+}
+
+.ticker-add-row {
+  display: grid;
+  padding-top: 0.5rem;
+  border-top: 0.0625rem solid #2a3038;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.25rem;
 }
 
 .ticker-selection-controls {
   display: flex;
   gap: 0.25rem;
+}
+
+.ticker-selection-header {
+  display: flex;
+  min-height: 2rem;
+  padding: 0 0.25rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  color: #8f9aa7;
+  font-size: 0.68rem;
+  align-items: center;
+
+  & .MuiCheckbox-root {
+    padding: 0.25rem;
+  }
 }
 
 .industry-filter-search {
@@ -174,6 +196,19 @@
 
 .ai-job-suggestions {
   max-height: none;
+}
+
+.ai-job-errors {
+  max-height: none;
+  border-color: #713b3b;
+}
+
+.suggestion-error-row {
+  grid-template-columns: 8rem minmax(0, 1fr);
+
+  & > span {
+    color: #ffb4ab;
+  }
 }
 
 .assignment-workspace {

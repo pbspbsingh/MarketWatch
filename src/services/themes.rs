@@ -1,6 +1,6 @@
 use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeSuggestion,
-    ThemeTicker,
+    ThemeSuggestionError, ThemeTicker,
 };
 use crate::providers::{AiClient, AiError};
 use crate::services::tickers::TickerCatalogService;
@@ -12,6 +12,11 @@ use thiserror::Error;
 use tracing::error;
 
 const MAX_THEMES_PER_TICKER: usize = 2;
+
+struct AutomaticValidation {
+    suggestions: Vec<ThemeSuggestion>,
+    errors: Vec<ThemeSuggestionError>,
+}
 
 pub struct ThemeService {
     store: Store,
@@ -240,6 +245,14 @@ impl ThemeService {
         self: &Arc<Self>,
         symbols: &[String],
     ) -> Result<Vec<i64>, ThemeServiceError> {
+        self.create_automatic_jobs_for_attempt(symbols, None).await
+    }
+
+    async fn create_automatic_jobs_for_attempt(
+        self: &Arc<Self>,
+        symbols: &[String],
+        retry_of_job_id: Option<i64>,
+    ) -> Result<Vec<i64>, ThemeServiceError> {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
         })?;
@@ -259,7 +272,7 @@ impl ThemeService {
             .collect::<Vec<_>>();
         let job_ids = self
             .store
-            .create_theme_ai_jobs(ai.model(), &batches)
+            .create_theme_ai_jobs(ai.model(), &batches, retry_of_job_id)
             .await
             .map_err(ThemeServiceError::Persistence)?;
         for (job_id, (_, prompt)) in job_ids.iter().copied().zip(batches) {
@@ -278,6 +291,20 @@ impl ThemeService {
             });
         }
         Ok(job_ids)
+    }
+
+    pub async fn retry_automatic_job(
+        self: &Arc<Self>,
+        id: i64,
+    ) -> Result<Vec<i64>, ThemeServiceError> {
+        let job = self.ai_job(id).await?;
+        if !matches!(job.status, ThemeAiJobStatus::Failed) {
+            return Err(ThemeServiceError::Validation(
+                "only failed AI jobs can be retried".to_owned(),
+            ));
+        }
+        self.create_automatic_jobs_for_attempt(&job.symbols, Some(id))
+            .await
     }
 
     pub async fn ai_jobs(&self) -> Result<Vec<ThemeAiJobSummary>, ThemeServiceError> {
@@ -302,9 +329,12 @@ impl ThemeService {
             .await
             .map_err(ThemeServiceError::Persistence)?
             .ok_or_else(|| ThemeServiceError::Validation("AI job does not exist".to_owned()))?;
-        if !matches!(job.status, ThemeAiJobStatus::Completed) {
+        if !matches!(
+            job.status,
+            ThemeAiJobStatus::Completed | ThemeAiJobStatus::PartiallyFailed
+        ) {
             return Err(ThemeServiceError::Validation(
-                "only completed AI jobs can be applied".to_owned(),
+                "only completed or partially failed AI jobs can be applied".to_owned(),
             ));
         }
         let suggestions = job.suggestions.ok_or_else(|| {
@@ -343,14 +373,12 @@ impl ThemeService {
             .await
             .map_err(ThemeServiceError::Persistence)?;
         let response = ai.complete(&prompt).await?;
-        let suggestions: Vec<ThemeSuggestion> = serde_json::from_str(strip_code_fence(&response))
-            .map_err(ThemeServiceError::InvalidAiResponse)?;
         let job = self.ai_job(id).await?;
-        let suggestions = self
-            .validate_automatic_suggestions(suggestions, &job.symbols)
+        let validation = self
+            .validate_automatic_response(&response, &job.symbols)
             .await?;
         self.store
-            .complete_theme_ai_job(id, &response, &suggestions)
+            .finish_theme_ai_job(id, &response, &validation.suggestions, &validation.errors)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
@@ -501,6 +529,118 @@ impl ThemeService {
             }
         }
         self.validate_suggestions(suggestions).await
+    }
+
+    async fn validate_automatic_response(
+        &self,
+        response: &str,
+        job_symbols: &[String],
+    ) -> Result<AutomaticValidation, ThemeServiceError> {
+        let values: Vec<serde_json::Value> = serde_json::from_str(strip_code_fence(response))
+            .map_err(ThemeServiceError::InvalidAiResponse)?;
+        let allowed = job_symbols.iter().cloned().collect::<HashSet<_>>();
+        let known_themes = self.known_theme_names().await?;
+        let mut seen = HashSet::new();
+        let mut returned = HashSet::new();
+        let mut suggestions = Vec::new();
+        let mut errors = Vec::new();
+
+        for value in values {
+            let symbol = value
+                .get("symbol")
+                .and_then(serde_json::Value::as_str)
+                .map(|symbol| symbol.trim().to_uppercase())
+                .filter(|symbol| !symbol.is_empty());
+            if let Some(symbol) = &symbol {
+                returned.insert(symbol.clone());
+            }
+            let suggestion = match serde_json::from_value::<ThemeSuggestion>(value) {
+                Ok(suggestion) => suggestion,
+                Err(error) => {
+                    errors.push(ThemeSuggestionError {
+                        symbol,
+                        error: format!("invalid suggestion: {error}"),
+                    });
+                    continue;
+                }
+            };
+            match self
+                .validate_one_suggestion(suggestion, &known_themes, Some(&allowed), &mut seen)
+                .await
+            {
+                Ok(suggestion) => suggestions.push(suggestion),
+                Err((symbol, error)) => errors.push(ThemeSuggestionError { symbol, error }),
+            }
+        }
+
+        for symbol in job_symbols {
+            if !returned.contains(symbol) {
+                errors.push(ThemeSuggestionError {
+                    symbol: Some(symbol.clone()),
+                    error: "AI response omitted this ticker".to_owned(),
+                });
+            }
+        }
+
+        Ok(AutomaticValidation {
+            suggestions,
+            errors,
+        })
+    }
+
+    async fn known_theme_names(&self) -> Result<HashMap<String, String>, ThemeServiceError> {
+        Ok(self
+            .themes()
+            .await?
+            .into_iter()
+            .map(|theme| (theme.name.to_lowercase(), theme.name))
+            .collect())
+    }
+
+    async fn validate_one_suggestion(
+        &self,
+        mut suggestion: ThemeSuggestion,
+        known_themes: &HashMap<String, String>,
+        allowed_symbols: Option<&HashSet<String>>,
+        seen: &mut HashSet<String>,
+    ) -> Result<ThemeSuggestion, (Option<String>, String)> {
+        suggestion.symbol = suggestion.symbol.trim().to_uppercase();
+        let symbol = (!suggestion.symbol.is_empty()).then(|| suggestion.symbol.clone());
+        if let Err(error) = validate_symbol(&suggestion.symbol) {
+            return Err((symbol, error.to_string()));
+        }
+        if allowed_symbols.is_some_and(|allowed| !allowed.contains(&suggestion.symbol)) {
+            return Err((
+                symbol,
+                format!("{} is not part of this AI job", suggestion.symbol),
+            ));
+        }
+        if !seen.insert(suggestion.symbol.clone()) {
+            return Err((
+                symbol,
+                format!("duplicate suggestion for {}", suggestion.symbol),
+            ));
+        }
+        if let Err(error) = self.ensure_ticker(&suggestion.symbol).await {
+            return Err((symbol, error.to_string()));
+        }
+        if let Err(error) = validate_count(suggestion.themes.len()) {
+            return Err((symbol, error.to_string()));
+        }
+        let mut unique = HashSet::new();
+        for theme in &mut suggestion.themes {
+            let Some(canonical) = known_themes.get(&theme.trim().to_lowercase()) else {
+                return Err((symbol, format!("unknown theme {theme}")));
+            };
+            *theme = canonical.clone();
+            if !unique.insert(theme.clone()) {
+                return Err((
+                    symbol,
+                    format!("duplicate theme {} for {}", theme, suggestion.symbol),
+                ));
+            }
+        }
+        Ok(suggestion)
     }
 
     pub async fn ensure_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {

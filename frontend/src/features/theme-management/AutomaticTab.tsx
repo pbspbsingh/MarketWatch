@@ -6,11 +6,13 @@ import {
   deleteThemeAiJob,
   fetchThemeAiJob,
   fetchThemeAiJobs,
+  retryThemeAiJob,
   type AiCapability,
   type ThemeAiJob,
   type ThemeAiJobSummary,
   type ThemeTicker,
 } from "../../api/themes";
+import { TickerFilters, TickerSelectionHeader } from "./TickerListControls";
 import { IndustryFilter } from "./IndustryFilter";
 import {
   enrichTickers,
@@ -42,6 +44,7 @@ export function AutomaticTab({
 }) {
   const [search, setSearch] = useState("");
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<ThemeAiJobSummary[]>([]);
   const [selectedJob, setSelectedJob] = useState<ThemeAiJob>();
@@ -57,12 +60,13 @@ export function AutomaticTab({
     return tickers.filter(
       (ticker) =>
         (!unassignedOnly || ticker.assignments.length === 0) &&
+        (!unprocessedOnly || !ticker.automatic_processed) &&
         matchesIndustryFilter(ticker, selectedIndustryKeys) &&
         (!query ||
           ticker.symbol.toLowerCase().includes(query) ||
           ticker.name?.toLowerCase().includes(query)),
     );
-  }, [search, selectedIndustryKeys, tickers, unassignedOnly]);
+  }, [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly]);
 
   useEffect(() => {
     const visible = new Set(filtered.map((ticker) => ticker.symbol));
@@ -133,44 +137,38 @@ export function AutomaticTab({
   return (
     <div className="theme-management-body automatic-layout">
       <aside className="theme-list-pane">
-        <TextField
-          size="small"
-          placeholder="Search tickers"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <div className="ticker-selection-controls">
+        <div className="ticker-search-row">
           <IndustryFilter
             industries={industries}
             selectedIndustryKeys={selectedIndustryKeys}
             setSelectedIndustryKeys={setSelectedIndustryKeys}
           />
-          <Button
+          <TextField
             size="small"
-            variant={unassignedOnly ? "contained" : "text"}
-            onClick={() => setUnassignedOnly((current) => !current)}
-          >
-            Unassigned
-          </Button>
-          <Button
-            size="small"
-            disabled={filtered.length === 0}
-            onClick={() => {
-              const symbols = filtered.map((ticker) => ticker.symbol);
-              enrichTickers(symbols.filter((symbol) => !selectedSymbols.has(symbol)), onError);
-              setSelectedSymbols(new Set(symbols));
-            }}
-          >
-            Select all
-          </Button>
-          <Button
-            size="small"
-            disabled={selectedSymbols.size === 0}
-            onClick={() => setSelectedSymbols(new Set())}
-          >
-            Select none
-          </Button>
+            placeholder="Search tickers"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <TickerFilters
+            unprocessedOnly={unprocessedOnly}
+            setUnprocessedOnly={setUnprocessedOnly}
+            unassignedOnly={unassignedOnly}
+            setUnassignedOnly={setUnassignedOnly}
+          />
         </div>
+        <TickerSelectionHeader
+          selectedCount={selectedSymbols.size}
+          visibleCount={filtered.length}
+          onChange={(selectAll) => {
+            if (!selectAll) {
+              setSelectedSymbols(new Set());
+              return;
+            }
+            const symbols = filtered.map((ticker) => ticker.symbol);
+            enrichTickers(symbols.filter((symbol) => !selectedSymbols.has(symbol)), onError);
+            setSelectedSymbols(new Set(symbols));
+          }}
+        />
         <ol className="theme-management-list">
           {filtered.map((ticker) => (
             <li key={ticker.symbol}>
@@ -251,7 +249,11 @@ export function AutomaticTab({
                       <strong>{job.symbol_count} tickers · {job.model}</strong>
                       <small>{new Date(job.updated_at).toLocaleString()}</small>
                     </span>
-                    <Chip size="small" label={job.status} color={jobStatusColor(job.status)} />
+                    <Chip
+                      size="small"
+                      label={job.status.replace("_", " ")}
+                      color={jobStatusColor(job.status)}
+                    />
                   </button>
                 </li>
               ))}
@@ -267,8 +269,11 @@ export function AutomaticTab({
                 <div className="bulk-assignment-heading">
                   <Typography component="h2">Job #{selected.id}</Typography>
                   <div className="bulk-actions">
-                    <Chip label={selected.status} color={jobStatusColor(selected.status)} />
-                    {selected.status === "completed" && (
+                    <Chip
+                      label={selected.status.replace("_", " ")}
+                      color={jobStatusColor(selected.status)}
+                    />
+                    {["completed", "partially_failed"].includes(selected.status) && (
                       <Button
                         variant="contained"
                         disabled={busy}
@@ -281,7 +286,25 @@ export function AutomaticTab({
                           })
                         }
                       >
-                        Apply
+                        {selected.status === "partially_failed" ? "Apply Valid" : "Apply"}
+                      </Button>
+                    )}
+                    {selected.status === "failed" && (
+                      <Button
+                        variant="contained"
+                        disabled={busy || !capability.enabled}
+                        onClick={() =>
+                          run(async () => {
+                            const jobs = await retryThemeAiJob(selected.id);
+                            setSelectedId(jobs.ids[0]);
+                            await reloadJobs();
+                            onMessage(
+                              `${jobs.ids.length} retry job${jobs.ids.length === 1 ? "" : "s"} scheduled`,
+                            );
+                          })
+                        }
+                      >
+                        Retry
                       </Button>
                     )}
                     {!["pending", "running"].includes(selected.status) && (
@@ -303,14 +326,32 @@ export function AutomaticTab({
                   </div>
                 </div>
                 <Typography color="text.secondary">{selected.symbols.join(", ")}</Typography>
+                {selected.retry_of_job_id !== null && (
+                  <Typography color="text.secondary">
+                    Retry of job #{selected.retry_of_job_id}
+                  </Typography>
+                )}
                 {selected.error && <Typography color="error">{selected.error}</Typography>}
-                {selected.suggestions && (
+                {selected.suggestions !== null && selected.suggestions.length > 0 && (
                   <div className="suggestion-preview ai-job-suggestions">
                     {selected.suggestions.map((suggestion) => (
                       <div key={suggestion.symbol} className="suggestion-row">
                         <strong>{suggestion.symbol}</strong>
                         <span>{suggestion.themes.length > 0 ? suggestion.themes.join(", ") : "No theme"}</span>
                         <small>{suggestion.reasoning}</small>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {selected.validation_errors.length > 0 && (
+                  <div className="suggestion-preview ai-job-errors">
+                    {selected.validation_errors.map((validationError, index) => (
+                      <div
+                        key={`${validationError.symbol ?? "unknown"}-${index}`}
+                        className="suggestion-row suggestion-error-row"
+                      >
+                        <strong>{validationError.symbol ?? "Unknown ticker"}</strong>
+                        <span>{validationError.error}</span>
                       </div>
                     ))}
                   </div>

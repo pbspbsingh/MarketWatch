@@ -17,6 +17,7 @@ pub struct ThemeTicker {
     pub description: Option<String>,
     pub industries: Vec<ThemeTickerIndustry>,
     pub assignments: Vec<ThemeAssignment>,
+    pub automatic_processed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -33,12 +34,19 @@ pub struct ThemeSuggestion {
     pub reasoning: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ThemeSuggestionError {
+    pub symbol: Option<String>,
+    pub error: String,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeAiJobStatus {
     Pending,
     Running,
     Completed,
+    PartiallyFailed,
     Failed,
     Applied,
 }
@@ -52,7 +60,9 @@ pub struct ThemeAiJob {
     pub prompt: String,
     pub response: Option<String>,
     pub suggestions: Option<Vec<ThemeSuggestion>>,
+    pub validation_errors: Vec<ThemeSuggestionError>,
     pub error: Option<String>,
+    pub retry_of_job_id: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

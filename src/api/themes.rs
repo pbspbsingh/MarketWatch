@@ -64,6 +64,7 @@ pub fn router() -> Router<AppState> {
         .route("/theme-ai/jobs", get(ai_jobs).post(create_ai_jobs))
         .route("/theme-ai/jobs/{id}", get(ai_job).delete(delete_ai_job))
         .route("/theme-ai/jobs/{id}/apply", post(apply_ai_job))
+        .route("/theme-ai/jobs/{id}/retry", post(retry_ai_job))
         .route("/theme-ai/apply", post(apply))
 }
 
@@ -307,6 +308,18 @@ async fn apply_ai_job(
         .apply_ai_job(id)
         .await
         .map(|()| Json(json!({ "ok": true })))
+        .map_err(api_error)
+}
+
+async fn retry_ai_job(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<serde_json::Value> {
+    state
+        .themes
+        .retry_automatic_job(id)
+        .await
+        .map(|ids| Json(json!({ "ids": ids })))
         .map_err(api_error)
 }
 

@@ -18,7 +18,7 @@ pub use rrg::{
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,
-    ThemeSuggestion, ThemeTicker, ThemeTickerIndustry,
+    ThemeSuggestion, ThemeSuggestionError, ThemeTicker, ThemeTickerIndustry,
 };
 pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,

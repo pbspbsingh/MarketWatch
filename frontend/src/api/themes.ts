@@ -21,6 +21,7 @@ export interface ThemeTicker {
   description: string | null;
   industries: ThemeTickerIndustry[];
   assignments: ThemeAssignment[];
+  automatic_processed: boolean;
 }
 
 export interface ThemeTickerIndustry {
@@ -42,15 +43,28 @@ export interface AiCapability {
 
 export interface ThemeAiJob {
   id: number;
-  status: "pending" | "running" | "completed" | "failed" | "applied";
+  status:
+    | "pending"
+    | "running"
+    | "completed"
+    | "partially_failed"
+    | "failed"
+    | "applied";
   symbols: string[];
   model: string;
   prompt: string;
   response: string | null;
   suggestions: ThemeSuggestion[] | null;
+  validation_errors: ThemeSuggestionError[];
   error: string | null;
+  retry_of_job_id: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ThemeSuggestionError {
+  symbol: string | null;
+  error: string;
 }
 
 export interface ThemeAiJobSummary {
@@ -147,6 +161,9 @@ export const applyThemeAiJob = (id: number) =>
 
 export const deleteThemeAiJob = (id: number) =>
   request<{ ok: boolean }>(`/api/theme-ai/jobs/${id}`, { method: "DELETE" });
+
+export const retryThemeAiJob = (id: number) =>
+  request<{ ids: number[] }>(`/api/theme-ai/jobs/${id}/retry`, { method: "POST" });
 
 export const applyThemeSuggestions = (
   suggestions: ThemeSuggestion[],
