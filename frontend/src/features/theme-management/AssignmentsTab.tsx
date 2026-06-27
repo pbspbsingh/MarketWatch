@@ -1,6 +1,6 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
-import { Button, Checkbox, Chip, IconButton, TextField, Typography } from "@mui/material";
+import { Button, Chip, IconButton, TextField, Typography } from "@mui/material";
 import {
   addThemeTicker,
   applyThemeSuggestions,
@@ -14,6 +14,7 @@ import {
 } from "../../api/themes";
 import { TickerFilters, TickerSelectionHeader } from "./TickerListControls";
 import { IndustryFilter } from "./IndustryFilter";
+import { VirtualTickerList } from "./VirtualTickerList";
 import {
   enrichTickers,
   errorMessage,
@@ -201,42 +202,23 @@ export function AssignmentsTab({
             setBatchSymbols(new Set(symbols));
           }}
         />
-        <ol className="theme-management-list">
-          {filtered.map((ticker) => (
-            <li key={ticker.symbol}>
-              <div className="ticker-assignment-row">
-                <Checkbox
-                  size="small"
-                  checked={batchSymbols.has(ticker.symbol)}
-                  onChange={() => {
-                    if (!batchSymbols.has(ticker.symbol)) {
-                      enrichTickers([ticker.symbol], onError);
-                    }
-                    setBatchSymbols((current) => {
-                      const next = new Set(current);
-                      next.has(ticker.symbol) ? next.delete(ticker.symbol) : next.add(ticker.symbol);
-                      return next;
-                    });
-                  }}
-                />
-                <button
-                  className="theme-management-list-item"
-                  aria-pressed={ticker.symbol === editedTicker?.symbol}
-                  onClick={() => {
-                    setBatchSymbols(new Set());
-                    setSelectedSymbol(ticker.symbol);
-                  }}
-                >
-                  <span>
-                    <strong>{ticker.symbol}</strong>
-                    <small>{ticker.name ?? "Unknown company"}</small>
-                  </span>
-                  <Chip size="small" label={ticker.assignments.length} />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <VirtualTickerList
+          tickers={filtered}
+          selectedSymbols={batchSymbols}
+          activeSymbol={editedTicker?.symbol}
+          onToggle={(symbol) => {
+            if (!batchSymbols.has(symbol)) enrichTickers([symbol], onError);
+            setBatchSymbols((current) => {
+              const next = new Set(current);
+              next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+              return next;
+            });
+          }}
+          onOpen={(symbol) => {
+            setBatchSymbols(new Set());
+            setSelectedSymbol(symbol);
+          }}
+        />
         <div className="ticker-add-row">
           <TextField
             size="small"

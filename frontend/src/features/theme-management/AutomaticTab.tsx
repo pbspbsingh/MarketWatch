@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
-import { Button, Checkbox, Chip, TextField, Typography } from "@mui/material";
+import { Button, Chip, TextField, Typography } from "@mui/material";
 import {
   applyThemeAiJob,
   createAutomaticJobs,
@@ -14,6 +14,7 @@ import {
 } from "../../api/themes";
 import { TickerFilters, TickerSelectionHeader } from "./TickerListControls";
 import { IndustryFilter } from "./IndustryFilter";
+import { VirtualTickerList } from "./VirtualTickerList";
 import {
   enrichTickers,
   errorMessage,
@@ -169,35 +170,18 @@ export function AutomaticTab({
             setSelectedSymbols(new Set(symbols));
           }}
         />
-        <ol className="theme-management-list">
-          {filtered.map((ticker) => (
-            <li key={ticker.symbol}>
-              <div className="ticker-assignment-row">
-                <Checkbox
-                  size="small"
-                  checked={selectedSymbols.has(ticker.symbol)}
-                  onChange={() => {
-                    if (!selectedSymbols.has(ticker.symbol)) {
-                      enrichTickers([ticker.symbol], onError);
-                    }
-                    setSelectedSymbols((current) => {
-                      const next = new Set(current);
-                      next.has(ticker.symbol) ? next.delete(ticker.symbol) : next.add(ticker.symbol);
-                      return next;
-                    });
-                  }}
-                />
-                <div className="theme-management-list-item">
-                  <span>
-                    <strong>{ticker.symbol}</strong>
-                    <small>{ticker.name ?? "Unknown company"}</small>
-                  </span>
-                  <Chip size="small" label={ticker.assignments.length} />
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <VirtualTickerList
+          tickers={filtered}
+          selectedSymbols={selectedSymbols}
+          onToggle={(symbol) => {
+            if (!selectedSymbols.has(symbol)) enrichTickers([symbol], onError);
+            setSelectedSymbols((current) => {
+              const next = new Set(current);
+              next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+              return next;
+            });
+          }}
+        />
       </aside>
       <main className="automatic-workspace">
         <section className="assignment-card automatic-schedule-card">
