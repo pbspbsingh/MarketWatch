@@ -42,19 +42,34 @@ export async function fetchLastTickerCollection(): Promise<TickerCollection | nu
   return response.json() as Promise<TickerCollection>;
 }
 
-export async function uploadTickerCollection(files: FileList | File[]): Promise<TickerCollection> {
+export function uploadTickerCollection(
+  files: FileList | File[],
+  onProgress?: (percent: number) => void,
+): Promise<TickerCollection> {
   const formData = new FormData();
   for (const file of Array.from(files)) {
     formData.append("files", file, file.name);
   }
-  const response = await fetch("/api/ticker-collections/csv", {
-    method: "POST",
-    body: formData,
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", "/api/ticker-collections/csv");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress?.((event.loaded / event.total) * 100);
+    });
+    request.addEventListener("load", () => {
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(`Failed to parse ticker files: HTTP ${request.status}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(request.responseText) as TickerCollection);
+      } catch {
+        reject(new Error("Failed to parse ticker files: invalid response"));
+      }
+    });
+    request.addEventListener("error", () => reject(new Error("Failed to upload ticker files")));
+    request.send(formData);
   });
-  if (!response.ok) {
-    throw new Error(`Failed to parse ticker files: HTTP ${response.status}`);
-  }
-  return response.json() as Promise<TickerCollection>;
 }
 
 export async function clearTickerCollection(): Promise<void> {

@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  LinearProgress,
   Typography,
 } from "@mui/material";
 import {
@@ -23,6 +24,7 @@ export function CsvAnalyzerPage() {
   const [collection, setCollection] = useState<TickerCollection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [failedResolutionCount, setFailedResolutionCount] = useState(0);
   const [error, setError] = useState<string>();
@@ -43,13 +45,15 @@ export function CsvAnalyzerPage() {
       return;
     }
     setLoading(true);
+    setUploadProgress(0);
     try {
-      setCollection(await uploadTickerCollection(selectedFiles));
+      setCollection(await uploadTickerCollection(selectedFiles, setUploadProgress));
       setFailedResolutionCount(0);
     } catch (uploadError) {
       setError(errorMessage(uploadError));
     } finally {
       setLoading(false);
+      setUploadProgress(undefined);
       setDragging(false);
     }
   };
@@ -119,7 +123,16 @@ export function CsvAnalyzerPage() {
             </IconButton>
           </div>
         </header>
-        {collection === null ? (
+        {uploadProgress !== undefined ? (
+          <div className="panel-status csv-analyzer-upload-status">
+            <LinearProgress
+              className="csv-analyzer-upload-progress"
+              variant="determinate"
+              value={uploadProgress}
+              aria-label="File upload progress"
+            />
+          </div>
+        ) : collection === null ? (
           <div className="panel-status csv-analyzer-drop-target">
             <Typography color="text.secondary">
               Drop CSV/TXT files here or upload them. The backend reads tickers from the

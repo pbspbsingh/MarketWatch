@@ -62,3 +62,12 @@
   flex: 1;
   justify-content: center;
 }
+
+.csv-analyzer-upload-status {
+  flex: 1;
+  justify-content: center;
+
+  & .csv-analyzer-upload-progress {
+    width: min(24rem, 60%);
+  }
+}
