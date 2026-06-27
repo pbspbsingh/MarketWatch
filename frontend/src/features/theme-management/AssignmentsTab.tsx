@@ -312,7 +312,7 @@ export function AssignmentsTab({
                   multiline
                   label={promptLoading ? "Preparing prompt..." : "Prompt"}
                   value={prompt}
-                  InputProps={{ readOnly: true }}
+                  slotProps={{ input: { readOnly: true } }}
                 />
                 <Button
                   disabled={promptLoading || !prompt}

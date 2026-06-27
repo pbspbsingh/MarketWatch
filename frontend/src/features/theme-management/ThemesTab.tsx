@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import { Button, Chip, IconButton, TextField, Typography } from "@mui/material";
 import { createTheme, deleteTheme, updateTheme, type Theme } from "../../api/themes";
 import { errorMessage } from "./themeManagementUtils";

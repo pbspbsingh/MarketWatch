@@ -9,7 +9,7 @@ import {
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
-import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
+import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutlined";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
 import {
   Badge,

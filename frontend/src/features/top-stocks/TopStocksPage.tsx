@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Checkbox,
   CircularProgress,
@@ -118,7 +118,9 @@ export function TopStocksPage() {
                 type="number"
                 value={draftCounts[period]}
                 disabled={loading}
-                inputProps={{ min: 1, max: 1000, "aria-label": `${label} count` }}
+                slotProps={{
+                  htmlInput: { min: 1, max: 1000, "aria-label": `${label} count` },
+                }}
                 onChange={(event) =>
                   setDraftCounts((counts) => ({ ...counts, [period]: event.target.value }))
                 }

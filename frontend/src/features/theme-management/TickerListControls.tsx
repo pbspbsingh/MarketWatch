@@ -52,8 +52,10 @@ export function TickerSelectionHeader({
         checked={allSelected}
         indeterminate={selectedCount > 0 && !allSelected}
         disabled={visibleCount === 0}
-        inputProps={{
-          "aria-label": allSelected ? "Select no visible tickers" : "Select all visible tickers",
+        slotProps={{
+          input: {
+            "aria-label": allSelected ? "Select no visible tickers" : "Select all visible tickers",
+          },
         }}
         onChange={() => onChange(!allSelected)}
       />

@@ -346,7 +346,7 @@ export function AutomaticTab({
                     minRows={8}
                     label="Raw response"
                     value={selected.response}
-                    InputProps={{ readOnly: true }}
+                    slotProps={{ input: { readOnly: true } }}
                   />
                 )}
               </section>
