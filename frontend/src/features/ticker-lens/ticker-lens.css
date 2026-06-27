@@ -122,6 +122,19 @@
   list-style: none;
 }
 
+.ticker-ranked-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.ticker-ranked-list .ticker-list-item {
+  height: 100%;
+}
+
 .unassigned-group {
   position: sticky;
   bottom: 0;

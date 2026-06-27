@@ -1,5 +1,4 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -9,6 +8,7 @@ import {
   type MouseEvent,
   type SetStateAction,
 } from "react";
+import { List, type RowComponentProps, useListRef } from "react-window";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
@@ -61,6 +61,7 @@ import {
 } from "./utils";
 
 const tickerUpdateIntervalMs = 1_000;
+const tickerRowHeight = 28;
 
 interface TickerPanelProps {
   mode: GroupMode;
@@ -72,27 +73,30 @@ interface TickerPanelProps {
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
 }
 
-const TickerRow = memo(function TickerRow({
-  ticker,
-  metric,
-  sortKey,
-  selected,
-  tickerElements,
-  onSelect,
-  watchlists,
-  onFavouriteClick,
-  onContextMenu,
-}: {
-  ticker: TickerRanking;
-  metric: number | undefined;
+interface TickerRowProps {
+  tickers: TickerRanking[];
   sortKey: SortKey;
-  selected: boolean;
-  tickerElements: { current: Map<string, HTMLButtonElement> };
+  selectedTicker: string | undefined;
   onSelect: (symbol: string) => void;
   watchlists: Watchlist[];
   onFavouriteClick: (ticker: TickerRanking) => void;
   onContextMenu: (event: MouseEvent, symbol: string) => void;
-}) {
+}
+
+function TickerRow({
+  index,
+  style,
+  ariaAttributes,
+  tickers,
+  sortKey,
+  selectedTicker,
+  onSelect,
+  watchlists,
+  onFavouriteClick,
+  onContextMenu,
+}: RowComponentProps<TickerRowProps>) {
+  const ticker = tickers[index];
+  const metric = tickerSortValue(ticker, sortKey);
   const memberships = ticker.watchlist_ids
     .map((id) => watchlists.find((watchlist) => watchlist.id === id))
     .filter((watchlist): watchlist is Watchlist => watchlist !== undefined);
@@ -101,15 +105,11 @@ const TickerRow = memo(function TickerRow({
   const displayed = memberships.find((watchlist) => !watchlist.is_default) ?? memberships[0];
   const title = `${isFavourite ? "Remove from" : "Add to"} Favourites${memberships.length > 0 ? ` · In: ${memberships.map((item) => item.name).join(", ")}` : ""}`;
   return (
-    <li>
+    <li style={style} {...ariaAttributes}>
       <button
         className="ranked-list-item ticker-list-item"
         type="button"
-        ref={(element) => {
-          if (element === null) tickerElements.current.delete(ticker.symbol);
-          else tickerElements.current.set(ticker.symbol, element);
-        }}
-        aria-pressed={selected}
+        aria-pressed={selectedTicker === ticker.symbol}
         onClick={() => onSelect(ticker.symbol)}
         onContextMenu={(event) => onContextMenu(event, ticker.symbol)}
       >
@@ -141,7 +141,7 @@ const TickerRow = memo(function TickerRow({
       </button>
     </li>
   );
-});
+}
 
 export function TickerPanel({
   mode,
@@ -156,7 +156,7 @@ export function TickerPanel({
   const [loadedWatchlists, setLoadedWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const watchlists = providedWatchlists ?? loadedWatchlists;
-  const tickerElements = useRef(new Map<string, HTMLButtonElement>());
+  const tickerListRef = useListRef(null);
   const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState(() =>
     readSortSetting(tickerSortSettingKey),
@@ -320,7 +320,7 @@ export function TickerPanel({
 
       event.preventDefault();
       setSelectedTicker(nextTicker.symbol);
-      tickerElements.current.get(nextTicker.symbol)?.scrollIntoView({ block: "nearest" });
+      tickerListRef.current?.scrollToRow({ align: "auto", index: nextIndex });
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -364,11 +364,33 @@ export function TickerPanel({
       .catch((requestError: unknown) => { if (requestError instanceof Error) setError(requestError.message); });
   }, [setTickerWatchlists]);
 
+  const handleContextMenu = useCallback((event: MouseEvent, symbol: string) => {
+    event.preventDefault();
+    setContextMenu({ symbol, top: event.clientY, left: event.clientX });
+  }, []);
+
   const toggleSelectedTicker = useCallback(
     (symbol: string) =>
       setSelectedTicker((selected) => (selected === symbol ? undefined : symbol)),
     [setSelectedTicker],
   );
+  const tickerRowProps = useMemo<TickerRowProps>(() => ({
+    tickers: sortedTickers,
+    sortKey: sortSetting.key,
+    selectedTicker,
+    onSelect: toggleSelectedTicker,
+    watchlists,
+    onFavouriteClick: handleFavouriteClick,
+    onContextMenu: handleContextMenu,
+  }), [
+    handleContextMenu,
+    handleFavouriteClick,
+    selectedTicker,
+    sortSetting.key,
+    sortedTickers,
+    toggleSelectedTicker,
+    watchlists,
+  ]);
 
   return (
     <section className="workspace-panel">
@@ -427,28 +449,17 @@ export function TickerPanel({
         </Typography>
       )}
       {tickers.length > 0 && (
-        <ol className="ranked-list" aria-label="Tickers">
-          {sortedTickers.map((ticker) => {
-            const metric = tickerSortValue(ticker, sortSetting.key);
-            return (
-              <TickerRow
-                key={ticker.symbol}
-                ticker={ticker}
-                metric={metric}
-                sortKey={sortSetting.key}
-                selected={selectedTicker === ticker.symbol}
-                tickerElements={tickerElements}
-                watchlists={watchlists}
-                onSelect={toggleSelectedTicker}
-                onFavouriteClick={handleFavouriteClick}
-                onContextMenu={(event, symbol) => {
-                  event.preventDefault();
-                  setContextMenu({ symbol, top: event.clientY, left: event.clientX });
-                }}
-              />
-            );
-          })}
-        </ol>
+        <List
+          tagName="ol"
+          className="ticker-ranked-list"
+          aria-label="Tickers"
+          listRef={tickerListRef}
+          rowComponent={TickerRow}
+          rowCount={sortedTickers.length}
+          rowHeight={tickerRowHeight}
+          rowProps={tickerRowProps}
+          overscanCount={8}
+        />
       )}
       <Menu
         open={contextMenu !== undefined}
