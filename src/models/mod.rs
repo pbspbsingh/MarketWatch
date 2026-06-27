@@ -5,6 +5,7 @@ mod performance;
 mod rrg;
 mod themes;
 mod ticker_collection;
+mod watchlists;
 
 pub use exchange::Exchange;
 pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
@@ -24,3 +25,4 @@ pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
 };
+pub use watchlists::{TickerWatchlists, Watchlist};

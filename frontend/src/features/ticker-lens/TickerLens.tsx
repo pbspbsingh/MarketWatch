@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
+import type { Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
@@ -28,14 +29,16 @@ import "./ticker-lens.css";
 
 interface TickerLensProps {
   universe: TickerUniverse;
-  onFavouriteChange?: (symbol: string, isFavourite: boolean) => void;
+  watchlists?: Watchlist[];
+  onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onBoundedResolution?: (failedCount: number) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral";
 }
 
 export function TickerLens({
   universe,
-  onFavouriteChange,
+  watchlists,
+  onWatchlistsChange,
   onBoundedResolution,
   accent,
 }: TickerLensProps) {
@@ -223,7 +226,8 @@ export function TickerLens({
         selectedTicker={selectedTicker}
         setSelectedTicker={setSelectedTicker}
         resolveTickers={resolveTickers}
-        onFavouriteChange={onFavouriteChange}
+        providedWatchlists={watchlists}
+        onWatchlistsChange={onWatchlistsChange}
       />
       <ChartPanel
         mode={groupMode}

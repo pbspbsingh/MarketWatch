@@ -7,9 +7,9 @@ const CsvAnalyzerPage = lazy(() =>
     default: CsvAnalyzerPage,
   })),
 );
-const FavouritesPage = lazy(() =>
-  import("../features/favourites/FavouritesPage").then(({ FavouritesPage }) => ({
-    default: FavouritesPage,
+const WatchlistsPage = lazy(() =>
+  import("../features/watchlists/WatchlistsPage").then(({ WatchlistsPage }) => ({
+    default: WatchlistsPage,
   })),
 );
 const MarketWatchPage = lazy(() =>
@@ -37,7 +37,9 @@ export function App() {
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/market-watch" replace />} />
         <Route path="/market-watch" element={<Page><MarketWatchPage /></Page>} />
-        <Route path="/favourites" element={<Page><FavouritesPage /></Page>} />
+        <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />
+        <Route path="/watchlists" element={<Page><WatchlistsPage /></Page>} />
+        <Route path="/watchlists/:id" element={<Page><WatchlistsPage /></Page>} />
         <Route path="/top-stocks" element={<Page><TopStocksPage /></Page>} />
         <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />

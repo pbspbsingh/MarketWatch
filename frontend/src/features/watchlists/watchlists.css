@@ -1,0 +1,27 @@
+.watchlists-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+
+  & > .ticker-lens { flex: 1; min-height: 0; }
+}
+
+.watchlists-header {
+  display: flex;
+  min-height: 1.55rem;
+  padding: 0.125rem 0.5rem;
+  align-items: center;
+  gap: 0.5rem;
+
+  & h1 { margin: 0; font-size: 0.72rem; font-weight: 700; }
+  & .MuiSelect-select { display: flex; min-width: 8rem; padding-block: 0.1rem; align-items: center; gap: 0.35rem; font-size: 0.68rem; }
+}
+
+.watchlists-count { font-size: 0.625rem !important; }
+.watchlists-actions { display: flex; margin-left: auto; align-items: center; gap: 0.2rem; }
+.watchlists-actions .MuiIconButton-root { padding: 0.1rem; }
+.watchlist-editor { display: flex; padding-top: 0.5rem !important; flex-direction: column; gap: 0.75rem; }
+.watchlist-icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.2rem; }
+.watchlist-icon-grid > span { display: flex; justify-content: center; }
+.watchlist-icon-grid .MuiIconButton-root { border: 0.0625rem solid transparent; border-radius: 0.25rem; }
+.watchlist-icon-grid .watchlist-icon-selected { border-color: #f2c94c; color: #f2c94c; background: rgb(242 201 76 / 10%); }

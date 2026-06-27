@@ -1,25 +1,70 @@
-export async function fetchFavourites(signal?: AbortSignal): Promise<string[]> {
-  const response = await fetch("/api/watchlists/favourites", { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to load favourites: HTTP ${response.status}`);
-  }
-  return response.json() as Promise<string[]>;
+export interface Watchlist {
+  id: number;
+  name: string;
+  icon_key: string;
+  is_default: boolean;
+  ticker_count: number;
 }
 
-export async function addFavourite(symbol: string): Promise<void> {
-  const response = await fetch(`/api/watchlists/favourites/${encodeURIComponent(symbol)}`, {
-    method: "PUT",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to add favourite: HTTP ${response.status}`);
-  }
+export interface WatchlistInput {
+  name: string;
+  icon_key: string;
 }
 
-export async function removeFavourite(symbol: string): Promise<void> {
-  const response = await fetch(`/api/watchlists/favourites/${encodeURIComponent(symbol)}`, {
-    method: "DELETE",
+export interface TickerWatchlists {
+  symbol: string;
+  watchlist_ids: number[];
+}
+
+export async function fetchWatchlists(signal?: AbortSignal): Promise<Watchlist[]> {
+  return request("/api/watchlists", { signal });
+}
+
+export async function createWatchlist(input: WatchlistInput): Promise<Watchlist> {
+  return request("/api/watchlists", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateWatchlist(id: number, input: WatchlistInput): Promise<Watchlist> {
+  return request(`/api/watchlists/${id}`, { method: "PUT", body: JSON.stringify(input) });
+}
+
+export async function deleteWatchlist(id: number): Promise<void> {
+  await request(`/api/watchlists/${id}`, { method: "DELETE" });
+}
+
+export async function fetchWatchlistSymbols(id: number, signal?: AbortSignal): Promise<string[]> {
+  return request(`/api/watchlists/${id}/tickers`, { signal });
+}
+
+export async function fetchTickerWatchlists(symbols: string[], signal?: AbortSignal): Promise<TickerWatchlists[]> {
+  return request("/api/watchlists/memberships", {
+    method: "POST",
+    body: JSON.stringify({ symbols }),
+    signal,
+  });
+}
+
+export async function addTickerToWatchlist(id: number, symbol: string): Promise<void> {
+  await request(`/api/watchlists/${id}/tickers/${encodeURIComponent(symbol)}`, { method: "PUT" });
+}
+
+export async function removeTickerFromWatchlist(id: number, symbol: string): Promise<void> {
+  await request(`/api/watchlists/${id}/tickers/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+}
+
+export async function clearTickerWatchlists(symbol: string): Promise<void> {
+  await request(`/api/watchlists/tickers/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+}
+
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: init.body === undefined ? init.headers : { "Content-Type": "application/json", ...init.headers },
   });
   if (!response.ok) {
-    throw new Error(`Failed to remove favourite: HTTP ${response.status}`);
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Watchlist request failed: HTTP ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
 }

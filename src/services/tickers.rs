@@ -6,7 +6,7 @@ use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{TimeDelta, Utc};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -83,19 +83,20 @@ impl TickerCatalogService {
 
     pub async fn ticker_ranking(&self, symbol: &str) -> anyhow::Result<TickerRanking> {
         let symbol = normalize_symbol(symbol)?;
-        let is_favourite = self
+        let watchlist_ids = self
             .store
-            .favourite_symbol_set(std::slice::from_ref(&symbol))
+            .ticker_watchlists(std::slice::from_ref(&symbol))
             .await?
-            .iter()
-            .any(|favourite| favourite == &symbol);
+            .into_iter()
+            .next()
+            .map_or_else(Vec::new, |membership| membership.watchlist_ids);
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
         let benchmark_candles = self.yahoo.daily_candles_for_year(&self.benchmark).await?;
         let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
         let performance = candle_performance(&candles, as_of);
         Ok(TickerRanking {
             symbol,
-            is_favourite,
+            watchlist_ids,
             relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
             performance: Some(performance),
         })
@@ -144,17 +145,21 @@ impl TickerCatalogService {
         metrics_active: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let favourite_symbols = self
+        let watchlists_by_symbol = self
             .store
-            .favourite_symbol_set(&symbols)
+            .ticker_watchlists(&symbols)
             .await?
             .into_iter()
-            .collect::<HashSet<_>>();
+            .map(|membership| (membership.symbol, membership.watchlist_ids))
+            .collect::<HashMap<_, _>>();
         for symbol in &symbols {
             if sender
                 .send(TickerRanking {
                     symbol: symbol.clone(),
-                    is_favourite: favourite_symbols.contains(symbol),
+                    watchlist_ids: watchlists_by_symbol
+                        .get(symbol)
+                        .cloned()
+                        .unwrap_or_default(),
                     performance: None,
                     relative_strength: None,
                 })
@@ -184,7 +189,10 @@ impl TickerCatalogService {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
                     TickerRanking {
-                        is_favourite: favourite_symbols.contains(&symbol),
+                        watchlist_ids: watchlists_by_symbol
+                            .get(&symbol)
+                            .cloned()
+                            .unwrap_or_default(),
                         symbol,
                         relative_strength: Some(candle_relative_strength(
                             &candles,
@@ -196,7 +204,10 @@ impl TickerCatalogService {
                 Err(error) => {
                     warn!(stream_id, symbol, %error, "failed to load Yahoo ticker performance");
                     TickerRanking {
-                        is_favourite: favourite_symbols.contains(&symbol),
+                        watchlist_ids: watchlists_by_symbol
+                            .get(&symbol)
+                            .cloned()
+                            .unwrap_or_default(),
                         symbol,
                         performance: None,
                         relative_strength: None,

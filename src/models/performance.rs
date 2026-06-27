@@ -34,7 +34,7 @@ pub struct ThemeRanking {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerRanking {
     pub symbol: String,
-    pub is_favourite: bool,
+    pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
     pub relative_strength: Option<f64>,
 }
