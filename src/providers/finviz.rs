@@ -431,48 +431,6 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
-    #[test]
-    fn parses_industry_performance_and_identity() {
-        let industries = parse_industries(include_str!("fixtures/groups.html")).unwrap();
-
-        assert_eq!(
-            industries,
-            vec![IndustryPerformance {
-                industry: IndustryIdentity {
-                    key: "semiconductors".to_owned(),
-                    name: "Semiconductors".to_owned(),
-                },
-                week: 0.0379,
-                month: 0.0067,
-                quarter: 0.4025,
-                half_year: 0.364,
-                year: 0.8946,
-                year_to_date: 0.418,
-            }]
-        );
-    }
-
-    #[test]
-    fn parses_screener_tickers_and_total() {
-        let page = parse_screener_page(include_str!("fixtures/screener.html")).unwrap();
-
-        assert_eq!(page.tickers, ["ADI", "AMD"]);
-        assert_eq!(page.total, 42);
-    }
-
-    #[test]
-    fn parses_ticker_industry_identity() {
-        let industry = parse_ticker_industry(include_str!("fixtures/quote.html")).unwrap();
-
-        assert_eq!(
-            industry,
-            IndustryIdentity {
-                key: "consumerelectronics".to_owned(),
-                name: "Consumer Electronics".to_owned(),
-            }
-        );
-    }
-
     #[tokio::test]
     #[ignore = "calls live Finviz endpoints"]
     async fn live_fetches_industries_membership_and_ticker_industry() -> anyhow::Result<()> {

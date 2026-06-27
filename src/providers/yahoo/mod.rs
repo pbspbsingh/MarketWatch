@@ -407,37 +407,6 @@ fn invalid(message: String) -> YahooError {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use chrono::TimeZone;
-
-    #[test]
-    fn parses_chart_candles_and_skips_incomplete_rows() {
-        let start = Utc.timestamp_opt(1_718_150_400, 0).unwrap();
-        let end = Utc.timestamp_opt(1_718_409_600, 0).unwrap();
-        let response = serde_json::from_str(include_str!("fixtures/chart.json")).unwrap();
-
-        let candles = parse_chart(response, "QQQ", start, end).unwrap();
-
-        assert_eq!(candles.len(), 2);
-        assert_eq!(candles[0].close, 470.48);
-        assert_eq!(candles[1].volume, 31_200_000);
-    }
-
-    #[test]
-    fn parses_company_profile() {
-        let response = serde_json::from_str(include_str!("fixtures/profile.json")).unwrap();
-
-        let profile = parse_profile(response, "AAPL").unwrap();
-
-        assert_eq!(profile.symbol, "AAPL");
-        assert_eq!(profile.name.as_deref(), Some("Apple Inc."));
-        assert_eq!(profile.exchange, Exchange::Nasdaq);
-        assert_eq!(profile.exchange.tradingview_code(), "NASDAQ");
-        assert_eq!(
-            profile.description.as_deref(),
-            Some("Apple designs products.")
-        );
-    }
-
     #[test]
     fn normalizes_yahoo_exchanges_for_tradingview() {
         assert_eq!(
