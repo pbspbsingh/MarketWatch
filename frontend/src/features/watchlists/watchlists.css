@@ -18,6 +18,7 @@
 }
 
 .watchlists-count { font-size: 0.625rem !important; }
+.watchlist-select-option { gap: 0.5rem; }
 .watchlists-actions { display: flex; margin-left: auto; align-items: center; gap: 0.2rem; }
 .watchlists-actions .MuiIconButton-root { padding: 0.1rem; }
 .watchlist-editor { display: flex; padding-top: 0.5rem !important; flex-direction: column; gap: 0.75rem; }

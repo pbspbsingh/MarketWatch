@@ -16,6 +16,8 @@ export interface TickerWatchlists {
   watchlist_ids: number[];
 }
 
+const membershipBatchSize = 500;
+
 export async function fetchWatchlists(signal?: AbortSignal): Promise<Watchlist[]> {
   return request("/api/watchlists", { signal });
 }
@@ -37,11 +39,16 @@ export async function fetchWatchlistSymbols(id: number, signal?: AbortSignal): P
 }
 
 export async function fetchTickerWatchlists(symbols: string[], signal?: AbortSignal): Promise<TickerWatchlists[]> {
-  return request("/api/watchlists/memberships", {
-    method: "POST",
-    body: JSON.stringify({ symbols }),
-    signal,
-  });
+  if (symbols.length === 0) return [];
+  const requests: Promise<TickerWatchlists[]>[] = [];
+  for (let start = 0; start < symbols.length; start += membershipBatchSize) {
+    requests.push(request("/api/watchlists/memberships", {
+      method: "POST",
+      body: JSON.stringify({ symbols: symbols.slice(start, start + membershipBatchSize) }),
+      signal,
+    }));
+  }
+  return (await Promise.all(requests)).flat();
 }
 
 export async function addTickerToWatchlist(id: number, symbol: string): Promise<void> {

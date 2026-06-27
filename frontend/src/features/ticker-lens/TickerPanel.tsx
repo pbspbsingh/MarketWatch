@@ -39,6 +39,7 @@ import {
   type Watchlist,
 } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
+import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import {
   defaultSortSetting,
@@ -152,6 +153,7 @@ export function TickerPanel({
   providedWatchlists,
   onWatchlistsChange,
 }: TickerPanelProps) {
+  const focusRevision = useFocusRefresh();
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
   const [loadedWatchlists, setLoadedWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
@@ -175,7 +177,7 @@ export function TickerPanel({
         if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
       });
     return () => controller.abort();
-  }, [providedWatchlists]);
+  }, [focusRevision, providedWatchlists]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -242,6 +244,29 @@ export function TickerPanel({
   useEffect(() => {
     localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
+
+  useEffect(() => {
+    if (focusRevision === 0 || tickers.length === 0) return;
+    const controller = new AbortController();
+    const symbols = tickers.map((ticker) => ticker.symbol);
+    fetchTickerWatchlists(symbols, controller.signal)
+      .then((memberships) => {
+        if (controller.signal.aborted) return;
+        const idsBySymbol = new Map(
+          memberships.map((membership) => [membership.symbol, membership.watchlist_ids]),
+        );
+        setTickers((current) => current.map((ticker) => ({
+          ...ticker,
+          watchlist_ids: idsBySymbol.get(ticker.symbol) ?? [],
+        })));
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setError(requestError.message);
+        }
+      });
+    return () => controller.abort();
+  }, [focusRevision]);
 
   const sortedTickers = useMemo(
     () => sortTickers(tickers, sortSetting, metricsActive),

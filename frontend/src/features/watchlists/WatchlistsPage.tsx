@@ -29,6 +29,7 @@ import {
   type Watchlist,
 } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
+import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import { WatchlistIcon, watchlistIcons } from "./WatchlistIcon";
 import "./watchlists.css";
@@ -38,6 +39,7 @@ const selectedWatchlistStorageKey = "market-watch.selected-watchlist";
 export function WatchlistsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const focusRevision = useFocusRefresh();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export function WatchlistsPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [id, navigate, selectedId]);
+  }, [focusRevision, id, navigate, selectedId]);
 
   useEffect(() => {
     if (selected !== undefined) {
@@ -92,7 +94,7 @@ export function WatchlistsPage() {
         if (!controller.signal.aborted) setSymbolsLoading(false);
       });
     return () => controller.abort();
-  }, [selected?.id]);
+  }, [focusRevision, selected?.id]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {
@@ -165,7 +167,7 @@ export function WatchlistsPage() {
             onChange={(event) => navigate(`/watchlists/${event.target.value}`)}
           >
             {watchlists.map((watchlist) => (
-              <MenuItem key={watchlist.id} value={watchlist.id}>
+              <MenuItem className="watchlist-select-option" key={watchlist.id} value={watchlist.id}>
                 <WatchlistIcon iconKey={watchlist.icon_key} fontSize="inherit" />
                 {watchlist.name}
               </MenuItem>
