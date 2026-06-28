@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/gzip-dist.mjs",
     "check": "tsc -b",
     "preview": "vite preview"
   },

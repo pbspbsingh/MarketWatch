@@ -3,6 +3,7 @@
 /.env
 /frontend/node_modules/
 /frontend/dist/
+/frontend/dist_gzipped/
 /frontend/*.tsbuildinfo
 *.log
 *.db

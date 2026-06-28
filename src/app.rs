@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(not(debug_assertions))]
-static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
+static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist_gzipped");
 
 #[derive(Clone)]
 pub struct AppState {
@@ -131,14 +131,17 @@ async fn debug_frontend() -> (StatusCode, &'static str) {
 #[cfg(not(debug_assertions))]
 async fn frontend(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-    let file = FRONTEND_DIST
-        .get_file(path)
-        .or_else(|| FRONTEND_DIST.get_file("index.html"));
-    let Some(file) = file else {
+    let compressed_path = format!("{path}.gz");
+    let (file, content_path) = if let Some(file) = FRONTEND_DIST.get_file(&compressed_path) {
+        (file, path)
+    } else if let Some(file) = FRONTEND_DIST.get_file("index.html.gz") {
+        (file, "index.html")
+    } else {
         return StatusCode::NOT_FOUND.into_response();
     };
     Response::builder()
-        .header(header::CONTENT_TYPE, content_type(path))
+        .header(header::CONTENT_TYPE, content_type(content_path))
+        .header(header::CONTENT_ENCODING, "gzip")
         .body(Body::from(file.contents()))
         .expect("embedded frontend response is valid")
 }
