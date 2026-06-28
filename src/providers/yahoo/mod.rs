@@ -407,6 +407,7 @@ fn invalid(message: String) -> YahooError {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use chrono::{NaiveDate, TimeZone};
     #[test]
     fn normalizes_yahoo_exchanges_for_tradingview() {
         assert_eq!(
@@ -446,6 +447,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preserves_complete_june_26_2026_daily_candle() {
+        let response = serde_json::from_str::<ChartResponse>(
+            r#"{
+                "chart": {
+                    "result": [{
+                        "timestamp": [1782480600],
+                        "indicators": {"quote": [{
+                            "open": [728.94],
+                            "high": [736.53],
+                            "low": [726.86],
+                            "close": [733.22],
+                            "volume": [69241946]
+                        }]}
+                    }],
+                    "error": null
+                }
+            }"#,
+        )
+        .unwrap();
+        let start = Utc.with_ymd_and_hms(2026, 6, 26, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 6, 27, 0, 0, 0).unwrap();
+
+        let candles = parse_chart(response, "SPY", start, end).unwrap();
+
+        assert_eq!(candles.len(), 1);
+        assert_eq!(candles[0].timestamp.date_naive(), start.date_naive());
+    }
+
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_chart_and_profile() -> Result<(), YahooError> {
@@ -463,6 +493,33 @@ mod tests {
         let profile = client.profile("AAPL").await?;
         println!("Fetched AAPL profile: {profile:?}");
         assert!(profile.description.is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Yahoo Finance endpoints"]
+    async fn live_includes_june_26_2026_daily_candle() -> Result<(), YahooError> {
+        let config = Config::load("config.toml").expect("default config is valid");
+        let client = YahooClient::new(&config.providers);
+        let start = Utc.with_ymd_and_hms(2026, 6, 15, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 6, 27, 0, 0, 0).unwrap();
+        let expected_date = NaiveDate::from_ymd_opt(2026, 6, 26).unwrap();
+
+        for symbol in ["SPY", "ITA"] {
+            let candles = client
+                .chart(symbol, ChartInterval::OneDay, start, end)
+                .await?;
+            let dates = candles
+                .iter()
+                .map(|candle| candle.timestamp.date_naive())
+                .collect::<Vec<_>>();
+            println!("{symbol} daily candle dates: {dates:?}");
+            assert!(
+                dates.contains(&expected_date),
+                "Yahoo client omitted {expected_date} for {symbol}; returned {dates:?}"
+            );
+        }
 
         Ok(())
     }
