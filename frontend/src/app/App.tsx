@@ -30,6 +30,9 @@ const TopStocksPage = lazy(() =>
     default: TopStocksPage,
   })),
 );
+const StudyPage = lazy(() =>
+  import("../features/study/StudyPage").then(({ StudyPage }) => ({ default: StudyPage })),
+);
 
 export function App() {
   return (
@@ -44,6 +47,7 @@ export function App() {
         <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />
         <Route path="/rrg" element={<Page><RrgPage /></Page>} />
+        <Route path="/study" element={<Page><StudyPage /></Page>} />
       </Route>
     </Routes>
   );

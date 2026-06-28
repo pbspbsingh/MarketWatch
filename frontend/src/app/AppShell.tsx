@@ -3,6 +3,7 @@ import BubbleChartIcon from "@mui/icons-material/BubbleChart";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
+import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -24,6 +25,7 @@ const destinations = [
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon],
   ["Relative Rotation Graph", "/rrg", BubbleChartIcon],
+  ["Study", "/study", ScienceOutlinedIcon, "blue"],
 ] as const;
 
 const navigationTriggerInset = 4;

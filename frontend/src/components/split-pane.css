@@ -1,0 +1,28 @@
+.split-pane {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.split-pane-divider {
+  position: relative;
+  z-index: 2;
+  background: #343b45;
+  touch-action: none;
+
+  &:hover,
+  &:focus-visible {
+    background: #65758a;
+    outline: none;
+  }
+}
+
+.split-pane-vertical .split-pane-divider {
+  cursor: row-resize;
+}
+
+.split-pane-horizontal .split-pane-divider {
+  cursor: col-resize;
+}

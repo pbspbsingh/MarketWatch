@@ -6,6 +6,7 @@ use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::nyse_calendar;
+use crate::services::study::StudyService;
 use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
@@ -43,6 +44,7 @@ pub struct AppState {
     pub chart: Arc<ChartService>,
     pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
+    pub study: Arc<StudyService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
     pub market_schedule: MarketSchedule,
     pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
@@ -60,11 +62,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let market_schedule =
         MarketSchedule::with_holidays(&config.market, Duration::ZERO, nyse_holidays.clone())?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
-    let yahoo = Arc::new(YahooClient::new(&config.providers));
+    let yahoo_client = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
     let yahoo = Arc::new(YahooService::new(
         store.clone(),
-        yahoo,
+        yahoo_client.clone(),
         &config.market,
         nyse_holidays,
     )?);
@@ -103,6 +105,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     ));
     let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
     let top_stocks = Arc::new(TopStocksService::new(finviz.clone()));
+    let study = Arc::new(StudyService::new(yahoo_client, market_schedule.clone()));
     let industry_refresh =
         IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
     industry_refresh.spawn_refresh_task();
@@ -110,6 +113,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         chart,
         details,
         industry_analysis,
+        study,
         ticker_catalog,
         market_schedule,
         active_ticker_stream: Arc::new(Mutex::new(None)),
