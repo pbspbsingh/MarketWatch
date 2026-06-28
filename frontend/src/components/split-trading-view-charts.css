@@ -1,0 +1,26 @@
+.chart-workspace {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tradingview-chart {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chart-divider {
+  position: relative;
+  z-index: 1;
+  background: #343b45;
+  cursor: row-resize;
+  touch-action: none;
+
+  &:hover,
+  &:focus-visible {
+    background: #65758a;
+    outline: none;
+  }
+}

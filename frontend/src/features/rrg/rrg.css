@@ -119,6 +119,18 @@
   overflow: auto;
 }
 
+.rrg-theme-list-loading {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+
+  & p {
+    font-size: 0.68rem;
+  }
+}
+
 .rrg-theme-header-actions {
   display: flex;
   align-items: center;
@@ -166,6 +178,30 @@
   & .MuiCheckbox-root.Mui-checked {
     color: #58a6ff;
   }
+}
+
+.rrg-theme-action-button.MuiIconButton-root {
+  flex-shrink: 0;
+  padding: 0.2rem;
+  color: #8f9aa7;
+  font-size: 0.85rem;
+
+  &[aria-pressed="true"] {
+    color: #f5a524;
+  }
+}
+
+.rrg-theme-chart-dialog .MuiDialog-paper {
+  width: 80vw;
+  max-width: none;
+  height: 95vh;
+}
+
+.rrg-theme-chart-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  padding: 0 !important;
 }
 
 .rrg-theme-label {
@@ -368,7 +404,15 @@
 }
 
 .rrg-list-row {
+  display: flex;
+  min-width: 0;
   border-radius: 0.1875rem;
+  align-items: center;
+
+  & .rrg-theme-row {
+    min-width: 0;
+    flex: 1;
+  }
 
   &.selected {
     background: rgb(245 165 36 / 10%);

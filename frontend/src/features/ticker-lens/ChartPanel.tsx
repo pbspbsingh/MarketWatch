@@ -1,9 +1,7 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type PointerEvent,
 } from "react";
 import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
@@ -13,8 +11,8 @@ import {
   type TickerGroupSummaryItem,
 } from "../../api/tickers";
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
+import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
-import { TradingViewChart } from "../../components/TradingViewChart";
 import { chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
 import { ChartHeader } from "./ChartHeader";
 import type { GroupMode, SelectedTickerContext } from "./types";
@@ -56,13 +54,10 @@ export function ChartPanel({
   const [showThemeEtfChart, setShowThemeEtfChart] = useState(() =>
     readEnabled(chartThemeEtfKey),
   );
-  const [split, setSplit] = useState(() => readChartSplit(chartSplitKey));
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [summaryVersion, setSummaryVersion] = useState(0);
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  const splitRef = useRef(split);
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
   const selectedIndustry = summary?.industry?.name ?? "All industries";
@@ -168,32 +163,6 @@ export function ChartPanel({
     return () => controller.abort();
   }, [groupKeysKey, mode, selectedTicker, symbolsKey]);
 
-  const updateSplit = (event: PointerEvent<HTMLDivElement>) => {
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    if (bounds === undefined || bounds.height === 0) return;
-    const nextSplit = Math.max(
-      0,
-      Math.min(100, (100 * (event.clientY - bounds.top)) / bounds.height),
-    );
-    splitRef.current = nextSplit;
-    setSplit(nextSplit);
-  };
-
-  const handleDividerPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    updateSplit(event);
-  };
-
-  const handleDividerPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) updateSplit(event);
-  };
-
-  const handleDividerPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    localStorage.setItem(chartSplitKey, String(splitRef.current));
-  };
-
   return (
     <section className="workspace-panel">
       <ChartHeader
@@ -223,34 +192,14 @@ export function ChartPanel({
         </div>
       )}
       {summary !== undefined && (
-        <div
-          ref={workspaceRef}
-          className="chart-workspace"
-          style={{
-            gridTemplateRows: `minmax(0, ${split}fr) 2px minmax(0, ${100 - split}fr)`,
-          }}
-        >
-          <TradingViewChart
-            symbol={summary.tradingview_symbol}
-            interval={interval}
-            onError={setError}
-          />
-          <div
-            className="chart-divider"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-valuenow={Math.round(split)}
-            onPointerDown={handleDividerPointerDown}
-            onPointerMove={handleDividerPointerMove}
-            onPointerUp={handleDividerPointerUp}
-            onPointerCancel={handleDividerPointerUp}
-          />
-          <TradingViewChart
-            symbol={bottomChartSymbol ?? summary.benchmark_symbol}
-            interval={interval}
-            onError={setError}
-          />
-        </div>
+        <SplitTradingViewCharts
+          topSymbol={summary.tradingview_symbol}
+          bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+          interval={interval}
+          initialSplit={readChartSplit(chartSplitKey)}
+          onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+          onError={setError}
+        />
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast

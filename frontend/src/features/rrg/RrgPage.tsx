@@ -10,6 +10,7 @@ import { themesMarketWatchUrl } from "../ticker-lens/utils";
 import { RrgControls } from "./RrgControls";
 import { RrgSidePanel } from "./RrgSidePanel";
 import { RrgThemeList } from "./RrgThemeList";
+import { ThemeChartDialog } from "./ThemeChartDialog";
 import { getRrgViewport } from "./rrgChart";
 import {
   QUADRANTS,
@@ -18,6 +19,7 @@ import {
   type ExploreFilter,
   type Quadrant,
   type RrgItem,
+  type RrgListItem,
 } from "./rrgTypes";
 import "./rrg.css";
 
@@ -35,6 +37,19 @@ const parseNullableStoredNumber = (value: string) => {
 };
 const parseStoredBoolean = (value: string) => value === "true";
 const serializeNullableNumber = (value: number | null) => value === null ? null : String(value);
+
+function pointToSegmentDistance(
+  x: number,
+  y: number,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) return Math.hypot(x - start.x, y - start.y);
+  const position = Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - (start.x + position * dx), y - (start.y + position * dy));
+}
 
 export function RrgPage() {
   const [interval, setInterval] = useLocalStorageState<"daily" | "weekly">(
@@ -78,6 +93,7 @@ export function RrgPage() {
   const [exploredIds, setExploredIds] = useState<Set<number>>(new Set());
   const [exploreFilter, setExploreFilter] = useState<ExploreFilter>("unexplored");
   const [showExplored, setShowExplored] = useState(true);
+  const [chartTheme, setChartTheme] = useState<RrgListItem>();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -110,7 +126,9 @@ export function RrgPage() {
         setError(undefined);
       })
       .catch((e) => { if ((e as Error).name !== "AbortError") setError(String(e)); })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [interval, debouncedLookback, debouncedTail, normalize]);
 
@@ -261,7 +279,7 @@ export function RrgPage() {
       ctx.fillStyle = isHovered || isSelected ? "#fff" : "#aeb7c2";
       ctx.font = `${isHovered || isSelected ? "600 " : ""}10px -apple-system, sans-serif`;
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(d.etf_symbol, Math.round(x + r + 3), Math.round(y));
+      ctx.fillText(`${d.theme_name} (${d.etf_symbol})`, Math.round(x + r + 3), Math.round(y));
     });
   }, [items, hoverIdx, selectedIds, loading]);
 
@@ -275,7 +293,7 @@ export function RrgPage() {
     const tooltip = tooltipRef.current;
     if (!canvas || !wrap || !tooltip) return;
 
-    const handleMove = (e: MouseEvent) => {
+    const hitTest = (e: MouseEvent) => {
       const items = itemsRef.current;
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -285,10 +303,20 @@ export function RrgPage() {
 
       let hitIdx: number | null = null, hitDist = 12;
       items.forEach((d, idx) => {
-        const x = toX(d.rsRatio), y = toY(d.rsMomentum);
-        const dist = Math.hypot(mx - x, my - y);
+        const points = d.points.map((point) => ({ x: toX(point.rs_ratio), y: toY(point.rs_momentum) }));
+        const last = points[points.length - 1];
+        let dist = last === undefined ? Infinity : Math.hypot(mx - last.x, my - last.y);
+        for (let pointIndex = 1; pointIndex < points.length; pointIndex++) {
+          dist = Math.min(dist, pointToSegmentDistance(mx, my, points[pointIndex - 1], points[pointIndex]));
+        }
         if (dist < hitDist) { hitDist = dist; hitIdx = idx; }
       });
+      return { hitIdx, mx, my, W };
+    };
+
+    const handleMove = (e: MouseEvent) => {
+      const items = itemsRef.current;
+      const { hitIdx, mx, my, W } = hitTest(e);
       setHoverIdx(hitIdx);
       if (hitIdx !== null) {
         const d = items[hitIdx];
@@ -321,13 +349,22 @@ export function RrgPage() {
         });
       }
     };
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      const { hitIdx } = hitTest(event);
+      const theme = hitIdx === null ? undefined : itemsRef.current[hitIdx];
+      if (theme === undefined) return;
+      setChartTheme(theme);
+    };
     canvas.addEventListener("mousemove", handleMove);
     canvas.addEventListener("mouseleave", handleLeave);
     canvas.addEventListener("click", handleClick);
+    canvas.addEventListener("contextmenu", handleContextMenu);
     return () => {
       canvas.removeEventListener("mousemove", handleMove);
       canvas.removeEventListener("mouseleave", handleLeave);
       canvas.removeEventListener("click", handleClick);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
     };
   }, [items]);
 
@@ -475,10 +512,13 @@ export function RrgPage() {
           exploreFilter={exploreFilter}
           itemCount={items.length}
           totalCount={totalCount}
+          loading={loading}
           allVisible={allVisible}
           onExploreFilterChange={setExploreFilter}
           onToggleAllVisible={toggleAllVisible}
           onToggleVisible={toggleVisible}
+          onToggleSelected={toggleSelected}
+          onOpenCharts={setChartTheme}
           onThemeElement={(themeId, element) => {
             if (element) themeElements.current.set(themeId, element);
             else themeElements.current.delete(themeId);
@@ -521,6 +561,7 @@ export function RrgPage() {
           onUnmarkExplored={(themeId) => markExplored([themeId], false)}
         />
       </div>
+      <ThemeChartDialog theme={chartTheme} onClose={() => setChartTheme(undefined)} />
     </section>
   );
 }

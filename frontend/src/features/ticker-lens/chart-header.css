@@ -1,0 +1,125 @@
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+
+  & .MuiToggleButton-root {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+  }
+}
+
+.chart-header-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+
+  & h2 {
+    min-width: 0;
+    overflow: hidden;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & span,
+  & a {
+    color: #f0f4f8;
+  }
+
+  & a:hover {
+    color: #58a6ff;
+  }
+}
+
+.chart-header-controls,
+.chart-header-loading,
+.chart-indicators,
+.chart-theme-chips {
+  display: flex;
+  align-items: center;
+}
+
+.chart-header-controls {
+  flex-shrink: 0;
+  gap: 0.75rem;
+}
+
+.chart-header-loading {
+  gap: 0.25rem;
+
+  & p {
+    font-size: 0.625rem;
+  }
+}
+
+.chart-context-link {
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    color: #f5a524 !important;
+    text-decoration: underline;
+  }
+}
+
+.ticker-description-tooltip {
+  max-width: 24rem;
+  max-height: 12rem;
+  overflow: auto;
+
+  & p {
+    margin: 0;
+    font-size: 0.68rem;
+    line-height: 1.45;
+  }
+
+  & .ticker-description-title {
+    margin-bottom: 0.375rem;
+    color: #f0f4f8;
+    font-weight: 600;
+  }
+}
+
+.chart-indicators {
+  padding: 0.15rem 0.375rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.25rem;
+  background: #151a20;
+
+  & p {
+    padding: 0 0.25rem;
+    font-size: 0.65rem;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+
+  & p + p {
+    border-left: 0.0625rem solid #4a5563;
+  }
+}
+
+.chart-theme-chips {
+  min-width: 0;
+  gap: 0.25rem;
+
+  & .MuiChip-root {
+    height: 1.15rem;
+    font-size: 0.55rem;
+  }
+}
+
+.chart-theme-link {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: #9ba5b0 !important;
+  font-size: 0.72rem !important;
+
+  &:hover {
+    color: #f5a524 !important;
+  }
+}

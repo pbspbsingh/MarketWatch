@@ -1,4 +1,6 @@
-import { Button, Checkbox, FormControlLabel, Typography } from "@mui/material";
+import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
+import ShowChartIcon from "@mui/icons-material/ShowChart";
+import { Button, Checkbox, CircularProgress, FormControlLabel, IconButton, Tooltip, Typography } from "@mui/material";
 import { QUADRANTS, type ExploreFilter, type Quadrant, type RrgListItem } from "./rrgTypes";
 
 interface RrgThemeListProps {
@@ -9,10 +11,13 @@ interface RrgThemeListProps {
   exploreFilter: ExploreFilter;
   itemCount: number;
   totalCount: number;
+  loading: boolean;
   allVisible: boolean;
   onExploreFilterChange: (filter: ExploreFilter) => void;
   onToggleAllVisible: () => void;
   onToggleVisible: (themeId: number, visible: boolean) => void;
+  onToggleSelected: (themeId: number) => void;
+  onOpenCharts: (theme: RrgListItem) => void;
   onThemeElement: (themeId: number, element: HTMLElement | null) => void;
 }
 
@@ -24,10 +29,13 @@ export function RrgThemeList({
   exploreFilter,
   itemCount,
   totalCount,
+  loading,
   allVisible,
   onExploreFilterChange,
   onToggleAllVisible,
   onToggleVisible,
+  onToggleSelected,
+  onOpenCharts,
   onThemeElement,
 }: RrgThemeListProps) {
   return (
@@ -52,7 +60,12 @@ export function RrgThemeList({
         </div>
       </div>
       <div className="rrg-theme-list">
-        {groups.map(({ quadrant, themes }) => (
+        {loading ? (
+          <div className="rrg-theme-list-loading">
+            <CircularProgress size="1rem" />
+            <Typography color="text.secondary">Loading relative strength</Typography>
+          </div>
+        ) : groups.map(({ quadrant, themes }) => (
           <section key={quadrant} className="rrg-theme-group">
             <div className="rrg-theme-group-header">
               <span className="rrg-quadrant-dot" style={{ background: QUADRANTS[quadrant].dot }} />
@@ -85,6 +98,27 @@ export function RrgThemeList({
                       </span>
                     }
                   />
+                  <Tooltip title={isSelected ? `Unselect ${theme.theme_name}` : `Select ${theme.theme_name}`}>
+                    <IconButton
+                      className="rrg-theme-action-button"
+                      size="small"
+                      aria-label={isSelected ? `Unselect ${theme.theme_name}` : `Select ${theme.theme_name}`}
+                      aria-pressed={isSelected}
+                      onClick={() => onToggleSelected(theme.theme_id)}
+                    >
+                      <CheckCircleOutlinedIcon fontSize="inherit" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={`Open ${theme.theme_name} charts`}>
+                    <IconButton
+                      className="rrg-theme-action-button"
+                      size="small"
+                      aria-label={`Open ${theme.theme_name} charts`}
+                      onClick={() => onOpenCharts(theme)}
+                    >
+                      <ShowChartIcon fontSize="inherit" />
+                    </IconButton>
+                  </Tooltip>
                 </div>
               );
             })}

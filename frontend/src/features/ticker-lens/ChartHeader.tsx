@@ -22,6 +22,7 @@ import {
   themesMarketWatchUrl,
   tradingViewSymbolUrl,
 } from "./utils";
+import "./chart-header.css";
 
 interface ChartHeaderProps {
   summary: ChartSummary | undefined;
@@ -31,8 +32,9 @@ interface ChartHeaderProps {
   interval: "D" | "W";
   showThemeEtfChart: boolean;
   setInterval: (interval: "D" | "W") => void;
-  setShowThemeEtfChart: (updater: (enabled: boolean) => boolean) => void;
-  setDetailsOpen: (open: boolean) => void;
+  setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
+  setDetailsOpen?: (open: boolean) => void;
+  contextLabel?: string;
 }
 
 export function ChartHeader({
@@ -45,12 +47,15 @@ export function ChartHeader({
   setInterval,
   setShowThemeEtfChart,
   setDetailsOpen,
+  contextLabel,
 }: ChartHeaderProps) {
   return (
     <header className="panel-header chart-header">
       <div className="chart-header-identity">
         <Typography component="h2">
-          {summary?.industry === undefined || summary.industry === null ? (
+          {contextLabel !== undefined ? (
+            <span>{contextLabel}</span>
+          ) : summary?.industry === undefined || summary.industry === null ? (
             <span>{selectedIndustry}</span>
           ) : (
             <Link
@@ -96,14 +101,16 @@ export function ChartHeader({
             </Tooltip>
           )}
         </Typography>
-        <IconButton
-          size="small"
-          aria-label="Open ticker details"
-          disabled={selectedTicker === undefined}
-          onClick={() => setDetailsOpen(true)}
-        >
-          <AssessmentOutlinedIcon fontSize="small" />
-        </IconButton>
+        {setDetailsOpen !== undefined && (
+          <IconButton
+            size="small"
+            aria-label="Open ticker details"
+            disabled={selectedTicker === undefined}
+            onClick={() => setDetailsOpen(true)}
+          >
+            <AssessmentOutlinedIcon fontSize="small" />
+          </IconButton>
+        )}
       </div>
       <div className="chart-header-controls">
         {summaryLoading && (
@@ -143,13 +150,7 @@ export function ChartHeader({
                 )}
               </div>
             )}
-            <div className="chart-indicators">
-              <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
-              <Typography>
-                Ext {summary.extension_from_50_sma === null ? "N/A" : `${summary.extension_from_50_sma >= 0 ? "+" : ""}${summary.extension_from_50_sma.toFixed(1)}x`}
-              </Typography>
-              <Typography>AVol {formatVolume(summary.average_volume)}</Typography>
-            </div>
+            <ChartIndicators summary={summary} />
           </>
         )}
         <ToggleButtonGroup
@@ -167,21 +168,35 @@ export function ChartHeader({
           <ToggleButton value="D">Daily</ToggleButton>
           <ToggleButton value="W">Weekly</ToggleButton>
         </ToggleButtonGroup>
-        <ToggleButton
-          size="small"
-          value="theme-etf"
-          selected={showThemeEtfChart}
-          aria-label="Toggle theme ETF bottom chart"
-          onChange={() =>
-            setShowThemeEtfChart((enabled) => {
-              localStorage.setItem(chartThemeEtfKey, enabled ? "0" : "1");
-              return !enabled;
-            })
-          }
-        >
-          Theme ETF
-        </ToggleButton>
+        {setShowThemeEtfChart !== undefined && (
+          <ToggleButton
+            size="small"
+            value="theme-etf"
+            selected={showThemeEtfChart}
+            aria-label="Toggle theme ETF bottom chart"
+            onChange={() =>
+              setShowThemeEtfChart((enabled) => {
+                localStorage.setItem(chartThemeEtfKey, enabled ? "0" : "1");
+                return !enabled;
+              })
+            }
+          >
+            Theme ETF
+          </ToggleButton>
+        )}
       </div>
     </header>
+  );
+}
+
+function ChartIndicators({ summary }: { summary: ChartSummary }) {
+  return (
+    <div className="chart-indicators">
+      <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
+      <Typography>
+        Ext {summary.extension_from_50_sma === null ? "N/A" : `${summary.extension_from_50_sma >= 0 ? "+" : ""}${summary.extension_from_50_sma.toFixed(1)}x`}
+      </Typography>
+      <Typography>AVol {formatVolume(summary.average_volume)}</Typography>
+    </div>
   );
 }
