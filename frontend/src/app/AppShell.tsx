@@ -23,8 +23,8 @@ const destinations = [
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
-  ["Theme Management", "/theme-management", TuneIcon],
-  ["Relative Rotation Graph", "/rrg", BubbleChartIcon],
+  ["Theme Management", "/theme-management", TuneIcon, "magenta"],
+  ["Relative Rotation Graph", "/rrg", BubbleChartIcon, "cyan"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
 ] as const;
 

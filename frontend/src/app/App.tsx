@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
 
@@ -39,20 +39,23 @@ export function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/market-watch" replace />} />
-        <Route path="/market-watch" element={<Page><MarketWatchPage /></Page>} />
+        <Route path="/market-watch" element={<Page title="Market Watch"><MarketWatchPage /></Page>} />
         <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />
-        <Route path="/watchlists" element={<Page><WatchlistsPage /></Page>} />
-        <Route path="/watchlists/:id" element={<Page><WatchlistsPage /></Page>} />
-        <Route path="/top-stocks" element={<Page><TopStocksPage /></Page>} />
-        <Route path="/csv-analyzer" element={<Page><CsvAnalyzerPage /></Page>} />
-        <Route path="/theme-management" element={<Page><ThemeManagementPage /></Page>} />
-        <Route path="/rrg" element={<Page><RrgPage /></Page>} />
-        <Route path="/study" element={<Page><StudyPage /></Page>} />
+        <Route path="/watchlists" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
+        <Route path="/watchlists/:id" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
+        <Route path="/top-stocks" element={<Page title="Top Stocks"><TopStocksPage /></Page>} />
+        <Route path="/csv-analyzer" element={<Page title="CSV Analyzer"><CsvAnalyzerPage /></Page>} />
+        <Route path="/theme-management" element={<Page title="Theme Management"><ThemeManagementPage /></Page>} />
+        <Route path="/rrg" element={<Page title="Relative Rotation Graph"><RrgPage /></Page>} />
+        <Route path="/study" element={<Page title="Study"><StudyPage /></Page>} />
       </Route>
     </Routes>
   );
 }
 
-function Page({ children }: { children: React.ReactNode }) {
+function Page({ title, children }: { title: string; children: React.ReactNode }) {
+  useEffect(() => {
+    document.title = `${title} | MarketWatch`;
+  }, [title]);
   return <Suspense fallback={null}>{children}</Suspense>;
 }
