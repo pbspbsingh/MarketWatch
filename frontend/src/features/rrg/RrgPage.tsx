@@ -6,7 +6,7 @@ import {
 import { fetchThemeRrg, type ThemeRrgSeries } from "../../api/themes";
 import { useDebouncedValue } from "../../shared/useDebouncedValue";
 import { useLocalStorageState } from "../../shared/useLocalStorageState";
-import { themesMarketWatchUrl } from "../ticker-lens/utils";
+import { isArrowKeyControl, themesMarketWatchUrl } from "../ticker-lens/utils";
 import { RrgControls } from "./RrgControls";
 import { RrgSidePanel } from "./RrgSidePanel";
 import { RrgThemeList } from "./RrgThemeList";
@@ -450,6 +450,49 @@ export function RrgPage() {
       }))
       .filter((group) => group.themes.length > 0);
   }, [listItems]);
+  const navigableThemes = useMemo(
+    () => groupedListItems.flatMap((group) => group.themes),
+    [groupedListItems],
+  );
+
+  useEffect(() => {
+    if (chartTheme === undefined) return;
+    themeElements.current
+      .get(chartTheme.theme_id)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [chartTheme]);
+
+  useEffect(() => {
+    if (chartTheme === undefined) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.key !== "ArrowUp" && event.key !== "ArrowDown") ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isArrowKeyControl(event.target)
+      ) {
+        return;
+      }
+      const currentIndex = navigableThemes.findIndex(
+        (theme) => theme.theme_id === chartTheme.theme_id,
+      );
+      const nextIndex = Math.max(
+        0,
+        Math.min(
+          navigableThemes.length - 1,
+          currentIndex + (event.key === "ArrowDown" ? 1 : -1),
+        ),
+      );
+      const nextTheme = navigableThemes[nextIndex];
+      if (nextTheme === undefined) return;
+      event.preventDefault();
+      setChartTheme(nextTheme);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [chartTheme, navigableThemes]);
 
   const allVisible = series.every((s) => visible[s.theme_id] !== false);
   const toggleAllVisible = () => {
@@ -508,6 +551,7 @@ export function RrgPage() {
           groups={groupedListItems}
           visible={visible}
           selectedIds={selectedIds}
+          chartThemeId={chartTheme?.theme_id}
           exploredIds={exploredIds}
           exploreFilter={exploreFilter}
           itemCount={items.length}

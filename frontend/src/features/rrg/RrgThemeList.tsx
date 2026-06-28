@@ -7,6 +7,7 @@ interface RrgThemeListProps {
   groups: { quadrant: Quadrant; themes: RrgListItem[] }[];
   visible: Record<number, boolean>;
   selectedIds: Set<number>;
+  chartThemeId?: number;
   exploredIds: Set<number>;
   exploreFilter: ExploreFilter;
   itemCount: number;
@@ -25,6 +26,7 @@ export function RrgThemeList({
   groups,
   visible,
   selectedIds,
+  chartThemeId,
   exploredIds,
   exploreFilter,
   itemCount,
@@ -76,11 +78,12 @@ export function RrgThemeList({
               const isVisible = visible[theme.theme_id] !== false;
               const isExplored = exploredIds.has(theme.theme_id);
               const isSelected = selectedIds.has(theme.theme_id);
+              const isChartOpen = chartThemeId === theme.theme_id;
               return (
                 <div
                   key={theme.theme_id}
                   ref={(element) => onThemeElement(theme.theme_id, element)}
-                  className={`rrg-list-row${isSelected ? " selected" : ""}`}
+                  className={`rrg-list-row${isSelected ? " selected" : ""}${isChartOpen ? " chart-open" : ""}`}
                 >
                   <FormControlLabel
                     className="rrg-theme-row"
