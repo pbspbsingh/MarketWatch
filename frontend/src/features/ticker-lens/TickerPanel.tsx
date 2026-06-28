@@ -27,9 +27,9 @@ import {
 } from "@mui/material";
 import {
   fetchTickerRanking,
-  streamTickerSymbols,
   type TickerRanking,
 } from "../../api/tickers";
+import type { TickerStreamClient } from "../../api/tickerStream";
 import {
   addTickerToWatchlist,
   clearTickerWatchlists,
@@ -65,6 +65,7 @@ const tickerUpdateIntervalMs = 1_000;
 const tickerRowHeight = 28;
 
 interface TickerPanelProps {
+  tickerStream: TickerStreamClient;
   mode: GroupMode;
   groupKeys: Set<string>;
   selectedTicker: string | undefined;
@@ -145,6 +146,7 @@ function TickerRow({
 }
 
 export function TickerPanel({
+  tickerStream,
   mode,
   groupKeys,
   selectedTicker,
@@ -225,7 +227,7 @@ export function TickerPanel({
           setLoading(false);
           return;
         }
-        return streamTickerSymbols(symbols, queueTicker, controller.signal).then(flushTickers);
+        return tickerStream.streamSymbols(symbols, queueTicker, controller.signal).then(flushTickers);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
@@ -239,7 +241,7 @@ export function TickerPanel({
       controller.abort();
       if (tickerFlushTimer !== undefined) window.clearTimeout(tickerFlushTimer);
     };
-  }, [groupKey, metricsActive, mode, resolveTickers, setSelectedTicker]);
+  }, [groupKey, metricsActive, mode, resolveTickers, setSelectedTicker, tickerStream]);
 
   useEffect(() => {
     localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));

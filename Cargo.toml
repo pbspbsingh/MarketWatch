@@ -22,7 +22,7 @@ anyhow = "1.0.102"
 thiserror = "2.0.18"
 
 # Web
-axum = { version = "0.8.9", features = ["multipart"] }
+axum = { version = "0.8.9", features = ["multipart", "ws"] }
 include_dir = "0.7.4"
 
 # Persistence

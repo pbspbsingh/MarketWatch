@@ -27,17 +27,10 @@ use axum::response::{IntoResponse, Response};
 #[cfg(not(debug_assertions))]
 use include_dir::{Dir, include_dir};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
-use tokio::task::AbortHandle;
 
 #[cfg(not(debug_assertions))]
 static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
-
-pub struct ActiveTickerStream {
-    pub stream_id: u64,
-    pub abort_handle: AbortHandle,
-}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -47,7 +40,6 @@ pub struct AppState {
     pub study: Arc<StudyService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
     pub market_schedule: MarketSchedule,
-    pub active_ticker_stream: Arc<Mutex<Option<ActiveTickerStream>>>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
     pub ticker_collections: Arc<TickerCollectionService>,
@@ -116,7 +108,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         study,
         ticker_catalog,
         market_schedule,
-        active_ticker_stream: Arc::new(Mutex::new(None)),
         themes,
         theme_analysis,
         ticker_collections,

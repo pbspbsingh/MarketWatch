@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
+import { createTickerStreamClient } from "../../api/tickerStream";
 import type { Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import {
@@ -43,6 +44,7 @@ export function TickerLens({
   accent,
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const tickerStream = useMemo(createTickerStreamClient, []);
   const [groupMode, setGroupMode] = useState<GroupMode>(() => readGroupMode(searchParams));
   const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() =>
     readGroupMode(searchParams) === "industry"
@@ -79,6 +81,8 @@ export function TickerLens({
   const marketResolveGroupCounts =
     universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
   const selectedGroupKey = [...selectedGroupKeys].sort().join(",");
+
+  useEffect(() => () => tickerStream.close(), [tickerStream]);
 
   useEffect(() => {
     const mode = searchGroupMode(searchParams);
@@ -221,6 +225,7 @@ export function TickerLens({
         groupError={groupsError}
       />
       <TickerPanel
+        tickerStream={tickerStream}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}

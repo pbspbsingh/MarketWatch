@@ -1,26 +1,23 @@
 use crate::app::AppState;
 use crate::models::TickerRanking;
-use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::http::StatusCode;
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::task::{Context, Poll};
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
-use tokio_stream::Stream;
-use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, info};
+use tokio::time::{Duration, Instant, MissedTickBehavior};
+use tracing::{error, info, warn};
 
 const STREAM_BUFFER_SIZE: usize = 1;
+const STREAM_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+const STREAM_PONG_TIMEOUT: Duration = Duration::from_secs(15);
 static NEXT_TICKER_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Deserialize)]
@@ -35,6 +32,19 @@ enum TickerRequest {
     },
     Symbols {
         symbols: Vec<String>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum TickerSocketCommand {
+    Stream {
+        request_id: u64,
+        #[serde(flatten)]
+        request: TickerRequest,
+    },
+    Cancel {
+        request_id: u64,
     },
 }
 
@@ -90,138 +100,185 @@ enum TickerStreamEvent {
     Error { message: String },
 }
 
+#[derive(Serialize)]
+struct TickerStreamMessage {
+    request_id: u64,
+    #[serde(flatten)]
+    event: TickerStreamEvent,
+}
+
 struct AbortOnDrop {
     handle: AbortHandle,
 }
 
-struct TickerBodyStream {
-    stream_id: u64,
-    receiver: ReceiverStream<Result<Bytes, Infallible>>,
-    active_stream: Arc<Mutex<Option<crate::app::ActiveTickerStream>>>,
-    _relay_guard: AbortOnDrop,
-}
-
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/tickers", post(tickers))
+        .route("/tickers", get(tickers_socket))
         .route("/ticker-ranking", post(ticker_ranking))
         .route("/ticker-membership", post(membership))
         .route("/ticker-group-summary", post(group_summary))
 }
 
-async fn tickers(State(state): State<AppState>, Json(request): Json<TickerRequest>) -> Response {
-    let stream_id = NEXT_TICKER_STREAM_ID.fetch_add(1, Ordering::Relaxed);
-    match &request {
-        TickerRequest::Industry { keys } => {
-            info!(
-                stream_id,
-                group_type = "industry",
-                selected_count = keys.len(),
-                "ticker stream requested"
-            );
-        }
-        TickerRequest::Theme {
-            ids,
-            include_unassigned,
-        } => {
-            info!(
-                stream_id,
-                group_type = "theme",
-                selected_count = ids.len(),
-                include_unassigned,
-                "ticker stream requested"
-            );
-        }
-        TickerRequest::Symbols { symbols } => {
-            info!(
-                stream_id,
-                group_type = "symbols",
-                selected_count = symbols.len(),
-                "ticker stream requested"
-            );
+async fn tickers_socket(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+    ws.on_upgrade(move |socket| handle_ticker_socket(socket, state))
+}
+
+async fn handle_ticker_socket(mut socket: WebSocket, state: AppState) {
+    let (event_sender, mut event_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
+    let mut active_stream: Option<(u64, AbortOnDrop)> = None;
+    let mut ping = tokio::time::interval(STREAM_HEARTBEAT_INTERVAL);
+    ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    ping.tick().await;
+    let mut last_pong = Instant::now();
+    loop {
+        let pong_deadline = tokio::time::sleep_until(last_pong + STREAM_PONG_TIMEOUT);
+        tokio::pin!(pong_deadline);
+        tokio::select! {
+            event = event_receiver.recv() => {
+                let Some(event) = event else { return; };
+                if !send_socket_event(&mut socket, event).await {
+                    info!("ticker WebSocket send failed");
+                    return;
+                }
+            }
+            message = socket.recv() => match message {
+                Some(Ok(Message::Pong(_))) => {
+                    last_pong = Instant::now();
+                }
+                Some(Ok(Message::Ping(payload))) => {
+                    if socket.send(Message::Pong(payload)).await.is_err() { return; }
+                }
+                Some(Ok(Message::Text(payload))) => {
+                    let command = match serde_json::from_str::<TickerSocketCommand>(&payload) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            warn!(%error, "rejecting invalid ticker WebSocket request");
+                            return;
+                        }
+                    };
+                    match command {
+                        TickerSocketCommand::Stream { request_id, request } => {
+                            let next = spawn_ticker_stream(
+                                state.ticker_catalog.clone(),
+                                request_id,
+                                request,
+                                event_sender.clone(),
+                            );
+                            if let Some((_, previous)) = active_stream.replace((request_id, next)) {
+                                drop(previous);
+                            }
+                        }
+                        TickerSocketCommand::Cancel { request_id } => {
+                            if active_stream.as_ref().is_some_and(|(id, _)| *id == request_id)
+                                && let Some((_, active)) = active_stream.take()
+                            {
+                                drop(active);
+                                info!(request_id, "ticker WebSocket stream cancelled");
+                            }
+                        }
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
+                    info!("ticker WebSocket closed");
+                    return;
+                }
+                Some(Ok(_)) => {}
+            },
+            _ = ping.tick() => {
+                if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    info!("ticker WebSocket ping failed");
+                    return;
+                }
+            },
+            _ = &mut pong_deadline => {
+                info!("ticker WebSocket pong timeout");
+                return;
+            },
         }
     }
-    let (body_sender, body_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
-    let ticker_catalog = state.ticker_catalog.clone();
-    let active_stream = state.active_ticker_stream.clone();
-    let relay = tokio::spawn(async move {
-        let (ticker_sender, mut ticker_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
-        let producer = tokio::spawn(async move {
-            match request {
-                TickerRequest::Industry { keys } => {
-                    ticker_catalog
-                        .stream_industry_tickers(stream_id, &keys, &ticker_sender)
-                        .await
-                }
-                TickerRequest::Theme {
-                    ids,
-                    include_unassigned,
-                } => {
-                    ticker_catalog
-                        .stream_theme_tickers(stream_id, &ids, include_unassigned, &ticker_sender)
-                        .await
-                }
-                TickerRequest::Symbols { symbols } => {
-                    ticker_catalog
-                        .stream_ranked_symbols(stream_id, &symbols, &ticker_sender)
-                        .await
-                }
-            }
-        });
-        let _producer_guard = AbortOnDrop {
-            handle: producer.abort_handle(),
-        };
+}
 
-        while let Some(ticker) = ticker_receiver.recv().await {
-            if body_sender
-                .send(Ok::<_, Infallible>(event_bytes(
-                    TickerStreamEvent::Ticker { ticker },
-                )))
-                .await
-                .is_err()
-            {
-                producer.abort();
-                return;
+fn spawn_ticker_stream(
+    ticker_catalog: Arc<crate::services::tickers::TickerCatalogService>,
+    request_id: u64,
+    request: TickerRequest,
+    event_sender: mpsc::Sender<TickerStreamMessage>,
+) -> AbortOnDrop {
+    let task = tokio::spawn(run_ticker_stream(
+        ticker_catalog,
+        request_id,
+        request,
+        event_sender,
+    ));
+    AbortOnDrop {
+        handle: task.abort_handle(),
+    }
+}
+
+async fn run_ticker_stream(
+    ticker_catalog: Arc<crate::services::tickers::TickerCatalogService>,
+    request_id: u64,
+    request: TickerRequest,
+    event_sender: mpsc::Sender<TickerStreamMessage>,
+) {
+    let stream_id = NEXT_TICKER_STREAM_ID.fetch_add(1, Ordering::Relaxed);
+    let (ticker_sender, mut ticker_receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
+    let producer = tokio::spawn(async move {
+        match request {
+            TickerRequest::Industry { keys } => {
+                ticker_catalog
+                    .stream_industry_tickers(stream_id, &keys, &ticker_sender)
+                    .await
+            }
+            TickerRequest::Theme {
+                ids,
+                include_unassigned,
+            } => {
+                ticker_catalog
+                    .stream_theme_tickers(stream_id, &ids, include_unassigned, &ticker_sender)
+                    .await
+            }
+            TickerRequest::Symbols { symbols } => {
+                ticker_catalog
+                    .stream_ranked_symbols(stream_id, &symbols, &ticker_sender)
+                    .await
             }
         }
-
-        let event = match producer.await {
-            Ok(Ok(())) => TickerStreamEvent::Complete,
-            Ok(Err(error)) => {
-                error!(%error, "failed to stream tickers");
-                TickerStreamEvent::Error {
-                    message: error.to_string(),
-                }
-            }
-            Err(error) => {
-                error!(%error, "ticker stream task failed");
-                TickerStreamEvent::Error {
-                    message: "ticker stream task failed".to_owned(),
-                }
-            }
-        };
-        let _ = body_sender
-            .send(Ok::<_, Infallible>(event_bytes(event)))
-            .await;
-        clear_active_stream(&active_stream, stream_id);
-        info!(stream_id, "ticker stream relay finished");
     });
-    let relay_handle = relay.abort_handle();
-    replace_active_stream(&state.active_ticker_stream, stream_id, relay_handle.clone());
-    let stream = TickerBodyStream {
-        stream_id,
-        receiver: ReceiverStream::new(body_receiver),
-        active_stream: state.active_ticker_stream.clone(),
-        _relay_guard: AbortOnDrop {
-            handle: relay_handle,
-        },
+    let _producer_guard = AbortOnDrop {
+        handle: producer.abort_handle(),
     };
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/x-ndjson")
-        .body(Body::from_stream(stream))
-        .expect("ticker stream response is valid")
+    while let Some(ticker) = ticker_receiver.recv().await {
+        if event_sender
+            .send(TickerStreamMessage {
+                request_id,
+                event: TickerStreamEvent::Ticker { ticker },
+            })
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
+    let event = match producer.await {
+        Ok(Ok(())) => TickerStreamEvent::Complete,
+        Ok(Err(error)) => {
+            error!(%error, "failed to stream tickers");
+            TickerStreamEvent::Error {
+                message: error.to_string(),
+            }
+        }
+        Err(error) => {
+            error!(%error, "ticker stream task failed");
+            TickerStreamEvent::Error {
+                message: "ticker stream task failed".to_owned(),
+            }
+        }
+    };
+    let _ = event_sender
+        .send(TickerStreamMessage { request_id, event })
+        .await;
+    info!(stream_id, "ticker WebSocket completed");
 }
 
 async fn membership(
@@ -473,64 +530,13 @@ fn unique_sorted(symbols: impl Iterator<Item = String>) -> Vec<String> {
     symbols
 }
 
-fn event_bytes(event: TickerStreamEvent) -> Bytes {
-    let mut bytes = serde_json::to_vec(&event).expect("ticker stream event is serializable");
-    bytes.push(b'\n');
-    Bytes::from(bytes)
-}
-
-fn replace_active_stream(
-    active_stream: &Mutex<Option<crate::app::ActiveTickerStream>>,
-    stream_id: u64,
-    abort_handle: AbortHandle,
-) {
-    let mut active_stream = active_stream
-        .lock()
-        .expect("active ticker stream mutex is not poisoned");
-    if let Some(previous) = active_stream.replace(crate::app::ActiveTickerStream {
-        stream_id,
-        abort_handle,
-    }) {
-        info!(
-            stream_id,
-            previous_stream_id = previous.stream_id,
-            "aborting previous ticker stream on new request"
-        );
-        previous.abort_handle.abort();
-    }
-}
-
-fn clear_active_stream(
-    active_stream: &Mutex<Option<crate::app::ActiveTickerStream>>,
-    stream_id: u64,
-) {
-    let mut active_stream = active_stream
-        .lock()
-        .expect("active ticker stream mutex is not poisoned");
-    if active_stream
-        .as_ref()
-        .is_some_and(|active| active.stream_id == stream_id)
-    {
-        active_stream.take();
-    }
+async fn send_socket_event(socket: &mut WebSocket, event: TickerStreamMessage) -> bool {
+    let payload = serde_json::to_string(&event).expect("ticker stream event is serializable");
+    socket.send(Message::Text(payload.into())).await.is_ok()
 }
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.handle.abort();
-    }
-}
-
-impl Drop for TickerBodyStream {
-    fn drop(&mut self) {
-        clear_active_stream(&self.active_stream, self.stream_id);
-    }
-}
-
-impl Stream for TickerBodyStream {
-    type Item = Result<Bytes, Infallible>;
-
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.receiver).poll_next(context)
     }
 }
