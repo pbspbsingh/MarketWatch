@@ -4,10 +4,11 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { CircularProgress, IconButton, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { List, type RowComponentProps, useListRef } from "react-window";
 import { fetchThemeRankings, type PerformancePeriods, type ThemeRanking } from "../../api/industries";
-import { resolveTickerMembership, type TickerRanking } from "../../api/tickers";
+import { resolveTickerMembership } from "../../api/tickers";
 import { createTickerStreamClient } from "../../api/tickerStream";
 import { fetchThemes } from "../../api/themes";
 import { Toast } from "../../components/Toast";
+import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { ChartPanel } from "../ticker-lens/ChartPanel";
 import { isArrowKeyControl } from "../ticker-lens/utils";
 import "./theme-tracker.css";
@@ -45,7 +46,6 @@ export function ThemeTrackerPage() {
   const [themes, setThemes] = useState<ThemeRanking[]>([]);
   const [activeTheme, setActiveTheme] = useState<ThemeRanking>();
   const [stockMode, setStockMode] = useState(false);
-  const [stocks, setStocks] = useState<TickerRanking[]>([]);
   const [selectedTicker, setSelectedTicker] = useState<string>();
   const [selectedStock, setSelectedStock] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -57,6 +57,21 @@ export function ThemeTrackerPage() {
     () => activeTheme === undefined ? new Set<string>() : new Set([String(activeTheme.id)]),
     [activeTheme],
   );
+  const resolveThemeStocks = useCallback(
+    (signal: AbortSignal) => activeTheme === undefined
+      ? Promise.resolve([])
+      : resolveTickerMembership(
+          { group_type: "theme", ids: [activeTheme.id], include_unassigned: false },
+          signal,
+        ),
+    [activeTheme],
+  );
+  const stockStream = useTickerRankingStream({
+    client: tickerStream,
+    enabled: stockMode && activeTheme !== undefined,
+    requestKey: activeTheme === undefined ? "" : String(activeTheme.id),
+    resolveSymbols: resolveThemeStocks,
+  });
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
   useEffect(() => {
@@ -105,43 +120,12 @@ export function ThemeTrackerPage() {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    if (!stockMode || activeTheme === undefined) return;
-    const controller = new AbortController();
-    const streamedStocks = new Map<string, TickerRanking>();
-    let flushTimer: number | undefined;
-    const flushStocks = () => {
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-      flushTimer = undefined;
-      if (!controller.signal.aborted) setStocks([...streamedStocks.values()]);
-    };
-    const queueStock = (ticker: TickerRanking) => {
-      streamedStocks.set(ticker.symbol, ticker);
-      flushTimer ??= window.setTimeout(flushStocks, 1_000);
-    };
-    setLoading(true);
-    setStocks([]);
-    resolveTickerMembership(
-      { group_type: "theme", ids: [activeTheme.id], include_unassigned: false },
-      controller.signal,
-    ).then((symbols) => tickerStream.streamSymbols(symbols, queueStock, controller.signal))
-      .then(flushStocks)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => {
-      controller.abort();
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-    };
-  }, [activeTheme, stockMode, tickerStream]);
-
   const sortedItems = useMemo(() => {
     const items: RankedItem[] = stockMode
-      ? stocks.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance }))
+      ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance }))
       : themes.map((theme) => ({ key: String(theme.id), label: `${theme.name} (${theme.etf_symbol})`, symbol: theme.etf_symbol, performance: theme.performance }));
     return items.sort((a, b) => metric(b, range) - metric(a, range));
-  }, [range, stockMode, stocks, themes]);
+  }, [range, stockMode, stockStream.tickers, themes]);
   const scale = useMemo(() => Math.max(0.01, ...sortedItems.flatMap((item) => {
     const value = item.performance?.[range];
     return value == null ? [] : [Math.abs(value)];
@@ -220,7 +204,7 @@ export function ThemeTrackerPage() {
             {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
           </ToggleButtonGroup>
         </header>
-        {loading && sortedItems.length === 0 ? <div className="panel-status"><CircularProgress size="1rem" /></div> : stockMode ? (
+        {(stockMode ? stockStream.loading : loading) && sortedItems.length === 0 ? <div className="panel-status"><CircularProgress size="1rem" /></div> : stockMode ? (
           <List
             tagName="ol"
             className="theme-tracker-list"
@@ -263,6 +247,7 @@ export function ThemeTrackerPage() {
         horizontalDetailsNavigation={false}
       />
       <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast message={stockStream.error} onClose={stockStream.clearError} />
     </section>
   );
 }

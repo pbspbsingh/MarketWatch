@@ -40,6 +40,7 @@ import {
 } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
+import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import {
   defaultSortSetting,
@@ -61,7 +62,6 @@ import {
   tickerSortValue,
 } from "./utils";
 
-const tickerUpdateIntervalMs = 1_000;
 const tickerRowHeight = 28;
 
 interface TickerPanelProps {
@@ -169,6 +169,23 @@ export function TickerPanel({
   const [loading, setLoading] = useState(true);
   const groupKey = [...groupKeys].sort().join(",");
   const metricsActive = groupKeys.size > 0;
+  const resolveRankedSymbols = useCallback(
+    (signal: AbortSignal) => resolveTickers({ mode, groupKeys, signal }),
+    [groupKeys, mode, resolveTickers],
+  );
+  const rankingStream = useTickerRankingStream({
+    client: tickerStream,
+    enabled: metricsActive,
+    requestKey: `${mode}:${groupKey}`,
+    resolveSymbols: resolveRankedSymbols,
+  });
+  const panelLoading = metricsActive ? rankingStream.loading : loading;
+  const panelError = error ?? rankingStream.error;
+
+  useEffect(() => {
+    setSelectedTicker(undefined);
+    setError(undefined);
+  }, [groupKey, metricsActive, mode, setSelectedTicker]);
 
   useEffect(() => {
     if (providedWatchlists !== undefined) return;
@@ -182,22 +199,11 @@ export function TickerPanel({
   }, [focusRevision, providedWatchlists]);
 
   useEffect(() => {
+    if (metricsActive) {
+      setTickers(rankingStream.tickers);
+      return;
+    }
     const controller = new AbortController();
-    const tickerBySymbol = new Map<string, TickerRanking>();
-    let tickerFlushTimer: number | undefined;
-    const flushTickers = () => {
-      if (tickerFlushTimer !== undefined) {
-        window.clearTimeout(tickerFlushTimer);
-        tickerFlushTimer = undefined;
-      }
-      if (!controller.signal.aborted) setTickers([...tickerBySymbol.values()]);
-    };
-    const queueTicker = (ticker: TickerRanking) => {
-      tickerBySymbol.set(ticker.symbol, ticker);
-      if (tickerFlushTimer === undefined) {
-        tickerFlushTimer = window.setTimeout(flushTickers, tickerUpdateIntervalMs);
-      }
-    };
     setLoading(true);
     setError(undefined);
     setTickers([]);
@@ -206,28 +212,21 @@ export function TickerPanel({
     resolveTickers({ mode, groupKeys, signal: controller.signal })
       .then(async (symbols) => {
         if (controller.signal.aborted) return;
-        if (!metricsActive) {
-          let memberships = new Map<string, number[]>();
-          try {
-            memberships = new Map((await fetchTickerWatchlists(symbols, controller.signal)).map((item) => [item.symbol, item.watchlist_ids]));
-          } catch (requestError: unknown) {
-            if (requestError instanceof Error && requestError.name !== "AbortError") {
-              setError(requestError.message);
-            }
+        let memberships = new Map<string, number[]>();
+        try {
+          memberships = new Map((await fetchTickerWatchlists(symbols, controller.signal)).map((item) => [item.symbol, item.watchlist_ids]));
+        } catch (requestError: unknown) {
+          if (requestError instanceof Error && requestError.name !== "AbortError") {
+            setError(requestError.message);
           }
-          if (controller.signal.aborted) return;
-          setTickers(
-            symbols.map((symbol) => ({
-              symbol,
-              watchlist_ids: memberships.get(symbol) ?? [],
-              performance: null,
-              relative_strength: null,
-            })),
-          );
-          setLoading(false);
-          return;
         }
-        return tickerStream.streamSymbols(symbols, queueTicker, controller.signal).then(flushTickers);
+        if (controller.signal.aborted) return;
+        setTickers(symbols.map((symbol) => ({
+          symbol,
+          watchlist_ids: memberships.get(symbol) ?? [],
+          performance: null,
+          relative_strength: null,
+        })));
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
@@ -237,11 +236,8 @@ export function TickerPanel({
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => {
-      controller.abort();
-      if (tickerFlushTimer !== undefined) window.clearTimeout(tickerFlushTimer);
-    };
-  }, [groupKey, metricsActive, mode, resolveTickers, setSelectedTicker, tickerStream]);
+    return () => controller.abort();
+  }, [groupKey, metricsActive, mode, rankingStream.tickers, resolveTickers, setSelectedTicker]);
 
   useEffect(() => {
     localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
@@ -427,7 +423,7 @@ export function TickerPanel({
           <Typography className="panel-position" color="text.secondary">
             {selectedTickerPosition}/{sortedTickers.length}
           </Typography>
-          {loading && <CircularProgress size="0.75rem" />}
+          {panelLoading && <CircularProgress size="0.75rem" />}
         </div>
         <div className="metric-sort-controls">
           <Select
@@ -464,13 +460,13 @@ export function TickerPanel({
           </IconButton>
         </div>
       </header>
-      {loading && tickers.length === 0 && (
+      {panelLoading && tickers.length === 0 && (
         <div className="panel-status">
           <CircularProgress size="1rem" />
           <Typography color="text.secondary">Loading tickers</Typography>
         </div>
       )}
-      {!loading && !error && tickers.length === 0 && (
+      {!panelLoading && !panelError && tickers.length === 0 && (
         <Typography className="panel-empty" color="text.secondary">
           No known tickers
         </Typography>
@@ -511,7 +507,10 @@ export function TickerPanel({
           <ListItemText>Clear all</ListItemText>
         </MenuItem>
       </Menu>
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast message={panelError} onClose={() => {
+        setError(undefined);
+        rankingStream.clearError();
+      }} />
     </section>
   );
 }
