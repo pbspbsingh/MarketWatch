@@ -17,7 +17,7 @@ export interface BoundedTickerGroup {
   key: string;
   name: string;
   performance: {
-    day: number | null;
+    day: number;
     week: number;
     month: number;
     quarter: number;

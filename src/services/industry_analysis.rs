@@ -53,7 +53,7 @@ impl IndustryAnalysisService {
             .into_iter()
             .map(|industry| {
                 let performance = PerformancePeriods {
-                    day: None,
+                    day: industry.performance_day,
                     week: industry.performance_week,
                     month: industry.performance_month,
                     quarter: industry.performance_quarter,

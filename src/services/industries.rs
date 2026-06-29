@@ -65,6 +65,7 @@ impl IndustryRefreshService {
                 .map(|industry| IndustrySnapshotRow {
                     key: industry.industry.key,
                     name: industry.industry.name,
+                    performance_day: industry.day,
                     performance_week: industry.week,
                     performance_month: industry.month,
                     performance_quarter: industry.quarter,

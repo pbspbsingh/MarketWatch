@@ -41,6 +41,7 @@ pub struct IndustryIdentity {
 #[derive(Clone, Debug, PartialEq)]
 pub struct IndustryPerformance {
     pub industry: IndustryIdentity,
+    pub day: f64,
     pub week: f64,
     pub month: f64,
     pub quarter: f64,
@@ -231,7 +232,7 @@ fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
 
     for row in document.select(&row_selector) {
         let cells = row.select(&cell_selector).collect::<Vec<_>>();
-        anyhow::ensure!(cells.len() >= 8, "Finviz industry row has too few columns");
+        anyhow::ensure!(cells.len() >= 11, "Finviz industry row has too few columns");
         let link = cells[1]
             .select(&link_selector)
             .next()
@@ -242,6 +243,7 @@ fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
                 key: industry_key(link)?,
                 name: text(link),
             },
+            day: percentage(cells[10])?,
             week: percentage(cells[2])?,
             month: percentage(cells[3])?,
             quarter: percentage(cells[4])?,

@@ -20,6 +20,7 @@ pub struct IndustrySnapshot {
 pub struct IndustrySnapshotRow {
     pub key: String,
     pub name: String,
+    pub performance_day: f64,
     pub performance_week: f64,
     pub performance_month: f64,
     pub performance_quarter: f64,
@@ -103,14 +104,15 @@ impl Store {
         for industry in &snapshot.rows {
             sqlx::query!(
                 "INSERT INTO industry_snapshot_rows (
-                    snapshot_id, industry_key, industry_name, performance_week,
+                    snapshot_id, industry_key, industry_name, performance_day, performance_week,
                     performance_month, performance_quarter, performance_half_year,
                     performance_year, performance_year_to_date
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 snapshot_id,
                 industry.key,
                 industry.name,
+                industry.performance_day,
                 industry.performance_week,
                 industry.performance_month,
                 industry.performance_quarter,
@@ -155,7 +157,7 @@ impl Store {
     ) -> anyhow::Result<IndustrySnapshot> {
         let rows = sqlx::query_as!(
             IndustrySnapshotRow,
-            "SELECT industry_key AS key, industry_name AS name, performance_week,
+            "SELECT industry_key AS key, industry_name AS name, performance_day, performance_week,
                     performance_month, performance_quarter, performance_half_year,
                     performance_year, performance_year_to_date
              FROM industry_snapshot_rows
@@ -184,6 +186,7 @@ mod tests {
         IndustrySnapshotRow {
             key: key.to_owned(),
             name: name.to_owned(),
+            performance_day: 0.02,
             performance_week,
             performance_month: 0.08,
             performance_quarter: 0.15,

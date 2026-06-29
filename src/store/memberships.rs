@@ -357,6 +357,7 @@ mod tests {
                 rows: vec![IndustrySnapshotRow {
                     key: "semiconductors".to_owned(),
                     name: "Semiconductors".to_owned(),
+                    performance_day: 0.0,
                     performance_week: 0.0,
                     performance_month: 0.0,
                     performance_quarter: 0.0,
