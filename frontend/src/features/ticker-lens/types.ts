@@ -5,6 +5,8 @@ export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type GroupMode = "industry" | "theme";
 
+export type RevealRequest<T> = { value: T; revision: number };
+
 export type GroupRanking = {
   key: string;
   name: string;

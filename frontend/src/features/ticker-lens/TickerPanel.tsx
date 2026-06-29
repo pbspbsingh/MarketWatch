@@ -50,6 +50,7 @@ import {
 import type {
   GroupMode,
   ResolveTickersRequest,
+  RevealRequest,
   SortKey,
   SortSetting,
 } from "./types";
@@ -73,6 +74,8 @@ interface TickerPanelProps {
   resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
   providedWatchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
+  onTickersChange?: (symbols: string[]) => void;
+  revealTicker?: RevealRequest<string>;
 }
 
 interface TickerRowProps {
@@ -154,6 +157,8 @@ export function TickerPanel({
   resolveTickers,
   providedWatchlists,
   onWatchlistsChange,
+  onTickersChange,
+  revealTicker,
 }: TickerPanelProps) {
   const focusRevision = useFocusRefresh();
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
@@ -270,8 +275,19 @@ export function TickerPanel({
     () => sortTickers(tickers, sortSetting, metricsActive),
     [metricsActive, sortSetting, tickers],
   );
+  const tickerSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
+
+  useEffect(() => {
+    onTickersChange?.(tickers.map((ticker) => ticker.symbol));
+  }, [onTickersChange, tickerSymbolsKey]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
+
+  useEffect(() => {
+    if (revealTicker === undefined) return;
+    const index = sortedTickers.findIndex((ticker) => ticker.symbol === revealTicker.value);
+    if (index >= 0) tickerListRef.current?.scrollToRow({ align: "center", index });
+  }, [revealTicker]);
 
   useEffect(() => {
     if (selectedTicker === undefined) return;

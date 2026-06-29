@@ -12,9 +12,11 @@ import {
 import { ChartPanel } from "./ChartPanel";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
+import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
   GroupRanking,
+  RevealRequest,
   ResolveTickersRequest,
   SelectedTickerContext,
   TickerUniverse,
@@ -67,6 +69,9 @@ export function TickerLens({
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState<string>();
   const [groupsWarning, setGroupsWarning] = useState<string>();
+  const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
+  const [revealGroup, setRevealGroup] = useState<RevealRequest<string>>();
+  const [revealTicker, setRevealTicker] = useState<RevealRequest<string>>();
   const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
   const requestedUnassigned = searchIncludesUnassigned(searchParams);
   const bounded = universe.type === "bounded";
@@ -223,6 +228,7 @@ export function TickerLens({
         groups={groups}
         loadingGroups={groupsLoading}
         groupError={groupsError}
+        revealGroup={revealGroup}
       />
       <TickerPanel
         tickerStream={tickerStream}
@@ -233,6 +239,8 @@ export function TickerLens({
         resolveTickers={resolveTickers}
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
+        onTickersChange={setSearchTickerSymbols}
+        revealTicker={revealTicker}
       />
       <ChartPanel
         mode={groupMode}
@@ -241,6 +249,24 @@ export function TickerLens({
         selectedTicker={selectedTicker}
         symbols={bounded ? boundedSymbols : undefined}
         onSelectedTickerContext={handleSelectedTickerContext}
+      />
+      <TickerLensSearch
+        mode={groupMode}
+        groups={groups}
+        tickerSymbols={searchTickerSymbols}
+        onSelectGroup={(key) => {
+          setSelectedGroupKeys((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          });
+          setRevealGroup((current) => ({ value: key, revision: (current?.revision ?? 0) + 1 }));
+        }}
+        onSelectTicker={(symbol) => {
+          setSelectedTicker(symbol);
+          setRevealTicker((current) => ({ value: symbol, revision: (current?.revision ?? 0) + 1 }));
+        }}
       />
       <Toast
         message={groupsWarning}

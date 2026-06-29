@@ -29,6 +29,7 @@ import {
 import type {
   GroupMode,
   GroupRanking,
+  RevealRequest,
   SelectedTickerContext,
   SortKey,
 } from "./types";
@@ -60,6 +61,7 @@ interface GroupPanelProps {
   groups: GroupRanking[];
   loadingGroups: boolean;
   groupError?: string;
+  revealGroup?: RevealRequest<string>;
 }
 
 export function GroupPanel({
@@ -74,6 +76,7 @@ export function GroupPanel({
   groups,
   loadingGroups,
   groupError,
+  revealGroup,
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
@@ -110,6 +113,13 @@ export function GroupPanel({
   ]);
 
   const sortedGroups = useMemo(() => sortGroups(groups, sortSetting), [groups, sortSetting]);
+
+  useEffect(() => {
+    if (revealGroup === undefined) return;
+    window.requestAnimationFrame(() => {
+      groupElements.current.get(revealGroup.value)?.scrollIntoView({ block: "nearest" });
+    });
+  }, [revealGroup]);
   const highlightedGroupKeys = useMemo(() => {
     return highlightedGroups({ groups, mode, selectedTickerContext, unassignedGroupKey });
   }, [groups, mode, selectedTickerContext]);
