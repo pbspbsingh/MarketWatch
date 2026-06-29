@@ -42,6 +42,7 @@ export function WatchlistsPage() {
   const focusRevision = useFocusRefresh();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
+  const [symbolsWatchlistId, setSymbolsWatchlistId] = useState<number>();
   const [loading, setLoading] = useState(true);
   const [symbolsLoading, setSymbolsLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -85,7 +86,10 @@ export function WatchlistsPage() {
     setSymbolsLoading(true);
     fetchWatchlistSymbols(selected.id, controller.signal)
       .then((items) => {
-        if (!controller.signal.aborted) setSymbols(items);
+        if (!controller.signal.aborted) {
+          setSymbols(items);
+          setSymbolsWatchlistId(selected.id);
+        }
       })
       .catch((requestError: unknown) => {
         if (!controller.signal.aborted) setError(message(requestError));
@@ -185,7 +189,7 @@ export function WatchlistsPage() {
           <Tooltip title="Export watchlist CSV"><span><IconButton size="small" disabled={selected === undefined || symbols.length === 0 || downloading} onClick={() => void download()}><FileDownloadIcon fontSize="small" /></IconButton></span></Tooltip>
         </div>
       </header>
-      {selected === undefined || symbolsLoading ? (
+      {selected === undefined || symbolsWatchlistId !== selected.id ? (
         <div className="panel-status">{loading || symbolsLoading ? <CircularProgress size="1rem" /> : null}</div>
       ) : symbols.length === 0 ? (
         <div className="panel-status"><Typography color="text.secondary">No tickers in {selected.name}</Typography></div>
