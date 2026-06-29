@@ -34,6 +34,7 @@ interface ChartPanelProps {
   selectedTicker: string | undefined;
   symbols?: string[];
   onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
+  horizontalDetailsNavigation?: boolean;
 }
 
 export function ChartPanel({
@@ -43,6 +44,7 @@ export function ChartPanel({
   selectedTicker,
   symbols,
   onSelectedTickerContext,
+  horizontalDetailsNavigation = true,
 }: ChartPanelProps) {
   const [summary, setSummary] = useState<ChartSummary>();
   const [groupSummary, setGroupSummary] = useState<TickerGroupSummary>();
@@ -79,6 +81,7 @@ export function ChartPanel({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
+        !horizontalDetailsNavigation ||
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
@@ -104,7 +107,7 @@ export function ChartPanel({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [detailsOpen, selectedTicker]);
+  }, [detailsOpen, horizontalDetailsNavigation, selectedTicker]);
 
   useEffect(() => {
     setError(undefined);

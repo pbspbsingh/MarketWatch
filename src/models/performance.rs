@@ -7,6 +7,7 @@ const CANDLE_RS_WEIGHTS: [f64; 4] = [0.4, 0.2, 0.2, 0.2];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct PerformancePeriods {
+    pub day: Option<f64>,
     pub week: f64,
     pub month: f64,
     pub quarter: f64,
@@ -55,12 +56,25 @@ pub fn candle_performance(candles: &[DailyCandle], as_of: NaiveDate) -> Performa
     };
 
     PerformancePeriods {
+        day: previous_close(candles, as_of)
+            .filter(|close| *close != 0.0)
+            .map(|close| (end_close / close) - 1.0),
         week: period_return(candles, end_close, as_of - TimeDelta::days(7)),
         month: period_return(candles, end_close, as_of - TimeDelta::days(30)),
         quarter: period_return(candles, end_close, as_of - TimeDelta::days(90)),
         half_year: period_return(candles, end_close, as_of - TimeDelta::days(180)),
         year: period_return(candles, end_close, as_of - TimeDelta::days(365)),
     }
+}
+
+fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {
+    let mut closes = candles
+        .iter()
+        .rev()
+        .filter(|candle| candle.market_date <= as_of)
+        .map(|candle| candle.close);
+    closes.next()?;
+    closes.next()
 }
 
 pub fn candle_relative_strength(candles: &[DailyCandle], benchmark: &[DailyCandle]) -> f64 {

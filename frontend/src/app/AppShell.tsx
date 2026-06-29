@@ -7,6 +7,7 @@ import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
+import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import {
   Drawer,
   IconButton,
@@ -25,6 +26,7 @@ const destinations = [
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon, "magenta"],
   ["Relative Rotation Graph", "/rrg", BubbleChartIcon, "cyan"],
+  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
 ] as const;
 

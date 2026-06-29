@@ -1,4 +1,5 @@
 export interface PerformancePeriods {
+  day: number | null;
   week: number;
   month: number;
   quarter: number;

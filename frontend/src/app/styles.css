@@ -212,6 +212,10 @@ body,
   color: #22d3ee;
 }
 
+.navigation-drawer .navigation-icon-amber {
+  color: #f59e0b;
+}
+
 .navigation-drawer .MuiListItemButton-root:hover,
 .navigation-drawer .MuiListItemButton-root.active {
   color: #f0f4f8;

@@ -112,6 +112,7 @@ function rsColor(rs: number) {
 }
 
 const performanceCaps: Record<Exclude<SortKey, "relative_strength">, number> = {
+  day: 0.025,
   week: 0.05,
   month: 0.1,
   quarter: 0.2,

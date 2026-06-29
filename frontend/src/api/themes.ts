@@ -95,7 +95,7 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-export const fetchThemes = () => request<Theme[]>("/api/themes");
+export const fetchThemes = (signal?: AbortSignal) => request<Theme[]>("/api/themes", { signal });
 export const fetchThemeTickers = () => request<ThemeTicker[]>("/api/theme-tickers");
 export const fetchThemeIndustries = () => request<ThemeTickerIndustry[]>("/api/theme-industries");
 export const fetchThemeTicker = (symbol: string) =>
