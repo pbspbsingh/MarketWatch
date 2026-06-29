@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -11,6 +12,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  InputAdornment,
   MenuItem,
   Select,
   TextField,
@@ -21,6 +23,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { fetchNextTradingDay } from "../../api/market";
 import { fetchThemeTicker } from "../../api/themes";
 import {
+  addTickerToWatchlist,
   createWatchlist,
   deleteWatchlist,
   fetchWatchlists,
@@ -46,10 +49,14 @@ export function WatchlistsPage() {
   const [loading, setLoading] = useState(true);
   const [symbolsLoading, setSymbolsLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [addingTicker, setAddingTicker] = useState(false);
+  const [tickerInput, setTickerInput] = useState("");
   const [editor, setEditor] = useState<Watchlist | null | undefined>();
   const [deleteTarget, setDeleteTarget] = useState<Watchlist>();
   const [error, setError] = useState<string>();
   const selectedId = Number(id);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const selected = watchlists.find((watchlist) => watchlist.id === selectedId);
 
   useEffect(() => {
@@ -159,6 +166,25 @@ export function WatchlistsPage() {
     }
   };
 
+  const addTicker = async () => {
+    if (selected === undefined || addingTicker) return;
+    const watchlistId = selected.id;
+    const symbol = tickerInput.trim().toUpperCase();
+    if (symbol === "") return;
+    setAddingTicker(true);
+    try {
+      await addTickerToWatchlist(watchlistId, symbol);
+      if (selectedIdRef.current === watchlistId) {
+        setSymbols((current) => current.includes(symbol) ? current : [...current, symbol].sort());
+      }
+      setTickerInput("");
+    } catch (requestError) {
+      setError(message(requestError));
+    } finally {
+      setAddingTicker(false);
+    }
+  };
+
   return (
     <section className="workspace-panel watchlists-page" aria-label="Watchlists">
       <header className="panel-header watchlists-header">
@@ -181,8 +207,39 @@ export function WatchlistsPage() {
         <Typography className="watchlists-count" color="text.secondary">
           {selected === undefined ? "" : `${symbols.length} tickers`}
         </Typography>
+        <TextField
+          className="watchlists-add-ticker"
+          size="small"
+          value={tickerInput}
+          disabled={selected === undefined || addingTicker}
+          placeholder="Add ticker"
+          slotProps={{
+            htmlInput: { "aria-label": "Add ticker", maxLength: 12 },
+            input: {
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    aria-label="Submit ticker"
+                    disabled={selected === undefined || addingTicker || tickerInput.trim() === ""}
+                    onClick={() => void addTicker()}
+                  >
+                    <ArrowForwardIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
+          onChange={(event) => setTickerInput(event.target.value.toUpperCase())}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void addTicker();
+          }}
+        />
         <div className="watchlists-actions">
-          {(loading || symbolsLoading || downloading) && <CircularProgress size="0.8rem" />}
+          {(loading || symbolsLoading || downloading || addingTicker) && <CircularProgress size="0.8rem" />}
           <Tooltip title="Create watchlist"><span><IconButton size="small" disabled={watchlists.length >= watchlistIcons.length} onClick={() => setEditor(null)}><AddIcon fontSize="small" /></IconButton></span></Tooltip>
           <Tooltip title="Edit watchlist"><span><IconButton size="small" disabled={selected === undefined || selected.is_default} onClick={() => setEditor(selected)}><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
           <Tooltip title="Delete watchlist"><span><IconButton size="small" disabled={selected === undefined || selected.is_default} onClick={() => setDeleteTarget(selected)}><DeleteOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>

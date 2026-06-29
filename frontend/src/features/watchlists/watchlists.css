@@ -18,8 +18,11 @@
 }
 
 .watchlists-count { font-size: 0.625rem !important; }
+.watchlists-add-ticker { width: 8rem; margin-left: auto; }
+.watchlists-add-ticker .MuiInputBase-input { padding-block: 0.2rem; font-size: 0.72rem; }
+.watchlists-add-ticker .MuiInputAdornment-positionEnd { transform: translateX(0.35rem); }
 .watchlist-select-option { gap: 0.5rem; }
-.watchlists-actions { display: flex; margin-left: auto; align-items: center; gap: 0.2rem; }
+.watchlists-actions { display: flex; align-items: center; gap: 0.2rem; }
 .watchlists-actions .MuiIconButton-root { padding: 0.1rem; }
 .watchlist-editor { display: flex; padding-top: 0.5rem !important; flex-direction: column; gap: 0.75rem; }
 .watchlist-icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.2rem; }
