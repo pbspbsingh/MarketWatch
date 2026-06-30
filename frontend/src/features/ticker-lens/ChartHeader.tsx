@@ -193,6 +193,7 @@ function ChartIndicators({ summary }: { summary: ChartSummary }) {
   return (
     <div className="chart-indicators">
       <Typography>ADR {summary.adr_percent.toFixed(1)}%</Typography>
+      <Typography>RMV {summary.rmv_percent === null ? "N/A" : summary.rmv_percent.toFixed(0)}</Typography>
       <Typography>
         Ext {summary.extension_from_50_sma === null ? "N/A" : `${summary.extension_from_50_sma >= 0 ? "+" : ""}${summary.extension_from_50_sma.toFixed(1)}x`}
       </Typography>

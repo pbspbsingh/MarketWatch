@@ -44,22 +44,21 @@ import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import {
-  defaultSortSetting,
-  sortOptions,
+  tickerSortOptions,
   tickerSortSettingKey,
 } from "./constants";
 import type {
   GroupMode,
   ResolveTickersRequest,
   RevealRequest,
-  SortKey,
-  SortSetting,
+  TickerSortKey,
+  TickerSortSetting,
 } from "./types";
 import {
   formatMetric,
   isArrowKeyControl,
   metricColor,
-  readSortSetting,
+  readTickerSortSetting,
   sortTickers,
   tickerSortValue,
 } from "./utils";
@@ -81,7 +80,7 @@ interface TickerPanelProps {
 
 interface TickerRowProps {
   tickers: TickerRanking[];
-  sortKey: SortKey;
+  sortKey: TickerSortKey;
   selectedTicker: string | undefined;
   onSelect: (symbol: string) => void;
   watchlists: Watchlist[];
@@ -169,7 +168,7 @@ export function TickerPanel({
   const tickerListRef = useListRef(null);
   const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState(() =>
-    readSortSetting(tickerSortSettingKey),
+    readTickerSortSetting(tickerSortSettingKey),
   );
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -232,6 +231,8 @@ export function TickerPanel({
           watchlist_ids: memberships.get(symbol) ?? [],
           performance: null,
           relative_strength: null,
+          adr_percent: null,
+          rmv_percent: null,
         })));
       })
       .catch((requestError: unknown) => {
@@ -449,10 +450,10 @@ export function TickerPanel({
             disabled={!metricsActive}
             aria-label="Sort tickers by"
             onChange={(event) =>
-              setSortSetting({ key: event.target.value as SortKey, direction: "desc" })
+              setSortSetting({ key: event.target.value as TickerSortKey, direction: "desc" })
             }
           >
-            {sortOptions.map((option) => (
+            {tickerSortOptions.map((option) => (
               <MenuItem key={option.key} value={option.key}>
                 {option.label}
               </MenuItem>
@@ -463,7 +464,7 @@ export function TickerPanel({
             disabled={!metricsActive}
             aria-label={`Sort ${sortSetting.direction === "desc" ? "ascending" : "descending"}`}
             onClick={() =>
-              setSortSetting((current: SortSetting) => ({
+              setSortSetting((current: TickerSortSetting) => ({
                 ...current,
                 direction: current.direction === "desc" ? "asc" : "desc",
               }))

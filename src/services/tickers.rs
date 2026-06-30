@@ -1,6 +1,9 @@
 use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
-use crate::models::{TickerRanking, candle_performance, candle_relative_strength};
+use crate::models::{
+    DailyCandle, TickerRanking, average_daily_range_percent, candle_performance,
+    candle_relative_strength, relative_move_percent,
+};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
@@ -21,6 +24,7 @@ pub struct TickerCatalogService {
     benchmark: String,
     market_schedule: MarketSchedule,
     membership_fresh_days: i64,
+    adr_sessions: usize,
     membership_locks: KeyedLock,
 }
 
@@ -39,6 +43,7 @@ impl TickerCatalogService {
             benchmark: market.benchmark.clone(),
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             membership_fresh_days: i64::from(finviz_config.membership_fresh_days),
+            adr_sessions: usize::from(market.adr_sessions),
             membership_locks: KeyedLock::new(),
         })
     }
@@ -94,11 +99,14 @@ impl TickerCatalogService {
         let benchmark_candles = self.yahoo.daily_candles_for_year(&self.benchmark).await?;
         let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
         let performance = candle_performance(&candles, as_of);
+        let adr_percent = average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
         Ok(TickerRanking {
             symbol,
             watchlist_ids,
             relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
             performance: Some(performance),
+            adr_percent: Some(adr_percent),
+            rmv_percent: relative_move_percent(&candles, self.adr_sessions),
         })
     }
 
@@ -162,6 +170,8 @@ impl TickerCatalogService {
                         .unwrap_or_default(),
                     performance: None,
                     relative_strength: None,
+                    adr_percent: None,
+                    rmv_percent: None,
                 })
                 .await
                 .is_err()
@@ -188,6 +198,8 @@ impl TickerCatalogService {
             let ranking = match self.yahoo.daily_candles_for_year(&symbol).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
+                    let adr_percent =
+                        average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
                     TickerRanking {
                         watchlist_ids: watchlists_by_symbol
                             .get(&symbol)
@@ -199,6 +211,8 @@ impl TickerCatalogService {
                             &benchmark_candles,
                         )),
                         performance: Some(performance),
+                        adr_percent: Some(adr_percent),
+                        rmv_percent: relative_move_percent(&candles, self.adr_sessions),
                     }
                 }
                 Err(error) => {
@@ -211,6 +225,8 @@ impl TickerCatalogService {
                         symbol,
                         performance: None,
                         relative_strength: None,
+                        adr_percent: None,
+                        rmv_percent: None,
                     }
                 }
             };
@@ -314,4 +330,8 @@ fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<String>> {
         }
     }
     Ok(normalized)
+}
+
+fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
+    &candles[candles.len().saturating_sub(sessions)..]
 }

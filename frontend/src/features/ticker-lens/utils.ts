@@ -1,6 +1,6 @@
 import type { TickerRanking } from "../../api/tickers";
-import { defaultSortSetting, sortOptions } from "./constants";
-import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting } from "./types";
+import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
+import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
 
 export function readSortSetting(storageKey: string): SortSetting {
   const value = localStorage.getItem(storageKey);
@@ -18,13 +18,30 @@ export function readSortSetting(storageKey: string): SortSetting {
   }
 }
 
+export function readTickerSortSetting(storageKey: string): TickerSortSetting {
+  const value = localStorage.getItem(storageKey);
+  if (value === null) return defaultTickerSortSetting;
+
+  try {
+    const setting = JSON.parse(value) as Partial<TickerSortSetting>;
+    const validKey = tickerSortOptions.some((option) => option.key === setting.key);
+    const validDirection = setting.direction === "asc" || setting.direction === "desc";
+    return validKey && validDirection
+      ? { key: setting.key as TickerSortKey, direction: setting.direction as TickerSortSetting["direction"] }
+      : defaultTickerSortSetting;
+  } catch {
+    return defaultTickerSortSetting;
+  }
+}
+
 export function sortValue(group: GroupRanking, key: SortKey) {
   if (key === "relative_strength") return group[key] ?? undefined;
   return group.performance?.[key] ?? undefined;
 }
 
-export function tickerSortValue(ticker: TickerRanking, key: SortKey) {
+export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
   if (key === "relative_strength") return ticker.relative_strength ?? undefined;
+  if (key === "adr_percent" || key === "rmv_percent") return ticker[key] ?? undefined;
   return ticker.performance?.[key] ?? undefined;
 }
 
@@ -65,7 +82,7 @@ export function highlightedGroups({
   return new Set(groups.filter((group) => themeNames.has(group.name)).map((group) => group.key));
 }
 
-export function sortTickers(tickers: TickerRanking[], sortSetting: SortSetting, metricsActive: boolean) {
+export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSetting, metricsActive: boolean) {
   return [...tickers].sort((left, right) => {
     if (!metricsActive) return left.symbol.localeCompare(right.symbol);
     const leftValue = tickerSortValue(left, sortSetting.key);
@@ -84,13 +101,16 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: SortSetting, 
   });
 }
 
-export function formatMetric(value: number, key: SortKey) {
+export function formatMetric(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return value.toFixed(1);
+  if (key === "adr_percent") return `${value.toFixed(1)}%`;
+  if (key === "rmv_percent") return value.toFixed(0);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
-export function metricColor(value: number, key: SortKey) {
+export function metricColor(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return rsColor(value).fg;
+  if (key === "adr_percent" || key === "rmv_percent") return undefined;
   return performanceColor(value, key);
 }
 

@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::DailyCandle;
+use crate::models::{DailyCandle, average_daily_range_percent, relative_move_percent};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use serde::Serialize;
@@ -27,6 +27,7 @@ pub struct ChartSummary {
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
+    rmv_percent: Option<f64>,
     extension_from_50_sma: Option<f64>,
     average_volume: i64,
 }
@@ -103,7 +104,8 @@ impl ChartService {
             theme_benchmark,
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
-            adr_percent: average_daily_range(latest_sessions(&candles, self.adr_sessions)),
+            adr_percent: average_daily_range_percent(latest_sessions(&candles, self.adr_sessions)),
+            rmv_percent: relative_move_percent(&candles, self.adr_sessions),
             extension_from_50_sma: extension_from_50_sma(&candles, self.adr_sessions),
             average_volume: average_volume(latest_sessions(&candles, self.average_volume_sessions)),
         })
@@ -112,19 +114,6 @@ impl ChartService {
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
     &candles[candles.len().saturating_sub(sessions)..]
-}
-
-fn average_daily_range(candles: &[DailyCandle]) -> f64 {
-    if candles.is_empty() {
-        return 0.0;
-    }
-    100.0
-        * candles
-            .iter()
-            .filter(|candle| candle.low > 0.0)
-            .map(|candle| (candle.high / candle.low) - 1.0)
-            .sum::<f64>()
-        / candles.len() as f64
 }
 
 fn average_volume(candles: &[DailyCandle]) -> i64 {
@@ -177,7 +166,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(
-            (average_daily_range(latest_sessions(&candles, 20)) - 22.222_222).abs() < 0.000_001
+            (average_daily_range_percent(latest_sessions(&candles, 20)) - 22.222_222).abs()
+                < 0.000_001
         );
         assert_eq!(average_volume(latest_sessions(&candles, 25)), 1_800);
     }
