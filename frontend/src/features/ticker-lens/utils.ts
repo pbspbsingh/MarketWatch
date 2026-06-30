@@ -110,8 +110,16 @@ export function formatMetric(value: number, key: TickerSortKey) {
 
 export function metricColor(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return rsColor(value).fg;
-  if (key === "adr_percent" || key === "rmv_percent") return undefined;
+  if (key === "adr_percent") return adrColor(value);
+  if (key === "rmv_percent") return undefined;
   return performanceColor(value, key);
+}
+
+function adrColor(adr: number) {
+  if (adr >= 5) return "rgb(40,210,80)";
+  if (adr >= 4) return "rgb(230,200,79)";
+  if (adr >= 3) return "rgb(245,165,36)";
+  return "rgb(180,30,30)";
 }
 
 function rsColor(rs: number) {
