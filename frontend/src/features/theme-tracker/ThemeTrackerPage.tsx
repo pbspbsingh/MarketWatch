@@ -32,16 +32,19 @@ const ranges: { key: Range; label: string }[] = [
   { key: "half_year", label: "6M" },
   { key: "year", label: "1Y" },
 ];
-const rangeStorageKey = "market-watch.theme-tracker-range";
-function initialRange(): Range {
-  const stored = localStorage.getItem(rangeStorageKey);
-  return ranges.some(({ key }) => key === stored) ? stored as Range : "day";
+const topRangeStorageKey = "market-watch.theme-tracker-range";
+const drillDownRangeStorageKey = "market-watch.theme-tracker-stock-range";
+
+function initialRange(storageKey: string, fallback: Range): Range {
+  const stored = localStorage.getItem(storageKey);
+  return ranges.some(({ key }) => key === stored) ? stored as Range : fallback;
 }
 
 export function ThemeTrackerPage() {
   const tickerStream = useMemo(createTickerStreamClient, []);
   const stockListRef = useListRef(null);
-  const [range, setRange] = useState<Range>(initialRange);
+  const [topRange, setTopRange] = useState<Range>(() => initialRange(topRangeStorageKey, "week"));
+  const [drillDownRange, setDrillDownRange] = useState<Range>(() => initialRange(drillDownRangeStorageKey, "month"));
   const [mode, setMode] = useState<TrackerMode>("theme");
   const [themes, setThemes] = useState<ThemeRanking[]>([]);
   const [industries, setIndustries] = useState<IndustryRanking[]>([]);
@@ -53,7 +56,7 @@ export function ThemeTrackerPage() {
   const [loading, setLoading] = useState(true);
   const [industriesLoading, setIndustriesLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const rangeRef = useRef(range);
+  const topRangeRef = useRef(topRange);
   const userSelected = useRef(false);
   const ignoreTickerContext = useCallback(() => {}, []);
   const activeThemeKeys = useMemo(
@@ -109,7 +112,7 @@ export function ThemeTrackerPage() {
         setThemes(allThemes);
         const first = rankings === undefined
           ? allThemes[0]
-          : [...allThemes].sort((a, b) => metric(b, rangeRef.current) - metric(a, rangeRef.current))[0];
+          : [...allThemes].sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0];
         if (first !== undefined && !userSelected.current) {
           setActiveTheme(first);
           setSelectedTicker(first.etf_symbol);
@@ -127,7 +130,7 @@ export function ThemeTrackerPage() {
         const rankingsById = new Map(next.map((theme) => [theme.id, theme]));
         setThemes((current) => current.map((theme) => rankingsById.get(theme.id) ?? theme));
         if (!userSelected.current) {
-          const first = [...next].sort((a, b) => metric(b, rangeRef.current) - metric(a, rangeRef.current))[0];
+          const first = [...next].sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0];
           setActiveTheme(first);
           setSelectedTicker(first?.etf_symbol);
         } else {
@@ -157,9 +160,10 @@ export function ThemeTrackerPage() {
 
   useEffect(() => {
     if (mode !== "industry" || activeIndustry !== undefined || industries.length === 0) return;
-    setActiveIndustry([...industries].sort((a, b) => metric(b, range) - metric(a, range))[0]);
-  }, [activeIndustry, industries, mode, range]);
+    setActiveIndustry([...industries].sort((a, b) => metric(b, topRange) - metric(a, topRange))[0]);
+  }, [activeIndustry, industries, mode, topRange]);
 
+  const range = stockMode ? drillDownRange : topRange;
   const sortedItems = useMemo(() => {
     const items: RankedItem[] = stockMode
       ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance }))
@@ -177,9 +181,14 @@ export function ThemeTrackerPage() {
 
   const selectRange = (_: React.MouseEvent<HTMLElement>, value: Range | null) => {
     if (value === null) return;
-    localStorage.setItem(rangeStorageKey, value);
-    rangeRef.current = value;
-    setRange(value);
+    if (stockMode) {
+      localStorage.setItem(drillDownRangeStorageKey, value);
+      setDrillDownRange(value);
+    } else {
+      localStorage.setItem(topRangeStorageKey, value);
+      topRangeRef.current = value;
+      setTopRange(value);
+    }
   };
   const selectItem = (item: RankedItem) => {
     userSelected.current = true;
@@ -192,6 +201,10 @@ export function ThemeTrackerPage() {
       setSelectedStock(undefined);
       setActiveIndustry(industries.find((industry) => industry.key === item.key));
     }
+  };
+  const enterStockMode = (item: RankedItem) => {
+    selectItem(item);
+    setStockMode(true);
   };
   const selectMode = (_: React.MouseEvent<HTMLElement>, value: TrackerMode | null) => {
     if (value === null || value === mode) return;
@@ -289,12 +302,11 @@ export function ThemeTrackerPage() {
           <ol className="theme-tracker-list">
             {sortedItems.map((item) => {
               return <li key={item.key}>
-                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)}>
+                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)} onDoubleClick={() => enterStockMode(item)}>
                   <PerformanceCells item={item} range={range} scale={scale} />
-                  <IconButton component="span" size="small" aria-label={`Show stocks in ${item.label}`} onClick={(event) => {
+                  <IconButton component="span" size="small" aria-label={`Show stocks in ${item.label}`} onDoubleClick={(event) => event.stopPropagation()} onClick={(event) => {
                     event.stopPropagation();
-                    selectItem(item);
-                    setStockMode(true);
+                    enterStockMode(item);
                   }}><ChevronRightIcon fontSize="small" /></IconButton>
                 </button>
               </li>;
@@ -308,7 +320,7 @@ export function ThemeTrackerPage() {
         industryKeys={activeIndustryKeys}
         selectedTicker={selectedTicker}
         onSelectedTickerContext={ignoreTickerContext}
-        horizontalDetailsNavigation={false}
+        horizontalDetailsNavigation={stockMode && selectedStock !== undefined ? "right" : false}
       />
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast message={stockStream.error} onClose={stockStream.clearError} />

@@ -34,7 +34,7 @@ interface ChartPanelProps {
   selectedTicker: string | undefined;
   symbols?: string[];
   onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
-  horizontalDetailsNavigation?: boolean;
+  horizontalDetailsNavigation?: boolean | "right";
 }
 
 export function ChartPanel({
@@ -96,10 +96,11 @@ export function ChartPanel({
         return;
       }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (horizontalDetailsNavigation === "right" && event.key !== "ArrowRight") return;
 
       event.preventDefault();
       if (selectedTicker === undefined) {
-        setWarning("No ticker is selected");
+        if (horizontalDetailsNavigation !== "right") setWarning("No ticker is selected");
       } else {
         setDetailsOpen(true);
       }
