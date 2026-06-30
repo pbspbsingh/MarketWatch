@@ -257,14 +257,16 @@ export function ThemeTrackerPage() {
     <section className="theme-tracker">
       <aside className="workspace-panel theme-tracker-panel">
         <header className="theme-tracker-header">
-          <div className="theme-tracker-title">
-            {stockMode && <IconButton size="small" aria-label={`Back to ${mode === "theme" ? "themes" : "industries"}`} onClick={leaveStockMode}><ArrowBackIcon fontSize="small" /></IconButton>}
-            <Typography component="h1">{stockMode ? `${activeGroupName ?? ""}${activeGroupSymbol === undefined ? "" : ` (${activeGroupSymbol})`}` : "Theme Tracker"}</Typography>
-          </div>
+          {stockMode && (
+            <div className="theme-tracker-title">
+              <IconButton size="small" aria-label={`Back to ${mode === "theme" ? "themes" : "industries"}`} onClick={leaveStockMode}><ArrowBackIcon fontSize="small" /></IconButton>
+              <Typography component="h1">{`${activeGroupName ?? ""}${activeGroupSymbol === undefined ? "" : ` (${activeGroupSymbol})`}`}</Typography>
+            </div>
+          )}
           {!stockMode && (
             <ToggleButtonGroup className="theme-tracker-mode" exclusive size="small" value={mode} onChange={selectMode} aria-label="Tracker mode">
-              <ToggleButton value="theme" aria-label="Themes" title="Themes">T</ToggleButton>
-              <ToggleButton value="industry" aria-label="Industries" title="Industries">I</ToggleButton>
+              <ToggleButton value="theme">Theme</ToggleButton>
+              <ToggleButton value="industry">Industry</ToggleButton>
             </ToggleButtonGroup>
           )}
           <ToggleButtonGroup exclusive size="small" value={range} onChange={selectRange} aria-label="Performance range">
