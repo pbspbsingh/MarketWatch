@@ -21,12 +21,12 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
+  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon, "magenta"],
   ["Relative Rotation Graph", "/rrg", BubbleChartIcon, "cyan"],
-  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
 ] as const;
 
