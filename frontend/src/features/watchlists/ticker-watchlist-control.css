@@ -1,0 +1,28 @@
+.ticker-favourite {
+  display: inline-flex;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: #687482;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: #f2c94c;
+    outline: none;
+  }
+}
+
+.ticker-favourite-active {
+  color: #f2c94c;
+}
+
+.ticker-watchlist-member:not(.ticker-favourite-active) {
+  color: #58a6ff;
+}
+
+.ticker-watchlist-clear-icon {
+  margin-left: 0.5625rem;
+}

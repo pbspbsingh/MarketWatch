@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TickerRanking } from "../api/tickers";
 import type { TickerStreamClient } from "../api/tickerStream";
 
@@ -18,6 +18,7 @@ export function useTickerRankingStream({
   const [tickers, setTickers] = useState<TickerRanking[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string>();
+  const watchlistOverrides = useRef(new Map<string, number[]>());
 
   useEffect(() => {
     if (!enabled) {
@@ -36,7 +37,11 @@ export function useTickerRankingStream({
       if (!controller.signal.aborted) setTickers([...tickerBySymbol.values()]);
     };
     const queue = (ticker: TickerRanking) => {
-      tickerBySymbol.set(ticker.symbol, ticker);
+      const watchlistIds = watchlistOverrides.current.get(ticker.symbol);
+      tickerBySymbol.set(
+        ticker.symbol,
+        watchlistIds === undefined ? ticker : { ...ticker, watchlist_ids: watchlistIds },
+      );
       flushTimer ??= window.setTimeout(flush, batchIntervalMs);
     };
 
@@ -61,5 +66,18 @@ export function useTickerRankingStream({
     };
   }, [client, enabled, requestKey, resolveSymbols]);
 
-  return { tickers, loading, error, clearError: () => setError(undefined) };
+  const setTickerWatchlists = useCallback((symbol: string, watchlistIds: number[]) => {
+    watchlistOverrides.current.set(symbol, watchlistIds);
+    setTickers((current) => current.map((ticker) =>
+      ticker.symbol === symbol ? { ...ticker, watchlist_ids: watchlistIds } : ticker,
+    ));
+  }, []);
+
+  return {
+    tickers,
+    loading,
+    error,
+    clearError: () => setError(undefined),
+    setTickerWatchlists,
+  };
 }

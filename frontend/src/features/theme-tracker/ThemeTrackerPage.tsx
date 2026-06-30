@@ -1,27 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { CircularProgress, IconButton, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import { Checkbox, CircularProgress, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { List, type RowComponentProps, useListRef } from "react-window";
 import { fetchIndustries, fetchThemeRankings, type IndustryRanking, type PerformancePeriods, type ThemeRanking } from "../../api/industries";
 import { resolveTickerMembership } from "../../api/tickers";
 import { createTickerStreamClient } from "../../api/tickerStream";
 import { fetchThemes } from "../../api/themes";
+import { addTickerToWatchlist, clearTickerWatchlists, fetchTickerWatchlists, fetchWatchlists, removeTickerFromWatchlist, type Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
+import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { ChartPanel } from "../ticker-lens/ChartPanel";
 import { isArrowKeyControl } from "../ticker-lens/utils";
+import { WatchlistIcon } from "../watchlists/WatchlistIcon";
+import "../watchlists/ticker-watchlist-control.css";
 import "./theme-tracker.css";
 
 type Range = "day" | "week" | "month" | "quarter" | "half_year" | "year";
 type TrackerMode = "theme" | "industry";
-type RankedItem = { key: string; label: string; symbol?: string; performance: PerformancePeriods | null };
+type RankedItem = { key: string; label: string; symbol?: string; performance: PerformancePeriods | null; watchlistIds?: number[] };
 type StockRowProps = {
   items: RankedItem[];
   range: Range;
   scale: number;
   selectedTicker?: string;
   onSelect: (item: RankedItem) => void;
+  watchlists: Watchlist[];
+  onFavouriteClick: (item: RankedItem) => void;
+  onContextMenu: (event: React.MouseEvent, symbol: string) => void;
 };
 
 const ranges: { key: Range; label: string }[] = [
@@ -41,6 +50,7 @@ function initialRange(storageKey: string, fallback: Range): Range {
 }
 
 export function ThemeTrackerPage() {
+  const focusRevision = useFocusRefresh();
   const tickerStream = useMemo(createTickerStreamClient, []);
   const stockListRef = useListRef(null);
   const [topRange, setTopRange] = useState<Range>(() => initialRange(topRangeStorageKey, "week"));
@@ -55,9 +65,12 @@ export function ThemeTrackerPage() {
   const [selectedStock, setSelectedStock] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [industriesLoading, setIndustriesLoading] = useState(true);
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const [error, setError] = useState<string>();
   const topRangeRef = useRef(topRange);
   const userSelected = useRef(false);
+  const refreshedMembershipRevision = useRef(0);
   const ignoreTickerContext = useCallback(() => {}, []);
   const activeThemeKeys = useMemo(
     () => mode === "theme" && activeTheme !== undefined ? new Set([String(activeTheme.id)]) : new Set<string>(),
@@ -97,6 +110,15 @@ export function ThemeTrackerPage() {
   });
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWatchlists(controller.signal)
+      .then(setWatchlists)
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
+      });
+    return () => controller.abort();
+  }, [focusRevision]);
   useEffect(() => {
     const controller = new AbortController();
     let rankings: ThemeRanking[] | undefined;
@@ -163,10 +185,33 @@ export function ThemeTrackerPage() {
     setActiveIndustry([...industries].sort((a, b) => metric(b, topRange) - metric(a, topRange))[0]);
   }, [activeIndustry, industries, mode, topRange]);
 
+  const stockSymbolsKey = stockStream.tickers.map((ticker) => ticker.symbol).join("\0");
+  useEffect(() => {
+    if (
+      focusRevision === 0 ||
+      refreshedMembershipRevision.current === focusRevision ||
+      !stockMode ||
+      stockStream.tickers.length === 0
+    ) return;
+    refreshedMembershipRevision.current = focusRevision;
+    const controller = new AbortController();
+    fetchTickerWatchlists(stockStream.tickers.map((ticker) => ticker.symbol), controller.signal)
+      .then((memberships) => {
+        if (controller.signal.aborted) return;
+        memberships.forEach((membership) => {
+          stockStream.setTickerWatchlists(membership.symbol, membership.watchlist_ids);
+        });
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
+      });
+    return () => controller.abort();
+  }, [focusRevision, stockMode, stockSymbolsKey, stockStream.setTickerWatchlists]);
+
   const range = stockMode ? drillDownRange : topRange;
   const sortedItems = useMemo(() => {
     const items: RankedItem[] = stockMode
-      ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance }))
+      ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance, watchlistIds: stock.watchlist_ids }))
       : mode === "theme"
         ? themes.map((theme) => ({ key: String(theme.id), label: `${theme.name} (${theme.etf_symbol})`, symbol: theme.etf_symbol, performance: theme.performance }))
         : industries.map((industry) => ({ key: industry.key, label: industry.name, performance: industry.performance }));
@@ -206,6 +251,57 @@ export function ThemeTrackerPage() {
     selectItem(item);
     setStockMode(true);
   };
+  const handleFavouriteClick = (item: RankedItem) => {
+    const symbol = item.symbol;
+    if (symbol === undefined) return;
+    const favourite = watchlists.find((watchlist) => watchlist.is_default);
+    if (favourite === undefined) return;
+    const watchlistIds = item.watchlistIds ?? [];
+    const removing = watchlistIds.includes(favourite.id);
+    const request = removing
+      ? removeTickerFromWatchlist(favourite.id, symbol)
+      : addTickerToWatchlist(favourite.id, symbol);
+    request
+      .then(() => stockStream.setTickerWatchlists(
+        symbol,
+        removing ? watchlistIds.filter((id) => id !== favourite.id) : [favourite.id, ...watchlistIds],
+      ))
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error) setError(requestError.message);
+      });
+  };
+  const toggleMembership = (symbol: string, watchlist: Watchlist) => {
+    const ticker = stockStream.tickers.find((item) => item.symbol === symbol);
+    if (ticker === undefined) return;
+    const removing = ticker.watchlist_ids.includes(watchlist.id);
+    const request = removing
+      ? removeTickerFromWatchlist(watchlist.id, symbol)
+      : addTickerToWatchlist(watchlist.id, symbol);
+    request
+      .then(() => stockStream.setTickerWatchlists(
+        symbol,
+        removing
+          ? ticker.watchlist_ids.filter((id) => id !== watchlist.id)
+          : [watchlist.id, ...ticker.watchlist_ids],
+      ))
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error) setError(requestError.message);
+      });
+  };
+  const clearMemberships = (symbol: string) => {
+    clearTickerWatchlists(symbol)
+      .then(() => {
+        stockStream.setTickerWatchlists(symbol, []);
+        setContextMenu(undefined);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error) setError(requestError.message);
+      });
+  };
+  const handleContextMenu = (event: React.MouseEvent, symbol: string) => {
+    event.preventDefault();
+    setContextMenu({ symbol, top: event.clientY, left: event.clientX });
+  };
   const selectMode = (_: React.MouseEvent<HTMLElement>, value: TrackerMode | null) => {
     if (value === null || value === mode) return;
     userSelected.current = true;
@@ -225,6 +321,7 @@ export function ThemeTrackerPage() {
   const leaveStockMode = useCallback(() => {
     setStockMode(false);
     setSelectedStock(undefined);
+    setContextMenu(undefined);
     setSelectedTicker(mode === "theme" ? activeTheme?.etf_symbol : undefined);
     if (activeGroupKey !== undefined) {
       requestAnimationFrame(() => scrollTrackerItemIntoView(activeGroupKey));
@@ -295,7 +392,16 @@ export function ThemeTrackerPage() {
             rowComponent={StockRow}
             rowCount={sortedItems.length}
             rowHeight={32}
-            rowProps={{ items: sortedItems, range, scale, selectedTicker: selectedStock, onSelect: selectItem }}
+            rowProps={{
+              items: sortedItems,
+              range,
+              scale,
+              selectedTicker: selectedStock,
+              onSelect: selectItem,
+              watchlists,
+              onFavouriteClick: handleFavouriteClick,
+              onContextMenu: handleContextMenu,
+            }}
             overscanCount={8}
           />
         ) : (
@@ -313,6 +419,32 @@ export function ThemeTrackerPage() {
             })}
           </ol>
         )}
+        <Menu
+          open={contextMenu !== undefined}
+          onClose={() => setContextMenu(undefined)}
+          anchorReference="anchorPosition"
+          anchorPosition={contextMenu === undefined ? undefined : { top: contextMenu.top, left: contextMenu.left }}
+          slotProps={{ list: { dense: true, "aria-label": "Ticker watchlists" } }}
+        >
+          {watchlists.map((watchlist) => {
+            const checked = stockStream.tickers.find((ticker) => ticker.symbol === contextMenu?.symbol)?.watchlist_ids.includes(watchlist.id) ?? false;
+            return (
+              <MenuItem key={watchlist.id} onClick={() => contextMenu !== undefined && toggleMembership(contextMenu.symbol, watchlist)}>
+                <Checkbox size="small" checked={checked} tabIndex={-1} />
+                <ListItemIcon><WatchlistIcon iconKey={watchlist.icon_key} fontSize="small" /></ListItemIcon>
+                <ListItemText>{watchlist.name}</ListItemText>
+              </MenuItem>
+            );
+          })}
+          <Divider />
+          <MenuItem
+            disabled={contextMenu === undefined || !(stockStream.tickers.find((ticker) => ticker.symbol === contextMenu.symbol)?.watchlist_ids.length)}
+            onClick={() => contextMenu !== undefined && clearMemberships(contextMenu.symbol)}
+          >
+            <ListItemIcon className="ticker-watchlist-clear-icon"><DeleteSweepIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Clear all</ListItemText>
+          </MenuItem>
+        </Menu>
       </aside>
       <ChartPanel
         mode={mode}
@@ -338,11 +470,25 @@ function PerformanceBar({ value, scale }: { value: number | null | undefined; sc
   return <span className="performance-bar"><span className={value >= 0 ? "bar-positive" : "bar-negative"} style={{ width, [value >= 0 ? "left" : "right"]: "50%" }} /></span>;
 }
 
-function StockRow({ index, style, ariaAttributes, items, range, scale, selectedTicker, onSelect }: RowComponentProps<StockRowProps>) {
+function StockRow({ index, style, ariaAttributes, items, range, scale, selectedTicker, onSelect, watchlists, onFavouriteClick, onContextMenu }: RowComponentProps<StockRowProps>) {
   const item = items[index];
+  const watchlistIds = item.watchlistIds ?? [];
+  const memberships = watchlistIds
+    .map((id) => watchlists.find((watchlist) => watchlist.id === id))
+    .filter((watchlist): watchlist is Watchlist => watchlist !== undefined);
+  const favourite = watchlists.find((watchlist) => watchlist.is_default);
+  const isFavourite = favourite !== undefined && watchlistIds.includes(favourite.id);
+  const displayed = memberships.find((watchlist) => !watchlist.is_default) ?? memberships[0];
+  const title = `${isFavourite ? "Remove from" : "Add to"} Favourites${memberships.length > 0 ? ` · In: ${memberships.map((membership) => membership.name).join(", ")}` : ""}`;
   return (
     <li style={style} {...ariaAttributes}>
-      <button className="theme-tracker-row theme-tracker-stock-row" data-tracker-key={item.key} type="button" aria-pressed={selectedTicker === item.symbol} onClick={() => onSelect(item)}>
+      <button className="theme-tracker-row theme-tracker-stock-row" data-tracker-key={item.key} type="button" aria-pressed={selectedTicker === item.symbol} onClick={() => onSelect(item)} onContextMenu={(event) => item.symbol !== undefined && onContextMenu(event, item.symbol)}>
+        <span className={`ticker-favourite${isFavourite ? " ticker-favourite-active" : ""}${displayed !== undefined ? " ticker-watchlist-member" : ""}`} title={title} onClick={(event) => {
+          event.stopPropagation();
+          onFavouriteClick(item);
+        }}>
+          {displayed !== undefined ? <WatchlistIcon iconKey={displayed.icon_key} fontSize="inherit" /> : <BookmarkBorderIcon fontSize="inherit" />}
+        </span>
         <PerformanceCells item={item} range={range} scale={scale} />
       </button>
     </li>

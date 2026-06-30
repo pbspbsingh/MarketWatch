@@ -51,7 +51,7 @@
   box-shadow: inset 0.18rem 0 #f59e0b;
 }
 .theme-tracker-row[aria-pressed="true"]:hover { background: rgb(245 158 11 / 21%); }
-.theme-tracker-stock-row { grid-template-columns: 10rem minmax(9rem, 1fr) 4rem; }
+.theme-tracker-stock-row { grid-template-columns: 0.875rem 10rem minmax(9rem, 1fr) 4rem; }
 .theme-tracker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-bar { position: relative; height: 0.7rem; }
 .performance-bar::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 0.0625rem; background: #687382; content: ""; }
@@ -65,5 +65,5 @@
   .theme-tracker { grid-template-columns: minmax(20rem, 45%) minmax(0, 1fr); }
   .theme-tracker-header > .MuiToggleButtonGroup-root:not(.theme-tracker-mode) { flex-basis: 10rem; }
   .theme-tracker-row { grid-template-columns: 5.5rem minmax(7rem, 1fr) 3.8rem 1.25rem; }
-  .theme-tracker-stock-row { grid-template-columns: 5.5rem minmax(7rem, 1fr) 3.8rem; }
+  .theme-tracker-stock-row { grid-template-columns: 0.875rem 5.5rem minmax(7rem, 1fr) 3.8rem; }
 }

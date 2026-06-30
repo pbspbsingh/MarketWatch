@@ -42,6 +42,7 @@ import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
+import "../watchlists/ticker-watchlist-control.css";
 import {
   defaultSortSetting,
   sortOptions,
