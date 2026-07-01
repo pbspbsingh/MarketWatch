@@ -18,6 +18,14 @@ import {
 import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 
+const movingAverages = [
+  { period: 10, color: "#3179f5" },
+  { period: 20, color: "#f6c309" },
+  { period: 50, color: "#fb9800" },
+  { period: 100, color: "#fb6500" },
+  { period: 200, color: "#f60c0c" },
+] as const;
+
 export function StudyCharts({
   result,
   orientation,
@@ -79,16 +87,8 @@ export function StudyCharts({
         const candle = byDate.get(date);
         return candle === undefined ? { time: date } : { time: date, open: candle.open, high: candle.high, low: candle.low, close: candle.close };
       }));
-      const movingAverages = [
-        { period: 10, color: "#3179f5" },
-        { period: 20, color: "#f6c309" },
-        { period: 50, color: "#fb9800" },
-        { period: 100, color: "#fb6500" },
-        { period: 200, color: "#f60c0c" },
-      ] as const;
       for (const { period, color } of movingAverages) {
         const line = chart.addSeries(LineSeries, {
-          title: `SMA ${period}`,
           color,
           lineWidth: 1,
           priceLineVisible: false,
@@ -193,6 +193,11 @@ function ChartContainer({ containerRef, symbol }: { containerRef: React.RefObjec
     <div className="study-chart-wrap">
       <div ref={containerRef} className="study-chart" />
       <strong className="study-chart-symbol">{symbol}</strong>
+      <div className="study-chart-legend" aria-label="Simple moving averages">
+        {movingAverages.map(({ period, color }) => (
+          <span key={period} style={{ color }}>SMA {period}</span>
+        ))}
+      </div>
     </div>
   );
 }

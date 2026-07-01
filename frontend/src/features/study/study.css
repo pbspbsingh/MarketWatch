@@ -77,6 +77,20 @@
   pointer-events: none;
 }
 
+.study-chart-legend {
+  display: flex;
+  position: absolute;
+  z-index: 1;
+  top: 0.35rem;
+  right: 4rem;
+  gap: 0.5rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.2rem;
+  background: rgb(17 20 24 / 75%);
+  font-size: 0.65rem;
+  pointer-events: none;
+}
+
 .study-attribution {
   position: absolute;
   z-index: 3;
