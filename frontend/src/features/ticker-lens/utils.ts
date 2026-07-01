@@ -41,7 +41,7 @@ export function sortValue(group: GroupRanking, key: SortKey) {
 
 export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
   if (key === "relative_strength") return ticker.relative_strength ?? undefined;
-  if (key === "adr_percent" || key === "rmv_percent") return ticker[key] ?? undefined;
+  if (key === "adr_percent") return ticker[key] ?? undefined;
   return ticker.performance?.[key] ?? undefined;
 }
 
@@ -104,14 +104,12 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
 export function formatMetric(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return value.toFixed(1);
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
-  if (key === "rmv_percent") return value.toFixed(0);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
 export function metricColor(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return rsColor(value).fg;
   if (key === "adr_percent") return adrColor(value);
-  if (key === "rmv_percent") return undefined;
   return performanceColor(value, key);
 }
 

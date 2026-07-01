@@ -232,7 +232,6 @@ export function TickerPanel({
           performance: null,
           relative_strength: null,
           adr_percent: null,
-          rmv_percent: null,
         })));
       })
       .catch((requestError: unknown) => {

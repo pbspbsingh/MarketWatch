@@ -39,7 +39,6 @@ pub struct TickerRanking {
     pub performance: Option<PerformancePeriods>,
     pub relative_strength: Option<f64>,
     pub adr_percent: Option<f64>,
-    pub rmv_percent: Option<f64>,
 }
 
 impl PerformancePeriods {
@@ -80,20 +79,6 @@ pub fn average_daily_range_percent(candles: &[DailyCandle]) -> f64 {
             .map(|candle| (candle.high / candle.low) - 1.0)
             .sum::<f64>()
         / candles.len() as f64
-}
-
-pub fn relative_move_percent(candles: &[DailyCandle], adr_sessions: usize) -> Option<f64> {
-    let (latest, prior) = candles.split_last()?;
-    let prior = &prior[prior.len().saturating_sub(adr_sessions)..];
-    if prior.is_empty() {
-        return None;
-    }
-    let adr = prior
-        .iter()
-        .map(|candle| candle.high - candle.low)
-        .sum::<f64>()
-        / prior.len() as f64;
-    (adr > 0.0).then_some(100.0 * (latest.high - latest.low) / adr)
 }
 
 fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {
@@ -197,51 +182,5 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!((candle_relative_strength(&candles, &benchmark) - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn calculates_relative_move_against_prior_absolute_ranges() {
-        let candles = [
-            DailyCandle {
-                symbol: "TEST".to_owned(),
-                market_date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                open: 100.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1,
-            },
-            DailyCandle {
-                market_date: NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
-                high: 103.0,
-                low: 97.0,
-                ..candle_for_test()
-            },
-            DailyCandle {
-                market_date: NaiveDate::from_ymd_opt(2026, 1, 3).unwrap(),
-                high: 105.0,
-                low: 95.0,
-                ..candle_for_test()
-            },
-        ];
-
-        assert_eq!(relative_move_percent(&candles, 2), Some(200.0));
-        assert_eq!(relative_move_percent(&candles[..1], 2), None);
-        assert_eq!(
-            relative_move_percent(&[candle_for_test(), candles[2].clone()], 2),
-            None
-        );
-    }
-
-    fn candle_for_test() -> DailyCandle {
-        DailyCandle {
-            symbol: "TEST".to_owned(),
-            market_date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-            open: 100.0,
-            high: 100.0,
-            low: 100.0,
-            close: 100.0,
-            volume: 1,
-        }
     }
 }

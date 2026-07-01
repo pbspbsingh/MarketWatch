@@ -11,7 +11,6 @@ export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
 export const tickerSortOptions: ReadonlyArray<{ key: TickerSortKey; label: string }> = [
   { key: "relative_strength", label: "RS" },
   { key: "adr_percent", label: "ADR" },
-  { key: "rmv_percent", label: "RMV" },
   ...sortOptions.slice(1),
 ];
 

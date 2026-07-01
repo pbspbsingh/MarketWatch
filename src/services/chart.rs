@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::{DailyCandle, average_daily_range_percent, relative_move_percent};
+use crate::models::{DailyCandle, average_daily_range_percent};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use serde::Serialize;
@@ -27,7 +27,6 @@ pub struct ChartSummary {
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
-    rmv_percent: Option<f64>,
     extension_from_50_sma: Option<f64>,
     average_volume: i64,
 }
@@ -105,7 +104,6 @@ impl ChartService {
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
             adr_percent: average_daily_range_percent(latest_sessions(&candles, self.adr_sessions)),
-            rmv_percent: relative_move_percent(&candles, self.adr_sessions),
             extension_from_50_sma: extension_from_50_sma(&candles, self.adr_sessions),
             average_volume: average_volume(latest_sessions(&candles, self.average_volume_sessions)),
         })
