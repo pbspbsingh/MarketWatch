@@ -127,6 +127,9 @@ function EstimateChart({
 }) {
   const actual = quarters.map((quarter) => quarter[actualField]);
   const estimates = quarters.map((quarter) => quarter[estimateField]);
+  const forecastValues = Array<number | null>(quarters.length + 1).fill(null);
+  if (quarters.length > 0) forecastValues[quarters.length - 1] = estimates.at(-1) ?? null;
+  forecastValues[quarters.length] = forecast;
   const surprises = actual.map((value, index) => surprisePercent(value, estimates[index]));
   const options = chartOptions((value) => format(Number(value)));
   if (options.plugins?.tooltip?.callbacks !== undefined) {
@@ -135,6 +138,8 @@ function EstimateChart({
       if (index === undefined || index >= quarters.length) return "";
       return `Surprise: ${formatSurprise(actual[index], estimates[index])}`;
     };
+    options.plugins.tooltip.filter = (item) =>
+      item.dataset.label !== "Forecast" || item.dataIndex === quarters.length;
   }
 
   return (
@@ -147,12 +152,30 @@ function EstimateChart({
           labels: [...quarters.map((quarter) => quarter.fiscal_period), "Next Q"],
           datasets: [
             {
-              label: "Estimate / Forecast",
-              data: [...estimates, forecast],
-              backgroundColor: "rgba(119, 119, 119, 0.30)",
+              type: "line",
+              label: "Estimate",
+              data: [...estimates, null],
+              borderColor: "#aaa",
+              backgroundColor: "#aaa",
+              borderWidth: 2,
+              pointRadius: 2,
+              tension: 0.2,
+            },
+            {
+              type: "line",
+              label: "Forecast",
+              data: forecastValues,
+              borderColor: "#aaa",
+              backgroundColor: "#151a20",
+              borderDash: [5, 5],
+              pointBorderColor: "#aaa",
+              pointBorderWidth: 2,
+              pointRadius: 2,
+              tension: 0.2,
             },
             {
               label: "Actual",
+              barPercentage: 0.7,
               data: [...actual, null],
               backgroundColor: actual.map((value, index) =>
                 value === null || estimates[index] === null
