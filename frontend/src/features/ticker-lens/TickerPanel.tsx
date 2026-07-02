@@ -211,8 +211,6 @@ export function TickerPanel({
     const controller = new AbortController();
     setLoading(true);
     setError(undefined);
-    setTickers([]);
-    setSelectedTicker(undefined);
 
     resolveTickers({ mode, groupKeys, signal: controller.signal })
       .then(async (symbols) => {
@@ -277,6 +275,14 @@ export function TickerPanel({
     [metricsActive, sortSetting, tickers],
   );
   const tickerSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
+
+  useEffect(() => {
+    if (panelLoading) return;
+    const availableSymbols = new Set(tickers.map((ticker) => ticker.symbol));
+    setSelectedTicker((current) =>
+      current !== undefined && !availableSymbols.has(current) ? undefined : current,
+    );
+  }, [panelLoading, setSelectedTicker, tickerSymbolsKey]);
 
   useEffect(() => {
     onTickersChange?.(tickers.map((ticker) => ticker.symbol));
