@@ -5,6 +5,7 @@ mod performance;
 mod rrg;
 mod themes;
 mod ticker_collection;
+mod top_stock_screens;
 mod watchlists;
 
 pub use exchange::Exchange;
@@ -25,4 +26,5 @@ pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
 };
+pub use top_stock_screens::TopStockScreen;
 pub use watchlists::{TickerWatchlists, Watchlist};

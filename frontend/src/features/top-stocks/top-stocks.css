@@ -18,6 +18,56 @@
   align-items: center;
 }
 
+.top-stocks-screen-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+
+  & .MuiSelect-select {
+    min-width: 9rem;
+    padding-top: 0.125rem;
+    padding-bottom: 0.125rem;
+    font-size: 0.7rem;
+  }
+}
+
+.top-stocks-screen-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.75rem !important;
+}
+
+.top-stocks-screen-option {
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 1rem;
+}
+
+.top-stocks-screen-option-actions {
+  display: flex;
+  margin: -0.35rem -0.6rem -0.35rem 0;
+}
+
+@media (max-width: 1200px) {
+  .top-stocks-header,
+  .top-stocks-controls {
+    flex-wrap: wrap;
+  }
+
+  .top-stocks-controls {
+    gap: 0.75rem;
+  }
+
+  .top-stocks-actions {
+    flex-shrink: 1;
+  }
+
+  .top-stocks-action-buttons {
+    margin-left: 0;
+  }
+}
+
 .top-stocks-header {
   min-height: 1.55rem;
   padding-top: 0.125rem;

@@ -123,6 +123,27 @@ impl FinvizClient {
         Ok(tickers)
     }
 
+    pub async fn custom_screen(
+        &self,
+        screen_url: &str,
+        count: usize,
+    ) -> anyhow::Result<Vec<String>> {
+        anyhow::ensure!(count > 0, "top stock count must be positive");
+        let url = Url::parse(screen_url).context("invalid Finviz screen URL")?;
+        let pairs = url
+            .query_pairs()
+            .filter(|(key, _)| key != "v" && key != "r")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        let tickers = self.screener_tickers_with_pairs(&pairs, count).await?;
+        info!(
+            screen_url,
+            ticker_count = tickers.len(),
+            "fetched custom Finviz screen"
+        );
+        Ok(tickers)
+    }
+
     pub async fn ticker_industry(&self, ticker: &str) -> anyhow::Result<IndustryIdentity> {
         anyhow::ensure!(!ticker.trim().is_empty(), "ticker is required");
 
@@ -190,17 +211,26 @@ impl FinvizClient {
         sort: Option<&str>,
         count: usize,
     ) -> anyhow::Result<Vec<String>> {
+        let mut pairs = vec![("f".to_owned(), filters.to_owned())];
+        if let Some(sort) = sort {
+            pairs.push(("o".to_owned(), sort.to_owned()));
+        }
+        self.screener_tickers_with_pairs(&pairs, count).await
+    }
+
+    async fn screener_tickers_with_pairs(
+        &self,
+        pairs: &[(String, String)],
+        count: usize,
+    ) -> anyhow::Result<Vec<String>> {
         let mut tickers = Vec::new();
         loop {
             let mut url = self.screener_url.clone();
             {
                 let mut query = url.query_pairs_mut();
-                query
-                    .clear()
-                    .append_pair("v", SCREENER_OVERVIEW_VIEW)
-                    .append_pair("f", filters);
-                if let Some(sort) = sort {
-                    query.append_pair("o", sort);
+                query.clear().append_pair("v", SCREENER_OVERVIEW_VIEW);
+                for (key, value) in pairs {
+                    query.append_pair(key, value);
                 }
                 if !tickers.is_empty() {
                     query.append_pair("r", &(tickers.len() + 1).to_string());

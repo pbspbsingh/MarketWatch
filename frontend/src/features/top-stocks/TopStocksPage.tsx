@@ -1,196 +1,182 @@
 import { useEffect, useState } from "react";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import {
-  Checkbox,
-  CircularProgress,
-  FormControlLabel,
-  IconButton,
-  TextField,
-  Tooltip,
-  Typography,
+  Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  FormControlLabel, IconButton, MenuItem, Select, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
-  clearTopStocks,
-  fetchTopStocks,
-  refreshTopStocks,
-  replaceTopStocks,
-  type TopStocksPeriod,
-  type TopStocksSelection,
-  type TopStocksSnapshot,
+  clearTopStocks, createTopStockScreen, deleteTopStockScreen, fetchTopStockScreens,
+  fetchTopStocks, refreshTopStocks, replaceTopStocks, updateTopStockScreen,
+  type TopStockScreen, type TopStockScreenInput, type TopStocksPeriod,
+  type TopStocksSelection, type TopStocksSnapshot, type TopStocksSource,
 } from "../../api/topStocks";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import "./top-stocks.css";
 
 const periods: { period: TopStocksPeriod; label: string }[] = [
-  { period: "week1", label: "1 Week" },
-  { period: "month1", label: "1 Month" },
-  { period: "months3", label: "3 Months" },
-  { period: "months6", label: "6 Months" },
+  { period: "week1", label: "1 Week" }, { period: "month1", label: "1 Month" },
+  { period: "months3", label: "3 Months" }, { period: "months6", label: "6 Months" },
   { period: "year1", label: "1 Year" },
 ];
 const defaultCount = 100;
+const periodMode = "periods";
 
 export function TopStocksPage() {
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
+  const [screens, setScreens] = useState<TopStockScreen[]>([]);
   const [draftCounts, setDraftCounts] = useState<Record<TopStocksPeriod, string>>(() =>
-    Object.fromEntries(periods.map(({ period }) => [period, String(defaultCount)])) as Record<
-      TopStocksPeriod,
-      string
-    >,
+    Object.fromEntries(periods.map(({ period }) => [period, String(defaultCount)])) as Record<TopStocksPeriod, string>,
   );
   const [loading, setLoading] = useState(true);
+  const [screenMenuOpen, setScreenMenuOpen] = useState(false);
+  const [editor, setEditor] = useState<TopStockScreen | null>();
+  const [deleteTarget, setDeleteTarget] = useState<TopStockScreen>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchTopStocks(controller.signal)
-      .then((nextSnapshot) => {
+    Promise.all([fetchTopStocks(controller.signal), fetchTopStockScreens(controller.signal)])
+      .then(([nextSnapshot, nextScreens]) => {
         if (controller.signal.aborted) return;
-        setSnapshot(nextSnapshot);
-        if (nextSnapshot !== null) {
-          setDraftCounts((counts) => ({
-            ...counts,
-            ...Object.fromEntries(
-              nextSnapshot.selections.map(({ period, count }) => [period, String(count)]),
-            ),
-          }));
+        setScreens(nextScreens);
+        const source = nextSnapshot?.source;
+        const validSnapshot = source?.kind !== "custom_screen"
+          || nextScreens.some((screen) => screen.id === source.screen_id) ? nextSnapshot : null;
+        setSnapshot(validSnapshot);
+        const validSource = validSnapshot?.source;
+        if (validSource?.kind === "periods") {
+          setDraftCounts((counts) => ({ ...counts, ...Object.fromEntries(validSource.selections.map(({ period, count }) => [period, String(count)])) }));
         }
       })
-      .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) {
-          setSnapshot(null);
-          setError(message(requestError));
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+      .catch((requestError: unknown) => { if (!controller.signal.aborted) { setSnapshot(null); setError(message(requestError)); } })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, []);
 
-  const selections = snapshot?.selections ?? [];
-  const selected = (period: TopStocksPeriod) =>
-    selections.some((selection) => selection.period === period);
-  const save = async (nextSelections: TopStocksSelection[]) => {
-    setLoading(true);
-    setError(undefined);
-    try {
-      setSnapshot(await replaceTopStocks(nextSelections));
-    } catch (requestError) {
-      setError(message(requestError));
-    } finally {
-      setLoading(false);
-    }
+  const selections = snapshot?.source.kind === "periods" ? snapshot.source.selections : [];
+  const snapshotSource = snapshot?.source;
+  const selectedScreen = snapshotSource?.kind === "custom_screen"
+    ? screens.find((screen) => screen.id === snapshotSource.screen_id) : undefined;
+  const selectedMode = selectedScreen === undefined ? periodMode : String(selectedScreen.id);
+  const save = async (source: TopStocksSource) => {
+    setLoading(true); setError(undefined);
+    try { setSnapshot(await replaceTopStocks(source)); }
+    catch (requestError) { setError(message(requestError)); }
+    finally { setLoading(false); }
   };
   const countFor = (period: TopStocksPeriod) => {
     const value = Number(draftCounts[period]);
     return Number.isInteger(value) && value > 0 ? value : defaultCount;
   };
 
+  const saveScreen = async (input: TopStockScreenInput) => {
+    try {
+      const saved = editor === null ? await createTopStockScreen(input) : await updateTopStockScreen(editor!.id, input);
+      setScreens((current) => (editor === null ? [...current, saved] : current.map((item) => item.id === saved.id ? saved : item)).sort(compareScreens));
+      setEditor(undefined);
+      await save({ kind: "custom_screen", screen_id: saved.id });
+    } catch (requestError) { setError(message(requestError)); }
+  };
+
+  const removeScreen = async () => {
+    if (deleteTarget === undefined) return;
+    try {
+      await deleteTopStockScreen(deleteTarget.id);
+      setScreens((current) => current.filter((screen) => screen.id !== deleteTarget.id));
+      if (snapshot?.source.kind === "custom_screen" && snapshot.source.screen_id === deleteTarget.id) setSnapshot(null);
+      setDeleteTarget(undefined);
+    } catch (requestError) { setError(message(requestError)); }
+  };
+
   return (
     <section className="workspace-panel top-stocks-page" aria-label="Top Stocks">
       <header className="panel-header top-stocks-header">
         <Typography component="h1">Top Stocks</Typography>
-        <div className="top-stocks-actions">
-          <div className="top-stocks-controls">
-            {periods.map(({ period, label }) => (
-              <div className="top-stocks-period" key={period}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={selected(period)}
-                    disabled={loading}
-                    onChange={(event) => {
-                      const next = event.target.checked
-                        ? [...selections, { period, count: countFor(period) }]
-                        : selections.filter((selection) => selection.period !== period);
-                      void save(next);
-                    }}
-                  />
-                }
-                label={label}
-              />
-              <TextField
-                size="small"
-                type="number"
-                value={draftCounts[period]}
-                disabled={loading}
-                slotProps={{
-                  htmlInput: { min: 1, max: 1000, "aria-label": `${label} count` },
-                }}
-                onChange={(event) =>
-                  setDraftCounts((counts) => ({ ...counts, [period]: event.target.value }))
-                }
+        <div className="top-stocks-actions"><div className="top-stocks-controls">
+          {selectedMode === periodMode && periods.map(({ period, label }) => (
+            <div className="top-stocks-period" key={period}>
+              <FormControlLabel control={<Checkbox size="small" checked={selections.some((item) => item.period === period)} disabled={loading}
+                onChange={(event) => void save({ kind: "periods", selections: event.target.checked
+                  ? [...selections, { period, count: countFor(period) }]
+                  : selections.filter((item) => item.period !== period) })} />} label={label} />
+              <TextField size="small" type="number" value={draftCounts[period]} disabled={loading}
+                slotProps={{ htmlInput: { min: 1, max: 1000, "aria-label": `${label} count` } }}
+                onChange={(event) => setDraftCounts((counts) => ({ ...counts, [period]: event.target.value }))}
                 onBlur={() => {
-                  if (!selected(period)) return;
-                  const count = countFor(period);
-                  setDraftCounts((counts) => ({ ...counts, [period]: String(count) }));
-                  if (selections.find((selection) => selection.period === period)?.count !== count) {
-                    void save(
-                      selections.map((selection) =>
-                        selection.period === period ? { ...selection, count } : selection,
-                      ),
-                    );
-                  }
-                }}
-              />
-              </div>
-            ))}
-            {loading && <CircularProgress size="0.8rem" />}
-            <div className="top-stocks-action-buttons">
-              <Tooltip title="Refresh top stocks">
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={loading || snapshot === null}
-                    onClick={() => {
-                      setLoading(true);
-                      void refreshTopStocks()
-                        .then(setSnapshot)
-                        .catch((requestError: unknown) => setError(message(requestError)))
-                        .finally(() => setLoading(false));
-                    }}
-                  >
-                    <RefreshIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="Clear top stocks">
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={loading || snapshot === null}
-                    onClick={() => {
-                      setLoading(true);
-                      void clearTopStocks()
-                        .then(() => setSnapshot(null))
-                        .catch((requestError: unknown) => setError(message(requestError)))
-                        .finally(() => setLoading(false));
-                    }}
-                  >
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
+                  const current = selections.find((item) => item.period === period); if (current === undefined) return;
+                  const count = countFor(period); setDraftCounts((counts) => ({ ...counts, [period]: String(count) }));
+                  if (current.count !== count) void save({ kind: "periods", selections: selections.map((item) => item.period === period ? { ...item, count } : item) });
+                }} />
             </div>
+          ))}
+          {loading && <CircularProgress size="0.8rem" />}
+          <div className="top-stocks-screen-controls">
+            <Select size="small" value={selectedMode} disabled={loading} aria-label="Top stocks source"
+              open={screenMenuOpen} onOpen={() => setScreenMenuOpen(true)} onClose={() => setScreenMenuOpen(false)}
+              renderValue={(value) => value === periodMode
+                ? "Performance periods"
+                : screens.find((screen) => String(screen.id) === value)?.name ?? "Custom screen"}
+              onChange={(event) => void save(event.target.value === periodMode
+                ? { kind: "periods", selections: [] }
+                : { kind: "custom_screen", screen_id: Number(event.target.value) })}>
+              <MenuItem value={periodMode}>Performance periods</MenuItem>
+              {screens.map((screen) => <MenuItem key={screen.id} value={String(screen.id)} className="top-stocks-screen-option">
+                <span>{screen.name}</span>
+                <span className="top-stocks-screen-option-actions">
+                  <Tooltip title="Edit custom screen"><IconButton size="small" onClick={(event) => {
+                    event.stopPropagation(); setScreenMenuOpen(false); setEditor(screen);
+                  }}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                  <Tooltip title="Delete custom screen"><IconButton size="small" onClick={(event) => {
+                    event.stopPropagation(); setScreenMenuOpen(false); setDeleteTarget(screen);
+                  }}><DeleteOutlineIcon fontSize="small" /></IconButton></Tooltip>
+                </span>
+              </MenuItem>)}
+            </Select>
+            <Tooltip title="Add custom screen"><IconButton size="small" disabled={loading} onClick={() => setEditor(null)}><AddIcon fontSize="small" /></IconButton></Tooltip>
           </div>
-        </div>
+          <div className="top-stocks-action-buttons">
+            <Tooltip title="Refresh top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {
+              setLoading(true); void refreshTopStocks().then(setSnapshot).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
+            }}><RefreshIcon fontSize="small" /></IconButton></span></Tooltip>
+            <Tooltip title="Clear top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {
+              setLoading(true); void clearTopStocks().then(() => setSnapshot(null)).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
+            }}><DeleteOutlineIcon fontSize="small" /></IconButton></span></Tooltip>
+          </div>
+        </div></div>
       </header>
-      {snapshot === undefined ? (
-        <div className="panel-status"><CircularProgress size="1rem" /></div>
-      ) : snapshot === null || snapshot.symbols.length === 0 ? (
-        <div className="panel-status"><Typography color="text.secondary">Select a period to load top stocks</Typography></div>
-      ) : (
-        <TickerLens accent="green" universe={{ type: "bounded", symbols: snapshot.symbols }} />
-      )}
+      {snapshot === undefined ? <div className="panel-status"><CircularProgress size="1rem" /></div>
+        : snapshot === null || snapshot.symbols.length === 0 ? <div className="panel-status"><Typography color="text.secondary">Select a source to load top stocks</Typography></div>
+        : <TickerLens accent="green" universe={{ type: "bounded", symbols: snapshot.symbols }} />}
+      {editor !== undefined && <ScreenEditor screen={editor} onClose={() => setEditor(undefined)} onSave={saveScreen} />}
+      <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>
+        <DialogTitle>Delete custom screen?</DialogTitle><DialogContent><Typography>This permanently deletes {deleteTarget?.name}.</Typography></DialogContent>
+        <DialogActions><Button onClick={() => setDeleteTarget(undefined)}>Cancel</Button><Button color="error" onClick={() => void removeScreen()}>Delete</Button></DialogActions>
+      </Dialog>
       <Toast message={error} onClose={() => setError(undefined)} />
     </section>
   );
 }
 
-function message(error: unknown) {
-  return error instanceof Error ? error.message : "Top stocks request failed";
+function ScreenEditor({ screen, onClose, onSave }: { screen: TopStockScreen | null; onClose: () => void; onSave: (input: TopStockScreenInput) => Promise<void> }) {
+  const [name, setName] = useState(screen?.name ?? "");
+  const [url, setUrl] = useState(screen?.url ?? "");
+  const [count, setCount] = useState(String(screen?.max_stock_count ?? 100));
+  const parsedCount = Number(count);
+  const valid = name.trim() !== "" && url.trim() !== "" && Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 500;
+  return <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+    <DialogTitle>{screen === null ? "Add custom screen" : "Edit custom screen"}</DialogTitle>
+    <DialogContent className="top-stocks-screen-editor">
+      <TextField label="Unique name" value={name} onChange={(event) => setName(event.target.value)} slotProps={{ htmlInput: { maxLength: 100 } }} autoFocus />
+      <TextField label="Finviz screener URL" value={url} onChange={(event) => setUrl(event.target.value)} />
+      <TextField label="Maximum stocks" type="number" value={count} onChange={(event) => setCount(event.target.value)} slotProps={{ htmlInput: { min: 1, max: 500 } }} />
+    </DialogContent>
+    <DialogActions><Button onClick={onClose}>Cancel</Button><Button disabled={!valid} onClick={() => void onSave({ name: name.trim(), url: url.trim(), max_stock_count: parsedCount })}>Save</Button></DialogActions>
+  </Dialog>;
 }
+
+function compareScreens(left: TopStockScreen, right: TopStockScreen) { return left.name.localeCompare(right.name, undefined, { sensitivity: "base" }); }
+function message(error: unknown) { return error instanceof Error ? error.message : "Top stocks request failed"; }
