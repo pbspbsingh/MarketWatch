@@ -3,6 +3,14 @@ use anyhow::Context;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct IndustryClassification {
+    pub industry_key: String,
+    pub industry_name: String,
+    pub sector_key: String,
+    pub sector_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct NewIndustrySnapshot {
     pub market_date: NaiveDate,
     pub fetched_at: DateTime<Utc>,
@@ -36,6 +44,71 @@ struct StoredSnapshot {
 }
 
 impl Store {
+    pub async fn industry_classifications_fetched_at(
+        &self,
+    ) -> anyhow::Result<Option<DateTime<Utc>>> {
+        let fetched_at = sqlx::query_scalar!(
+            "SELECT fetched_at AS \"fetched_at: NaiveDateTime\"
+             FROM industry_classifications
+             ORDER BY fetched_at DESC LIMIT 1"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load industry classification freshness")?;
+        Ok(fetched_at.map(|value| value.and_utc()))
+    }
+
+    pub async fn replace_industry_classifications(
+        &self,
+        classifications: &[IndustryClassification],
+        fetched_at: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !classifications.is_empty(),
+            "industry classifications must not be empty"
+        );
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin industry classification transaction")?;
+        sqlx::query!("DELETE FROM industry_classifications")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to clear industry classifications")?;
+        let fetched_at = fetched_at.naive_utc();
+        for classification in classifications {
+            sqlx::query!(
+                "INSERT INTO industry_classifications (
+                    industry_key, industry_name, sector_key, sector_name, fetched_at
+                 ) VALUES (?, ?, ?, ?, ?)",
+                classification.industry_key,
+                classification.industry_name,
+                classification.sector_key,
+                classification.sector_name,
+                fetched_at,
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to insert industry classification")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit industry classifications")
+    }
+
+    pub async fn industry_classifications(&self) -> anyhow::Result<Vec<IndustryClassification>> {
+        sqlx::query_as!(
+            IndustryClassification,
+            "SELECT industry_key, industry_name, sector_key, sector_name
+             FROM industry_classifications ORDER BY industry_name"
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load industry classifications")
+    }
+
     pub async fn latest_snapshot_has_industry(&self, industry_key: &str) -> anyhow::Result<bool> {
         sqlx::query_scalar!(
             r#"SELECT EXISTS(

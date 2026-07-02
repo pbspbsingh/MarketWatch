@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,8 +12,11 @@ import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutlined";
 import RemoveDoneIcon from "@mui/icons-material/RemoveDone";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
   Badge,
+  Checkbox,
   CircularProgress,
   IconButton,
   MenuItem,
@@ -24,6 +28,8 @@ import {
 import {
   sortOptions,
   sortSettingKey,
+  sectorGroupingKey,
+  expandedSectorsKey,
   unassignedGroupKey,
 } from "./constants";
 import type {
@@ -81,10 +87,23 @@ export function GroupPanel({
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
   const [exploredGroupKeys, setExploredGroupKeys] = useState(() => new Set<string>());
+  const [groupBySector, setGroupBySector] = useState(
+    () => localStorage.getItem(sectorGroupingKey) === "true",
+  );
+  const [expandedSectors, setExpandedSectors] = useState(readExpandedSectors);
+  const [pendingScrollGroupKey, setPendingScrollGroupKey] = useState<string>();
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
+
+  useEffect(() => {
+    localStorage.setItem(sectorGroupingKey, String(groupBySector));
+  }, [groupBySector]);
+
+  useEffect(() => {
+    localStorage.setItem(expandedSectorsKey, JSON.stringify([...expandedSectors]));
+  }, [expandedSectors]);
 
   useEffect(() => {
     setExploredGroupKeys(new Set());
@@ -113,13 +132,37 @@ export function GroupPanel({
   ]);
 
   const sortedGroups = useMemo(() => sortGroups(groups, sortSetting), [groups, sortSetting]);
+  const sectors = useMemo(() => {
+    const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[] }>();
+    for (const group of sortedGroups) {
+      const key = group.sector_key ?? "__other__";
+      const sector = byKey.get(key) ?? {
+        key,
+        name: group.sector_name ?? "Other",
+        groups: [],
+      };
+      sector.groups.push(group);
+      byKey.set(key, sector);
+    }
+    return [...byKey.values()].sort((left, right) => {
+      if (left.key === "__other__") return 1;
+      if (right.key === "__other__") return -1;
+      return left.name.localeCompare(right.name);
+    });
+  }, [sortedGroups]);
+  const sectorKeyByGroup = useMemo(
+    () => new Map(sectors.flatMap((sector) => sector.groups.map((group) => [group.key, sector.key]))),
+    [sectors],
+  );
 
   useEffect(() => {
     if (revealGroup === undefined) return;
-    window.requestAnimationFrame(() => {
-      groupElements.current.get(revealGroup.value)?.scrollIntoView({ block: "nearest" });
-    });
-  }, [revealGroup]);
+    const sectorKey = sectorKeyByGroup.get(revealGroup.value);
+    if (groupBySector && sectorKey !== undefined) {
+      setExpandedSectors((current) => new Set(current).add(sectorKey));
+    }
+    setPendingScrollGroupKey(revealGroup.value);
+  }, [groupBySector, revealGroup, sectorKeyByGroup]);
   const highlightedGroupKeys = useMemo(() => {
     return highlightedGroups({ groups, mode, selectedTickerContext, unassignedGroupKey });
   }, [groups, mode, selectedTickerContext]);
@@ -129,8 +172,29 @@ export function GroupPanel({
       sortedGroups.find((group) => highlightedGroupKeys.has(group.key))?.key ??
       (highlightedGroupKeys.has(unassignedGroupKey) ? unassignedGroupKey : undefined);
     if (highlightedKey === undefined) return;
-    groupElements.current.get(highlightedKey)?.scrollIntoView({ block: "nearest" });
-  }, [highlightedGroupKeys, sortedGroups]);
+    const sectorKey = sectorKeyByGroup.get(highlightedKey);
+    if (groupBySector && sectorKey !== undefined) {
+      setExpandedSectors((current) => new Set(current).add(sectorKey));
+    }
+    setPendingScrollGroupKey(highlightedKey);
+  }, [groupBySector, highlightedGroupKeys, sectorKeyByGroup, sortedGroups]);
+
+  useLayoutEffect(() => {
+    if (pendingScrollGroupKey === undefined) return;
+    const element = groupElements.current.get(pendingScrollGroupKey);
+    if (element === undefined) return;
+    element.scrollIntoView({ block: "nearest" });
+    setPendingScrollGroupKey(undefined);
+  }, [expandedSectors, pendingScrollGroupKey]);
+
+  useEffect(() => {
+    if (!groupBySector || mode !== "industry") return;
+    const selectedSectors = [...selectedGroupKeys]
+      .map((key) => sectorKeyByGroup.get(key))
+      .filter((key): key is string => key !== undefined);
+    if (selectedSectors.length === 0) return;
+    setExpandedSectors((current) => new Set([...current, ...selectedSectors]));
+  }, [groupBySector, mode, sectorKeyByGroup, selectedGroupKeys]);
 
   const markExplored = (groupKey: string) => {
     const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
@@ -208,6 +272,18 @@ export function GroupPanel({
           </IconButton>
         </div>
         <div className="metric-sort-controls">
+          {mode === "industry" && (
+            <ToggleButton
+              size="small"
+              value="sector"
+              selected={groupBySector}
+              aria-label="Group industries by sector"
+              title="Group industries by sector"
+              onChange={() => setGroupBySector((current) => !current)}
+            >
+              <AccountTreeIcon fontSize="small" />
+            </ToggleButton>
+          )}
           <Select
             size="small"
             value={sortSetting.key}
@@ -255,7 +331,113 @@ export function GroupPanel({
       )}
       {!loadingGroups && !groupError && (groups.length > 0 || mode === "theme") && (
         <ol className="ranked-list" aria-label={`${mode} rankings`}>
-          {sortedGroups.map((group) => {
+          {mode === "industry" && groupBySector
+            ? sectors.map((sector) => {
+                const eligibleKeys = sector.groups
+                  .filter((group) => group.ticker_count !== 0)
+                  .map((group) => group.key)
+                  .filter((key) => !exploredGroupKeys.has(key));
+                const selectedCount = eligibleKeys.filter((key) => selectedGroupKeys.has(key)).length;
+                const allSelected = eligibleKeys.length > 0 && selectedCount === eligibleKeys.length;
+                return (
+                  <li key={sector.key} className="sector-group">
+                    <div className="sector-group-header">
+                      <Checkbox
+                        size="small"
+                        checked={allSelected}
+                        indeterminate={selectedCount > 0 && !allSelected}
+                        disabled={eligibleKeys.length === 0}
+                        slotProps={{
+                          input: { "aria-label": `Select all ${sector.name} industries` },
+                        }}
+                        onChange={() =>
+                          setSelectedGroupKeys((selected) => {
+                            const next = new Set(selected);
+                            if (selectedCount > 0) sector.groups.forEach((group) => next.delete(group.key));
+                            else eligibleKeys.forEach((key) => next.add(key));
+                            return next;
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="sector-group-toggle"
+                        aria-expanded={expandedSectors.has(sector.key)}
+                        onClick={() =>
+                          setExpandedSectors((current) => {
+                            const next = new Set(current);
+                            if (next.has(sector.key)) next.delete(sector.key);
+                            else next.add(sector.key);
+                            return next;
+                          })
+                        }
+                      >
+                        <span>{sector.name}</span>
+                        <span className="sector-group-count">{selectedCount}/{eligibleKeys.length}</span>
+                        <ExpandMoreIcon fontSize="small" />
+                      </button>
+                    </div>
+                    {expandedSectors.has(sector.key) && (
+                      <ol className="sector-industry-list">
+                        {sector.groups.map(renderGroup)}
+                      </ol>
+                    )}
+                  </li>
+                );
+              })
+            : sortedGroups.map(renderGroup)}
+          {mode === "theme" &&
+            !groups.some((group) => group.key === unassignedGroupKey) && (
+            <li className="unassigned-group">
+              <button
+                className={[
+                  "ranked-list-item",
+                  highlightedGroupKeys.has(unassignedGroupKey)
+                    ? "ranked-list-item-context"
+                    : "",
+                  exploredGroupKeys.has(unassignedGroupKey)
+                    ? "ranked-list-item-explored"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                type="button"
+                disabled={exploredGroupKeys.has(unassignedGroupKey)}
+                ref={(element) => {
+                  if (element === null) groupElements.current.delete(unassignedGroupKey);
+                  else groupElements.current.set(unassignedGroupKey, element);
+                }}
+                aria-pressed={!exploredGroupKeys.has(unassignedGroupKey) && selectedGroupKeys.has(unassignedGroupKey)}
+                onClick={() =>
+                  setSelectedGroupKeys((selected) => {
+                    if (exploredGroupKeys.has(unassignedGroupKey)) return selected;
+                    const next = new Set(selected);
+                    if (next.has(unassignedGroupKey)) next.delete(unassignedGroupKey);
+                    else next.add(unassignedGroupKey);
+                    return next;
+                  })
+                }
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  markExplored(unassignedGroupKey);
+                }}
+              >
+                <span
+                  className="ranked-name"
+                  title={`Unassigned${countLabel(unassignedGroup, selectedGroupTickerCounts)}`}
+                >
+                  Unassigned
+                  {countLabel(unassignedGroup, selectedGroupTickerCounts)}
+                </span>
+              </button>
+            </li>
+          )}
+        </ol>
+      )}
+    </section>
+  );
+
+  function renderGroup(group: GroupRanking) {
             const metric = sortValue(group, sortSetting.key);
             const highlighted = highlightedGroupKeys.has(group.key);
             const explored = exploredGroupKeys.has(group.key);
@@ -310,57 +492,16 @@ export function GroupPanel({
                 </button>
               </li>
             );
-          })}
-          {mode === "theme" &&
-            !groups.some((group) => group.key === unassignedGroupKey) && (
-            <li className="unassigned-group">
-              <button
-                className={[
-                  "ranked-list-item",
-                  highlightedGroupKeys.has(unassignedGroupKey)
-                    ? "ranked-list-item-context"
-                    : "",
-                  exploredGroupKeys.has(unassignedGroupKey)
-                    ? "ranked-list-item-explored"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                type="button"
-                disabled={exploredGroupKeys.has(unassignedGroupKey)}
-                ref={(element) => {
-                  if (element === null) groupElements.current.delete(unassignedGroupKey);
-                  else groupElements.current.set(unassignedGroupKey, element);
-                }}
-                aria-pressed={!exploredGroupKeys.has(unassignedGroupKey) && selectedGroupKeys.has(unassignedGroupKey)}
-                onClick={() =>
-                  setSelectedGroupKeys((selected) => {
-                    if (exploredGroupKeys.has(unassignedGroupKey)) return selected;
-                    const next = new Set(selected);
-                    if (next.has(unassignedGroupKey)) next.delete(unassignedGroupKey);
-                    else next.add(unassignedGroupKey);
-                    return next;
-                  })
-                }
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  markExplored(unassignedGroupKey);
-                }}
-              >
-                <span
-                  className="ranked-name"
-                  title={`Unassigned${countLabel(unassignedGroup, selectedGroupTickerCounts)}`}
-                >
-                  Unassigned
-                  {countLabel(unassignedGroup, selectedGroupTickerCounts)}
-                </span>
-              </button>
-            </li>
-          )}
-        </ol>
-      )}
-    </section>
-  );
+  }
+}
+
+function readExpandedSectors() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(expandedSectorsKey) ?? "[]") as unknown;
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
 }
 
 function countLabel(

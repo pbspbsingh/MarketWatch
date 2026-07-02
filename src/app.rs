@@ -98,8 +98,12 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
     let top_stocks = Arc::new(TopStocksService::new(store.clone(), finviz.clone()));
     let study = Arc::new(StudyService::new(yahoo_client, market_schedule.clone()));
-    let industry_refresh =
-        IndustryRefreshService::new(store.clone(), finviz.clone(), &config.market)?;
+    let industry_refresh = IndustryRefreshService::new(
+        store.clone(),
+        finviz.clone(),
+        &config.market,
+        &config.finviz,
+    )?;
     industry_refresh.spawn_refresh_task();
     let state = AppState {
         chart,

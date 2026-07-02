@@ -19,6 +19,7 @@ const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
 const MAX_CONCURRENT_REQUESTS: usize = 1;
 const FUNDAMENTAL_QUARTERS: usize = 8;
+const FINVIZ_SECTOR_COUNT: usize = 11;
 
 pub struct FinvizClient {
     http: Client,
@@ -48,6 +49,12 @@ pub struct IndustryPerformance {
     pub half_year: f64,
     pub year: f64,
     pub year_to_date: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndustryClassification {
+    pub industry: IndustryIdentity,
+    pub sector: IndustryIdentity,
 }
 
 struct ScreenerPage {
@@ -86,6 +93,55 @@ impl FinvizClient {
             "fetched Finviz industries"
         );
         Ok(industries)
+    }
+
+    pub async fn industry_classifications(&self) -> anyhow::Result<Vec<IndustryClassification>> {
+        let mut base_url = self.screener_url.clone();
+        base_url
+            .query_pairs_mut()
+            .append_pair("v", SCREENER_OVERVIEW_VIEW);
+        let sectors = parse_select_options(&self.get(base_url).await?, "#fs_sec")?;
+        anyhow::ensure!(
+            sectors.len() == FINVIZ_SECTOR_COUNT,
+            "expected {FINVIZ_SECTOR_COUNT} Finviz sectors, found {}",
+            sectors.len()
+        );
+
+        let mut classifications = Vec::new();
+        for sector in sectors {
+            let mut url = self.screener_url.clone();
+            url.query_pairs_mut()
+                .append_pair("v", SCREENER_OVERVIEW_VIEW)
+                .append_pair("f", &format!("sec_{}", sector.key));
+            let industries = parse_select_options(&self.get(url).await?, "#fs_ind")?;
+            anyhow::ensure!(
+                !industries.is_empty(),
+                "Finviz returned no industries for sector {}",
+                sector.name
+            );
+            classifications.extend(
+                industries
+                    .into_iter()
+                    .map(|industry| IndustryClassification {
+                        industry,
+                        sector: sector.clone(),
+                    }),
+            );
+        }
+
+        classifications.sort_by(|left, right| left.industry.key.cmp(&right.industry.key));
+        for pair in classifications.windows(2) {
+            anyhow::ensure!(
+                pair[0].industry.key != pair[1].industry.key,
+                "Finviz industry {} belongs to multiple sectors",
+                pair[0].industry.key
+            );
+        }
+        info!(
+            industry_count = classifications.len(),
+            "fetched Finviz industry classifications"
+        );
+        Ok(classifications)
     }
 
     pub async fn industry_tickers(&self, industry_key: &str) -> anyhow::Result<Vec<String>> {
@@ -288,6 +344,22 @@ fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
         "Finviz industry table was not found"
     );
     Ok(industries)
+}
+
+fn parse_select_options(html: &str, select: &str) -> anyhow::Result<Vec<IndustryIdentity>> {
+    let document = Html::parse_document(html);
+    let option_selector = selector(&format!("{select} option[value]"))?;
+    Ok(document
+        .select(&option_selector)
+        .filter_map(|option| {
+            let key = option.value().attr("value")?.trim();
+            let name = text(option);
+            (!key.is_empty() && !name.is_empty()).then(|| IndustryIdentity {
+                key: key.to_owned(),
+                name,
+            })
+        })
+        .collect())
 }
 
 fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {

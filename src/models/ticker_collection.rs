@@ -30,6 +30,8 @@ pub struct TickerCollectionFile {
 pub struct TickerCollectionGroup {
     pub key: String,
     pub name: String,
+    pub sector_key: Option<String>,
+    pub sector_name: Option<String>,
     pub performance: Option<PerformancePeriods>,
     pub relative_strength: Option<f64>,
     pub symbols: Vec<String>,

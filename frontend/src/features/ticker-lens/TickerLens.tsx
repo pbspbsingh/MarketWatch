@@ -138,9 +138,11 @@ export function TickerLens({
             setBoundedSymbolsByGroup(
               new Map(groups.map((group) => [group.key, group.symbols])),
             );
-            return groups.map(({ key, name, performance, relative_strength, symbols }) => ({
+            return groups.map(({ key, name, sector_key, sector_name, performance, relative_strength, symbols }) => ({
               key,
               name,
+              sector_key,
+              sector_name,
               ticker_count: symbols.length,
               performance,
               relative_strength,

@@ -10,6 +10,8 @@ export interface PerformancePeriods {
 export interface IndustryRanking {
   key: string;
   name: string;
+  sector_key: string | null;
+  sector_name: string | null;
   performance: PerformancePeriods;
   relative_strength: number;
 }

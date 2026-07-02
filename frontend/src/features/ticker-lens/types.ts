@@ -12,6 +12,8 @@ export type RevealRequest<T> = { value: T; revision: number };
 export type GroupRanking = {
   key: string;
   name: string;
+  sector_key?: string | null;
+  sector_name?: string | null;
   ticker_count?: number;
   performance: PerformancePeriods | null;
   relative_strength: number | null;

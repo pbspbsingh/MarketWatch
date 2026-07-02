@@ -16,6 +16,8 @@ export interface TickerCollection {
 export interface BoundedTickerGroup {
   key: string;
   name: string;
+  sector_key: string | null;
+  sector_name: string | null;
   performance: {
     day: number;
     week: number;

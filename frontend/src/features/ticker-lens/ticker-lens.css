@@ -171,6 +171,12 @@
   & .MuiIconButton-root {
     padding: 0.125rem;
   }
+
+  & .MuiToggleButton-root {
+    min-width: 1.55rem;
+    min-height: 1.55rem;
+    padding: 0.125rem;
+  }
 }
 
 .panel-empty {
@@ -188,6 +194,65 @@
   overflow: auto;
   flex-direction: column;
   list-style: none;
+}
+
+.sector-group {
+  border-bottom: 0.0625rem solid #2b323c;
+}
+
+.sector-group-header {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  background: #1b2129;
+
+  & .MuiCheckbox-root {
+    padding: 0.25rem 0.35rem;
+  }
+}
+
+.sector-group-toggle {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  padding: 0.35rem 0.35rem 0.35rem 0;
+  gap: 0.25rem;
+  border: 0;
+  color: #c8d0da;
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+
+  & > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &[aria-expanded="true"] .MuiSvgIcon-root {
+    transform: rotate(180deg);
+  }
+}
+
+.sector-group-count {
+  color: #788493;
+  font-size: 0.6rem;
+  font-weight: 500;
+}
+
+.sector-industry-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sector-industry-list .ranked-list-item {
+  padding-left: 1.25rem;
 }
 
 .ticker-ranked-list {

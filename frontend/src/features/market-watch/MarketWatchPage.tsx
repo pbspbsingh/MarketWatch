@@ -23,9 +23,11 @@ export function MarketWatchPage() {
   const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
     if (mode === "industry") {
       return fetchIndustries(signal).then((industries) =>
-        industries.map(({ key, name, performance, relative_strength }) => ({
+        industries.map(({ key, name, sector_key, sector_name, performance, relative_strength }) => ({
           key,
           name,
+          sector_key,
+          sector_name,
           performance,
           relative_strength,
         })),

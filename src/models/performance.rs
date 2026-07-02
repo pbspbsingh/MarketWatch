@@ -19,6 +19,8 @@ pub struct PerformancePeriods {
 pub struct IndustryRanking {
     pub key: String,
     pub name: String,
+    pub sector_key: Option<String>,
+    pub sector_name: Option<String>,
     pub performance: PerformancePeriods,
     pub relative_strength: f64,
 }

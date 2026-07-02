@@ -2,6 +2,7 @@ use crate::models::{IndustryRanking, PerformancePeriods, candle_performance};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use chrono::TimeDelta;
+use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -47,11 +48,20 @@ impl IndustryAnalysisService {
             .daily_candles(&self.benchmark, start, end)
             .await?;
         let benchmark = candle_performance(&benchmark_candles, snapshot.market_date);
+        let classifications = self
+            .store
+            .industry_classifications()
+            .await
+            .map_err(IndustryAnalysisError::Persistence)?
+            .into_iter()
+            .map(|classification| (classification.industry_key.clone(), classification))
+            .collect::<HashMap<_, _>>();
 
         Ok(snapshot
             .rows
             .into_iter()
             .map(|industry| {
+                let classification = classifications.get(&industry.key);
                 let performance = PerformancePeriods {
                     day: industry.performance_day,
                     week: industry.performance_week,
@@ -63,6 +73,8 @@ impl IndustryAnalysisService {
                 IndustryRanking {
                     key: industry.key,
                     name: industry.name,
+                    sector_key: classification.map(|value| value.sector_key.clone()),
+                    sector_name: classification.map(|value| value.sector_name.clone()),
                     relative_strength: performance.relative_strength_against(benchmark),
                     performance,
                 }

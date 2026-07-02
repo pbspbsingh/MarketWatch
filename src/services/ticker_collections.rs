@@ -153,6 +153,8 @@ impl TickerCollectionService {
                 TickerCollectionGroup {
                     key,
                     name,
+                    sector_key: ranking.and_then(|ranking| ranking.sector_key.clone()),
+                    sector_name: ranking.and_then(|ranking| ranking.sector_name.clone()),
                     performance: ranking.map(|ranking| ranking.performance),
                     relative_strength: ranking.map(|ranking| ranking.relative_strength),
                     symbols,
@@ -199,6 +201,8 @@ impl TickerCollectionService {
                 TickerCollectionGroup {
                     key: id.to_string(),
                     name,
+                    sector_key: None,
+                    sector_name: None,
                     performance: ranking.and_then(|ranking| ranking.performance),
                     relative_strength: ranking.and_then(|ranking| ranking.relative_strength),
                     symbols,
@@ -215,6 +219,8 @@ impl TickerCollectionService {
             groups.push(TickerCollectionGroup {
                 key: "unassigned".to_owned(),
                 name: "Unassigned".to_owned(),
+                sector_key: None,
+                sector_name: None,
                 performance: None,
                 relative_strength: None,
                 symbols: unassigned,
