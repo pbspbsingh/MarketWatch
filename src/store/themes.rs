@@ -80,12 +80,14 @@ impl Store {
             .await
             .context("failed to delete ticker market data")?
             .rows_affected();
-        deleted += sqlx::query("DELETE FROM theme_ai_processed_symbols WHERE symbol = ?")
-            .bind(symbol)
-            .execute(&mut *transaction)
-            .await
-            .context("failed to delete ticker automatic processing outcome")?
-            .rows_affected();
+        deleted += sqlx::query!(
+            "DELETE FROM theme_ai_processed_symbols WHERE symbol = ?",
+            symbol,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete ticker automatic processing outcome")?
+        .rows_affected();
         deleted += sqlx::query!(
             "DELETE FROM theme_ai_jobs
              WHERE EXISTS (SELECT 1 FROM json_each(symbols) WHERE value = ?)",
@@ -554,17 +556,17 @@ impl Store {
         for (symbols, prompt) in batches {
             let symbols =
                 serde_json::to_string(symbols).context("failed to serialize job symbols")?;
-            let result = sqlx::query(
+            let result = sqlx::query!(
                 r#"INSERT INTO theme_ai_jobs (
                        status, symbols, model, prompt, retry_of_job_id, created_at, updated_at
                    ) VALUES ('pending', ?, ?, ?, ?, ?, ?)"#,
+                symbols,
+                model,
+                prompt,
+                retry_of_job_id,
+                now,
+                now,
             )
-            .bind(symbols)
-            .bind(model)
-            .bind(prompt)
-            .bind(retry_of_job_id)
-            .bind(now)
-            .bind(now)
             .execute(&mut *transaction)
             .await
             .context("failed to create theme AI job")?;
@@ -628,18 +630,18 @@ impl Store {
             .begin()
             .await
             .context("failed to begin theme AI job completion")?;
-        sqlx::query(
+        sqlx::query!(
             r#"UPDATE theme_ai_jobs
                SET status = ?, response = ?, suggestions = ?, validation_errors = ?,
                    error = NULL, updated_at = ?
                WHERE id = ?"#,
+            status,
+            response,
+            suggestions_json,
+            validation_errors_json,
+            now,
+            id,
         )
-        .bind(status)
-        .bind(response)
-        .bind(suggestions_json)
-        .bind(validation_errors_json)
-        .bind(now)
-        .bind(id)
         .execute(&mut *transaction)
         .await
         .context("failed to complete theme AI job")?;
@@ -649,18 +651,18 @@ impl Store {
             } else {
                 "assigned"
             };
-            sqlx::query(
+            sqlx::query!(
                 r#"INSERT INTO theme_ai_processed_symbols (symbol, job_id, outcome, processed_at)
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(symbol) DO UPDATE SET
                        job_id = excluded.job_id,
                        outcome = excluded.outcome,
                        processed_at = excluded.processed_at"#,
+                suggestion.symbol,
+                id,
+                outcome,
+                now,
             )
-            .bind(&suggestion.symbol)
-            .bind(id)
-            .bind(outcome)
-            .bind(now)
             .execute(&mut *transaction)
             .await
             .context("failed to mark automatically processed ticker")?;
@@ -687,13 +689,13 @@ impl Store {
 
     pub async fn mark_theme_ai_job_applied(&self, id: i64) -> anyhow::Result<()> {
         let now = Utc::now().naive_utc();
-        sqlx::query(
+        sqlx::query!(
             r#"UPDATE theme_ai_jobs
                SET status = 'applied', updated_at = ?
                WHERE id = ? AND status IN ('completed', 'partially_failed')"#,
+            now,
+            id,
         )
-        .bind(now)
-        .bind(id)
         .execute(&self.pool)
         .await
         .context("failed to mark theme AI job applied")?;

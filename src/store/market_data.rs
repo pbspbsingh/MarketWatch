@@ -15,11 +15,11 @@ impl Store {
     pub async fn has_nyse_holidays_for_year(&self, year: i32) -> anyhow::Result<bool> {
         let start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid calendar year");
         let end = NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid calendar year");
-        let count: i64 = sqlx::query_scalar(
+        let count = sqlx::query_scalar!(
             "SELECT COUNT(*) FROM nyse_holidays WHERE market_date >= ? AND market_date < ?",
+            start,
+            end,
         )
-        .bind(start)
-        .bind(end)
         .fetch_one(&self.pool)
         .await
         .context("failed to check NYSE holiday calendar")?;
@@ -41,12 +41,12 @@ impl Store {
             .context("failed to begin NYSE holiday calendar transaction")?;
         let fetched_at = chrono::Utc::now().naive_utc();
         for market_date in holidays {
-            sqlx::query(
+            sqlx::query!(
                 "INSERT INTO nyse_holidays (market_date, fetched_at) VALUES (?, ?) \
                  ON CONFLICT (market_date) DO UPDATE SET fetched_at = excluded.fetched_at",
+                market_date,
+                fetched_at,
             )
-            .bind(market_date)
-            .bind(fetched_at)
             .execute(&mut *transaction)
             .await
             .context("failed to store NYSE holiday")?;

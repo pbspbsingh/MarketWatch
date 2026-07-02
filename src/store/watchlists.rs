@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 impl Store {
     pub async fn watchlists(&self) -> anyhow::Result<Vec<Watchlist>> {
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
             SELECT watchlists.id, watchlists.name, watchlists.icon_key,
                    watchlists.kind = 'favourites' AS is_default,
@@ -24,11 +24,11 @@ impl Store {
         rows.into_iter()
             .map(|row| {
                 Ok(Watchlist {
-                    id: row.try_get("id")?,
-                    name: row.try_get("name")?,
-                    icon_key: row.try_get("icon_key")?,
-                    is_default: row.try_get::<i64, _>("is_default")? != 0,
-                    ticker_count: row.try_get("ticker_count")?,
+                    id: row.id,
+                    name: row.name,
+                    icon_key: row.icon_key,
+                    is_default: row.is_default != 0,
+                    ticker_count: row.ticker_count,
                 })
             })
             .collect::<Result<_, sqlx::Error>>()
@@ -36,11 +36,11 @@ impl Store {
     }
 
     pub async fn create_watchlist(&self, name: &str, icon_key: &str) -> anyhow::Result<i64> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             "INSERT INTO watchlists (name, icon_key, kind, created_at, updated_at) VALUES (?, ?, 'custom', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            name,
+            icon_key,
         )
-        .bind(name)
-        .bind(icon_key)
         .execute(&self.pool)
         .await
         .context("failed to create watchlist")?;
@@ -53,12 +53,12 @@ impl Store {
         name: &str,
         icon_key: &str,
     ) -> anyhow::Result<bool> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             "UPDATE watchlists SET name = ?, icon_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND kind = 'custom'",
+            name,
+            icon_key,
+            id,
         )
-        .bind(name)
-        .bind(icon_key)
-        .bind(id)
         .execute(&self.pool)
         .await
         .context("failed to update watchlist")?;
@@ -66,17 +66,18 @@ impl Store {
     }
 
     pub async fn delete_watchlist(&self, id: i64) -> anyhow::Result<bool> {
-        let result = sqlx::query("DELETE FROM watchlists WHERE id = ? AND kind = 'custom'")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .context("failed to delete watchlist")?;
+        let result = sqlx::query!(
+            "DELETE FROM watchlists WHERE id = ? AND kind = 'custom'",
+            id,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to delete watchlist")?;
         Ok(result.rows_affected() == 1)
     }
 
     pub async fn watchlist_symbols(&self, id: i64) -> anyhow::Result<Option<Vec<String>>> {
-        let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watchlists WHERE id = ?")
-            .bind(id)
+        let exists = sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
             .fetch_one(&self.pool)
             .await
             .context("failed to find watchlist")?
@@ -84,10 +85,10 @@ impl Store {
         if !exists {
             return Ok(None);
         }
-        sqlx::query_scalar(
+        sqlx::query_scalar!(
             "SELECT symbol FROM watchlist_tickers WHERE watchlist_id = ? ORDER BY symbol COLLATE NOCASE",
+            id,
         )
-        .bind(id)
         .fetch_all(&self.pool)
         .await
         .map(Some)
@@ -95,14 +96,14 @@ impl Store {
     }
 
     pub async fn add_watchlist_symbol(&self, id: i64, symbol: &str) -> anyhow::Result<bool> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             INSERT OR IGNORE INTO watchlist_tickers (watchlist_id, symbol, added_at)
             SELECT id, ?, CURRENT_TIMESTAMP FROM watchlists WHERE id = ?
             "#,
+            symbol,
+            id,
         )
-        .bind(symbol)
-        .bind(id)
         .execute(&self.pool)
         .await
         .context("failed to add watchlist symbol")?;
@@ -110,8 +111,7 @@ impl Store {
             return Ok(true);
         }
         Ok(
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watchlists WHERE id = ?")
-                .bind(id)
+            sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
                 .fetch_one(&self.pool)
                 .await?
                 > 0,
@@ -119,8 +119,7 @@ impl Store {
     }
 
     pub async fn remove_watchlist_symbol(&self, id: i64, symbol: &str) -> anyhow::Result<bool> {
-        let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watchlists WHERE id = ?")
-            .bind(id)
+        let exists = sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
             .fetch_one(&self.pool)
             .await
             .context("failed to find watchlist")?
@@ -128,18 +127,19 @@ impl Store {
         if !exists {
             return Ok(false);
         }
-        sqlx::query("DELETE FROM watchlist_tickers WHERE watchlist_id = ? AND symbol = ?")
-            .bind(id)
-            .bind(symbol)
-            .execute(&self.pool)
-            .await
-            .context("failed to remove watchlist symbol")?;
+        sqlx::query!(
+            "DELETE FROM watchlist_tickers WHERE watchlist_id = ? AND symbol = ?",
+            id,
+            symbol,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to remove watchlist symbol")?;
         Ok(true)
     }
 
     pub async fn clear_symbol_watchlists(&self, symbol: &str) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM watchlist_tickers WHERE symbol = ?")
-            .bind(symbol)
+        sqlx::query!("DELETE FROM watchlist_tickers WHERE symbol = ?", symbol)
             .execute(&self.pool)
             .await
             .context("failed to clear ticker watchlists")?;
@@ -190,7 +190,7 @@ mod tests {
     #[tokio::test]
     async fn stores_multiple_watchlist_memberships_and_cascades_deleted_lists() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        sqlx::query("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
+        sqlx::query!("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
             .execute(&store.pool)
             .await
             .unwrap();
