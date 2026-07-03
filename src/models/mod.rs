@@ -1,3 +1,4 @@
+mod daily_notes;
 mod exchange;
 mod fundamentals;
 mod market_data;
@@ -8,6 +9,7 @@ mod ticker_collection;
 mod top_stock_screens;
 mod watchlists;
 
+pub use daily_notes::{DailyNote, DailyNoteSummary};
 pub use exchange::Exchange;
 pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};

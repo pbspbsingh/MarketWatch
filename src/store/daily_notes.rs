@@ -1,0 +1,238 @@
+use super::{DailyNoteUpdate, Store};
+use crate::models::{DailyNote, DailyNoteSummary};
+use anyhow::Context;
+use chrono::{NaiveDate, NaiveDateTime};
+
+impl Store {
+    pub async fn daily_notes(&self, query: Option<&str>) -> anyhow::Result<Vec<DailyNoteSummary>> {
+        let query = query.map(str::trim).filter(|query| !query.is_empty());
+        let Some(query) = query else {
+            return sqlx::query_as!(
+                DailyNoteSummary,
+                r#"SELECT note_date AS "note_date: NaiveDate", title
+                   FROM daily_notes
+                   ORDER BY note_date DESC"#,
+            )
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to list daily notes");
+        };
+
+        let pattern = contains_pattern(query);
+        if query.chars().count() < 3 {
+            return sqlx::query_as!(
+                DailyNoteSummary,
+                r#"SELECT note_date AS "note_date: NaiveDate", title
+                   FROM daily_notes
+                   WHERE note_date LIKE ? ESCAPE '\'
+                      OR title LIKE ? ESCAPE '\'
+                      OR markdown LIKE ? ESCAPE '\'
+                   ORDER BY note_date DESC"#,
+                pattern,
+                pattern,
+                pattern,
+            )
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to search daily notes");
+        }
+
+        let fts_query = format!("\"{}\"", query.replace('"', "\"\""));
+        sqlx::query_as!(
+            DailyNoteSummary,
+            r#"SELECT note_date AS "note_date: NaiveDate", title
+               FROM daily_notes
+               WHERE note_date LIKE ? ESCAPE '\'
+                  OR rowid IN (
+                      SELECT rowid FROM daily_notes_fts WHERE daily_notes_fts MATCH ?
+                  )
+               ORDER BY note_date DESC"#,
+            pattern,
+            fts_query,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to search daily notes")
+    }
+
+    pub async fn daily_note(&self, note_date: NaiveDate) -> anyhow::Result<Option<DailyNote>> {
+        sqlx::query_as!(
+            DailyNote,
+            r#"SELECT note_date AS "note_date: NaiveDate",
+                      title,
+                      markdown,
+                      revision,
+                      created_at AS "created_at: NaiveDateTime",
+                      updated_at AS "updated_at: NaiveDateTime"
+               FROM daily_notes
+               WHERE note_date = ?"#,
+            note_date,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load daily note")
+    }
+
+    pub async fn create_daily_note(&self, note_date: NaiveDate) -> anyhow::Result<DailyNote> {
+        let title = note_date.to_string();
+        sqlx::query!(
+            "INSERT INTO daily_notes (note_date, title) VALUES (?, ?)",
+            note_date,
+            title,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to create daily note")?;
+        self.daily_note(note_date)
+            .await?
+            .context("created daily note was not found")
+    }
+
+    pub async fn update_daily_note(
+        &self,
+        note_date: NaiveDate,
+        title: &str,
+        markdown: &str,
+        expected_revision: i64,
+    ) -> anyhow::Result<DailyNoteUpdate> {
+        let result = sqlx::query!(
+            r#"UPDATE daily_notes
+               SET title = ?,
+                   markdown = ?,
+                   revision = revision + 1,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE note_date = ? AND revision = ?"#,
+            title,
+            markdown,
+            note_date,
+            expected_revision,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to update daily note")?;
+
+        if result.rows_affected() == 1 {
+            return self
+                .daily_note(note_date)
+                .await?
+                .map(DailyNoteUpdate::Updated)
+                .context("updated daily note was not found");
+        }
+
+        Ok(match self.daily_note(note_date).await? {
+            Some(note) => DailyNoteUpdate::Conflict {
+                current_revision: note.revision,
+            },
+            None => DailyNoteUpdate::NotFound,
+        })
+    }
+
+    pub async fn delete_daily_note(&self, note_date: NaiveDate) -> anyhow::Result<bool> {
+        sqlx::query!("DELETE FROM daily_notes WHERE note_date = ?", note_date)
+            .execute(&self.pool)
+            .await
+            .context("failed to delete daily note")
+            .map(|result| result.rows_affected() == 1)
+    }
+}
+
+fn contains_pattern(value: &str) -> String {
+    let mut pattern = String::with_capacity(value.len() + 2);
+    pattern.push('%');
+    for character in value.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date(value: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
+    }
+
+    #[tokio::test]
+    async fn manages_notes_with_revision_checks() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let note_date = date("2026-07-03");
+        let created = store.create_daily_note(note_date).await.unwrap();
+        assert_eq!(created.title, "2026-07-03");
+        assert_eq!(created.revision, 1);
+        assert!(store.create_daily_note(note_date).await.is_err());
+
+        let updated = store
+            .update_daily_note(note_date, "Breakout", "# Breakout\n\nChart notes", 1)
+            .await
+            .unwrap();
+        assert!(matches!(updated, DailyNoteUpdate::Updated(ref note) if note.revision == 2));
+
+        assert_eq!(
+            store
+                .update_daily_note(note_date, "Stale", "stale", 1)
+                .await
+                .unwrap(),
+            DailyNoteUpdate::Conflict {
+                current_revision: 2
+            }
+        );
+        assert_eq!(
+            store
+                .update_daily_note(date("2026-07-04"), "Missing", "", 1)
+                .await
+                .unwrap(),
+            DailyNoteUpdate::NotFound
+        );
+        assert!(store.delete_daily_note(note_date).await.unwrap());
+        assert!(store.daily_note(note_date).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn lists_and_searches_notes_by_date_title_and_body() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        for value in ["2026-07-01", "2026-07-03", "2026-07-02"] {
+            store.create_daily_note(date(value)).await.unwrap();
+        }
+        store
+            .update_daily_note(
+                date("2026-07-01"),
+                "Breakout",
+                "# Breakout\n\nConsolidation complete",
+                1,
+            )
+            .await
+            .unwrap();
+
+        let notes = store.daily_notes(None).await.unwrap();
+        assert_eq!(notes[0].note_date, date("2026-07-03"));
+        assert_eq!(notes[2].note_date, date("2026-07-01"));
+        assert_eq!(store.daily_notes(Some("eak")).await.unwrap().len(), 1);
+        assert_eq!(
+            store.daily_notes(Some("solidation")).await.unwrap().len(),
+            1
+        );
+        assert_eq!(store.daily_notes(Some("07-02")).await.unwrap().len(), 1);
+        assert_eq!(store.daily_notes(Some("Br")).await.unwrap().len(), 1);
+        assert!(store.daily_notes(Some("%")).await.unwrap().is_empty());
+        assert!(store.daily_notes(Some("_")).await.unwrap().is_empty());
+
+        store
+            .update_daily_note(
+                date("2026-07-01"),
+                "Reversal",
+                "# Reversal\n\nFailed move",
+                2,
+            )
+            .await
+            .unwrap();
+        assert!(store.daily_notes(Some("eak")).await.unwrap().is_empty());
+        assert_eq!(store.daily_notes(Some("versal")).await.unwrap().len(), 1);
+        store.delete_daily_note(date("2026-07-01")).await.unwrap();
+        assert!(store.daily_notes(Some("versal")).await.unwrap().is_empty());
+    }
+}

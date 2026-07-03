@@ -6,10 +6,13 @@ use sqlx::sqlite::{
 use std::str::FromStr;
 use std::time::Duration;
 
+use crate::models::DailyNote;
+
 const MAX_CONNECTIONS: u32 = 8;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
+mod daily_notes;
 mod fundamentals;
 mod industries;
 mod market_data;
@@ -21,6 +24,13 @@ mod watchlists;
 pub use industries::{IndustryClassification, IndustrySnapshotRow, NewIndustrySnapshot};
 pub use memberships::TickerIndustryMembership;
 pub use themes::TickerThemeMembership;
+
+#[derive(Debug, PartialEq)]
+pub enum DailyNoteUpdate {
+    Updated(DailyNote),
+    NotFound,
+    Conflict { current_revision: i64 },
+}
 
 #[derive(Clone)]
 pub struct Store {
