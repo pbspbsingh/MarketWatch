@@ -30,10 +30,12 @@ export function StudyCharts({
   result,
   orientation,
   syncCrosshair,
+  tickerBVisible,
 }: {
   result: StudyResult;
   orientation: SplitOrientation;
   syncCrosshair: boolean;
+  tickerBVisible: boolean;
 }) {
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -48,13 +50,14 @@ export function StudyCharts({
   useEffect(() => {
     const top = topRef.current;
     const bottom = bottomRef.current;
-    if (top === null || bottom === null || result.series.length !== 2) return;
+    if (top === null || (tickerBVisible && bottom === null) || result.series.length !== 2) return;
     const dates = [...new Set(result.series.flatMap((series) => series.candles.map((candle) => candle.date)))].sort();
     const candleSeries: ISeriesApi<"Candlestick">[] = [];
     const candlesByDate = result.series.map(
       (series) => new Map(series.candles.map((candle) => [candle.date, candle])),
     );
-    const charts = [top, bottom].map((container, index) => {
+    const containers = tickerBVisible ? [top, bottom!] : [top];
+    const charts = containers.map((container, index) => {
       const chart = createChart(container, {
         autoSize: true,
         layout: {
@@ -121,10 +124,12 @@ export function StudyCharts({
       target.timeScale().setVisibleLogicalRange(range);
       synchronizing = false;
     };
-    const topHandler = (range: LogicalRange | null) => synchronize(charts[1], range);
+    const topHandler = (range: LogicalRange | null) => charts[1] && synchronize(charts[1], range);
     const bottomHandler = (range: LogicalRange | null) => synchronize(charts[0], range);
-    charts[0].timeScale().subscribeVisibleLogicalRangeChange(topHandler);
-    charts[1].timeScale().subscribeVisibleLogicalRangeChange(bottomHandler);
+    if (charts[1]) {
+      charts[0].timeScale().subscribeVisibleLogicalRangeChange(topHandler);
+      charts[1].timeScale().subscribeVisibleLogicalRangeChange(bottomHandler);
+    }
     let synchronizingCrosshair = false;
     const crosshairHandler = (targetIndex: number) => (event: MouseEventParams<Time>) => {
       if (!syncCrosshairRef.current || synchronizingCrosshair) return;
@@ -140,8 +145,10 @@ export function StudyCharts({
     };
     const topCrosshairHandler = crosshairHandler(1);
     const bottomCrosshairHandler = crosshairHandler(0);
-    charts[0].subscribeCrosshairMove(topCrosshairHandler);
-    charts[1].subscribeCrosshairMove(bottomCrosshairHandler);
+    if (charts[1]) {
+      charts[0].subscribeCrosshairMove(topCrosshairHandler);
+      charts[1].subscribeCrosshairMove(bottomCrosshairHandler);
+    }
     const visibleStart = shiftYears(result.date, -1);
     const visibleEnd = shiftYears(result.date, 1);
     const firstVisible = dates.findIndex((date) => date >= visibleStart);
@@ -155,17 +162,23 @@ export function StudyCharts({
       charts[0].timeScale().fitContent();
     }
     const initialRange = charts[0].timeScale().getVisibleLogicalRange();
-    if (initialRange !== null) charts[1].timeScale().setVisibleLogicalRange(initialRange);
+    if (initialRange !== null && charts[1]) charts[1].timeScale().setVisibleLogicalRange(initialRange);
 
     return () => {
-      charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
-      charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
-      charts[0].unsubscribeCrosshairMove(topCrosshairHandler);
-      charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
+      if (charts[1]) {
+        charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
+        charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
+        charts[0].unsubscribeCrosshairMove(topCrosshairHandler);
+        charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
+      }
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
     };
-  }, [result]);
+  }, [result, tickerBVisible]);
+
+  if (!tickerBVisible) {
+    return <ChartContainer containerRef={topRef} symbol={result.series[0]?.symbol ?? ""} />;
+  }
 
   return (
     <SplitPane

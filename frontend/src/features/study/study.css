@@ -54,7 +54,9 @@
 }
 
 .study-chart-wrap {
+  width: 100%;
   min-height: 0;
+  flex: 1;
   position: relative;
   overflow: hidden;
 }

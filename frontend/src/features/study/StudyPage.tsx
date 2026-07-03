@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import { Button, CircularProgress, IconButton, TextField, Tooltip, Typography } from "@mui/material";
 import { fetchLastStudy, fetchStudy, type StudyResult } from "../../api/study";
 import { Toast } from "../../components/Toast";
@@ -11,6 +13,8 @@ import "./study.css";
 
 const todayText = localDateText(new Date());
 const studyOrientationKey = "market-watch.study-orientation";
+const studyCrosshairSyncKey = "market-watch.study-crosshair-sync";
+const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 
 export function StudyPage() {
   const [symbolA, setSymbolA] = useState("SPY");
@@ -21,7 +25,12 @@ export function StudyPage() {
   const [orientation, setOrientation] = useState<SplitOrientation>(() =>
     localStorage.getItem(studyOrientationKey) === "horizontal" ? "horizontal" : "vertical",
   );
-  const [crosshairSync, setCrosshairSync] = useState(false);
+  const [crosshairSync, setCrosshairSync] = useState(
+    () => localStorage.getItem(studyCrosshairSyncKey) === "true",
+  );
+  const [tickerBVisible, setTickerBVisible] = useState(
+    () => localStorage.getItem(studyTickerBVisibleKey) !== "false",
+  );
   const [error, setError] = useState<string>();
   const requestRef = useRef<AbortController | undefined>(undefined);
 
@@ -111,9 +120,29 @@ export function StudyPage() {
             color={crosshairSync ? "primary" : "default"}
             aria-label={`${crosshairSync ? "Disable" : "Enable"} synchronized crosshair`}
             aria-pressed={crosshairSync}
-            onClick={() => setCrosshairSync((enabled) => !enabled)}
+            onClick={() => setCrosshairSync((enabled) => {
+              const next = !enabled;
+              localStorage.setItem(studyCrosshairSyncKey, String(next));
+              return next;
+            })}
           >
             <GpsFixedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={`${tickerBVisible ? "Hide" : "Show"} Ticker B chart`}>
+          <IconButton
+            size="small"
+            type="button"
+            color={tickerBVisible ? "default" : "primary"}
+            aria-label={`${tickerBVisible ? "Hide" : "Show"} Ticker B chart`}
+            aria-pressed={!tickerBVisible}
+            onClick={() => setTickerBVisible((visible) => {
+              const next = !visible;
+              localStorage.setItem(studyTickerBVisibleKey, String(next));
+              return next;
+            })}
+          >
+            {tickerBVisible ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
       </form>
@@ -123,7 +152,12 @@ export function StudyPage() {
             <Typography color="text.secondary">Enter two tickers and a historical date</Typography>
           </div>
         ) : (
-          <StudyCharts result={result} orientation={orientation} syncCrosshair={crosshairSync} />
+          <StudyCharts
+            result={result}
+            orientation={orientation}
+            syncCrosshair={crosshairSync}
+            tickerBVisible={tickerBVisible}
+          />
         )}
       </div>
       <a className="study-attribution" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
