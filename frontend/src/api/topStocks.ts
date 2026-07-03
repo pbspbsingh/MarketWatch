@@ -12,6 +12,7 @@ export type TopStocksSource =
 export interface TopStocksSnapshot {
   source: TopStocksSource;
   symbols: string[];
+  period_selections: TopStocksSelection[];
 }
 
 export interface TopStockScreen {

@@ -52,6 +52,7 @@ pub enum TopStocksSource {
 pub struct TopStocksSnapshot {
     pub source: TopStocksSource,
     pub symbols: Vec<String>,
+    pub period_selections: Vec<TopStocksSelection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,7 +64,7 @@ pub struct TopStockScreenInput {
 }
 
 fn default_screen_count() -> i64 {
-    100
+    200
 }
 
 #[derive(Debug, Error)]
@@ -84,6 +85,7 @@ pub struct TopStocksService {
     store: Store,
     finviz: Arc<FinvizClient>,
     snapshot: Mutex<Option<TopStocksSnapshot>>,
+    period_selections: Mutex<Vec<TopStocksSelection>>,
     cache: Mutex<Cache>,
 }
 
@@ -111,6 +113,7 @@ impl TopStocksService {
             store,
             finviz,
             snapshot: Mutex::new(None),
+            period_selections: Mutex::new(Vec::new()),
             cache: Mutex::new(Cache::default()),
         }
     }
@@ -125,7 +128,18 @@ impl TopStocksService {
     ) -> Result<TopStocksSnapshot, TopStocksError> {
         validate_source(&source)?;
         let symbols = self.fetch(&source).await?;
-        let snapshot = TopStocksSnapshot { source, symbols };
+        let period_selections = match &source {
+            TopStocksSource::Periods { selections } => {
+                *self.period_selections.lock().await = selections.clone();
+                selections.clone()
+            }
+            TopStocksSource::CustomScreen { .. } => self.period_selections.lock().await.clone(),
+        };
+        let snapshot = TopStocksSnapshot {
+            source,
+            symbols,
+            period_selections,
+        };
         *self.snapshot.lock().await = Some(snapshot.clone());
         Ok(snapshot)
     }

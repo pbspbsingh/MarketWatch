@@ -22,12 +22,13 @@ const periods: { period: TopStocksPeriod; label: string }[] = [
   { period: "months3", label: "3 Months" }, { period: "months6", label: "6 Months" },
   { period: "year1", label: "1 Year" },
 ];
-const defaultCount = 100;
+const defaultCount = 200;
 const periodMode = "periods";
 
 export function TopStocksPage() {
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
   const [screens, setScreens] = useState<TopStockScreen[]>([]);
+  const [periodSelections, setPeriodSelections] = useState<TopStocksSelection[]>([]);
   const [draftCounts, setDraftCounts] = useState<Record<TopStocksPeriod, string>>(() =>
     Object.fromEntries(periods.map(({ period }) => [period, String(defaultCount)])) as Record<TopStocksPeriod, string>,
   );
@@ -47,9 +48,10 @@ export function TopStocksPage() {
         const validSnapshot = source?.kind !== "custom_screen"
           || nextScreens.some((screen) => screen.id === source.screen_id) ? nextSnapshot : null;
         setSnapshot(validSnapshot);
-        const validSource = validSnapshot?.source;
-        if (validSource?.kind === "periods") {
-          setDraftCounts((counts) => ({ ...counts, ...Object.fromEntries(validSource.selections.map(({ period, count }) => [period, String(count)])) }));
+        const rememberedSelections = nextSnapshot?.period_selections ?? [];
+        setPeriodSelections(rememberedSelections);
+        if (rememberedSelections.length > 0) {
+          setDraftCounts((counts) => ({ ...counts, ...Object.fromEntries(rememberedSelections.map(({ period, count }) => [period, String(count)])) }));
         }
       })
       .catch((requestError: unknown) => { if (!controller.signal.aborted) { setSnapshot(null); setError(message(requestError)); } })
@@ -57,14 +59,18 @@ export function TopStocksPage() {
     return () => controller.abort();
   }, []);
 
-  const selections = snapshot?.source.kind === "periods" ? snapshot.source.selections : [];
+  const selections = periodSelections;
   const snapshotSource = snapshot?.source;
   const selectedScreen = snapshotSource?.kind === "custom_screen"
     ? screens.find((screen) => screen.id === snapshotSource.screen_id) : undefined;
   const selectedMode = selectedScreen === undefined ? periodMode : String(selectedScreen.id);
   const save = async (source: TopStocksSource) => {
     setLoading(true); setError(undefined);
-    try { setSnapshot(await replaceTopStocks(source)); }
+    try {
+      const next = await replaceTopStocks(source);
+      setSnapshot(next);
+      setPeriodSelections(next.period_selections);
+    }
     catch (requestError) { setError(message(requestError)); }
     finally { setLoading(false); }
   };
@@ -121,7 +127,7 @@ export function TopStocksPage() {
                 ? "Performance periods"
                 : screens.find((screen) => String(screen.id) === value)?.name ?? "Custom screen"}
               onChange={(event) => void save(event.target.value === periodMode
-                ? { kind: "periods", selections: [] }
+                ? { kind: "periods", selections }
                 : { kind: "custom_screen", screen_id: Number(event.target.value) })}>
               <MenuItem value={periodMode}>Performance periods</MenuItem>
               {screens.map((screen) => <MenuItem key={screen.id} value={String(screen.id)} className="top-stocks-screen-option">
@@ -140,7 +146,10 @@ export function TopStocksPage() {
           </div>
           <div className="top-stocks-action-buttons">
             <Tooltip title="Refresh top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {
-              setLoading(true); void refreshTopStocks().then(setSnapshot).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
+              setLoading(true); void refreshTopStocks().then((next) => {
+                setSnapshot(next);
+                if (next !== null) setPeriodSelections(next.period_selections);
+              }).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
             }}><RefreshIcon fontSize="small" /></IconButton></span></Tooltip>
             <Tooltip title="Clear top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {
               setLoading(true); void clearTopStocks().then(() => setSnapshot(null)).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
@@ -164,7 +173,7 @@ export function TopStocksPage() {
 function ScreenEditor({ screen, onClose, onSave }: { screen: TopStockScreen | null; onClose: () => void; onSave: (input: TopStockScreenInput) => Promise<void> }) {
   const [name, setName] = useState(screen?.name ?? "");
   const [url, setUrl] = useState(screen?.url ?? "");
-  const [count, setCount] = useState(String(screen?.max_stock_count ?? 100));
+  const [count, setCount] = useState(String(screen?.max_stock_count ?? defaultCount));
   const parsedCount = Number(count);
   const valid = name.trim() !== "" && url.trim() !== "" && Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 500;
   return <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
