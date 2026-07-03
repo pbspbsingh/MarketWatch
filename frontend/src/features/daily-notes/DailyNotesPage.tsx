@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircularProgress,
   Dialog,
@@ -8,8 +6,6 @@ import {
   DialogContent,
   DialogTitle,
   Button,
-  IconButton,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -22,10 +18,15 @@ import {
   type DailyNoteSummary,
 } from "../../api/daily-notes";
 import { Toast } from "../../components/Toast";
+import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
 import "./daily-notes.css";
 
 export function DailyNotesPage() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(sidebarCollapsedStorageKey) === "true",
+  );
+  const [readingWidth, setReadingWidth] = useState(readReadingWidth);
   const [allNotes, setAllNotes] = useState<DailyNoteSummary[]>([]);
   const [visibleNotes, setVisibleNotes] = useState<DailyNoteSummary[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>();
@@ -42,6 +43,10 @@ export function DailyNotesPage() {
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [error, setError] = useState<string>();
   const previewRef = useRef<HTMLDivElement>(null);
+  const pageClassName = useMemo(
+    () => `daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}`,
+    [sidebarCollapsed],
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -173,36 +178,55 @@ export function DailyNotesPage() {
   };
 
   return (
-    <section className="daily-notes-page">
-      <DailyNotesSidebar
-        notes={visibleNotes}
-        allNotes={allNotes}
-        selectedDate={selectedDate}
-        search={search}
-        loading={listLoading}
-        onSearchChange={setSearch}
-        onSelect={(note) => {
-          setSelectedDate(note.note_date);
-          setHighlightQuery(debouncedSearch || undefined);
-        }}
-        onCreate={create}
-        onDelete={setDeleteTarget}
-      />
+    <section className={pageClassName}>
+      {!sidebarCollapsed && (
+        <DailyNotesSidebar
+          notes={visibleNotes}
+          allNotes={allNotes}
+          selectedDate={selectedDate}
+          search={search}
+          loading={listLoading}
+          onSearchChange={setSearch}
+          onSelect={(note) => {
+            setSelectedDate(note.note_date);
+            setHighlightQuery(debouncedSearch || undefined);
+          }}
+          onCreate={create}
+          onDelete={setDeleteTarget}
+        />
+      )}
       <main className="daily-note-workspace">
-        {highlightQuery !== undefined && matchCount > 0 && (
-          <div className="daily-note-match-controls">
-            <Typography>{matchIndex + 1} / {matchCount}</Typography>
-            <Tooltip title="Previous match"><IconButton size="small" onClick={() => selectMatch(matchIndex - 1)}><KeyboardArrowUpIcon fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title="Next match"><IconButton size="small" onClick={() => selectMatch(matchIndex + 1)}><KeyboardArrowDownIcon fontSize="small" /></IconButton></Tooltip>
-          </div>
-        )}
-        {documentLoading && document === undefined ? (
-          <CircularProgress className="daily-note-document-loading" size="1.5rem" />
-        ) : document === undefined ? (
-          <div className="panel-status"><Typography color="text.secondary">Create or select a daily note</Typography></div>
-        ) : (
-          <article ref={previewRef} className="daily-note-preview" dangerouslySetInnerHTML={{ __html: document.html }} />
-        )}
+        <DailyNoteHeader
+          note={document}
+          sidebarCollapsed={sidebarCollapsed}
+          readingWidth={readingWidth}
+          matchIndex={matchIndex}
+          matchCount={highlightQuery === undefined ? 0 : matchCount}
+          onToggleSidebar={() => setSidebarCollapsed((collapsed) => {
+            const next = !collapsed;
+            localStorage.setItem(sidebarCollapsedStorageKey, String(next));
+            return next;
+          })}
+          onReadingWidthChange={(width) => {
+            setReadingWidth(width);
+            localStorage.setItem(readingWidthStorageKey, String(width));
+          }}
+          onSelectMatch={selectMatch}
+        />
+        <div className="daily-note-content">
+          {documentLoading && document === undefined ? (
+            <CircularProgress className="daily-note-document-loading" size="1.5rem" />
+          ) : document === undefined ? (
+            <div className="panel-status"><Typography color="text.secondary">Create or select a daily note</Typography></div>
+          ) : (
+            <article
+              ref={previewRef}
+              className="daily-note-preview"
+              style={{ width: `${readingWidth}%` }}
+              dangerouslySetInnerHTML={{ __html: document.html }}
+            />
+          )}
+        </div>
       </main>
       <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>
         <DialogTitle>Delete daily note?</DialogTitle>
@@ -217,6 +241,14 @@ export function DailyNotesPage() {
       <Toast message={error} onClose={() => setError(undefined)} />
     </section>
   );
+}
+
+const sidebarCollapsedStorageKey = "market-watch.daily-notes-sidebar-collapsed";
+const readingWidthStorageKey = "market-watch.daily-notes-reading-width";
+
+function readReadingWidth() {
+  const stored = Number(localStorage.getItem(readingWidthStorageKey));
+  return Number.isFinite(stored) && stored >= 10 && stored <= 100 ? stored : 80;
 }
 
 function message(error: unknown) {
