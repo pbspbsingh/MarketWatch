@@ -1,0 +1,182 @@
+.theme-rank-page {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 18rem minmax(0, 1fr);
+  border-top: 0.125rem solid #f59e0b;
+}
+
+.theme-rank-sidebar {
+  background: #151a20;
+}
+
+.theme-rank-sidebar-header {
+  display: grid;
+  padding: 0.35rem;
+  gap: 0.25rem;
+  border-bottom: 0.0625rem solid #2a3038;
+}
+
+.theme-rank-selection-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.theme-rank-selection-actions .MuiButton-root {
+  min-width: 0;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+}
+
+.theme-rank-selection-actions .MuiInputBase-root {
+  width: 2.15rem;
+  height: 1.4rem;
+}
+
+.theme-rank-selection-actions .MuiSelect-select.MuiSelect-outlined {
+  min-width: 0;
+  padding: 0.1rem 0.65rem 0.1rem 0.3rem !important;
+  font-size: 0.62rem;
+}
+
+.theme-rank-selection-actions .MuiSelect-icon {
+  right: 0;
+  font-size: 0.8rem;
+}
+
+.theme-rank-theme-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.theme-rank-theme-row {
+  display: grid;
+  min-height: 1.55rem;
+  padding-right: 0.35rem;
+  padding-left: 0.35rem;
+  grid-template-columns: auto 0.55rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: 0.0625rem solid #20262e;
+  cursor: pointer;
+}
+
+.theme-rank-theme-row:hover {
+  background: #202832;
+}
+
+.theme-rank-theme-row .MuiCheckbox-root {
+  padding: 0.1rem;
+}
+
+.theme-rank-color {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.theme-rank-theme-name {
+  overflow: hidden;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-rank-theme-name small {
+  color: #7f8a98;
+  font-size: 0.62rem;
+}
+
+.theme-rank-chart-panel {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: #11161c;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.theme-rank-chart-header {
+  display: grid;
+  height: 1.35rem;
+  flex: 0 0 1.35rem;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: center;
+  border-bottom: 0.0625rem solid #303944;
+  background: #1a2027;
+  color: #b7c0cb;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.theme-rank-chart-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.theme-rank-chart {
+  width: 100%;
+  height: auto;
+  min-height: 30rem;
+  flex: none;
+}
+
+.theme-rank-column {
+  stroke: #303944;
+  stroke-width: 0.5;
+}
+
+.theme-rank-line {
+  cursor: pointer;
+  outline: none;
+  transition: filter 180ms ease-out;
+}
+
+.theme-rank-line path,
+.theme-rank-line > g {
+  transition: opacity 300ms ease-in-out, stroke-width 300ms ease-in-out;
+}
+
+.theme-rank-line:focus {
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+.theme-rank-ticker-box {
+  fill: #151a20;
+}
+
+.theme-rank-ticker-label {
+  fill: #e1e6ec;
+  font-size: 7px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.theme-rank-ticker-rank {
+  fill: #8d99a7;
+  font-size: 6px;
+  pointer-events: none;
+}
+
+.theme-rank-empty {
+  display: grid;
+  height: 100%;
+  flex: 1;
+  place-items: center;
+  font-size: 0.75rem !important;
+}
+
+@media (max-width: 800px) {
+  .theme-rank-page {
+    grid-template-columns: 15rem minmax(0, 1fr);
+  }
+}

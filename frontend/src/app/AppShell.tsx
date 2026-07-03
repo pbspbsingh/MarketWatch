@@ -8,6 +8,7 @@ import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
+import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import {
   Drawer,
   IconButton,
@@ -22,6 +23,7 @@ import { NavLink, Outlet } from "react-router-dom";
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
+  ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
