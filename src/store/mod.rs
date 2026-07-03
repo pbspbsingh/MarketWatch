@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use crate::models::DailyNote;
+use chrono::NaiveDate;
 
 const MAX_CONNECTIONS: u32 = 8;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -30,6 +31,12 @@ pub enum DailyNoteUpdate {
     Updated(DailyNote),
     NotFound,
     Conflict { current_revision: i64 },
+}
+
+pub(crate) struct DailyNoteListRow {
+    pub note_date: NaiveDate,
+    pub title: String,
+    pub markdown: String,
 }
 
 #[derive(Clone)]

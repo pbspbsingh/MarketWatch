@@ -1,11 +1,28 @@
-use crate::models::{DailyNote, DailyNoteSummary};
+use crate::models::DailyNote;
 use crate::store::{DailyNoteUpdate, Store};
 use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
+use serde::Serialize;
 use thiserror::Error;
 
+mod markdown;
+
+pub use markdown::RenderedMarkdown;
+
 const MAX_SEARCH_LENGTH: usize = 200;
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DailyNoteSummary {
+    pub note_date: NaiveDate,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet_html: Option<String>,
+}
 
 #[derive(Debug, Error)]
 pub enum DailyNotesError {
@@ -20,6 +37,8 @@ pub enum DailyNotesError {
     },
     #[error("daily note persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
+    #[error("daily note rendering failed: {0}")]
+    Rendering(#[source] anyhow::Error),
 }
 
 pub struct DailyNotesService {
@@ -40,10 +59,28 @@ impl DailyNotesService {
                 "search must be at most {MAX_SEARCH_LENGTH} characters"
             )));
         }
-        self.store
+        let rows = self
+            .store
             .daily_notes(query)
             .await
-            .map_err(DailyNotesError::Persistence)
+            .map_err(DailyNotesError::Persistence)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let query = query.map(str::trim).filter(|query| !query.is_empty());
+                DailyNoteSummary {
+                    note_date: row.note_date,
+                    title_html: query
+                        .and_then(|query| markdown::highlight_plain(&row.title, query)),
+                    date_html: query.and_then(|query| {
+                        markdown::highlight_plain(&row.note_date.to_string(), query)
+                    }),
+                    snippet_html: query
+                        .and_then(|query| markdown::highlight_excerpt(&row.markdown, query)),
+                    title: row.title,
+                }
+            })
+            .collect())
     }
 
     pub async fn get(&self, date: NaiveDate) -> Result<DailyNote, DailyNotesError> {
@@ -124,6 +161,19 @@ impl DailyNotesService {
         } else {
             Err(DailyNotesError::NotFound(date))
         }
+    }
+
+    pub fn render(
+        &self,
+        markdown: &str,
+        query: Option<&str>,
+    ) -> Result<RenderedMarkdown, DailyNotesError> {
+        if query.is_some_and(|query| query.chars().count() > MAX_SEARCH_LENGTH) {
+            return Err(DailyNotesError::Validation(format!(
+                "search must be at most {MAX_SEARCH_LENGTH} characters"
+            )));
+        }
+        markdown::render(markdown, query).map_err(DailyNotesError::Rendering)
     }
 }
 
@@ -206,7 +256,18 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(service.list(Some("eak")).await.unwrap().len(), 1);
+        let search = service.list(Some("eak")).await.unwrap();
+        assert_eq!(search.len(), 1);
+        assert_eq!(
+            search[0].title_html.as_deref(),
+            Some("Br<mark>eak</mark>out")
+        );
+        assert!(
+            search[0]
+                .snippet_html
+                .as_deref()
+                .is_some_and(|snippet| snippet.contains("<mark>eak</mark>"))
+        );
         service.delete(note_date).await.unwrap();
         assert!(matches!(
             service.get(note_date).await,

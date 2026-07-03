@@ -1,15 +1,15 @@
-use super::{DailyNoteUpdate, Store};
-use crate::models::{DailyNote, DailyNoteSummary};
+use super::{DailyNoteListRow, DailyNoteUpdate, Store};
+use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
 
 impl Store {
-    pub async fn daily_notes(&self, query: Option<&str>) -> anyhow::Result<Vec<DailyNoteSummary>> {
+    pub async fn daily_notes(&self, query: Option<&str>) -> anyhow::Result<Vec<DailyNoteListRow>> {
         let query = query.map(str::trim).filter(|query| !query.is_empty());
         let Some(query) = query else {
             return sqlx::query_as!(
-                DailyNoteSummary,
-                r#"SELECT note_date AS "note_date: NaiveDate", title
+                DailyNoteListRow,
+                r#"SELECT note_date AS "note_date: NaiveDate", title, '' AS markdown
                    FROM daily_notes
                    ORDER BY note_date DESC"#,
             )
@@ -21,8 +21,8 @@ impl Store {
         let pattern = contains_pattern(query);
         if query.chars().count() < 3 {
             return sqlx::query_as!(
-                DailyNoteSummary,
-                r#"SELECT note_date AS "note_date: NaiveDate", title
+                DailyNoteListRow,
+                r#"SELECT note_date AS "note_date: NaiveDate", title, markdown
                    FROM daily_notes
                    WHERE note_date LIKE ? ESCAPE '\'
                       OR title LIKE ? ESCAPE '\'
@@ -39,8 +39,8 @@ impl Store {
 
         let fts_query = format!("\"{}\"", query.replace('"', "\"\""));
         sqlx::query_as!(
-            DailyNoteSummary,
-            r#"SELECT note_date AS "note_date: NaiveDate", title
+            DailyNoteListRow,
+            r#"SELECT note_date AS "note_date: NaiveDate", title, markdown
                FROM daily_notes
                WHERE note_date LIKE ? ESCAPE '\'
                   OR rowid IN (

@@ -10,9 +10,3 @@ pub struct DailyNote {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct DailyNoteSummary {
-    pub note_date: NaiveDate,
-    pub title: String,
-}
