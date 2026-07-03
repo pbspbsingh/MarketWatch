@@ -1,4 +1,5 @@
 mod chart;
+mod daily_notes;
 mod details;
 mod industries;
 mod market;
@@ -15,6 +16,7 @@ use axum::Router;
 pub fn router() -> Router<AppState> {
     Router::new()
         .merge(chart::router())
+        .merge(daily_notes::router())
         .merge(details::router())
         .merge(industries::router())
         .merge(market::router())

@@ -1,4 +1,5 @@
 pub mod chart;
+pub mod daily_notes;
 pub mod details;
 pub mod industries;
 pub mod industry_analysis;

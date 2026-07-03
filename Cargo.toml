@@ -28,6 +28,9 @@ include_dir = "0.7.4"
 # Persistence
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate", "chrono"] }
 
+# Content
+comrak = { version = "0.53.0", default-features = false }
+
 # External providers
 fastrand = "2.4.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "cookies", "gzip", "json", "deflate"] }

@@ -2,6 +2,7 @@ use crate::api;
 use crate::config::Config;
 use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
+use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
@@ -35,6 +36,7 @@ static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist_
 #[derive(Clone)]
 pub struct AppState {
     pub chart: Arc<ChartService>,
+    pub daily_notes: Arc<DailyNotesService>,
     pub details: Arc<TickerDetailsService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub study: Arc<StudyService>,
@@ -49,6 +51,7 @@ pub struct AppState {
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
     let store = Store::connect(&config.database.url).await?;
+    let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
     store.fail_interrupted_theme_ai_jobs().await?;
     let nyse_holidays = nyse_calendar::load_holidays(&store, &config.providers).await?;
     let market_schedule =
@@ -107,6 +110,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     industry_refresh.spawn_refresh_task();
     let state = AppState {
         chart,
+        daily_notes,
         details,
         industry_analysis,
         study,
