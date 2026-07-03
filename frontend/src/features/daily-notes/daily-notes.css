@@ -1,0 +1,212 @@
+.daily-notes-page {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 18rem minmax(0, 1fr);
+  background: #111418;
+}
+
+.daily-notes-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  border-right: 0.0625rem solid #2a3038;
+  background: #191e24;
+  flex-direction: column;
+}
+
+.daily-notes-sidebar-header {
+  display: flex;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.5rem 0.2rem 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+
+  & h1 {
+    margin: 0;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}
+
+.daily-notes-search {
+  margin: 0.35rem 0.5rem 0.5rem !important;
+
+  & .MuiInputBase-input {
+    padding-block: 0.35rem;
+    font-size: 0.72rem;
+  }
+}
+
+.daily-note-new-row {
+  padding: 0.25rem 0.5rem 0.5rem;
+  border-bottom: 0.0625rem solid #2a3038;
+}
+
+.daily-notes-list {
+  min-height: 0;
+  position: relative;
+  flex: 1;
+  overflow: auto;
+}
+
+.daily-notes-list-loading {
+  position: absolute;
+  top: 1rem;
+  left: calc(50% - 0.625rem);
+}
+
+.daily-notes-empty {
+  padding: 1rem;
+  font-size: 0.72rem !important;
+  text-align: center;
+}
+
+.daily-note-list-row {
+  display: flex;
+  min-width: 0;
+  border-bottom: 0.0625rem solid #252b33;
+  align-items: center;
+
+  & > .MuiIconButton-root {
+    margin-right: 0.25rem;
+    opacity: 0;
+  }
+
+  &:hover > .MuiIconButton-root,
+  &:focus-within > .MuiIconButton-root {
+    opacity: 1;
+  }
+}
+
+.daily-note-list-button {
+  display: flex;
+  min-width: 0;
+  padding: 0.5rem 0.25rem 0.5rem 0.75rem;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  flex: 1;
+  flex-direction: column;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover,
+  &[aria-pressed="true"] {
+    background: #253140;
+  }
+
+  & strong,
+  & small,
+  & span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & strong {
+    font-size: 0.74rem;
+  }
+
+  & small {
+    color: #8f9aa7;
+    font-size: 0.63rem;
+  }
+
+  & mark {
+    color: #111418;
+    background: #ffd54f;
+  }
+}
+
+.daily-note-search-snippet {
+  margin-top: 0.2rem;
+  color: #aeb7c2;
+  font-size: 0.64rem;
+}
+
+.daily-note-workspace {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+}
+
+.daily-note-document-loading {
+  position: absolute;
+  top: 1rem;
+  left: calc(50% - 0.75rem);
+}
+
+.daily-note-preview {
+  width: 80%;
+  max-width: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 2rem;
+  color: #d7dde5;
+  line-height: 1.6;
+
+  & img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  & a {
+    color: #58a6ff;
+  }
+
+  & pre,
+  & code {
+    background: #191e24;
+  }
+
+  & pre {
+    padding: 0.75rem;
+    overflow: auto;
+  }
+
+  & mark {
+    color: inherit;
+    background: #6b5d16;
+  }
+
+  & mark.daily-note-active-match {
+    color: #111418;
+    background: #ffd54f;
+  }
+}
+
+.daily-note-match-controls {
+  display: flex;
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border-bottom: 0.0625rem solid #2a3038;
+  background: #191e24;
+  align-items: center;
+  justify-content: flex-end;
+
+  & .MuiTypography-root {
+    margin-right: 0.25rem;
+    color: #8f9aa7;
+    font-size: 0.65rem;
+  }
+}
+
+@media (width <= 700px) {
+  .daily-notes-page {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+
+  .daily-note-preview {
+    width: 100%;
+    padding: 1rem;
+  }
+}

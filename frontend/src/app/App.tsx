@@ -43,6 +43,9 @@ const TopStocksPage = lazy(() =>
 const StudyPage = lazy(() =>
   import("../features/study/StudyPage").then(({ StudyPage }) => ({ default: StudyPage })),
 );
+const DailyNotesPage = lazy(() =>
+  import("../features/daily-notes/DailyNotesPage").then(({ DailyNotesPage }) => ({ default: DailyNotesPage })),
+);
 
 export function App() {
   return (
@@ -60,6 +63,7 @@ export function App() {
         <Route path="/theme-tracker" element={<Page title="Theme Tracker"><ThemeTrackerPage /></Page>} />
         <Route path="/theme-rank" element={<Page title="Theme Rank"><ThemeRankPage /></Page>} />
         <Route path="/study" element={<Page title="Study"><StudyPage /></Page>} />
+        <Route path="/daily-notes" element={<Page title="Daily Notes"><DailyNotesPage /></Page>} />
       </Route>
     </Routes>
   );
