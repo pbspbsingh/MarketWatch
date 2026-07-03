@@ -133,7 +133,7 @@ export function GroupPanel({
 
   const sortedGroups = useMemo(() => sortGroups(groups, sortSetting), [groups, sortSetting]);
   const sectors = useMemo(() => {
-    const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[] }>();
+    const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[]; value?: number }>();
     for (const group of sortedGroups) {
       const key = group.sector_key ?? "__other__";
       const sector = byKey.get(key) ?? {
@@ -144,12 +144,26 @@ export function GroupPanel({
       sector.groups.push(group);
       byKey.set(key, sector);
     }
-    return [...byKey.values()].sort((left, right) => {
+    const sectors = [...byKey.values()];
+    for (const sector of sectors) {
+      const values = sector.groups
+        .map((group) => sortValue(group, sortSetting.key))
+        .filter((value): value is number => value !== undefined);
+      sector.value = values.length === 0
+        ? undefined
+        : values.reduce((total, value) => total + value, 0) / values.length;
+    }
+    return sectors.sort((left, right) => {
       if (left.key === "__other__") return 1;
       if (right.key === "__other__") return -1;
-      return left.name.localeCompare(right.name);
+      if (left.value === undefined) return right.value === undefined ? left.name.localeCompare(right.name) : 1;
+      if (right.value === undefined) return -1;
+      const comparison = left.value - right.value;
+      return comparison === 0
+        ? left.name.localeCompare(right.name)
+        : sortSetting.direction === "desc" ? -comparison : comparison;
     });
-  }, [sortedGroups]);
+  }, [sortedGroups, sortSetting]);
   const sectorKeyByGroup = useMemo(
     () => new Map(sectors.flatMap((sector) => sector.groups.map((group) => [group.key, sector.key]))),
     [sectors],
@@ -373,6 +387,12 @@ export function GroupPanel({
                         }
                       >
                         <span>{sector.name}</span>
+                        <span
+                          className="sector-group-metric"
+                          style={{ color: sector.value === undefined ? undefined : metricColor(sector.value, sortSetting.key) }}
+                        >
+                          {sector.value === undefined ? "—" : formatMetric(sector.value, sortSetting.key)}
+                        </span>
                         <span className="sector-group-count">{selectedCount}/{eligibleKeys.length}</span>
                         <ExpandMoreIcon fontSize="small" />
                       </button>

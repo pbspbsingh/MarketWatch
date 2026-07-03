@@ -215,7 +215,7 @@
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   padding: 0.35rem 0.35rem 0.35rem 0;
   gap: 0.25rem;
@@ -243,6 +243,12 @@
   color: #788493;
   font-size: 0.6rem;
   font-weight: 500;
+}
+
+.sector-group-metric {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-align: right;
 }
 
 .sector-industry-list {
