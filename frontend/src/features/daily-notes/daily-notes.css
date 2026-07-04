@@ -75,12 +75,18 @@
   border-bottom: 0.0625rem solid #252b33;
   align-items: center;
 
+  &:hover,
+  &[data-selected="true"] {
+    background: #253140;
+  }
+
   & > .MuiIconButton-root {
     margin-right: 0.25rem;
     opacity: 0;
   }
 
   &:hover > .MuiIconButton-root,
+  &[data-selected="true"] > .MuiIconButton-root,
   &:focus-within > .MuiIconButton-root {
     opacity: 1;
   }
@@ -97,11 +103,6 @@
   flex-direction: column;
   text-align: left;
   cursor: pointer;
-
-  &:hover,
-  &[aria-pressed="true"] {
-    background: #253140;
-  }
 
   & strong,
   & small,

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import SearchIcon from "@mui/icons-material/Search";
@@ -28,6 +28,7 @@ export function DailyNotesSidebar({
 }) {
   const [draftDate, setDraftDate] = useState<string>();
   const [draftError, setDraftError] = useState<string>();
+  const submittingRef = useRef(false);
 
   const beginCreate = () => {
     const today = localDateText(new Date());
@@ -36,15 +37,20 @@ export function DailyNotesSidebar({
   };
 
   const submitDraft = async () => {
-    if (draftDate === undefined) return;
+    if (draftDate === undefined || submittingRef.current) return;
     const validationError = validateDate(draftDate, allNotes);
     if (validationError !== undefined) {
       setDraftError(validationError);
       return;
     }
-    if (await onCreate(draftDate)) {
-      setDraftDate(undefined);
-      setDraftError(undefined);
+    submittingRef.current = true;
+    try {
+      if (await onCreate(draftDate)) {
+        setDraftDate(undefined);
+        setDraftError(undefined);
+      }
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -93,6 +99,7 @@ export function DailyNotesSidebar({
               setDraftDate(event.target.value);
               setDraftError(undefined);
             }}
+            onBlur={() => void submitDraft()}
             onKeyDown={draftKeyDown}
             slotProps={{ htmlInput: { "aria-label": "New note date", maxLength: 10 } }}
           />
@@ -106,7 +113,11 @@ export function DailyNotesSidebar({
             {search.trim() === "" ? "No notes yet" : "No matching notes"}
           </Typography>
         ) : notes.map((note) => (
-          <div className="daily-note-list-row" key={note.note_date}>
+          <div
+            className="daily-note-list-row"
+            data-selected={selectedDate === note.note_date}
+            key={note.note_date}
+          >
             <button
               type="button"
               className="daily-note-list-button"

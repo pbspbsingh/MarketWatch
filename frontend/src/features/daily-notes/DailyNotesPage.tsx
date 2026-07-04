@@ -359,6 +359,23 @@ export function DailyNotesPage() {
     if (await leaveEditor()) setMode("read");
   };
 
+  useEffect(() => {
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented
+        || event.key !== "Escape"
+        || mode !== "edit"
+        || annotationImageId !== undefined
+        || deleteTarget !== undefined
+        || conflictRevision !== undefined
+      ) return;
+      event.preventDefault();
+      void exitEditMode();
+    };
+    window.addEventListener("keydown", exitOnEscape);
+    return () => window.removeEventListener("keydown", exitOnEscape);
+  }, [annotationImageId, conflictRevision, deleteTarget, mode]);
+
   const pasteImage = (source: Blob) => {
     if (uploadPromiseRef.current !== null) {
       setError("Wait for the current image upload to finish");
