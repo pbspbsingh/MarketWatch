@@ -51,6 +51,7 @@ export function DailyNotesPage() {
   const [previewHtml, setPreviewHtml] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [imageUploading, setImageUploading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [highlightQuery, setHighlightQuery] = useState<string>();
@@ -358,6 +359,7 @@ export function DailyNotesPage() {
     }
     const date = selectedDateRef.current;
     if (date === undefined) return;
+    setImageUploading(true);
     setSaveStatus("saving");
     const promise = (async () => {
       try {
@@ -371,6 +373,7 @@ export function DailyNotesPage() {
         return false;
       } finally {
         uploadPromiseRef.current = null;
+        setImageUploading(false);
       }
     })();
     uploadPromiseRef.current = promise;
@@ -457,9 +460,17 @@ export function DailyNotesPage() {
                 localStorage.setItem(editorSplitStorageKey, String(next));
               }}
               first={(
-                <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
-                  <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={changeDraft} />
-                </Suspense>
+                <div className="daily-note-editor-pane">
+                  <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
+                    <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={changeDraft} />
+                  </Suspense>
+                  {imageUploading && (
+                    <div className="daily-note-image-uploading" role="status">
+                      <CircularProgress size="0.9rem" />
+                      <span>Uploading image…</span>
+                    </div>
+                  )}
+                </div>
               )}
               second={(
                 <DailyNoteImagePreview
