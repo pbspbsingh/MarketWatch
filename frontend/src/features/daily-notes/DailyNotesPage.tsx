@@ -481,6 +481,7 @@ export function DailyNotesPage() {
                 <DailyNoteImagePreview
                   key={annotationRevision}
                   html={previewHtml}
+                  imageRevision={annotationRevision}
                   onAnnotate={setAnnotationImageId}
                   onResize={(sourcePosition, width) => {
                     const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);

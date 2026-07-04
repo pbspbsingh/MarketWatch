@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 
 interface DailyNoteImagePreviewProps {
   html: string;
+  imageRevision: number;
   onResize: (sourcePosition: string, width: number) => void;
   onAnnotate: (imageId: number) => void;
 }
 
-export function DailyNoteImagePreview({ html, onResize, onAnnotate }: DailyNoteImagePreviewProps) {
+export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotate }: DailyNoteImagePreviewProps) {
   const previewRef = useRef<HTMLElement>(null);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
@@ -20,6 +21,11 @@ export function DailyNoteImagePreview({ html, onResize, onAnnotate }: DailyNoteI
     const enhanceImages = () => {
       for (const image of preview.querySelectorAll<HTMLImageElement>("img[data-sourcepos]")) {
         if (image.closest(".daily-note-resizable-image") !== null) continue;
+        const sourceUrl = new URL(image.src, window.location.href);
+        if (sourceUrl.pathname.startsWith("/api/daily-notes/image-refs/")) {
+          sourceUrl.searchParams.set("preview", String(imageRevision));
+          image.src = sourceUrl.toString();
+        }
         const sourcePosition = image.dataset.sourcepos;
         if (sourcePosition === undefined) continue;
         const wrapper = document.createElement("span");
@@ -79,7 +85,7 @@ export function DailyNoteImagePreview({ html, onResize, onAnnotate }: DailyNoteI
         wrapper.replaceWith(image);
       }
     };
-  }, [html]);
+  }, [html, imageRevision]);
 
   return (
     <article
