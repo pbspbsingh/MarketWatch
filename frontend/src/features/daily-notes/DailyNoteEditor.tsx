@@ -75,6 +75,21 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
               onPasteImageRef.current(image);
               return true;
             },
+            dragover: (event) => {
+              if (!hasImage(event.dataTransfer)) return false;
+              event.preventDefault();
+              return true;
+            },
+            drop: (event, view) => {
+              const image = droppedImage(event.dataTransfer);
+              if (image === undefined) return false;
+              event.preventDefault();
+              const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+              if (position !== null) view.dispatch({ selection: { anchor: position } });
+              view.focus();
+              onPasteImageRef.current(image);
+              return true;
+            },
           }),
           EditorView.theme({
             "&": { height: "100%", backgroundColor: "#111418", color: "#d7dde5" },
@@ -113,3 +128,17 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
 
   return <div ref={hostRef} className="daily-note-editor" />;
 });
+
+function hasImage(dataTransfer: DataTransfer | null) {
+  return [...(dataTransfer?.files ?? [])].some((file) => file.type.startsWith("image/"))
+    || [...(dataTransfer?.items ?? [])].some((item) =>
+      item.kind === "file" && item.type.startsWith("image/"));
+}
+
+function droppedImage(dataTransfer: DataTransfer | null) {
+  return [...(dataTransfer?.files ?? [])].find((file) => file.type.startsWith("image/"))
+    ?? [...(dataTransfer?.items ?? [])]
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+      ?.getAsFile()
+    ?? undefined;
+}
