@@ -113,11 +113,18 @@ export function DailyNotesPage() {
         conflictBlockedRef.current = false;
         setDocument(saved);
         if (selectedDateRef.current === date && draftRef.current === markdown) {
+          draftRef.current = saved.markdown;
+          setDraft(saved.markdown);
           setPreviewHtml(saved.html);
           dirtyRef.current = false;
           setDirty(false);
           setSaveStatus("saved");
         } else {
+          const reconciled = reconcileSavedImageIds(draftRef.current, markdown, saved.markdown);
+          if (reconciled !== draftRef.current) {
+            draftRef.current = reconciled;
+            setDraft(reconciled);
+          }
           setSaveStatus("unsaved");
         }
         setRefreshRevision((value) => value + 1);
@@ -557,6 +564,22 @@ function resizeMarkdownImage(markdown: string, sourcePosition: string, width: nu
   const existing = /^\{width=\d+%\}/.exec(suffix)?.[0] ?? "";
   lines[line - 1] = `${sourceLine.slice(0, suffixStart)}{width=${Math.min(100, Math.max(20, width))}%}${suffix.slice(existing.length)}`;
   return lines.join("\n");
+}
+
+function reconcileSavedImageIds(current: string, submitted: string, saved: string) {
+  const imageUrl = /\/api\/daily-notes\/images\/(\d+)/g;
+  const submittedIds = [...submitted.matchAll(imageUrl)].map((match) => match[1]);
+  const savedIds = [...saved.matchAll(imageUrl)].map((match) => match[1]);
+  const replacements = new Map<string, string>();
+  submittedIds.forEach((id, index) => {
+    const savedId = savedIds[index];
+    if (savedId !== undefined && savedId !== id) replacements.set(id, savedId);
+  });
+  if (replacements.size === 0) return current;
+  return current.replace(imageUrl, (url, id: string) => {
+    const replacement = replacements.get(id);
+    return replacement === undefined ? url : `/api/daily-notes/images/${replacement}`;
+  });
 }
 
 function message(error: unknown) {

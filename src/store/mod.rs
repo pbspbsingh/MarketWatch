@@ -30,6 +30,7 @@ pub use themes::TickerThemeMembership;
 pub enum DailyNoteUpdate {
     Updated(DailyNote),
     NotFound,
+    ImageNotFound(i64),
     Conflict { current_revision: i64 },
 }
 

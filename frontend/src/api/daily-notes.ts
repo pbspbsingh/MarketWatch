@@ -77,7 +77,7 @@ export async function uploadDailyNoteImage(date: string, image: Blob, signal?: A
   });
 }
 
-export async function saveDailyNoteRenderedImage(
+export async function updateDailyNoteImage(
   id: number,
   image: Blob,
   signal?: AbortSignal,

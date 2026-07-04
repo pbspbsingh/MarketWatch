@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnnotationTool, type AnnotationToolRef } from "mark-my-image";
-import { saveDailyNoteRenderedImage } from "../../api/daily-notes";
+import { updateDailyNoteImage } from "../../api/daily-notes";
 
 interface ImageAnnotatorProps {
   imageId: number;
@@ -74,7 +74,7 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
       const rendered = editorRef.current?.getCanvasDataURL("png", { multiplier });
       if (rendered === undefined) throw new Error("Image editor did not produce an image");
       const image = await dataUrlToWebp(rendered, sourceSize.width, sourceSize.height);
-      await saveDailyNoteRenderedImage(imageId, image);
+      await updateDailyNoteImage(imageId, image);
       onSaved();
       onClose();
     } catch (error) {

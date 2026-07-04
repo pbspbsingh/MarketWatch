@@ -2,6 +2,7 @@ use super::{DailyNoteImage, DailyNoteListRow, DailyNoteUpdate, Store};
 use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
+use std::collections::HashMap;
 
 impl Store {
     pub async fn daily_notes(&self, query: Option<&str>) -> anyhow::Result<Vec<DailyNoteListRow>> {
@@ -101,6 +102,47 @@ impl Store {
             .begin()
             .await
             .context("failed to begin note update")?;
+        let mut persisted_image_ids = Vec::with_capacity(image_ids.len());
+        let mut replacements = HashMap::new();
+        for image_id in image_ids {
+            let Some(image) = sqlx::query!(
+                r#"SELECT note_date AS "note_date: NaiveDate", width, height,
+                          image_blob AS "image_blob!: Vec<u8>"
+                   FROM daily_note_images
+                   WHERE id = ?"#,
+                image_id,
+            )
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to load referenced image")?
+            else {
+                transaction
+                    .rollback()
+                    .await
+                    .context("failed to roll back note update")?;
+                return Ok(DailyNoteUpdate::ImageNotFound(*image_id));
+            };
+            if image.note_date == note_date {
+                persisted_image_ids.push(*image_id);
+                continue;
+            }
+            let copied_id = sqlx::query!(
+                r#"INSERT INTO daily_note_images
+                       (note_date, width, height, image_blob, detached_at)
+                   VALUES (?, ?, ?, ?, NULL)"#,
+                note_date,
+                image.width,
+                image.height,
+                image.image_blob,
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to copy daily note image")?
+            .last_insert_rowid();
+            replacements.insert(*image_id, copied_id);
+            persisted_image_ids.push(copied_id);
+        }
+        let markdown = rewrite_image_ids(markdown, &replacements);
         let result = sqlx::query!(
             r#"UPDATE daily_notes
                SET title = ?,
@@ -127,7 +169,7 @@ impl Store {
             .execute(&mut *transaction)
             .await
             .context("failed to detach removed images")?;
-            for image_id in image_ids {
+            for image_id in persisted_image_ids {
                 sqlx::query!(
                     r#"UPDATE daily_note_images
                        SET detached_at = NULL
@@ -221,18 +263,18 @@ impl Store {
     pub async fn update_daily_note_image(
         &self,
         image_id: i64,
-        rendered: &[u8],
+        image: &[u8],
     ) -> anyhow::Result<bool> {
         sqlx::query!(
             r#"UPDATE daily_note_images
                SET image_blob = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?"#,
-            rendered,
+            image,
             image_id,
         )
         .execute(&self.pool)
         .await
-        .context("failed to save rendered image")
+        .context("failed to update daily note image")
         .map(|result| result.rows_affected() == 1)
     }
 }
@@ -250,12 +292,50 @@ fn contains_pattern(value: &str) -> String {
     pattern
 }
 
+fn rewrite_image_ids(markdown: &str, replacements: &HashMap<i64, i64>) -> String {
+    const PREFIX: &str = "/api/daily-notes/images/";
+    if replacements.is_empty() {
+        return markdown.to_owned();
+    }
+    let mut rewritten = String::with_capacity(markdown.len());
+    let mut cursor = 0;
+    while let Some(offset) = markdown[cursor..].find(PREFIX) {
+        let start = cursor + offset;
+        let digits_start = start + PREFIX.len();
+        let digits_end = markdown[digits_start..]
+            .find(|character: char| !character.is_ascii_digit())
+            .map_or(markdown.len(), |offset| digits_start + offset);
+        rewritten.push_str(&markdown[cursor..digits_start]);
+        let id = markdown[digits_start..digits_end].parse::<i64>().ok();
+        if let Some(replacement) = id.and_then(|id| replacements.get(&id)) {
+            rewritten.push_str(&replacement.to_string());
+        } else {
+            rewritten.push_str(&markdown[digits_start..digits_end]);
+        }
+        cursor = digits_end;
+    }
+    rewritten.push_str(&markdown[cursor..]);
+    rewritten
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn date(value: &str) -> NaiveDate {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn rewrites_only_complete_image_ids() {
+        let replacements = HashMap::from([(12, 90)]);
+        assert_eq!(
+            rewrite_image_ids(
+                "![x](/api/daily-notes/images/12) /api/daily-notes/images/123",
+                &replacements,
+            ),
+            "![x](/api/daily-notes/images/90) /api/daily-notes/images/123",
+        );
     }
 
     #[tokio::test]
@@ -402,8 +482,8 @@ mod tests {
             store.create_daily_note_image(active_date, b"new", 1, 1),
             store.cleanup_daily_note_images(),
         );
-        let new_reference = match uploaded {
-            Ok(reference) => reference,
+        let new_image_id = match uploaded {
+            Ok(image_id) => image_id,
             Err(error) => {
                 assert!(format!("{error:#}").contains("locked"));
                 store
@@ -422,7 +502,7 @@ mod tests {
         assert_eq!(cleaned, 1);
         assert!(
             store
-                .daily_note_image(new_reference)
+                .daily_note_image(new_image_id)
                 .await
                 .unwrap()
                 .is_some()

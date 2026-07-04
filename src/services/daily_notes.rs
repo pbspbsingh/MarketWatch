@@ -158,6 +158,7 @@ impl DailyNotesService {
         {
             DailyNoteUpdate::Updated(note) => Ok(note),
             DailyNoteUpdate::NotFound => Err(DailyNotesError::NotFound(date)),
+            DailyNoteUpdate::ImageNotFound(id) => Err(DailyNotesError::ImageNotFound(id)),
             DailyNoteUpdate::Conflict { current_revision } => Err(DailyNotesError::Conflict {
                 date,
                 current_revision,
@@ -218,9 +219,9 @@ impl DailyNotesService {
             .ok_or(DailyNotesError::ImageNotFound(id))
     }
 
-    pub async fn update_image(&self, id: i64, rendered: &[u8]) -> Result<(), DailyNotesError> {
+    pub async fn update_image(&self, id: i64, image: &[u8]) -> Result<(), DailyNotesError> {
         let current = self.image(id).await?;
-        let (width, height) = validate_webp(rendered)?;
+        let (width, height) = validate_webp(image)?;
         if i64::from(width) != current.width || i64::from(height) != current.height {
             return Err(DailyNotesError::Validation(
                 "replacement image dimensions must match the current image".to_owned(),
@@ -228,7 +229,7 @@ impl DailyNotesService {
         }
         if !self
             .store
-            .update_daily_note_image(id, rendered)
+            .update_daily_note_image(id, image)
             .await
             .map_err(DailyNotesError::Persistence)?
         {
@@ -473,5 +474,31 @@ mod tests {
             service.update_image(999, &rendered).await,
             Err(DailyNotesError::ImageNotFound(999))
         ));
+    }
+
+    #[tokio::test]
+    async fn copies_cross_note_images_and_rewrites_markdown() {
+        use image::ImageEncoder;
+
+        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let source_date = date("2026-07-02");
+        let target_date = date("2026-07-03");
+        service.create(source_date).await.unwrap();
+        let target = service.create(target_date).await.unwrap();
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        let source = service.upload_image(source_date, &webp).await.unwrap();
+
+        let saved = service
+            .update(target_date, &source.markdown, target.revision)
+            .await
+            .unwrap();
+        assert_ne!(saved.markdown, source.markdown);
+        let copied_id = owned_image_ids(&saved.markdown)[0];
+        assert_ne!(copied_id, source.id);
+        assert_eq!(service.image(copied_id).await.unwrap().bytes, webp);
+        assert_eq!(service.image(source.id).await.unwrap().bytes, webp);
     }
 }
