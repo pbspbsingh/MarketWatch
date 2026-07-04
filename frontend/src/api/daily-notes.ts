@@ -21,6 +21,16 @@ export interface RenderedMarkdown {
   match_count: number;
 }
 
+export class DailyNotesApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly currentRevision?: number,
+  ) {
+    super(message);
+  }
+}
+
 export async function fetchDailyNotes(query?: string, signal?: AbortSignal) {
   const search = query === undefined || query === "" ? "" : `?query=${encodeURIComponent(query)}`;
   return request<DailyNoteSummary[]>(`/api/daily-notes${search}`, { signal });
@@ -43,6 +53,15 @@ export async function deleteDailyNote(date: string, signal?: AbortSignal) {
   await request<void>(`/api/daily-notes/${date}`, { method: "DELETE", signal });
 }
 
+export async function updateDailyNote(date: string, markdown: string, revision: number, signal?: AbortSignal) {
+  return request<DailyNoteDocument>(`/api/daily-notes/${date}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ markdown, revision }),
+    signal,
+  });
+}
+
 export async function renderDailyNote(markdown: string, query?: string, signal?: AbortSignal) {
   return request<RenderedMarkdown>("/api/daily-notes/render", {
     method: "POST",
@@ -55,8 +74,12 @@ export async function renderDailyNote(markdown: string, query?: string, signal?:
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
-    const body = await response.json().catch(() => undefined) as { error?: string } | undefined;
-    throw new Error(body?.error ?? `Request failed: HTTP ${response.status}`);
+    const body = await response.json().catch(() => undefined) as { error?: string; current_revision?: number } | undefined;
+    throw new DailyNotesApiError(
+      body?.error ?? `Request failed: HTTP ${response.status}`,
+      response.status,
+      body?.current_revision,
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

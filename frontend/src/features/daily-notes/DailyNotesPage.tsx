@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Button,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Button,
   Typography,
 } from "@mui/material";
 import {
@@ -14,23 +14,40 @@ import {
   fetchDailyNote,
   fetchDailyNotes,
   renderDailyNote,
+  updateDailyNote,
+  DailyNotesApiError,
   type DailyNoteDocument,
   type DailyNoteSummary,
 } from "../../api/daily-notes";
 import { Toast } from "../../components/Toast";
+import { SplitPane } from "../../components/SplitPane";
+import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
 import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
 import "./daily-notes.css";
+
+type SaveStatus = "saved" | "unsaved" | "saving" | "failed";
+type PageMode = "read" | "edit";
+
+const DailyNoteEditor = lazy(() =>
+  import("./DailyNoteEditor").then(({ DailyNoteEditor: Editor }) => ({ default: Editor })),
+);
 
 export function DailyNotesPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedStorageKey) === "true",
   );
   const [readingWidth, setReadingWidth] = useState(readReadingWidth);
+  const [split, setSplit] = useState(readEditorSplit);
   const [allNotes, setAllNotes] = useState<DailyNoteSummary[]>([]);
   const [visibleNotes, setVisibleNotes] = useState<DailyNoteSummary[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>();
   const [document, setDocument] = useState<DailyNoteDocument>();
+  const [mode, setMode] = useState<PageMode>("read");
+  const [draft, setDraft] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [highlightQuery, setHighlightQuery] = useState<string>();
@@ -38,15 +55,97 @@ export function DailyNotesPage() {
   const [allNotesLoaded, setAllNotesLoaded] = useState(false);
   const [documentLoading, setDocumentLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DailyNoteSummary>();
+  const [conflictRevision, setConflictRevision] = useState<number>();
   const [matchIndex, setMatchIndex] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [error, setError] = useState<string>();
   const previewRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<DailyNoteEditorHandle>(null);
+  const selectedDateRef = useRef(selectedDate);
+  const modeRef = useRef(mode);
+  const draftRef = useRef(draft);
+  const dirtyRef = useRef(dirty);
+  const revisionRef = useRef(document?.revision ?? 1);
+  const savingPromiseRef = useRef<Promise<boolean> | null>(null);
+  const conflictBlockedRef = useRef(false);
+  const saveDraftRef = useRef<() => Promise<boolean>>(async () => true);
+  selectedDateRef.current = selectedDate;
+  modeRef.current = mode;
+  draftRef.current = draft;
+  dirtyRef.current = dirty;
+
   const pageClassName = useMemo(
     () => `daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}`,
     [sidebarCollapsed],
   );
+
+  const openEditor = (note: DailyNoteDocument) => {
+    revisionRef.current = note.revision;
+    draftRef.current = note.markdown;
+    dirtyRef.current = false;
+    setDraft(note.markdown);
+    setPreviewHtml(note.html);
+    setDirty(false);
+    setSaveStatus("saved");
+    conflictBlockedRef.current = false;
+    setConflictRevision(undefined);
+    setHighlightQuery(undefined);
+    setMode("edit");
+  };
+
+  const saveDraft = (): Promise<boolean> => {
+    if (!dirtyRef.current) return Promise.resolve(true);
+    if (savingPromiseRef.current !== null) return savingPromiseRef.current;
+    const date = selectedDateRef.current;
+    if (date === undefined) return Promise.resolve(false);
+    const markdown = draftRef.current;
+    const revision = revisionRef.current;
+    setSaveStatus("saving");
+    const promise = updateDailyNote(date, markdown, revision)
+      .then((saved) => {
+        revisionRef.current = saved.revision;
+        conflictBlockedRef.current = false;
+        setDocument(saved);
+        if (selectedDateRef.current === date && draftRef.current === markdown) {
+          setPreviewHtml(saved.html);
+          dirtyRef.current = false;
+          setDirty(false);
+          setSaveStatus("saved");
+        } else {
+          setSaveStatus("unsaved");
+        }
+        setRefreshRevision((value) => value + 1);
+        return true;
+      })
+      .catch((requestError: unknown) => {
+        setSaveStatus("failed");
+        if (
+          requestError instanceof DailyNotesApiError
+          && requestError.status === 409
+          && requestError.currentRevision !== undefined
+        ) {
+          conflictBlockedRef.current = true;
+          setConflictRevision(requestError.currentRevision);
+        }
+        setError(message(requestError));
+        return false;
+      })
+      .finally(() => {
+        savingPromiseRef.current = null;
+      });
+    savingPromiseRef.current = promise;
+    return promise;
+  };
+  saveDraftRef.current = saveDraft;
+
+  const leaveEditor = async () => {
+    if (modeRef.current !== "edit") return true;
+    while (dirtyRef.current) {
+      if (!await saveDraftRef.current()) return false;
+    }
+    return true;
+  };
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -113,7 +212,10 @@ export function DailyNotesPage() {
         return { ...note, html: rendered.html };
       })
       .then((note) => {
-        if (!controller.signal.aborted && note !== undefined) setDocument(note);
+        if (!controller.signal.aborted && note !== undefined) {
+          revisionRef.current = note.revision;
+          setDocument(note);
+        }
       })
       .catch((requestError: unknown) => {
         if (!controller.signal.aborted) setError(message(requestError));
@@ -125,6 +227,53 @@ export function DailyNotesPage() {
   }, [highlightQuery, selectedDate]);
 
   useEffect(() => {
+    if (mode !== "edit") return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      renderDailyNote(draft, undefined, controller.signal)
+        .then((rendered) => {
+          if (!controller.signal.aborted) setPreviewHtml(rendered.html);
+        })
+        .catch((requestError: unknown) => {
+          if (!controller.signal.aborted) setError(message(requestError));
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [draft, mode]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (modeRef.current === "edit" && dirtyRef.current && !conflictBlockedRef.current) {
+        void saveDraftRef.current();
+      }
+    }, 10_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const saveShortcut = (event: KeyboardEvent) => {
+      if (modeRef.current !== "edit" || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      void saveDraftRef.current();
+    };
+    window.addEventListener("keydown", saveShortcut);
+    return () => window.removeEventListener("keydown", saveShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "read") return;
     const marks = [...(previewRef.current?.querySelectorAll("mark") ?? [])];
     marks.forEach((mark) => mark.classList.remove("daily-note-active-match"));
     setMatchCount(marks.length);
@@ -134,7 +283,7 @@ export function DailyNotesPage() {
       first.classList.add("daily-note-active-match");
       first.scrollIntoView({ block: "center" });
     }
-  }, [document?.html]);
+  }, [document?.html, mode]);
 
   const selectMatch = (nextIndex: number) => {
     const marks = [...(previewRef.current?.querySelectorAll("mark") ?? [])];
@@ -146,14 +295,22 @@ export function DailyNotesPage() {
     setMatchIndex(normalized);
   };
 
+  const selectNote = async (note: DailyNoteSummary) => {
+    if (!await leaveEditor()) return;
+    setMode("read");
+    setSelectedDate(note.note_date);
+    setHighlightQuery(debouncedSearch || undefined);
+  };
+
   const create = async (date: string) => {
+    if (!await leaveEditor()) return false;
     try {
       const created = await createDailyNote(date);
       setDocument(created);
       setSelectedDate(created.note_date);
-      setHighlightQuery(undefined);
       setSearch("");
       setRefreshRevision((revision) => revision + 1);
+      openEditor(created);
       return true;
     } catch (requestError) {
       setError(message(requestError));
@@ -168,6 +325,9 @@ export function DailyNotesPage() {
       const index = visibleNotes.findIndex((note) => note.note_date === deleteTarget.note_date);
       const remaining = visibleNotes.filter((note) => note.note_date !== deleteTarget.note_date);
       if (selectedDate === deleteTarget.note_date) {
+        dirtyRef.current = false;
+        setDirty(false);
+        setMode("read");
         setSelectedDate(remaining[Math.min(index, remaining.length - 1)]?.note_date);
       }
       setDeleteTarget(undefined);
@@ -175,6 +335,31 @@ export function DailyNotesPage() {
     } catch (requestError) {
       setError(message(requestError));
     }
+  };
+
+  const exitEditMode = async () => {
+    if (await leaveEditor()) setMode("read");
+  };
+
+  const reloadAfterConflict = async () => {
+    const date = selectedDateRef.current;
+    if (date === undefined) return;
+    try {
+      const current = await fetchDailyNote(date);
+      conflictBlockedRef.current = false;
+      setDocument(current);
+      openEditor(current);
+    } catch (requestError) {
+      setError(message(requestError));
+    }
+  };
+
+  const overwriteAfterConflict = async () => {
+    if (conflictRevision === undefined) return;
+    revisionRef.current = conflictRevision;
+    conflictBlockedRef.current = false;
+    setConflictRevision(undefined);
+    await saveDraftRef.current();
   };
 
   return (
@@ -187,10 +372,7 @@ export function DailyNotesPage() {
           search={search}
           loading={listLoading}
           onSearchChange={setSearch}
-          onSelect={(note) => {
-            setSelectedDate(note.note_date);
-            setHighlightQuery(debouncedSearch || undefined);
-          }}
+          onSelect={(note) => void selectNote(note)}
           onCreate={create}
           onDelete={setDeleteTarget}
         />
@@ -202,6 +384,8 @@ export function DailyNotesPage() {
           readingWidth={readingWidth}
           matchIndex={matchIndex}
           matchCount={highlightQuery === undefined ? 0 : matchCount}
+          editMode={mode === "edit"}
+          saveStatus={saveStatus}
           onToggleSidebar={() => setSidebarCollapsed((collapsed) => {
             const next = !collapsed;
             localStorage.setItem(sidebarCollapsedStorageKey, String(next));
@@ -212,12 +396,36 @@ export function DailyNotesPage() {
             localStorage.setItem(readingWidthStorageKey, String(width));
           }}
           onSelectMatch={selectMatch}
+          onEdit={() => document !== undefined && openEditor(document)}
+          onSave={() => void saveDraft()}
+          onExitEdit={() => void exitEditMode()}
         />
-        <div className="daily-note-content">
+        <div className={`daily-note-content${mode === "edit" ? " daily-note-content-editing" : ""}`}>
           {documentLoading && document === undefined ? (
             <CircularProgress className="daily-note-document-loading" size="1.5rem" />
           ) : document === undefined ? (
             <div className="panel-status"><Typography color="text.secondary">Create or select a daily note</Typography></div>
+          ) : mode === "edit" ? (
+            <SplitPane
+              orientation="horizontal"
+              initialSplit={split}
+              onSplitChange={(next) => {
+                setSplit(next);
+                localStorage.setItem(editorSplitStorageKey, String(next));
+              }}
+              first={(
+                <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
+                  <DailyNoteEditor ref={editorRef} value={draft} onChange={(value) => {
+                    draftRef.current = value;
+                    dirtyRef.current = true;
+                    setDraft(value);
+                    setDirty(true);
+                    setSaveStatus(conflictBlockedRef.current ? "failed" : "unsaved");
+                  }} />
+                </Suspense>
+              )}
+              second={<article className="daily-note-preview daily-note-edit-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />}
+            />
           ) : (
             <article
               ref={previewRef}
@@ -238,6 +446,17 @@ export function DailyNotesPage() {
           <Button color="error" onClick={() => void remove()}>Delete</Button>
         </DialogActions>
       </Dialog>
+      <Dialog open={conflictRevision !== undefined} onClose={() => setConflictRevision(undefined)}>
+        <DialogTitle>Note changed elsewhere</DialogTitle>
+        <DialogContent>
+          <Typography>Reload the saved version or overwrite it with your current draft?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConflictRevision(undefined)}>Keep editing</Button>
+          <Button onClick={() => void reloadAfterConflict()}>Reload</Button>
+          <Button variant="contained" onClick={() => void overwriteAfterConflict()}>Overwrite</Button>
+        </DialogActions>
+      </Dialog>
       <Toast message={error} onClose={() => setError(undefined)} />
     </section>
   );
@@ -245,10 +464,16 @@ export function DailyNotesPage() {
 
 const sidebarCollapsedStorageKey = "market-watch.daily-notes-sidebar-collapsed";
 const readingWidthStorageKey = "market-watch.daily-notes-reading-width";
+const editorSplitStorageKey = "market-watch.daily-notes-editor-split";
 
 function readReadingWidth() {
   const stored = Number(localStorage.getItem(readingWidthStorageKey));
   return Number.isFinite(stored) && stored >= 10 && stored <= 100 ? stored : 80;
+}
+
+function readEditorSplit() {
+  const stored = Number(localStorage.getItem(editorSplitStorageKey));
+  return Number.isFinite(stored) && stored >= 10 && stored <= 90 ? stored : 50;
 }
 
 function message(error: unknown) {
