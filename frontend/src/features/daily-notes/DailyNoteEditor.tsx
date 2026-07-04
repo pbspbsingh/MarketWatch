@@ -13,12 +13,15 @@ export interface DailyNoteEditorHandle {
 export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
   value: string;
   onChange: (value: string) => void;
-}>(function DailyNoteEditor({ value, onChange }, ref) {
+  onPasteImage: (image: Blob) => void;
+}>(function DailyNoteEditor({ value, onChange, onPasteImage }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
   const onChangeRef = useRef(onChange);
+  const onPasteImageRef = useRef(onPasteImage);
   const synchronizingRef = useRef(false);
   onChangeRef.current = onChange;
+  onPasteImageRef.current = onPasteImage;
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
@@ -42,6 +45,17 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
           markdown(),
           syntaxHighlighting(defaultHighlightStyle),
           EditorView.lineWrapping,
+          EditorView.domEventHandlers({
+            paste: (event) => {
+              const item = [...(event.clipboardData?.items ?? [])]
+                .find((candidate) => candidate.type.startsWith("image/"));
+              const image = item?.getAsFile();
+              if (image === null || image === undefined) return false;
+              event.preventDefault();
+              onPasteImageRef.current(image);
+              return true;
+            },
+          }),
           EditorView.theme({
             "&": { height: "100%", backgroundColor: "#111418", color: "#d7dde5" },
             ".cm-scroller": { overflow: "auto", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },

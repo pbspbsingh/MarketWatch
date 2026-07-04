@@ -1,4 +1,4 @@
-use super::{DailyNoteListRow, DailyNoteUpdate, Store};
+use super::{DailyNoteImage, DailyNoteListRow, DailyNoteUpdate, Store};
 use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -133,6 +133,64 @@ impl Store {
             .await
             .context("failed to delete daily note")
             .map(|result| result.rows_affected() == 1)
+    }
+
+    pub async fn create_daily_note_image(
+        &self,
+        note_date: NaiveDate,
+        bytes: &[u8],
+        width: i64,
+        height: i64,
+    ) -> anyhow::Result<i64> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin image upload")?;
+        let image_id = sqlx::query!(
+            r#"INSERT INTO daily_note_images (mime_type, width, height, source_blob)
+               VALUES ('image/webp', ?, ?, ?)"#,
+            width,
+            height,
+            bytes,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to store daily note image")?
+        .last_insert_rowid();
+        let reference_id = sqlx::query!(
+            r#"INSERT INTO daily_note_image_refs (note_date, image_id, detached_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)"#,
+            note_date,
+            image_id,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to create daily note image occurrence")?
+        .last_insert_rowid();
+        transaction
+            .commit()
+            .await
+            .context("failed to commit image upload")?;
+        Ok(reference_id)
+    }
+
+    pub async fn daily_note_image(
+        &self,
+        reference_id: i64,
+    ) -> anyhow::Result<Option<DailyNoteImage>> {
+        sqlx::query_as!(
+            DailyNoteImage,
+            r#"SELECT COALESCE(ref.rendered_blob, image.source_blob) AS "bytes!: Vec<u8>",
+                      ref.updated_at AS "updated_at: chrono::NaiveDateTime"
+               FROM daily_note_image_refs ref
+               JOIN daily_note_images image ON image.id = ref.image_id
+               WHERE ref.id = ?"#,
+            reference_id,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load daily note image")
     }
 }
 

@@ -39,6 +39,11 @@ pub(crate) struct DailyNoteListRow {
     pub markdown: String,
 }
 
+pub struct DailyNoteImage {
+    pub bytes: Vec<u8>,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,

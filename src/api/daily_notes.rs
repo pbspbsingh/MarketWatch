@@ -1,8 +1,11 @@
 use crate::app::AppState;
 use crate::models::DailyNote;
-use crate::services::daily_notes::{DailyNoteSummary, DailyNotesError, RenderedMarkdown};
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use crate::services::daily_notes::{
+    DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
+};
+use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::NaiveDate;
@@ -45,7 +48,13 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/daily-notes", get(list).post(create))
         .route("/daily-notes/render", axum::routing::post(render))
+        .route(
+            "/daily-notes/{date}/images",
+            axum::routing::post(upload_image),
+        )
+        .route("/daily-notes/image-refs/{id}", get(image))
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
+        .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
 }
 
 async fn render(
@@ -57,6 +66,67 @@ async fn render(
         .render(&input.markdown, input.query.as_deref())
         .map(Json)
         .map_err(api_error)
+}
+
+async fn upload_image(
+    State(state): State<AppState>,
+    Path(date): Path<NaiveDate>,
+    mut multipart: Multipart,
+) -> ApiResult<DailyNoteImageUpload> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?
+        .ok_or_else(|| {
+            api_error(DailyNotesError::Validation(
+                "image field is required".to_owned(),
+            ))
+        })?;
+    if field.content_type() != Some("image/webp") {
+        return Err(api_error(DailyNotesError::Validation(
+            "image content type must be image/webp".to_owned(),
+        )));
+    }
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?;
+    state
+        .daily_notes
+        .upload_image(date, &bytes)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn image(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, Json<Value>)> {
+    let image = state.daily_notes.image(id).await.map_err(api_error)?;
+    let timestamp = image.updated_at.and_utc();
+    let etag = format!(
+        "\"{id}-{}-{}\"",
+        timestamp.timestamp(),
+        timestamp.timestamp_subsec_nanos()
+    );
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        == Some(&etag)
+    {
+        return Ok(StatusCode::NOT_MODIFIED.into_response());
+    }
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/webp"),
+            (header::CACHE_CONTROL, "private, no-cache"),
+            (header::ETAG, etag.as_str()),
+        ],
+        image.bytes,
+    )
+        .into_response())
 }
 
 async fn list(
@@ -127,6 +197,7 @@ fn api_error(error_value: DailyNotesError) -> (StatusCode, Json<Value>) {
     let status = match &error_value {
         DailyNotesError::Validation(_) => StatusCode::BAD_REQUEST,
         DailyNotesError::NotFound(_) => StatusCode::NOT_FOUND,
+        DailyNotesError::ImageNotFound(_) => StatusCode::NOT_FOUND,
         DailyNotesError::Conflict { .. } => StatusCode::CONFLICT,
         DailyNotesError::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
         DailyNotesError::Rendering(_) => StatusCode::INTERNAL_SERVER_ERROR,

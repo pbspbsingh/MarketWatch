@@ -21,6 +21,14 @@ export interface RenderedMarkdown {
   match_count: number;
 }
 
+export interface DailyNoteImageUpload {
+  id: number;
+  width: number;
+  height: number;
+  url: string;
+  markdown: string;
+}
+
 export class DailyNotesApiError extends Error {
   constructor(
     message: string,
@@ -58,6 +66,16 @@ export async function updateDailyNote(date: string, markdown: string, revision: 
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ markdown, revision }),
+    signal,
+  });
+}
+
+export async function uploadDailyNoteImage(date: string, image: Blob, signal?: AbortSignal) {
+  const body = new FormData();
+  body.append("image", image, "chart.webp");
+  return request<DailyNoteImageUpload>(`/api/daily-notes/${date}/images`, {
+    method: "POST",
+    body,
     signal,
   });
 }

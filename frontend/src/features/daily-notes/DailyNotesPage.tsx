@@ -15,6 +15,7 @@ import {
   fetchDailyNotes,
   renderDailyNote,
   updateDailyNote,
+  uploadDailyNoteImage,
   DailyNotesApiError,
   type DailyNoteDocument,
   type DailyNoteSummary,
@@ -22,6 +23,7 @@ import {
 import { Toast } from "../../components/Toast";
 import { SplitPane } from "../../components/SplitPane";
 import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
+import { compressClipboardImage } from "./clipboard-image";
 import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
 import "./daily-notes.css";
@@ -68,6 +70,7 @@ export function DailyNotesPage() {
   const dirtyRef = useRef(dirty);
   const revisionRef = useRef(document?.revision ?? 1);
   const savingPromiseRef = useRef<Promise<boolean> | null>(null);
+  const uploadPromiseRef = useRef<Promise<boolean> | null>(null);
   const conflictBlockedRef = useRef(false);
   const saveDraftRef = useRef<() => Promise<boolean>>(async () => true);
   selectedDateRef.current = selectedDate;
@@ -141,6 +144,7 @@ export function DailyNotesPage() {
 
   const leaveEditor = async () => {
     if (modeRef.current !== "edit") return true;
+    if (uploadPromiseRef.current !== null && !await uploadPromiseRef.current) return false;
     while (dirtyRef.current) {
       if (!await saveDraftRef.current()) return false;
     }
@@ -246,7 +250,12 @@ export function DailyNotesPage() {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (modeRef.current === "edit" && dirtyRef.current && !conflictBlockedRef.current) {
+      if (
+        modeRef.current === "edit"
+        && dirtyRef.current
+        && !conflictBlockedRef.current
+        && uploadPromiseRef.current === null
+      ) {
         void saveDraftRef.current();
       }
     }, 10_000);
@@ -341,6 +350,31 @@ export function DailyNotesPage() {
     if (await leaveEditor()) setMode("read");
   };
 
+  const pasteImage = (source: Blob) => {
+    if (uploadPromiseRef.current !== null) {
+      setError("Wait for the current image upload to finish");
+      return;
+    }
+    const date = selectedDateRef.current;
+    if (date === undefined) return;
+    setSaveStatus("saving");
+    const promise = (async () => {
+      try {
+        const compressed = await compressClipboardImage(source);
+        const uploaded = await uploadDailyNoteImage(date, compressed);
+        editorRef.current?.replaceSelection(`\n${uploaded.markdown}\n`);
+        return true;
+      } catch (requestError) {
+        setSaveStatus("failed");
+        setError(message(requestError));
+        return false;
+      } finally {
+        uploadPromiseRef.current = null;
+      }
+    })();
+    uploadPromiseRef.current = promise;
+  };
+
   const reloadAfterConflict = async () => {
     const date = selectedDateRef.current;
     if (date === undefined) return;
@@ -415,7 +449,7 @@ export function DailyNotesPage() {
               }}
               first={(
                 <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
-                  <DailyNoteEditor ref={editorRef} value={draft} onChange={(value) => {
+                  <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={(value) => {
                     draftRef.current = value;
                     dirtyRef.current = true;
                     setDraft(value);

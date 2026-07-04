@@ -1,9 +1,11 @@
 use crate::models::DailyNote;
-use crate::store::{DailyNoteUpdate, Store};
+use crate::store::{DailyNoteImage, DailyNoteUpdate, Store};
 use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
+use image::ImageDecoder;
 use serde::Serialize;
+use std::io::Cursor;
 use thiserror::Error;
 
 mod markdown;
@@ -11,6 +13,9 @@ mod markdown;
 pub use markdown::RenderedMarkdown;
 
 const MAX_SEARCH_LENGTH: usize = 200;
+const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION: u32 = 1920;
+const MAX_IMAGE_PIXELS: u64 = 1920 * 1920;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DailyNoteSummary {
@@ -24,12 +29,23 @@ pub struct DailyNoteSummary {
     pub snippet_html: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DailyNoteImageUpload {
+    pub id: i64,
+    pub width: u32,
+    pub height: u32,
+    pub url: String,
+    pub markdown: String,
+}
+
 #[derive(Debug, Error)]
 pub enum DailyNotesError {
     #[error("{0}")]
     Validation(String),
     #[error("daily note for {0} was not found")]
     NotFound(NaiveDate),
+    #[error("daily note image {0} was not found")]
+    ImageNotFound(i64),
     #[error("daily note for {date} has changed (current revision: {current_revision})")]
     Conflict {
         date: NaiveDate,
@@ -175,6 +191,56 @@ impl DailyNotesService {
         }
         markdown::render(markdown, query).map_err(DailyNotesError::Rendering)
     }
+
+    pub async fn upload_image(
+        &self,
+        date: NaiveDate,
+        bytes: &[u8],
+    ) -> Result<DailyNoteImageUpload, DailyNotesError> {
+        self.get(date).await?;
+        if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+            return Err(DailyNotesError::Validation(
+                "image must be a non-empty WebP no larger than 5 MiB".to_owned(),
+            ));
+        }
+        let decoder = image::codecs::webp::WebPDecoder::new(Cursor::new(bytes))
+            .map_err(|_| DailyNotesError::Validation("image must be valid WebP".to_owned()))?;
+        let (width, height) = decoder.dimensions();
+        if width == 0
+            || height == 0
+            || width > MAX_IMAGE_DIMENSION
+            || height > MAX_IMAGE_DIMENSION
+            || u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS
+        {
+            return Err(DailyNotesError::Validation(
+                "image dimensions must not exceed 1920×1920".to_owned(),
+            ));
+        }
+        drop(decoder);
+        image::load_from_memory_with_format(bytes, image::ImageFormat::WebP)
+            .map_err(|_| DailyNotesError::Validation("image must be valid WebP".to_owned()))?;
+        let id = self
+            .store
+            .create_daily_note_image(date, bytes, i64::from(width), i64::from(height))
+            .await
+            .map_err(DailyNotesError::Persistence)?;
+        let url = format!("/api/daily-notes/image-refs/{id}");
+        Ok(DailyNoteImageUpload {
+            id,
+            width,
+            height,
+            markdown: format!("![Chart screenshot]({url})"),
+            url,
+        })
+    }
+
+    pub async fn image(&self, id: i64) -> Result<DailyNoteImage, DailyNotesError> {
+        self.store
+            .daily_note_image(id)
+            .await
+            .map_err(DailyNotesError::Persistence)?
+            .ok_or(DailyNotesError::ImageNotFound(id))
+    }
 }
 
 fn is_unique_violation(error: &anyhow::Error) -> bool {
@@ -286,6 +352,28 @@ mod tests {
         ));
         assert!(matches!(
             service.list(Some(&"x".repeat(MAX_SEARCH_LENGTH + 1))).await,
+            Err(DailyNotesError::Validation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn validates_and_round_trips_webp_images() {
+        use image::ImageEncoder;
+
+        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let note_date = date("2026-07-03");
+        service.create(note_date).await.unwrap();
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+
+        let uploaded = service.upload_image(note_date, &webp).await.unwrap();
+        assert_eq!(uploaded.width, 1);
+        assert_eq!(uploaded.height, 1);
+        assert_eq!(service.image(uploaded.id).await.unwrap().bytes, webp);
+        assert!(matches!(
+            service.upload_image(note_date, b"not webp").await,
             Err(DailyNotesError::Validation(_))
         ));
     }
