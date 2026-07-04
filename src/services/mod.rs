@@ -3,6 +3,8 @@ pub mod daily_notes;
 pub mod details;
 pub mod industries;
 pub mod industry_analysis;
+pub mod maintenance;
+pub mod market_data;
 pub mod nyse_calendar;
 pub mod study;
 pub mod theme_analysis;

@@ -195,11 +195,31 @@ impl Store {
             .context("failed to commit daily candles")?;
         Ok(())
     }
+
+    pub async fn cleanup_daily_candles(&self, cutoff: NaiveDate) -> anyhow::Result<u64> {
+        sqlx::query!("DELETE FROM daily_candles WHERE market_date < ?", cutoff)
+            .execute(&self.pool)
+            .await
+            .context("failed to delete expired daily candles")
+            .map(|result| result.rows_affected())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn candle(symbol: &str, market_date: NaiveDate) -> DailyCandle {
+        DailyCandle {
+            symbol: symbol.to_owned(),
+            market_date,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1,
+        }
+    }
 
     #[tokio::test]
     async fn stores_nyse_holidays_by_year() {
@@ -214,5 +234,34 @@ mod tests {
         assert!(store.has_nyse_holidays_for_year(2026).await.unwrap());
         assert!(!store.has_nyse_holidays_for_year(2028).await.unwrap());
         assert_eq!(store.nyse_holidays().await.unwrap(), holidays);
+    }
+
+    #[tokio::test]
+    async fn cleans_up_only_daily_candles_before_cutoff() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let cutoff = NaiveDate::from_ymd_opt(2025, 6, 20).unwrap();
+        let candles = [
+            candle("TEST", cutoff.pred_opt().unwrap()),
+            candle("TEST", cutoff),
+            candle("TEST", cutoff.succ_opt().unwrap()),
+        ];
+        store.upsert_daily_candles(&candles).await.unwrap();
+
+        assert_eq!(store.cleanup_daily_candles(cutoff).await.unwrap(), 1);
+        assert_eq!(
+            store
+                .daily_candles(
+                    "TEST",
+                    cutoff.pred_opt().unwrap(),
+                    cutoff.succ_opt().unwrap().succ_opt().unwrap(),
+                )
+                .await
+                .unwrap(),
+            candles[1..],
+        );
     }
 }

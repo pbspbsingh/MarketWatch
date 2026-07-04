@@ -6,8 +6,6 @@ use comrak::{Arena, Options, parse_document};
 use image::ImageDecoder;
 use serde::Serialize;
 use std::io::Cursor;
-use std::sync::Arc;
-use std::time::Duration;
 use thiserror::Error;
 
 mod markdown;
@@ -236,23 +234,6 @@ impl DailyNotesService {
             return Err(DailyNotesError::ImageNotFound(id));
         }
         Ok(())
-    }
-
-    pub fn spawn_cleanup_task(self: &Arc<Self>) {
-        let service = Arc::clone(self);
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            loop {
-                match service.store.cleanup_daily_note_images().await {
-                    Ok(images) if images > 0 => {
-                        tracing::info!(images, "cleaned up daily note images");
-                    }
-                    Ok(_) => {}
-                    Err(error) => tracing::error!(%error, "daily note image cleanup failed"),
-                }
-                tokio::time::sleep(Duration::from_secs(60 * 60)).await;
-            }
-        });
     }
 }
 

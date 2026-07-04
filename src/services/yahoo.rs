@@ -1,3 +1,4 @@
+use super::market_data::DAILY_CANDLE_HISTORY_DAYS;
 use crate::config::MarketConfig;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
@@ -17,7 +18,6 @@ const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const INCOMPLETE_CURRENT_DAY_REFRESH_TTL: Duration = Duration::from_secs(15 * 60);
-const ONE_YEAR_CALENDAR_DAYS: i64 = 380;
 
 pub struct YahooService {
     store: Store,
@@ -93,8 +93,12 @@ impl YahooService {
             .recent_trading_day(Utc::now())
             .succ_opt()
             .ok_or(YahooServiceError::InvalidRange)?;
-        self.daily_candles(symbol, end - TimeDelta::days(ONE_YEAR_CALENDAR_DAYS), end)
-            .await
+        self.daily_candles(
+            symbol,
+            end - TimeDelta::days(DAILY_CANDLE_HISTORY_DAYS),
+            end,
+        )
+        .await
     }
 
     pub async fn daily_candles(

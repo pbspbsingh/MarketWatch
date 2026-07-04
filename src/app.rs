@@ -6,6 +6,7 @@ use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::maintenance;
 use crate::services::nyse_calendar;
 use crate::services::study::StudyService;
 use crate::services::theme_analysis::ThemeAnalysisService;
@@ -108,7 +109,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.finviz,
     )?;
     industry_refresh.spawn_refresh_task();
-    daily_notes.spawn_cleanup_task();
+    maintenance::spawn(store);
     let state = AppState {
         chart,
         daily_notes,
