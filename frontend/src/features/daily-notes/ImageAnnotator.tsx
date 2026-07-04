@@ -19,7 +19,8 @@ interface ImageAnnotatorProps {
 }
 
 export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnnotatorProps) {
-  const [source, setSource] = useState<HTMLImageElement>();
+  const [source, setSource] = useState<ImageBitmap>();
+  const [loading, setLoading] = useState(true);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const [viewportWidth, setViewportWidth] = useState(1);
   const [history, setHistory] = useState<ImageAnnotation[][]>([[]]);
@@ -41,23 +42,32 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
 
   useEffect(() => {
     const controller = new AbortController();
+    let decoded: ImageBitmap | undefined;
     fetchDailyNoteImageEdit(imageId, controller.signal)
-      .then((edit) => {
-        const image = new window.Image();
-        image.onload = () => {
-          setSource(image);
-          setSize({ width: edit.width, height: edit.height });
-          setHistory([edit.annotations.objects]);
-          setHistoryIndex(0);
-          setSavedState(JSON.stringify(edit.annotations.objects));
-        };
-        image.onerror = () => onError(new Error("Failed to load annotation source image"));
-        image.src = edit.source_url;
+      .then(async (edit) => {
+        const response = await fetch(edit.source_url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Failed to load annotation source: HTTP ${response.status}`);
+        const image = await createImageBitmap(await response.blob());
+        if (controller.signal.aborted) {
+          image.close();
+          return;
+        }
+        decoded = image;
+        setSource(image);
+        setSize({ width: edit.width, height: edit.height });
+        setViewportWidth(Math.max(1, containerRef.current?.clientWidth ?? edit.width));
+        setHistory([edit.annotations.objects]);
+        setHistoryIndex(0);
+        setSavedState(JSON.stringify(edit.annotations.objects));
+        setLoading(false);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) onError(error);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      decoded?.close();
+    };
   }, [imageId]);
 
   useEffect(() => {
@@ -167,6 +177,7 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
           }}>Delete</Button>
         </div>
         <div ref={containerRef} className="daily-note-annotation-canvas">
+          {loading && <span>Loading image…</span>}
           {source !== undefined && (
             <Stage ref={stageRef} width={stageSize.width} height={stageSize.height} onPointerDown={startDrawing} onPointerMove={continueDrawing} onPointerUp={finishDrawing}>
               <Layer>

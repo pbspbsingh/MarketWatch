@@ -342,24 +342,7 @@
   touch-action: none;
 }
 
-.daily-note-image-annotate {
-  display: none;
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  padding: 0.3rem 0.5rem;
-  border: 0.0625rem solid #4fc1ff;
-  border-radius: 0.2rem;
-  color: #d7dde5;
-  background: #191e24;
-  cursor: pointer;
-}
-
 .daily-note-resizable-image-selected .daily-note-image-resize-handle {
-  display: block;
-}
-
-.daily-note-resizable-image-selected .daily-note-image-annotate {
   display: block;
 }
 
