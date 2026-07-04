@@ -35,6 +35,9 @@ type PageMode = "read" | "edit";
 const DailyNoteEditor = lazy(() =>
   import("./DailyNoteEditor").then(({ DailyNoteEditor: Editor }) => ({ default: Editor })),
 );
+const ImageAnnotator = lazy(() =>
+  import("./ImageAnnotator").then(({ ImageAnnotator: Annotator }) => ({ default: Annotator })),
+);
 
 export function DailyNotesPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -52,6 +55,8 @@ export function DailyNotesPage() {
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [imageUploading, setImageUploading] = useState(false);
+  const [annotationImageId, setAnnotationImageId] = useState<number>();
+  const [annotationRevision, setAnnotationRevision] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [highlightQuery, setHighlightQuery] = useState<string>();
@@ -474,7 +479,9 @@ export function DailyNotesPage() {
               )}
               second={(
                 <DailyNoteImagePreview
+                  key={annotationRevision}
                   html={previewHtml}
+                  onAnnotate={setAnnotationImageId}
                   onResize={(sourcePosition, width) => {
                     const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);
                     if (resized !== undefined) changeDraft(resized);
@@ -492,6 +499,16 @@ export function DailyNotesPage() {
           )}
         </div>
       </main>
+      {annotationImageId !== undefined && (
+        <Suspense fallback={null}>
+          <ImageAnnotator
+            imageId={annotationImageId}
+            onClose={() => setAnnotationImageId(undefined)}
+            onSaved={() => setAnnotationRevision((revision) => revision + 1)}
+            onError={(requestError) => setError(message(requestError))}
+          />
+        </Suspense>
+      )}
       <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>
         <DialogTitle>Delete daily note?</DialogTitle>
         <DialogContent>

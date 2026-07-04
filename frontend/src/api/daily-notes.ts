@@ -29,6 +29,22 @@ export interface DailyNoteImageUpload {
   markdown: string;
 }
 
+export type ImageAnnotation =
+  | { type: "line" | "arrow"; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
+  | { type: "text"; x: number; y: number; text: string; color: string; size: number };
+
+export interface ImageAnnotations {
+  version: 1;
+  objects: ImageAnnotation[];
+}
+
+export interface DailyNoteImageEdit {
+  annotations: ImageAnnotations;
+  width: number;
+  height: number;
+  source_url: string;
+}
+
 export class DailyNotesApiError extends Error {
   constructor(
     message: string,
@@ -75,6 +91,26 @@ export async function uploadDailyNoteImage(date: string, image: Blob, signal?: A
   body.append("image", image, "chart.webp");
   return request<DailyNoteImageUpload>(`/api/daily-notes/${date}/images`, {
     method: "POST",
+    body,
+    signal,
+  });
+}
+
+export async function fetchDailyNoteImageEdit(id: number, signal?: AbortSignal) {
+  return request<DailyNoteImageEdit>(`/api/daily-notes/image-refs/${id}/edit`, { signal });
+}
+
+export async function saveDailyNoteImageAnnotations(
+  id: number,
+  annotations: ImageAnnotations,
+  image: Blob,
+  signal?: AbortSignal,
+) {
+  const body = new FormData();
+  body.append("annotations", new Blob([JSON.stringify(annotations)], { type: "application/json" }));
+  body.append("image", image, "annotated.webp");
+  return request<DailyNoteImageEdit>(`/api/daily-notes/image-refs/${id}/annotations`, {
+    method: "PUT",
     body,
     signal,
   });

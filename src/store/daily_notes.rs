@@ -516,4 +516,51 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[tokio::test]
+    async fn annotations_are_isolated_between_occurrences_sharing_a_source() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let first_date = date("2026-07-02");
+        let second_date = date("2026-07-03");
+        store.create_daily_note(first_date).await.unwrap();
+        store.create_daily_note(second_date).await.unwrap();
+        let first = store
+            .create_daily_note_image(first_date, b"source", 1, 1)
+            .await
+            .unwrap();
+        let image_id = sqlx::query_scalar!(
+            "SELECT image_id FROM daily_note_image_refs WHERE id = ?",
+            first,
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        let second = sqlx::query!(
+            "INSERT INTO daily_note_image_refs (note_date, image_id) VALUES (?, ?)",
+            second_date,
+            image_id,
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+
+        store
+            .update_daily_note_image_annotations(
+                first,
+                r##"{"version":1,"objects":[{"type":"text"}]}"##,
+                b"rendered",
+            )
+            .await
+            .unwrap();
+        let untouched = sqlx::query!(
+            "SELECT annotations_json, rendered_blob FROM daily_note_image_refs WHERE id = ?",
+            second,
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(untouched.annotations_json, r#"{"version":1,"objects":[]}"#);
+        assert!(untouched.rendered_blob.is_none());
+    }
 }

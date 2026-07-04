@@ -3,9 +3,10 @@ import { useEffect, useRef } from "react";
 interface DailyNoteImagePreviewProps {
   html: string;
   onResize: (sourcePosition: string, width: number) => void;
+  onAnnotate: (imageId: number) => void;
 }
 
-export function DailyNoteImagePreview({ html, onResize }: DailyNoteImagePreviewProps) {
+export function DailyNoteImagePreview({ html, onResize, onAnnotate }: DailyNoteImagePreviewProps) {
   const previewRef = useRef<HTMLElement>(null);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
@@ -34,6 +35,16 @@ export function DailyNoteImagePreview({ html, onResize }: DailyNoteImagePreviewP
       handle.title = "Resize image";
       handle.setAttribute("aria-label", "Resize image");
       wrapper.append(handle);
+
+      const imageId = imageReferenceId(image.src);
+      if (imageId !== undefined) {
+        const annotate = document.createElement("button");
+        annotate.type = "button";
+        annotate.className = "daily-note-image-annotate";
+        annotate.textContent = "Annotate";
+        annotate.addEventListener("click", () => onAnnotate(imageId), { signal });
+        wrapper.append(annotate);
+      }
 
       const select = () => {
         preview.querySelectorAll(".daily-note-resizable-image-selected")
@@ -80,6 +91,11 @@ export function DailyNoteImagePreview({ html, onResize }: DailyNoteImagePreviewP
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
+}
+
+function imageReferenceId(url: string) {
+  const match = /\/api\/daily-notes\/image-refs\/(\d+)$/.exec(new URL(url, window.location.href).pathname);
+  return match === null ? undefined : Number(match[1]);
 }
 
 function clampWidth(width: number) {
