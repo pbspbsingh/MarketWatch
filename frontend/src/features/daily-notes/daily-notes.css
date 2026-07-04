@@ -346,30 +346,56 @@
   display: block;
 }
 
-.daily-note-annotator {
-  display: flex;
-  min-height: 70vh;
-  flex-direction: column;
-  gap: 0.75rem;
+.daily-note-image-editor {
+  position: fixed;
+  z-index: 1500;
+  inset: 0;
+  background: #111418;
 }
 
-.daily-note-annotation-toolbar {
+.daily-note-image-editor-actions {
+  position: absolute;
+  z-index: 1600;
+  top: 1rem;
+  right: 1rem;
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.daily-note-annotation-canvas {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  padding: 0.5rem;
-  background: #0b0d10;
-  flex: 1;
-  align-items: flex-start;
-  justify-content: center;
-  overflow: auto;
+.daily-note-image-editor-actions button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #4b5563;
+  border-radius: 0.35rem;
+  background: #20262e;
+  color: #d7dde5;
+  cursor: pointer;
+}
+
+.daily-note-image-editor-actions button:last-child {
+  border-color: #4fc1ff;
+}
+
+.daily-note-image-editor-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.daily-note-image-editor-loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+}
+
+.daily-note-image-editor-canvas {
+  height: 100%;
+}
+
+.daily-note-mark-my-image {
+  background: #111418 !important;
+}
+
+body.daily-note-image-editor-open [data-radix-popper-content-wrapper] {
+  z-index: 1700 !important;
 }
 
 .daily-note-match-controls {

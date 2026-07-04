@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::DailyNote;
 use crate::services::daily_notes::{
-    DailyNoteImageEdit, DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
+    DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
 };
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -53,57 +53,19 @@ pub fn router() -> Router<AppState> {
             "/daily-notes/{date}/images",
             axum::routing::post(upload_image),
         )
-        .route("/daily-notes/image-refs/{id}", get(image))
-        .route("/daily-notes/image-refs/{id}/edit", get(image_edit))
         .route(
-            "/daily-notes/image-refs/{id}/edit/source",
-            get(image_source),
-        )
-        .route(
-            "/daily-notes/image-refs/{id}/annotations",
-            axum::routing::put(save_annotations),
+            "/daily-notes/image-refs/{id}",
+            get(image).put(save_rendered_image),
         )
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
 }
 
-async fn image_edit(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> ApiResult<DailyNoteImageEdit> {
-    state
-        .daily_notes
-        .image_edit(id)
-        .await
-        .map(Json)
-        .map_err(api_error)
-}
-
-async fn image_source(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
-    let bytes = state
-        .daily_notes
-        .image_source(id)
-        .await
-        .map_err(api_error)?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "image/webp"),
-            (header::CACHE_CONTROL, "private, no-cache"),
-        ],
-        bytes,
-    )
-        .into_response())
-}
-
-async fn save_annotations(
+async fn save_rendered_image(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     mut multipart: Multipart,
-) -> ApiResult<DailyNoteImageEdit> {
-    let mut annotations = None;
+) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     let mut image = None;
     while let Some(field) = multipart
         .next_field()
@@ -117,20 +79,14 @@ async fn save_annotations(
             .await
             .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?;
         match name.as_str() {
-            "annotations" if content_type == "application/json" => annotations = Some(bytes),
             "image" if content_type == "image/webp" => image = Some(bytes),
             _ => {
                 return Err(api_error(DailyNotesError::Validation(
-                    "expected annotations JSON and image WebP fields".to_owned(),
+                    "expected one image WebP field".to_owned(),
                 )));
             }
         }
     }
-    let annotations = annotations.ok_or_else(|| {
-        api_error(DailyNotesError::Validation(
-            "annotations field is required".to_owned(),
-        ))
-    })?;
     let image = image.ok_or_else(|| {
         api_error(DailyNotesError::Validation(
             "image field is required".to_owned(),
@@ -138,10 +94,10 @@ async fn save_annotations(
     })?;
     state
         .daily_notes
-        .save_annotations(id, &annotations, &image)
+        .save_rendered_image(id, &image)
         .await
-        .map(Json)
-        .map_err(api_error)
+        .map_err(api_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn render(

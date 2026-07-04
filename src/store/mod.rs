@@ -43,13 +43,6 @@ pub struct DailyNoteImage {
     pub bytes: Vec<u8>,
 }
 
-pub struct DailyNoteImageEdit {
-    pub source: Vec<u8>,
-    pub annotations_json: String,
-    pub width: i64,
-    pub height: i64,
-}
-
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,

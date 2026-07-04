@@ -52,12 +52,10 @@ CREATE TABLE daily_note_image_refs (
     id INTEGER PRIMARY KEY NOT NULL,
     note_date DATE NOT NULL REFERENCES daily_notes(note_date) ON DELETE CASCADE,
     image_id INTEGER NOT NULL REFERENCES daily_note_images(id) ON DELETE CASCADE,
-    annotations_json TEXT NOT NULL DEFAULT '{"version":1,"objects":[]}',
     rendered_blob BLOB CHECK (rendered_blob IS NULL OR length(rendered_blob) BETWEEN 1 AND 5242880),
     detached_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (json_valid(annotations_json))
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX daily_note_image_refs_image_id

@@ -1,15 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle } from "@mui/material";
-import { Arrow, Image as KonvaImage, Layer, Line, Stage, Text } from "react-konva";
-import type Konva from "konva";
-import {
-  fetchDailyNoteImageEdit,
-  saveDailyNoteImageAnnotations,
-  type ImageAnnotation,
-  type ImageAnnotations,
-} from "../../api/daily-notes";
-
-type Tool = "select" | "arrow" | "line" | "text";
+import { useEffect, useRef, useState } from "react";
+import { AnnotationTool, type AnnotationToolRef } from "mark-my-image";
+import { saveDailyNoteRenderedImage } from "../../api/daily-notes";
 
 interface ImageAnnotatorProps {
   imageId: number;
@@ -18,136 +9,72 @@ interface ImageAnnotatorProps {
   onError: (error: unknown) => void;
 }
 
+const enabledTools = [
+  "select",
+  "pen",
+  "highlighter",
+  "line",
+  "shape",
+  "text",
+  "color",
+  "stroke",
+  "undo",
+  "redo",
+  "delete",
+] as const;
+
 export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnnotatorProps) {
-  const [source, setSource] = useState<ImageBitmap>();
-  const [loading, setLoading] = useState(true);
-  const [size, setSize] = useState({ width: 1, height: 1 });
-  const [viewportWidth, setViewportWidth] = useState(1);
-  const [history, setHistory] = useState<ImageAnnotation[][]>([[]]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [savedState, setSavedState] = useState("[]");
-  const [tool, setTool] = useState<Tool>("select");
-  const [color, setColor] = useState("#ff3b30");
-  const [stroke, setStroke] = useState(3);
-  const [text, setText] = useState("Breakout");
-  const [selected, setSelected] = useState(-1);
-  const [drawing, setDrawing] = useState<ImageAnnotation>();
+  const editorRef = useRef<AnnotationToolRef>(null);
+  const onErrorRef = useRef(onError);
+  const [source, setSource] = useState<Blob>();
+  const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
   const [saving, setSaving] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<Konva.Stage>(null);
-  const objects = history[historyIndex];
-  const dirty = JSON.stringify(objects) !== savedState;
-  const scale = Math.min(1, viewportWidth / size.width);
-  const stageSize = useMemo(() => ({ width: size.width * scale, height: size.height * scale }), [scale, size]);
+  const [dirty, setDirty] = useState(false);
+  onErrorRef.current = onError;
+
+  useEffect(() => {
+    document.body.classList.add("daily-note-image-editor-open");
+    return () => document.body.classList.remove("daily-note-image-editor-open");
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    let decoded: ImageBitmap | undefined;
-    fetchDailyNoteImageEdit(imageId, controller.signal)
-      .then(async (edit) => {
-        const response = await fetch(edit.source_url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Failed to load annotation source: HTTP ${response.status}`);
-        const image = await createImageBitmap(await response.blob());
-        if (controller.signal.aborted) {
-          image.close();
-          return;
+    fetch(`/api/daily-notes/image-refs/${imageId}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Failed to load image: HTTP ${response.status}`);
+        const blob = await response.blob();
+        const bitmap = await createImageBitmap(blob);
+        const size = { width: bitmap.width, height: bitmap.height };
+        bitmap.close();
+        if (!controller.signal.aborted) {
+          setSource(blob);
+          setSourceSize(size);
         }
-        decoded = image;
-        setSource(image);
-        setSize({ width: edit.width, height: edit.height });
-        setViewportWidth(Math.max(1, containerRef.current?.clientWidth ?? edit.width));
-        setHistory([edit.annotations.objects]);
-        setHistoryIndex(0);
-        setSavedState(JSON.stringify(edit.annotations.objects));
-        setLoading(false);
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) onError(error);
+        if (!controller.signal.aborted) onErrorRef.current(error);
       });
-    return () => {
-      controller.abort();
-      decoded?.close();
-    };
+    return () => controller.abort();
   }, [imageId]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container === null) return;
-    const observer = new ResizeObserver(([entry]) => setViewportWidth(Math.max(1, entry.contentRect.width)));
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
-  const commit = (next: ImageAnnotation[]) => {
-    setHistory((current) => [...current.slice(0, historyIndex + 1), next]);
-    setHistoryIndex((index) => index + 1);
-  };
-
-  const pointer = () => {
-    const point = stageRef.current?.getPointerPosition();
-    return point === undefined || point === null ? undefined : {
-      x: clamp(point.x / stageSize.width),
-      y: clamp(point.y / stageSize.height),
-    };
-  };
-
-  const startDrawing = (event: Konva.KonvaEventObject<PointerEvent>) => {
-    if (event.target !== event.target.getStage()) return;
-    setSelected(-1);
-    const point = pointer();
-    if (point === undefined || tool === "select") return;
-    if (tool === "text") {
-      if (text.trim() !== "") commit([...objects, { type: "text", ...point, text: text.slice(0, 200), color, size: 18 }]);
-      return;
-    }
-    setDrawing({ type: tool, x1: point.x, y1: point.y, x2: point.x, y2: point.y, color, width: stroke });
-  };
-
-  const continueDrawing = () => {
-    const point = pointer();
-    if (drawing === undefined || point === undefined || drawing.type === "text") return;
-    setDrawing({ ...drawing, x2: point.x, y2: point.y });
-  };
-
-  const finishDrawing = () => {
-    if (drawing !== undefined) commit([...objects, drawing]);
-    setDrawing(undefined);
-  };
-
-  const move = (index: number, x: number, y: number) => {
-    const object = objects[index];
-    if (object === undefined) return;
-    const next = [...objects];
-    if (object.type === "text") {
-      next[index] = { ...object, x: clamp(x / stageSize.width), y: clamp(y / stageSize.height) };
-    } else {
-      const dx = x / stageSize.width - object.x1;
-      const dy = y / stageSize.height - object.y1;
-      next[index] = { ...object, x1: clamp(object.x1 + dx), y1: clamp(object.y1 + dy), x2: clamp(object.x2 + dx), y2: clamp(object.y2 + dy) };
-    }
-    commit(next);
-  };
-
   const close = () => {
-    if (!dirty || window.confirm("Discard unsaved annotation changes?")) onClose();
+    if (!saving && (!dirty || window.confirm("Discard unsaved annotation changes?"))) onClose();
   };
 
   const save = async () => {
-    const stage = stageRef.current;
-    if (stage === null) return;
+    if (saving || sourceSize.width === 0) return;
     setSaving(true);
     try {
-      setSelected(-1);
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const canvas = stage.toCanvas({ pixelRatio: 1 / scale });
-      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-        (value) => value === null ? reject(new Error("Failed to encode annotation image")) : resolve(value),
-        "image/webp",
-        0.6,
-      ));
-      const annotations: ImageAnnotations = { version: 1, objects };
-      await saveDailyNoteImageAnnotations(imageId, annotations, blob);
-      setSavedState(JSON.stringify(objects));
+      const preview = editorRef.current?.getCanvasDataURL("png");
+      if (preview === undefined) throw new Error("Image editor is not ready");
+      const multiplier = sourceSize.width / await dataUrlWidth(preview);
+      const rendered = editorRef.current?.getCanvasDataURL("png", { multiplier });
+      if (rendered === undefined) throw new Error("Image editor did not produce an image");
+      const image = await dataUrlToWebp(rendered, sourceSize.width, sourceSize.height);
+      await saveDailyNoteRenderedImage(imageId, image);
       onSaved();
       onClose();
     } catch (error) {
@@ -157,56 +84,53 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
     }
   };
 
-  const displayed = drawing === undefined ? objects : [...objects, drawing];
   return (
-    <Dialog open fullWidth maxWidth="xl" onClose={close}>
-      <DialogTitle>Annotate image</DialogTitle>
-      <DialogContent className="daily-note-annotator">
-        <div className="daily-note-annotation-toolbar">
-          {(["select", "arrow", "line", "text"] as Tool[]).map((value) => (
-            <Button key={value} variant={tool === value ? "contained" : "outlined"} onClick={() => setTool(value)}>{value}</Button>
-          ))}
-          <input aria-label="Annotation color" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
-          <input aria-label="Stroke width" type="range" min="1" max="20" value={stroke} onChange={(event) => setStroke(Number(event.target.value))} />
-          {tool === "text" && <input aria-label="Annotation text" maxLength={200} value={text} onChange={(event) => setText(event.target.value)} />}
-          <Button disabled={historyIndex === 0} onClick={() => setHistoryIndex((index) => index - 1)}>Undo</Button>
-          <Button disabled={historyIndex === history.length - 1} onClick={() => setHistoryIndex((index) => index + 1)}>Redo</Button>
-          <Button disabled={selected < 0} color="error" onClick={() => {
-            commit(objects.filter((_, index) => index !== selected));
-            setSelected(-1);
-          }}>Delete</Button>
+    <div className="daily-note-image-editor" role="dialog" aria-modal="true" aria-label="Annotate image">
+      <div className="daily-note-image-editor-actions">
+        <button type="button" disabled={saving} onClick={close}>Cancel</button>
+        <button type="button" disabled={saving || source === undefined} onClick={() => void save()}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {source === undefined ? (
+        <span className="daily-note-image-editor-loading">Loading image…</span>
+      ) : (
+        <div className="daily-note-image-editor-canvas" onPointerDownCapture={() => setDirty(true)} onKeyDownCapture={() => setDirty(true)}>
+          <AnnotationTool
+            ref={editorRef}
+            imageSource={source}
+            enabledTools={[...enabledTools]}
+            className="daily-note-mark-my-image"
+            initialToolbarPosition={{ top: 16, left: 16 }}
+          />
         </div>
-        <div ref={containerRef} className="daily-note-annotation-canvas">
-          {loading && <span>Loading image…</span>}
-          {source !== undefined && (
-            <Stage ref={stageRef} width={stageSize.width} height={stageSize.height} onPointerDown={startDrawing} onPointerMove={continueDrawing} onPointerUp={finishDrawing}>
-              <Layer>
-                <KonvaImage image={source} width={stageSize.width} height={stageSize.height} listening={false} />
-                {displayed.map((object, index) => object.type === "text" ? (
-                  <Text key={index} x={object.x * stageSize.width} y={object.y * stageSize.height} text={object.text} fill={object.color} fontSize={object.size * scale} draggable={tool === "select"} stroke={selected === index ? "#4fc1ff" : undefined} strokeWidth={selected === index ? 1 : 0} onClick={() => setSelected(index)} onDragEnd={(event) => move(index, event.target.x(), event.target.y())} />
-                ) : object.type === "arrow" ? (
-                  <Arrow key={index} points={[object.x1 * stageSize.width, object.y1 * stageSize.height, object.x2 * stageSize.width, object.y2 * stageSize.height]} stroke={object.color} fill={object.color} strokeWidth={object.width * scale} pointerLength={12 * scale} pointerWidth={10 * scale} draggable={tool === "select"} shadowColor={selected === index ? "#4fc1ff" : undefined} shadowBlur={selected === index ? 5 : 0} onClick={() => setSelected(index)} onDragEnd={(event) => {
-                    const x = object.x1 * stageSize.width + event.target.x();
-                    const y = object.y1 * stageSize.height + event.target.y();
-                    event.target.position({ x: 0, y: 0 });
-                    move(index, x, y);
-                  }} />
-                ) : (
-                  <Line key={index} points={[object.x1 * stageSize.width, object.y1 * stageSize.height, object.x2 * stageSize.width, object.y2 * stageSize.height]} stroke={object.color} strokeWidth={object.width * scale} draggable={tool === "select"} shadowColor={selected === index ? "#4fc1ff" : undefined} shadowBlur={selected === index ? 5 : 0} onClick={() => setSelected(index)} onDragEnd={(event) => {
-                    const x = object.x1 * stageSize.width + event.target.x();
-                    const y = object.y1 * stageSize.height + event.target.y();
-                    event.target.position({ x: 0, y: 0 });
-                    move(index, x, y);
-                  }} />
-                ))}
-              </Layer>
-            </Stage>
-          )}
-        </div>
-      </DialogContent>
-      <DialogActions><Button onClick={close}>Cancel</Button><Button variant="contained" disabled={!dirty || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</Button></DialogActions>
-    </Dialog>
+      )}
+    </div>
   );
 }
 
-const clamp = (value: number) => Math.max(0, Math.min(1, value));
+async function dataUrlWidth(dataUrl: string) {
+  const bitmap = await createImageBitmap(await fetch(dataUrl).then((response) => response.blob()));
+  try {
+    return bitmap.width;
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function dataUrlToWebp(dataUrl: string, width: number, height: number) {
+  const bitmap = await createImageBitmap(await fetch(dataUrl).then((response) => response.blob()));
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("Canvas is unavailable");
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.6));
+    if (blob === null) throw new Error("Failed to encode annotated image");
+    return blob;
+  } finally {
+    bitmap.close();
+  }
+}

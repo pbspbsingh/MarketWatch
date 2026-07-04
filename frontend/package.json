@@ -21,11 +21,10 @@
     "@mui/icons-material": "^9.1.1",
     "@mui/material": "^9.1.2",
     "chart.js": "^4.5.1",
-    "konva": "^10.3.0",
     "lightweight-charts": "^5.2.0",
+    "mark-my-image": "^0.1.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "react-konva": "^19.2.5",
     "react-router-dom": "7.18.0",
     "react-window": "^2.2.7"
   },

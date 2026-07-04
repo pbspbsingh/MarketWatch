@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
 use image::ImageDecoder;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,53 +18,6 @@ const MAX_SEARCH_LENGTH: usize = 200;
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 1920;
 const MAX_IMAGE_PIXELS: u64 = 1920 * 1920;
-const MAX_ANNOTATION_OBJECTS: usize = 100;
-const MAX_ANNOTATION_TEXT: usize = 200;
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ImageAnnotations {
-    pub version: u8,
-    pub objects: Vec<ImageAnnotation>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-#[serde(deny_unknown_fields)]
-pub enum ImageAnnotation {
-    Line {
-        x1: f64,
-        y1: f64,
-        x2: f64,
-        y2: f64,
-        color: String,
-        width: f64,
-    },
-    Arrow {
-        x1: f64,
-        y1: f64,
-        x2: f64,
-        y2: f64,
-        color: String,
-        width: f64,
-    },
-    Text {
-        x: f64,
-        y: f64,
-        text: String,
-        color: String,
-        size: f64,
-    },
-}
-
-#[derive(Debug, Serialize)]
-pub struct DailyNoteImageEdit {
-    pub annotations: ImageAnnotations,
-    pub width: u32,
-    pub height: u32,
-    pub source_url: String,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DailyNoteSummary {
     pub note_date: NaiveDate,
@@ -277,66 +230,28 @@ impl DailyNotesService {
             .ok_or(DailyNotesError::ImageNotFound(id))
     }
 
-    pub async fn image_edit(&self, id: i64) -> Result<DailyNoteImageEdit, DailyNotesError> {
-        let edit = self
-            .store
-            .daily_note_image_edit(id)
-            .await
-            .map_err(DailyNotesError::Persistence)?
-            .ok_or(DailyNotesError::ImageNotFound(id))?;
-        let annotations = serde_json::from_str(&edit.annotations_json)
-            .map_err(|error| DailyNotesError::Persistence(error.into()))?;
-        Ok(DailyNoteImageEdit {
-            annotations,
-            width: edit.width as u32,
-            height: edit.height as u32,
-            source_url: format!("/api/daily-notes/image-refs/{id}/edit/source"),
-        })
-    }
-
-    pub async fn image_source(&self, id: i64) -> Result<Vec<u8>, DailyNotesError> {
-        self.store
-            .daily_note_image_edit(id)
-            .await
-            .map_err(DailyNotesError::Persistence)?
-            .map(|edit| edit.source)
-            .ok_or(DailyNotesError::ImageNotFound(id))
-    }
-
-    pub async fn save_annotations(
+    pub async fn save_rendered_image(
         &self,
         id: i64,
-        annotations_bytes: &[u8],
         rendered: &[u8],
-    ) -> Result<DailyNoteImageEdit, DailyNotesError> {
-        let current = self
-            .store
-            .daily_note_image_edit(id)
-            .await
-            .map_err(DailyNotesError::Persistence)?
-            .ok_or(DailyNotesError::ImageNotFound(id))?;
-        let annotations: ImageAnnotations =
-            serde_json::from_slice(annotations_bytes).map_err(|_| {
-                DailyNotesError::Validation("annotations must be valid JSON".to_owned())
-            })?;
-        validate_annotations(&annotations)?;
+    ) -> Result<(), DailyNotesError> {
+        let current = self.image(id).await?;
         let (width, height) = validate_webp(rendered)?;
-        if width != current.width as u32 || height != current.height as u32 {
+        let (current_width, current_height) = validate_webp(&current.bytes)?;
+        if width != current_width || height != current_height {
             return Err(DailyNotesError::Validation(
-                "composited image dimensions must match the source".to_owned(),
+                "rendered image dimensions must match the source".to_owned(),
             ));
         }
-        let annotations_json = serde_json::to_string(&annotations)
-            .map_err(|error| DailyNotesError::Persistence(error.into()))?;
         if !self
             .store
-            .update_daily_note_image_annotations(id, &annotations_json, rendered)
+            .update_daily_note_rendered_image(id, rendered)
             .await
             .map_err(DailyNotesError::Persistence)?
         {
             return Err(DailyNotesError::ImageNotFound(id));
         }
-        self.image_edit(id).await
+        Ok(())
     }
 
     pub fn spawn_cleanup_task(self: &Arc<Self>) {
@@ -380,69 +295,6 @@ fn validate_webp(bytes: &[u8]) -> Result<(u32, u32), DailyNotesError> {
     image::load_from_memory_with_format(bytes, image::ImageFormat::WebP)
         .map_err(|_| DailyNotesError::Validation("image must be valid WebP".to_owned()))?;
     Ok((width, height))
-}
-
-fn validate_annotations(document: &ImageAnnotations) -> Result<(), DailyNotesError> {
-    if document.version != 1 || document.objects.len() > MAX_ANNOTATION_OBJECTS {
-        return Err(DailyNotesError::Validation(
-            "invalid annotation document".to_owned(),
-        ));
-    }
-    for object in &document.objects {
-        let valid = match object {
-            ImageAnnotation::Line {
-                x1,
-                y1,
-                x2,
-                y2,
-                color,
-                width,
-            }
-            | ImageAnnotation::Arrow {
-                x1,
-                y1,
-                x2,
-                y2,
-                color,
-                width,
-            } => {
-                [x1, y1, x2, y2]
-                    .into_iter()
-                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-                    && valid_color(color)
-                    && width.is_finite()
-                    && (1.0..=20.0).contains(width)
-            }
-            ImageAnnotation::Text {
-                x,
-                y,
-                text,
-                color,
-                size,
-            } => {
-                [x, y]
-                    .into_iter()
-                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-                    && !text.is_empty()
-                    && text.chars().count() <= MAX_ANNOTATION_TEXT
-                    && valid_color(color)
-                    && size.is_finite()
-                    && (8.0..=96.0).contains(size)
-            }
-        };
-        if !valid {
-            return Err(DailyNotesError::Validation(
-                "invalid annotation object".to_owned(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn valid_color(color: &str) -> bool {
-    color.len() == 7
-        && color.starts_with('#')
-        && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn owned_image_reference_ids(markdown: &str) -> Vec<i64> {
@@ -610,7 +462,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validates_and_isolates_image_annotations() {
+    async fn validates_and_isolates_rendered_images() {
         use image::ImageEncoder;
 
         fn webp(pixel: [u8; 4]) -> Vec<u8> {
@@ -628,30 +480,19 @@ mod tests {
         let rendered = webp([0, 0, 255, 255]);
         let first = service.upload_image(note_date, &source).await.unwrap();
         let second = service.upload_image(note_date, &source).await.unwrap();
-        let annotations = br##"{"version":1,"objects":[{"type":"arrow","x1":0.1,"y1":0.2,"x2":0.8,"y2":0.9,"color":"#ff3b30","width":3}]}"##;
-
-        let saved = service
-            .save_annotations(first.id, annotations, &rendered)
+        service
+            .save_rendered_image(first.id, &rendered)
             .await
             .unwrap();
-        assert_eq!(saved.annotations.objects.len(), 1);
         assert_eq!(service.image(first.id).await.unwrap().bytes, rendered);
         assert_eq!(service.image(second.id).await.unwrap().bytes, source);
 
-        let invalid = br##"{"version":1,"objects":[{"type":"text","x":2,"y":0.2,"text":"bad","color":"#ffffff","size":18}]}"##;
         assert!(matches!(
-            service.save_annotations(first.id, invalid, &rendered).await,
-            Err(DailyNotesError::Validation(_))
-        ));
-        let unknown_field = br##"{"version":1,"objects":[],"libraryState":{}}"##;
-        assert!(matches!(
-            service
-                .save_annotations(first.id, unknown_field, &rendered)
-                .await,
+            service.save_rendered_image(first.id, b"not webp").await,
             Err(DailyNotesError::Validation(_))
         ));
         assert!(matches!(
-            service.save_annotations(999, annotations, &rendered).await,
+            service.save_rendered_image(999, &rendered).await,
             Err(DailyNotesError::ImageNotFound(999))
         ));
     }

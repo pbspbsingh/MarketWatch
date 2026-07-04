@@ -1,4 +1,4 @@
-use super::{DailyNoteImage, DailyNoteImageEdit, DailyNoteListRow, DailyNoteUpdate, Store};
+use super::{DailyNoteImage, DailyNoteListRow, DailyNoteUpdate, Store};
 use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -261,43 +261,21 @@ impl Store {
         Ok((references, images))
     }
 
-    pub async fn daily_note_image_edit(
+    pub async fn update_daily_note_rendered_image(
         &self,
         reference_id: i64,
-    ) -> anyhow::Result<Option<DailyNoteImageEdit>> {
-        sqlx::query_as!(
-            DailyNoteImageEdit,
-            r#"SELECT image.source_blob AS "source!: Vec<u8>",
-                      ref.annotations_json,
-                      image.width,
-                      image.height
-               FROM daily_note_image_refs ref
-               JOIN daily_note_images image ON image.id = ref.image_id
-               WHERE ref.id = ?"#,
-            reference_id,
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to load image annotation data")
-    }
-
-    pub async fn update_daily_note_image_annotations(
-        &self,
-        reference_id: i64,
-        annotations_json: &str,
         rendered: &[u8],
     ) -> anyhow::Result<bool> {
         sqlx::query!(
             r#"UPDATE daily_note_image_refs
-               SET annotations_json = ?, rendered_blob = ?, updated_at = CURRENT_TIMESTAMP
+               SET rendered_blob = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?"#,
-            annotations_json,
             rendered,
             reference_id,
         )
         .execute(&self.pool)
         .await
-        .context("failed to save image annotations")
+        .context("failed to save rendered image")
         .map(|result| result.rows_affected() == 1)
     }
 }
@@ -518,7 +496,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn annotations_are_isolated_between_occurrences_sharing_a_source() {
+    async fn rendered_images_are_isolated_between_occurrences_sharing_a_source() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let first_date = date("2026-07-02");
         let second_date = date("2026-07-03");
@@ -546,21 +524,16 @@ mod tests {
         .last_insert_rowid();
 
         store
-            .update_daily_note_image_annotations(
-                first,
-                r##"{"version":1,"objects":[{"type":"text"}]}"##,
-                b"rendered",
-            )
+            .update_daily_note_rendered_image(first, b"rendered")
             .await
             .unwrap();
-        let untouched = sqlx::query!(
-            "SELECT annotations_json, rendered_blob FROM daily_note_image_refs WHERE id = ?",
+        let untouched = sqlx::query_scalar!(
+            "SELECT rendered_blob FROM daily_note_image_refs WHERE id = ?",
             second,
         )
         .fetch_one(&store.pool)
         .await
         .unwrap();
-        assert_eq!(untouched.annotations_json, r#"{"version":1,"objects":[]}"#);
-        assert!(untouched.rendered_blob.is_none());
+        assert!(untouched.is_none());
     }
 }
