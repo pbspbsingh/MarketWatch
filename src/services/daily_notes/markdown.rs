@@ -125,6 +125,7 @@ fn options() -> Options<'static> {
     options.extension.autolink = true;
     options.extension.tasklist = true;
     options.render.r#unsafe = false;
+    options.render.sourcepos = true;
     options
 }
 
@@ -260,9 +261,10 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(rendered.html.contains("<table>"));
+        assert!(rendered.html.contains("<table "));
         assert!(rendered.html.contains("type=\"checkbox\""));
-        assert!(rendered.html.contains("<del>old</del>"));
+        assert!(rendered.html.contains("<del "));
+        assert!(rendered.html.contains(">old</del>"));
         assert!(!rendered.html.contains("<script>"));
         assert!(!rendered.html.contains("javascript:"));
         assert!(rendered.html.contains("rel=\"noopener noreferrer\""));
@@ -276,6 +278,11 @@ mod tests {
         )
         .unwrap();
         assert!(rendered.html.contains("style=\"width: 65%\""));
+        assert!(
+            rendered.html.contains("data-sourcepos=\"1:1-1:39\""),
+            "{}",
+            rendered.html
+        );
         assert!(rendered.html.contains("{width=10%}"));
     }
 
@@ -287,8 +294,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(rendered.match_count, 3);
-        assert_eq!(rendered.html.matches("<mark>").count(), 3);
-        assert!(rendered.html.contains("<code>breakout</code>"));
+        assert_eq!(rendered.html.matches("<mark ").count(), 3);
+        assert!(rendered.html.contains(">breakout</code>"));
     }
 
     #[test]

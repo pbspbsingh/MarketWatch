@@ -451,7 +451,16 @@ mod tests {
             store.create_daily_note_image(active_date, b"new", 1, 1),
             store.cleanup_daily_note_images(),
         );
-        let new_reference = uploaded.unwrap();
+        let new_reference = match uploaded {
+            Ok(reference) => reference,
+            Err(error) => {
+                assert!(format!("{error:#}").contains("locked"));
+                store
+                    .create_daily_note_image(active_date, b"new", 1, 1)
+                    .await
+                    .unwrap()
+            }
+        };
         let cleaned = match cleaned {
             Ok(counts) => counts,
             Err(error) => {

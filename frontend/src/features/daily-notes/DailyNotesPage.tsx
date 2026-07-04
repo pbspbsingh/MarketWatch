@@ -25,6 +25,7 @@ import { SplitPane } from "../../components/SplitPane";
 import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
 import { compressClipboardImage } from "./clipboard-image";
 import { DailyNoteHeader } from "./DailyNoteHeader";
+import { DailyNoteImagePreview } from "./DailyNoteImagePreview";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
 import "./daily-notes.css";
 
@@ -396,6 +397,14 @@ export function DailyNotesPage() {
     await saveDraftRef.current();
   };
 
+  const changeDraft = (value: string) => {
+    draftRef.current = value;
+    dirtyRef.current = true;
+    setDraft(value);
+    setDirty(true);
+    setSaveStatus(conflictBlockedRef.current ? "failed" : "unsaved");
+  };
+
   return (
     <section className={pageClassName}>
       {!sidebarCollapsed && (
@@ -449,16 +458,18 @@ export function DailyNotesPage() {
               }}
               first={(
                 <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
-                  <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={(value) => {
-                    draftRef.current = value;
-                    dirtyRef.current = true;
-                    setDraft(value);
-                    setDirty(true);
-                    setSaveStatus(conflictBlockedRef.current ? "failed" : "unsaved");
-                  }} />
+                  <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={changeDraft} />
                 </Suspense>
               )}
-              second={<article className="daily-note-preview daily-note-edit-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />}
+              second={(
+                <DailyNoteImagePreview
+                  html={previewHtml}
+                  onResize={(sourcePosition, width) => {
+                    const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);
+                    if (resized !== undefined) changeDraft(resized);
+                  }}
+                />
+              )}
             />
           ) : (
             <article
@@ -508,6 +519,21 @@ function readReadingWidth() {
 function readEditorSplit() {
   const stored = Number(localStorage.getItem(editorSplitStorageKey));
   return Number.isFinite(stored) && stored >= 10 && stored <= 90 ? stored : 50;
+}
+
+function resizeMarkdownImage(markdown: string, sourcePosition: string, width: number) {
+  const match = /^(\d+):(\d+)-(\d+):(\d+)$/.exec(sourcePosition);
+  if (match === null || match[1] !== match[3]) return undefined;
+  const line = Number(match[1]);
+  const endColumn = Number(match[4]);
+  const lines = markdown.split("\n");
+  const sourceLine = lines[line - 1];
+  if (sourceLine === undefined || endColumn < 1 || endColumn > sourceLine.length) return undefined;
+  const suffixStart = endColumn;
+  const suffix = sourceLine.slice(suffixStart);
+  const existing = /^\{width=\d+%\}/.exec(suffix)?.[0] ?? "";
+  lines[line - 1] = `${sourceLine.slice(0, suffixStart)}{width=${Math.min(100, Math.max(20, width))}%}${suffix.slice(existing.length)}`;
+  return lines.join("\n");
 }
 
 function message(error: unknown) {
