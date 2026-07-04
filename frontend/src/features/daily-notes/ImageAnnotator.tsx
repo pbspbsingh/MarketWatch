@@ -22,6 +22,7 @@ const enabledTools = [
   "redo",
   "delete",
 ] as const;
+const maximumImageBytes = 5 * 1024 * 1024;
 
 export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnnotatorProps) {
   const editorRef = useRef<AnnotationToolRef>(null);
@@ -68,10 +69,7 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
     if (saving || sourceSize.width === 0) return;
     setSaving(true);
     try {
-      const preview = editorRef.current?.getCanvasDataURL("png");
-      if (preview === undefined) throw new Error("Image editor is not ready");
-      const multiplier = sourceSize.width / await dataUrlWidth(preview);
-      const rendered = editorRef.current?.getCanvasDataURL("png", { multiplier });
+      const rendered = editorRef.current?.getCanvasDataURL("png");
       if (rendered === undefined) throw new Error("Image editor did not produce an image");
       const image = await dataUrlToWebp(rendered, sourceSize.width, sourceSize.height);
       await updateDailyNoteImage(imageId, image);
@@ -84,38 +82,65 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      } else if (event.key === "Enter" && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        void save();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
   return (
     <div className="daily-note-image-editor" role="dialog" aria-modal="true" aria-label="Annotate image">
-      <div className="daily-note-image-editor-actions">
-        <button type="button" disabled={saving} onClick={close}>Cancel</button>
-        <button type="button" disabled={saving || source === undefined} onClick={() => void save()}>
-          {saving ? "Saving…" : "Save"}
-        </button>
-      </div>
-      {source === undefined ? (
-        <span className="daily-note-image-editor-loading">Loading image…</span>
-      ) : (
-        <div className="daily-note-image-editor-canvas" onPointerDownCapture={() => setDirty(true)} onKeyDownCapture={() => setDirty(true)}>
-          <AnnotationTool
-            ref={editorRef}
-            imageSource={source}
-            enabledTools={[...enabledTools]}
-            className="daily-note-mark-my-image"
-            initialToolbarPosition={{ top: 16, left: 16 }}
-          />
+      <div
+        className="daily-note-image-editor-panel"
+        style={source === undefined ? undefined : {
+          width: sourceSize.width,
+          height: sourceSize.height + 36,
+        }}
+      >
+        <div className="daily-note-image-editor-actions">
+          <strong>Annotate Image</strong>
+          <button type="button" disabled={saving} onClick={close}>Cancel</button>
+          <button type="button" disabled={saving || source === undefined} onClick={() => void save()}>
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
-      )}
+        {source === undefined ? (
+          <span className="daily-note-image-editor-loading">Loading image…</span>
+        ) : (
+          <div className="daily-note-image-editor-canvas" onPointerDownCapture={() => setDirty(true)} onKeyDownCapture={() => setDirty(true)}>
+            <AnnotationTool
+              ref={editorRef}
+              imageSource={source}
+              enabledTools={[...enabledTools]}
+              className="daily-note-mark-my-image"
+              initialToolbarPosition={{ top: 16, left: 16 }}
+              style={{
+                flex: "none",
+                width: sourceSize.width,
+                height: sourceSize.height,
+                minHeight: sourceSize.height,
+                maxHeight: "none",
+              }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-async function dataUrlWidth(dataUrl: string) {
-  const bitmap = await createImageBitmap(await fetch(dataUrl).then((response) => response.blob()));
-  try {
-    return bitmap.width;
-  } finally {
-    bitmap.close();
-  }
+function isEditableTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
 async function dataUrlToWebp(dataUrl: string, width: number, height: number) {
@@ -127,8 +152,9 @@ async function dataUrlToWebp(dataUrl: string, width: number, height: number) {
     const context = canvas.getContext("2d");
     if (context === null) throw new Error("Canvas is unavailable");
     context.drawImage(bitmap, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.6));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 1));
     if (blob === null) throw new Error("Failed to encode annotated image");
+    if (blob.size > maximumImageBytes) throw new Error("Annotated image exceeds 5 MiB");
     return blob;
   } finally {
     bitmap.close();
