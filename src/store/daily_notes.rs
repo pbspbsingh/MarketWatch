@@ -94,7 +94,13 @@ impl Store {
         title: &str,
         markdown: &str,
         expected_revision: i64,
+        image_reference_ids: &[i64],
     ) -> anyhow::Result<DailyNoteUpdate> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin note update")?;
         let result = sqlx::query!(
             r#"UPDATE daily_notes
                SET title = ?,
@@ -107,17 +113,47 @@ impl Store {
             note_date,
             expected_revision,
         )
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .context("failed to update daily note")?;
 
         if result.rows_affected() == 1 {
+            sqlx::query!(
+                r#"UPDATE daily_note_image_refs
+                   SET detached_at = CURRENT_TIMESTAMP
+                   WHERE note_date = ? AND detached_at IS NULL"#,
+                note_date,
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to detach removed image occurrences")?;
+            for reference_id in image_reference_ids {
+                sqlx::query!(
+                    r#"UPDATE daily_note_image_refs
+                       SET detached_at = NULL
+                       WHERE id = ? AND note_date = ?"#,
+                    reference_id,
+                    note_date,
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to attach image occurrence")?;
+            }
+            transaction
+                .commit()
+                .await
+                .context("failed to commit note update")?;
             return self
                 .daily_note(note_date)
                 .await?
                 .map(DailyNoteUpdate::Updated)
                 .context("updated daily note was not found");
         }
+
+        transaction
+            .rollback()
+            .await
+            .context("failed to roll back note update")?;
 
         Ok(match self.daily_note(note_date).await? {
             Some(note) => DailyNoteUpdate::Conflict {
@@ -192,6 +228,39 @@ impl Store {
         .await
         .context("failed to load daily note image")
     }
+
+    pub async fn cleanup_daily_note_images(&self) -> anyhow::Result<(u64, u64)> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin image cleanup")?;
+        let references = sqlx::query!(
+            r#"DELETE FROM daily_note_image_refs
+               WHERE detached_at IS NOT NULL
+                 AND detached_at <= datetime('now', '-1 hour')"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete detached image occurrences")?
+        .rows_affected();
+        let images = sqlx::query!(
+            r#"DELETE FROM daily_note_images
+               WHERE created_at <= datetime('now', '-1 hour')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM daily_note_image_refs ref WHERE ref.image_id = daily_note_images.id
+                 )"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete unreferenced images")?
+        .rows_affected();
+        transaction
+            .commit()
+            .await
+            .context("failed to commit image cleanup")?;
+        Ok((references, images))
+    }
 }
 
 fn contains_pattern(value: &str) -> String {
@@ -225,14 +294,14 @@ mod tests {
         assert!(store.create_daily_note(note_date).await.is_err());
 
         let updated = store
-            .update_daily_note(note_date, "Breakout", "# Breakout\n\nChart notes", 1)
+            .update_daily_note(note_date, "Breakout", "# Breakout\n\nChart notes", 1, &[])
             .await
             .unwrap();
         assert!(matches!(updated, DailyNoteUpdate::Updated(ref note) if note.revision == 2));
 
         assert_eq!(
             store
-                .update_daily_note(note_date, "Stale", "stale", 1)
+                .update_daily_note(note_date, "Stale", "stale", 1, &[])
                 .await
                 .unwrap(),
             DailyNoteUpdate::Conflict {
@@ -241,7 +310,7 @@ mod tests {
         );
         assert_eq!(
             store
-                .update_daily_note(date("2026-07-04"), "Missing", "", 1)
+                .update_daily_note(date("2026-07-04"), "Missing", "", 1, &[])
                 .await
                 .unwrap(),
             DailyNoteUpdate::NotFound
@@ -262,6 +331,7 @@ mod tests {
                 "Breakout",
                 "# Breakout\n\nConsolidation complete",
                 1,
+                &[],
             )
             .await
             .unwrap();
@@ -285,6 +355,7 @@ mod tests {
                 "Reversal",
                 "# Reversal\n\nFailed move",
                 2,
+                &[],
             )
             .await
             .unwrap();
@@ -292,5 +363,109 @@ mod tests {
         assert_eq!(store.daily_notes(Some("versal")).await.unwrap().len(), 1);
         store.delete_daily_note(date("2026-07-01")).await.unwrap();
         assert!(store.daily_notes(Some("versal")).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn attaches_detaches_restores_and_cleans_up_images() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let note_date = date("2026-07-03");
+        store.create_daily_note(note_date).await.unwrap();
+        let reference_id = store
+            .create_daily_note_image(note_date, b"webp", 1, 1)
+            .await
+            .unwrap();
+
+        store
+            .update_daily_note(note_date, "note", "image", 1, &[reference_id])
+            .await
+            .unwrap();
+        let attached = sqlx::query_scalar!(
+            "SELECT detached_at IS NULL FROM daily_note_image_refs WHERE id = ?",
+            reference_id,
+        )
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(attached, 1);
+
+        store
+            .update_daily_note(note_date, "note", "removed", 2, &[])
+            .await
+            .unwrap();
+        store
+            .update_daily_note(note_date, "note", "restored", 3, &[reference_id])
+            .await
+            .unwrap();
+        assert!(
+            store
+                .daily_note_image(reference_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        store
+            .update_daily_note(note_date, "note", "removed", 4, &[])
+            .await
+            .unwrap();
+        sqlx::query!("UPDATE daily_note_image_refs SET detached_at = datetime('now', '-2 hours')",)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query!("UPDATE daily_note_images SET created_at = datetime('now', '-2 hours')",)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        assert_eq!(store.cleanup_daily_note_images().await.unwrap(), (1, 1));
+        assert!(
+            store
+                .daily_note_image(reference_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_preserves_an_upload_racing_with_deleted_note_cleanup() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let deleted_date = date("2026-07-02");
+        let active_date = date("2026-07-03");
+        store.create_daily_note(deleted_date).await.unwrap();
+        store.create_daily_note(active_date).await.unwrap();
+        let old_reference = store
+            .create_daily_note_image(deleted_date, b"old", 1, 1)
+            .await
+            .unwrap();
+        store
+            .update_daily_note(deleted_date, "old", "image", 1, &[old_reference])
+            .await
+            .unwrap();
+        sqlx::query!("UPDATE daily_note_images SET created_at = datetime('now', '-2 hours')")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        store.delete_daily_note(deleted_date).await.unwrap();
+
+        let (uploaded, cleaned) = tokio::join!(
+            store.create_daily_note_image(active_date, b"new", 1, 1),
+            store.cleanup_daily_note_images(),
+        );
+        let new_reference = uploaded.unwrap();
+        let cleaned = match cleaned {
+            Ok(counts) => counts,
+            Err(error) => {
+                assert!(format!("{error:#}").contains("locked"));
+                store.cleanup_daily_note_images().await.unwrap()
+            }
+        };
+        assert_eq!(cleaned, (0, 1));
+        assert!(
+            store
+                .daily_note_image(new_reference)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }

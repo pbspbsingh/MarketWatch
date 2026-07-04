@@ -6,6 +6,8 @@ use comrak::{Arena, Options, parse_document};
 use image::ImageDecoder;
 use serde::Serialize;
 use std::io::Cursor;
+use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 
 mod markdown;
@@ -151,9 +153,16 @@ impl DailyNotesService {
             ));
         }
         let title = extract_title(markdown).unwrap_or_else(|| date.to_string());
+        let image_reference_ids = owned_image_reference_ids(markdown);
         match self
             .store
-            .update_daily_note(date, &title, markdown, expected_revision)
+            .update_daily_note(
+                date,
+                &title,
+                markdown,
+                expected_revision,
+                &image_reference_ids,
+            )
             .await
             .map_err(DailyNotesError::Persistence)?
         {
@@ -241,6 +250,40 @@ impl DailyNotesService {
             .map_err(DailyNotesError::Persistence)?
             .ok_or(DailyNotesError::ImageNotFound(id))
     }
+
+    pub fn spawn_cleanup_task(self: &Arc<Self>) {
+        let service = Arc::clone(self);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            loop {
+                match service.store.cleanup_daily_note_images().await {
+                    Ok((references, images)) if references > 0 || images > 0 => {
+                        tracing::info!(references, images, "cleaned up daily note images");
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::error!(%error, "daily note image cleanup failed"),
+                }
+                tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+            }
+        });
+    }
+}
+
+fn owned_image_reference_ids(markdown: &str) -> Vec<i64> {
+    const PREFIX: &str = "/api/daily-notes/image-refs/";
+    let arena = Arena::new();
+    let root = parse_document(&arena, markdown, &Options::default());
+    let mut ids = root
+        .descendants()
+        .filter_map(|node| match &node.data.borrow().value {
+            NodeValue::Image(link) => link.url.strip_prefix(PREFIX)?.parse::<i64>().ok(),
+            _ => None,
+        })
+        .filter(|id| *id > 0)
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 fn is_unique_violation(error: &anyhow::Error) -> bool {
@@ -290,6 +333,18 @@ mod tests {
             Some("Setext title".to_owned())
         );
         assert_eq!(extract_title("No heading"), None);
+    }
+
+    #[test]
+    fn extracts_only_owned_image_reference_urls() {
+        let markdown = concat!(
+            "![one](/api/daily-notes/image-refs/12)\n",
+            "![duplicate](/api/daily-notes/image-refs/12)\n",
+            "![two](/api/daily-notes/image-refs/7)\n",
+            "[not an image](/api/daily-notes/image-refs/9)\n",
+            "![external](https://example.com/api/daily-notes/image-refs/8)\n",
+        );
+        assert_eq!(owned_image_reference_ids(markdown), vec![7, 12]);
     }
 
     #[tokio::test]

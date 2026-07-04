@@ -108,6 +108,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.finviz,
     )?;
     industry_refresh.spawn_refresh_task();
+    daily_notes.spawn_cleanup_task();
     let state = AppState {
         chart,
         daily_notes,
