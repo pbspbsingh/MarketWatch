@@ -22,7 +22,7 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
       for (const image of preview.querySelectorAll<HTMLImageElement>("img[data-sourcepos]")) {
         if (image.closest(".daily-note-resizable-image") !== null) continue;
         const sourceUrl = new URL(image.src, window.location.href);
-        if (sourceUrl.pathname.startsWith("/api/daily-notes/image-refs/")) {
+        if (sourceUrl.pathname.startsWith("/api/daily-notes/images/")) {
           sourceUrl.searchParams.set("preview", String(imageRevision));
           image.src = sourceUrl.toString();
         }
@@ -75,10 +75,7 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
       }
     };
     enhanceImages();
-    const observer = new MutationObserver(enhanceImages);
-    observer.observe(preview, { childList: true, subtree: true });
     return () => {
-      observer.disconnect();
       controller.abort();
       for (const { image, wrapper, width } of wrappedImages) {
         image.style.width = width;
@@ -102,7 +99,7 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
 }
 
 function imageReferenceId(url: string) {
-  const match = /\/api\/daily-notes\/image-refs\/(\d+)$/.exec(new URL(url, window.location.href).pathname);
+  const match = /\/api\/daily-notes\/images\/(\d+)$/.exec(new URL(url, window.location.href).pathname);
   return match === null ? undefined : Number(match[1]);
 }
 

@@ -273,13 +273,13 @@ mod tests {
     #[test]
     fn renders_only_controlled_image_widths() {
         let rendered = render(
-            "![chart](/api/daily-notes/image-refs/1){width=65%}\n\n![small](/x){width=10%}",
+            "![chart](/api/daily-notes/images/1){width=65%}\n\n![small](/x){width=10%}",
             None,
         )
         .unwrap();
         assert!(rendered.html.contains("style=\"width: 65%\""));
         assert!(
-            rendered.html.contains("data-sourcepos=\"1:1-1:39\""),
+            rendered.html.contains("data-sourcepos=\"1:1-1:46\""),
             "{}",
             rendered.html
         );

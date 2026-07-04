@@ -40,30 +40,18 @@ END;
 
 CREATE TABLE daily_note_images (
     id INTEGER PRIMARY KEY NOT NULL,
-    mime_type TEXT NOT NULL CHECK (mime_type = 'image/webp'),
+    note_date DATE NOT NULL REFERENCES daily_notes(note_date) ON DELETE CASCADE,
     width INTEGER NOT NULL CHECK (width BETWEEN 1 AND 1920),
     height INTEGER NOT NULL CHECK (height BETWEEN 1 AND 1920),
-    source_blob BLOB NOT NULL CHECK (length(source_blob) BETWEEN 1 AND 5242880),
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE daily_note_image_refs (
-    id INTEGER PRIMARY KEY NOT NULL,
-    note_date DATE NOT NULL REFERENCES daily_notes(note_date) ON DELETE CASCADE,
-    image_id INTEGER NOT NULL REFERENCES daily_note_images(id) ON DELETE CASCADE,
-    rendered_blob BLOB CHECK (rendered_blob IS NULL OR length(rendered_blob) BETWEEN 1 AND 5242880),
+    image_blob BLOB NOT NULL CHECK (length(image_blob) BETWEEN 1 AND 5242880),
     detached_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX daily_note_image_refs_image_id
-    ON daily_note_image_refs (image_id);
+CREATE INDEX daily_note_images_note_date
+    ON daily_note_images (note_date);
 
-CREATE INDEX daily_note_image_refs_note_date
-    ON daily_note_image_refs (note_date);
-
-CREATE INDEX daily_note_image_refs_detached_at
-    ON daily_note_image_refs (detached_at)
+CREATE INDEX daily_note_images_detached_at
+    ON daily_note_images (detached_at)
     WHERE detached_at IS NOT NULL;

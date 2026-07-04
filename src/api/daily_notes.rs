@@ -53,15 +53,12 @@ pub fn router() -> Router<AppState> {
             "/daily-notes/{date}/images",
             axum::routing::post(upload_image),
         )
-        .route(
-            "/daily-notes/image-refs/{id}",
-            get(image).put(save_rendered_image),
-        )
+        .route("/daily-notes/images/{id}", get(image).put(update_image))
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
 }
 
-async fn save_rendered_image(
+async fn update_image(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     mut multipart: Multipart,
@@ -94,7 +91,7 @@ async fn save_rendered_image(
     })?;
     state
         .daily_notes
-        .save_rendered_image(id, &image)
+        .update_image(id, &image)
         .await
         .map_err(api_error)?;
     Ok(StatusCode::NO_CONTENT)

@@ -94,7 +94,7 @@ impl Store {
         title: &str,
         markdown: &str,
         expected_revision: i64,
-        image_reference_ids: &[i64],
+        image_ids: &[i64],
     ) -> anyhow::Result<DailyNoteUpdate> {
         let mut transaction = self
             .pool
@@ -119,25 +119,25 @@ impl Store {
 
         if result.rows_affected() == 1 {
             sqlx::query!(
-                r#"UPDATE daily_note_image_refs
+                r#"UPDATE daily_note_images
                    SET detached_at = CURRENT_TIMESTAMP
                    WHERE note_date = ? AND detached_at IS NULL"#,
                 note_date,
             )
             .execute(&mut *transaction)
             .await
-            .context("failed to detach removed image occurrences")?;
-            for reference_id in image_reference_ids {
+            .context("failed to detach removed images")?;
+            for image_id in image_ids {
                 sqlx::query!(
-                    r#"UPDATE daily_note_image_refs
+                    r#"UPDATE daily_note_images
                        SET detached_at = NULL
                        WHERE id = ? AND note_date = ?"#,
-                    reference_id,
+                    image_id,
                     note_date,
                 )
                 .execute(&mut *transaction)
                 .await
-                .context("failed to attach image occurrence")?;
+                .context("failed to attach image")?;
             }
             transaction
                 .commit()
@@ -178,100 +178,57 @@ impl Store {
         width: i64,
         height: i64,
     ) -> anyhow::Result<i64> {
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin image upload")?;
-        let image_id = sqlx::query!(
-            r#"INSERT INTO daily_note_images (mime_type, width, height, source_blob)
-               VALUES ('image/webp', ?, ?, ?)"#,
+        sqlx::query!(
+            r#"INSERT INTO daily_note_images
+                   (note_date, width, height, image_blob, detached_at)
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)"#,
+            note_date,
             width,
             height,
             bytes,
         )
-        .execute(&mut *transaction)
+        .execute(&self.pool)
         .await
-        .context("failed to store daily note image")?
-        .last_insert_rowid();
-        let reference_id = sqlx::query!(
-            r#"INSERT INTO daily_note_image_refs (note_date, image_id, detached_at)
-               VALUES (?, ?, CURRENT_TIMESTAMP)"#,
-            note_date,
-            image_id,
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to create daily note image occurrence")?
-        .last_insert_rowid();
-        transaction
-            .commit()
-            .await
-            .context("failed to commit image upload")?;
-        Ok(reference_id)
+        .context("failed to store daily note image")
+        .map(|result| result.last_insert_rowid())
     }
 
-    pub async fn daily_note_image(
-        &self,
-        reference_id: i64,
-    ) -> anyhow::Result<Option<DailyNoteImage>> {
+    pub async fn daily_note_image(&self, image_id: i64) -> anyhow::Result<Option<DailyNoteImage>> {
         sqlx::query_as!(
             DailyNoteImage,
-            r#"SELECT COALESCE(ref.rendered_blob, image.source_blob) AS "bytes!: Vec<u8>"
-               FROM daily_note_image_refs ref
-               JOIN daily_note_images image ON image.id = ref.image_id
-               WHERE ref.id = ?"#,
-            reference_id,
+            r#"SELECT image_blob AS "bytes!: Vec<u8>", width, height
+               FROM daily_note_images
+               WHERE id = ?"#,
+            image_id,
         )
         .fetch_optional(&self.pool)
         .await
         .context("failed to load daily note image")
     }
 
-    pub async fn cleanup_daily_note_images(&self) -> anyhow::Result<(u64, u64)> {
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin image cleanup")?;
-        let references = sqlx::query!(
-            r#"DELETE FROM daily_note_image_refs
+    pub async fn cleanup_daily_note_images(&self) -> anyhow::Result<u64> {
+        sqlx::query!(
+            r#"DELETE FROM daily_note_images
                WHERE detached_at IS NOT NULL
                  AND detached_at <= datetime('now', '-1 hour')"#,
         )
-        .execute(&mut *transaction)
+        .execute(&self.pool)
         .await
-        .context("failed to delete detached image occurrences")?
-        .rows_affected();
-        let images = sqlx::query!(
-            r#"DELETE FROM daily_note_images
-               WHERE created_at <= datetime('now', '-1 hour')
-                 AND NOT EXISTS (
-                     SELECT 1 FROM daily_note_image_refs ref WHERE ref.image_id = daily_note_images.id
-                 )"#,
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to delete unreferenced images")?
-        .rows_affected();
-        transaction
-            .commit()
-            .await
-            .context("failed to commit image cleanup")?;
-        Ok((references, images))
+        .context("failed to delete detached daily note images")
+        .map(|result| result.rows_affected())
     }
 
-    pub async fn update_daily_note_rendered_image(
+    pub async fn update_daily_note_image(
         &self,
-        reference_id: i64,
+        image_id: i64,
         rendered: &[u8],
     ) -> anyhow::Result<bool> {
         sqlx::query!(
-            r#"UPDATE daily_note_image_refs
-               SET rendered_blob = ?, updated_at = CURRENT_TIMESTAMP
+            r#"UPDATE daily_note_images
+               SET image_blob = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?"#,
             rendered,
-            reference_id,
+            image_id,
         )
         .execute(&self.pool)
         .await
@@ -387,18 +344,18 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let note_date = date("2026-07-03");
         store.create_daily_note(note_date).await.unwrap();
-        let reference_id = store
+        let image_id = store
             .create_daily_note_image(note_date, b"webp", 1, 1)
             .await
             .unwrap();
 
         store
-            .update_daily_note(note_date, "note", "image", 1, &[reference_id])
+            .update_daily_note(note_date, "note", "image", 1, &[image_id])
             .await
             .unwrap();
         let attached = sqlx::query_scalar!(
-            "SELECT detached_at IS NULL FROM daily_note_image_refs WHERE id = ?",
-            reference_id,
+            "SELECT detached_at IS NULL FROM daily_note_images WHERE id = ?",
+            image_id,
         )
         .fetch_one(&store.pool)
         .await
@@ -410,59 +367,36 @@ mod tests {
             .await
             .unwrap();
         store
-            .update_daily_note(note_date, "note", "restored", 3, &[reference_id])
+            .update_daily_note(note_date, "note", "restored", 3, &[image_id])
             .await
             .unwrap();
-        assert!(
-            store
-                .daily_note_image(reference_id)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(store.daily_note_image(image_id).await.unwrap().is_some());
 
         store
             .update_daily_note(note_date, "note", "removed", 4, &[])
             .await
             .unwrap();
-        sqlx::query!("UPDATE daily_note_image_refs SET detached_at = datetime('now', '-2 hours')",)
+        sqlx::query!("UPDATE daily_note_images SET detached_at = datetime('now', '-2 hours')",)
             .execute(&store.pool)
             .await
             .unwrap();
-        sqlx::query!("UPDATE daily_note_images SET created_at = datetime('now', '-2 hours')",)
-            .execute(&store.pool)
-            .await
-            .unwrap();
-        assert_eq!(store.cleanup_daily_note_images().await.unwrap(), (1, 1));
-        assert!(
-            store
-                .daily_note_image(reference_id)
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert_eq!(store.cleanup_daily_note_images().await.unwrap(), 1);
+        assert!(store.daily_note_image(image_id).await.unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn cleanup_preserves_an_upload_racing_with_deleted_note_cleanup() {
+    async fn cleanup_preserves_a_concurrent_upload() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        let deleted_date = date("2026-07-02");
         let active_date = date("2026-07-03");
-        store.create_daily_note(deleted_date).await.unwrap();
         store.create_daily_note(active_date).await.unwrap();
-        let old_reference = store
-            .create_daily_note_image(deleted_date, b"old", 1, 1)
-            .await
-            .unwrap();
         store
-            .update_daily_note(deleted_date, "old", "image", 1, &[old_reference])
+            .create_daily_note_image(active_date, b"old", 1, 1)
             .await
             .unwrap();
-        sqlx::query!("UPDATE daily_note_images SET created_at = datetime('now', '-2 hours')")
+        sqlx::query!("UPDATE daily_note_images SET detached_at = datetime('now', '-2 hours')")
             .execute(&store.pool)
             .await
             .unwrap();
-        store.delete_daily_note(deleted_date).await.unwrap();
 
         let (uploaded, cleaned) = tokio::join!(
             store.create_daily_note_image(active_date, b"new", 1, 1),
@@ -485,7 +419,7 @@ mod tests {
                 store.cleanup_daily_note_images().await.unwrap()
             }
         };
-        assert_eq!(cleaned, (0, 1));
+        assert_eq!(cleaned, 1);
         assert!(
             store
                 .daily_note_image(new_reference)
@@ -493,47 +427,5 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-    }
-
-    #[tokio::test]
-    async fn rendered_images_are_isolated_between_occurrences_sharing_a_source() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
-        let first_date = date("2026-07-02");
-        let second_date = date("2026-07-03");
-        store.create_daily_note(first_date).await.unwrap();
-        store.create_daily_note(second_date).await.unwrap();
-        let first = store
-            .create_daily_note_image(first_date, b"source", 1, 1)
-            .await
-            .unwrap();
-        let image_id = sqlx::query_scalar!(
-            "SELECT image_id FROM daily_note_image_refs WHERE id = ?",
-            first,
-        )
-        .fetch_one(&store.pool)
-        .await
-        .unwrap();
-        let second = sqlx::query!(
-            "INSERT INTO daily_note_image_refs (note_date, image_id) VALUES (?, ?)",
-            second_date,
-            image_id,
-        )
-        .execute(&store.pool)
-        .await
-        .unwrap()
-        .last_insert_rowid();
-
-        store
-            .update_daily_note_rendered_image(first, b"rendered")
-            .await
-            .unwrap();
-        let untouched = sqlx::query_scalar!(
-            "SELECT rendered_blob FROM daily_note_image_refs WHERE id = ?",
-            second,
-        )
-        .fetch_one(&store.pool)
-        .await
-        .unwrap();
-        assert!(untouched.is_none());
     }
 }

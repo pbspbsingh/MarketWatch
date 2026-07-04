@@ -41,6 +41,8 @@ pub(crate) struct DailyNoteListRow {
 
 pub struct DailyNoteImage {
     pub bytes: Vec<u8>,
+    pub width: i64,
+    pub height: i64,
 }
 
 #[derive(Clone)]

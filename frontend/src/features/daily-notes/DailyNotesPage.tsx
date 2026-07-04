@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Button,
   CircularProgress,
@@ -84,11 +84,6 @@ export function DailyNotesPage() {
   modeRef.current = mode;
   draftRef.current = draft;
   dirtyRef.current = dirty;
-
-  const pageClassName = useMemo(
-    () => `daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}`,
-    [sidebarCollapsed],
-  );
 
   const openEditor = (note: DailyNoteDocument) => {
     revisionRef.current = note.revision;
@@ -414,7 +409,7 @@ export function DailyNotesPage() {
   };
 
   return (
-    <section className={pageClassName}>
+    <section className={`daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}`}>
       {!sidebarCollapsed && (
         <DailyNotesSidebar
           notes={visibleNotes}
@@ -479,7 +474,6 @@ export function DailyNotesPage() {
               )}
               second={(
                 <DailyNoteImagePreview
-                  key={annotationRevision}
                   html={previewHtml}
                   imageRevision={annotationRevision}
                   onAnnotate={setAnnotationImageId}

@@ -33,9 +33,6 @@ pub struct DailyNoteSummary {
 #[derive(Debug, Serialize)]
 pub struct DailyNoteImageUpload {
     pub id: i64,
-    pub width: u32,
-    pub height: u32,
-    pub url: String,
     pub markdown: String,
 }
 
@@ -152,16 +149,10 @@ impl DailyNotesService {
             ));
         }
         let title = extract_title(markdown).unwrap_or_else(|| date.to_string());
-        let image_reference_ids = owned_image_reference_ids(markdown);
+        let image_ids = owned_image_ids(markdown);
         match self
             .store
-            .update_daily_note(
-                date,
-                &title,
-                markdown,
-                expected_revision,
-                &image_reference_ids,
-            )
+            .update_daily_note(date, &title, markdown, expected_revision, &image_ids)
             .await
             .map_err(DailyNotesError::Persistence)?
         {
@@ -212,13 +203,10 @@ impl DailyNotesService {
             .create_daily_note_image(date, bytes, i64::from(width), i64::from(height))
             .await
             .map_err(DailyNotesError::Persistence)?;
-        let url = format!("/api/daily-notes/image-refs/{id}");
+        let url = format!("/api/daily-notes/images/{id}");
         Ok(DailyNoteImageUpload {
             id,
-            width,
-            height,
             markdown: format!("![Chart screenshot]({url})"),
-            url,
         })
     }
 
@@ -230,22 +218,17 @@ impl DailyNotesService {
             .ok_or(DailyNotesError::ImageNotFound(id))
     }
 
-    pub async fn save_rendered_image(
-        &self,
-        id: i64,
-        rendered: &[u8],
-    ) -> Result<(), DailyNotesError> {
+    pub async fn update_image(&self, id: i64, rendered: &[u8]) -> Result<(), DailyNotesError> {
         let current = self.image(id).await?;
         let (width, height) = validate_webp(rendered)?;
-        let (current_width, current_height) = validate_webp(&current.bytes)?;
-        if width != current_width || height != current_height {
+        if i64::from(width) != current.width || i64::from(height) != current.height {
             return Err(DailyNotesError::Validation(
-                "rendered image dimensions must match the source".to_owned(),
+                "replacement image dimensions must match the current image".to_owned(),
             ));
         }
         if !self
             .store
-            .update_daily_note_rendered_image(id, rendered)
+            .update_daily_note_image(id, rendered)
             .await
             .map_err(DailyNotesError::Persistence)?
         {
@@ -260,8 +243,8 @@ impl DailyNotesService {
             tokio::time::sleep(Duration::from_secs(30)).await;
             loop {
                 match service.store.cleanup_daily_note_images().await {
-                    Ok((references, images)) if references > 0 || images > 0 => {
-                        tracing::info!(references, images, "cleaned up daily note images");
+                    Ok(images) if images > 0 => {
+                        tracing::info!(images, "cleaned up daily note images");
                     }
                     Ok(_) => {}
                     Err(error) => tracing::error!(%error, "daily note image cleanup failed"),
@@ -297,8 +280,8 @@ fn validate_webp(bytes: &[u8]) -> Result<(u32, u32), DailyNotesError> {
     Ok((width, height))
 }
 
-fn owned_image_reference_ids(markdown: &str) -> Vec<i64> {
-    const PREFIX: &str = "/api/daily-notes/image-refs/";
+fn owned_image_ids(markdown: &str) -> Vec<i64> {
+    const PREFIX: &str = "/api/daily-notes/images/";
     let arena = Arena::new();
     let root = parse_document(&arena, markdown, &Options::default());
     let mut ids = root
@@ -364,15 +347,15 @@ mod tests {
     }
 
     #[test]
-    fn extracts_only_owned_image_reference_urls() {
+    fn extracts_only_owned_image_urls() {
         let markdown = concat!(
-            "![one](/api/daily-notes/image-refs/12)\n",
-            "![duplicate](/api/daily-notes/image-refs/12)\n",
-            "![two](/api/daily-notes/image-refs/7)\n",
-            "[not an image](/api/daily-notes/image-refs/9)\n",
-            "![external](https://example.com/api/daily-notes/image-refs/8)\n",
+            "![one](/api/daily-notes/images/12)\n",
+            "![duplicate](/api/daily-notes/images/12)\n",
+            "![two](/api/daily-notes/images/7)\n",
+            "[not an image](/api/daily-notes/images/9)\n",
+            "![external](https://example.com/api/daily-notes/images/8)\n",
         );
-        assert_eq!(owned_image_reference_ids(markdown), vec![7, 12]);
+        assert_eq!(owned_image_ids(markdown), vec![7, 12]);
     }
 
     #[tokio::test]
@@ -452,8 +435,6 @@ mod tests {
             .unwrap();
 
         let uploaded = service.upload_image(note_date, &webp).await.unwrap();
-        assert_eq!(uploaded.width, 1);
-        assert_eq!(uploaded.height, 1);
         assert_eq!(service.image(uploaded.id).await.unwrap().bytes, webp);
         assert!(matches!(
             service.upload_image(note_date, b"not webp").await,
@@ -462,7 +443,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validates_and_isolates_rendered_images() {
+    async fn validates_and_isolates_image_updates() {
         use image::ImageEncoder;
 
         fn webp(pixel: [u8; 4]) -> Vec<u8> {
@@ -480,19 +461,16 @@ mod tests {
         let rendered = webp([0, 0, 255, 255]);
         let first = service.upload_image(note_date, &source).await.unwrap();
         let second = service.upload_image(note_date, &source).await.unwrap();
-        service
-            .save_rendered_image(first.id, &rendered)
-            .await
-            .unwrap();
+        service.update_image(first.id, &rendered).await.unwrap();
         assert_eq!(service.image(first.id).await.unwrap().bytes, rendered);
         assert_eq!(service.image(second.id).await.unwrap().bytes, source);
 
         assert!(matches!(
-            service.save_rendered_image(first.id, b"not webp").await,
+            service.update_image(first.id, b"not webp").await,
             Err(DailyNotesError::Validation(_))
         ));
         assert!(matches!(
-            service.save_rendered_image(999, &rendered).await,
+            service.update_image(999, &rendered).await,
             Err(DailyNotesError::ImageNotFound(999))
         ));
     }

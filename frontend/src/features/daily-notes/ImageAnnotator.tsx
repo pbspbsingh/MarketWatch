@@ -39,7 +39,7 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/daily-notes/image-refs/${imageId}`, {
+    fetch(`/api/daily-notes/images/${imageId}`, {
       cache: "no-store",
       signal: controller.signal,
     })

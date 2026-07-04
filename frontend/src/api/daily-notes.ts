@@ -23,9 +23,6 @@ export interface RenderedMarkdown {
 
 export interface DailyNoteImageUpload {
   id: number;
-  width: number;
-  height: number;
-  url: string;
   markdown: string;
 }
 
@@ -87,7 +84,7 @@ export async function saveDailyNoteRenderedImage(
 ) {
   const body = new FormData();
   body.append("image", image, "annotated.webp");
-  return request<void>(`/api/daily-notes/image-refs/${id}`, {
+  return request<void>(`/api/daily-notes/images/${id}`, {
     method: "PUT",
     body,
     signal,
