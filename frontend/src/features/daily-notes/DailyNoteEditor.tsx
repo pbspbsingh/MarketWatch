@@ -1,9 +1,29 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+
+const vscodeDarkHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, color: "#569cd6", fontWeight: "bold" },
+  { tag: tags.strong, color: "#d7ba7d", fontWeight: "bold" },
+  { tag: tags.emphasis, color: "#d7ba7d", fontStyle: "italic" },
+  { tag: tags.strikethrough, color: "#808080", textDecoration: "line-through" },
+  { tag: tags.link, color: "#dcdcaa" },
+  { tag: tags.url, color: "#4fc1ff", textDecoration: "underline" },
+  { tag: tags.monospace, color: "#ce9178" },
+  { tag: tags.quote, color: "#6a9955" },
+  { tag: [tags.keyword, tags.operatorKeyword], color: "#c586c0" },
+  { tag: [tags.string, tags.special(tags.string)], color: "#ce9178" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#b5cea8" },
+  { tag: [tags.typeName, tags.className], color: "#4ec9b0" },
+  { tag: [tags.function(tags.variableName), tags.labelName], color: "#dcdcaa" },
+  { tag: [tags.variableName, tags.propertyName], color: "#9cdcfe" },
+  { tag: [tags.comment, tags.meta], color: "#6a9955" },
+  { tag: tags.invalid, color: "#f44747" },
+]);
 
 export interface DailyNoteEditorHandle {
   focus: () => void;
@@ -43,7 +63,7 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           markdown(),
-          syntaxHighlighting(defaultHighlightStyle),
+          syntaxHighlighting(vscodeDarkHighlightStyle),
           EditorView.lineWrapping,
           EditorView.domEventHandlers({
             paste: (event) => {
