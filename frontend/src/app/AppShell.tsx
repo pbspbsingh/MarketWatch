@@ -3,6 +3,8 @@ import BubbleChartIcon from "@mui/icons-material/BubbleChart";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
+import PushPinIcon from "@mui/icons-material/PushPin";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import NoteAltOutlinedIcon from "@mui/icons-material/NoteAltOutlined";
 import TableViewIcon from "@mui/icons-material/TableView";
@@ -18,6 +20,7 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -36,6 +39,13 @@ const destinations = [
 
 const navigationTriggerInset = 4;
 const navigationTriggerPositionKey = "navigation-trigger-y";
+const navigationModeKey = "navigation-mode";
+
+type NavigationMode = "tray" | "rail";
+
+function readNavigationMode(): NavigationMode {
+  return localStorage.getItem(navigationModeKey) === "rail" ? "rail" : "tray";
+}
 
 function readNavigationTriggerPosition() {
   const storedValue = localStorage.getItem(navigationTriggerPositionKey);
@@ -47,6 +57,7 @@ function readNavigationTriggerPosition() {
 
 export function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navigationMode, setNavigationMode] = useState<NavigationMode>(readNavigationMode);
   const [triggerPosition, setTriggerPosition] = useState(readNavigationTriggerPosition);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef({
@@ -121,50 +132,105 @@ export function AppShell() {
     setDrawerOpen(true);
   };
 
+  const selectNavigationMode = (mode: NavigationMode) => {
+    localStorage.setItem(navigationModeKey, mode);
+    setNavigationMode(mode);
+    setDrawerOpen(false);
+  };
+
   return (
     <div className="app-shell">
-      <Tooltip title="Open navigation">
-        <IconButton
-          ref={triggerRef}
-          className="navigation-trigger"
-          size="small"
-          aria-label="Open navigation"
-          style={{ top: triggerPosition }}
-          onClick={handleTriggerClick}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        >
-          <MenuIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-
-      <Drawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        slotProps={{ paper: { className: "navigation-drawer" } }}
-      >
-        <List dense disablePadding component="nav" aria-label="Primary navigation">
-          {destinations.map(([label, path, DestinationIcon, accent]) => (
-            <ListItemButton
-              component={NavLink}
-              key={path}
-              to={path}
-              onClick={() => setDrawerOpen(false)}
+      {navigationMode === "tray" ? (
+        <>
+          <Tooltip title="Open navigation">
+            <IconButton
+              ref={triggerRef}
+              className="navigation-trigger"
+              size="small"
+              aria-label="Open navigation"
+              style={{ top: triggerPosition }}
+              onClick={handleTriggerClick}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
             >
-              <ListItemIcon className={accent === undefined ? undefined : `navigation-icon-${accent}`}>
-                <DestinationIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText primary={label} />
-            </ListItemButton>
-          ))}
-        </List>
-      </Drawer>
+              <MenuIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Drawer
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            slotProps={{ paper: { className: "navigation-drawer" } }}
+          >
+            <div className="navigation-drawer-header">
+              <Typography variant="subtitle2">Navigation</Typography>
+              <Tooltip title="Keep navigation visible">
+                <IconButton
+                  size="small"
+                  aria-label="Keep navigation visible"
+                  onClick={() => selectNavigationMode("rail")}
+                >
+                  <PushPinOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </div>
+            <NavigationItems onNavigate={() => setDrawerOpen(false)} />
+          </Drawer>
+        </>
+      ) : (
+        <aside className="navigation-rail">
+          <Tooltip title="Use sliding navigation" placement="right">
+            <IconButton
+              size="small"
+              aria-label="Use sliding navigation"
+              onClick={() => selectNavigationMode("tray")}
+            >
+              <PushPinIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <NavigationItems compact />
+        </aside>
+      )}
 
       <main className="workspace">
         <Outlet />
       </main>
     </div>
+  );
+}
+
+function NavigationItems({
+  compact = false,
+  onNavigate,
+}: {
+  compact?: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <List dense disablePadding component="nav" aria-label="Primary navigation">
+      {destinations.map(([label, path, DestinationIcon, accent]) => {
+        const item = (
+          <ListItemButton
+            component={NavLink}
+            key={path}
+            to={path}
+            aria-label={compact ? label : undefined}
+            onClick={onNavigate}
+          >
+            <ListItemIcon className={`navigation-icon-${accent}`}>
+              <DestinationIcon fontSize="small" />
+            </ListItemIcon>
+            {!compact && <ListItemText primary={label} />}
+          </ListItemButton>
+        );
+        return compact ? (
+          <Tooltip key={path} title={label} placement="right">
+            {item}
+          </Tooltip>
+        ) : item;
+      })}
+    </List>
   );
 }

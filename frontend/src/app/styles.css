@@ -16,6 +16,7 @@ body,
 }
 
 .app-shell {
+  display: flex;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -57,6 +58,7 @@ body,
 
 .workspace {
   width: 100%;
+  flex: 1;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -174,54 +176,111 @@ body,
   box-shadow: 0.5rem 0 1.5rem rgb(0 0 0 / 35%);
 }
 
-.navigation-drawer .MuiListItemButton-root {
+.navigation-drawer-header {
+  display: flex;
+  min-height: 2.5rem;
+  padding: 0 0.5rem 0 0.75rem;
+  border-bottom: 0.0625rem solid #343b45;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.navigation-rail {
+  z-index: 1;
+  display: flex;
+  width: 2.5rem;
+  min-width: 2.5rem;
+  height: 100%;
+  padding: 0.25rem 0;
+  border-right: 0.0625rem solid #343b45;
+  background: #191e24;
+  flex-direction: column;
+  align-items: center;
+}
+
+.navigation-rail > .MuiIconButton-root {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.25rem;
+  color: #7f8b99;
+}
+
+.navigation-rail .MuiList-root {
+  width: 100%;
+}
+
+.navigation-drawer .MuiListItemButton-root,
+.navigation-rail .MuiListItemButton-root {
   padding: 0.4rem 0.75rem;
   color: #aeb7c2;
 }
 
-.navigation-drawer .MuiListItemIcon-root {
+.navigation-drawer .MuiListItemIcon-root,
+.navigation-rail .MuiListItemIcon-root {
   min-width: 2rem;
   color: inherit;
 }
 
-.navigation-drawer .navigation-icon-purple {
+.navigation-rail .MuiListItemButton-root {
+  min-height: 2.25rem;
+  padding: 0;
+  justify-content: center;
+}
+
+.navigation-rail .MuiListItemIcon-root {
+  min-width: 0;
+  justify-content: center;
+}
+
+.navigation-drawer .navigation-icon-purple,
+.navigation-rail .navigation-icon-purple {
   color: #8b5cf6;
 }
 
-.navigation-drawer .navigation-icon-yellow {
+.navigation-drawer .navigation-icon-yellow,
+.navigation-rail .navigation-icon-yellow {
   color: #f2c94c;
 }
 
-.navigation-drawer .navigation-icon-green {
+.navigation-drawer .navigation-icon-green,
+.navigation-rail .navigation-icon-green {
   color: #2fbf71;
 }
 
-.navigation-drawer .navigation-icon-blue {
+.navigation-drawer .navigation-icon-blue,
+.navigation-rail .navigation-icon-blue {
   color: #58a6ff;
 }
 
-.navigation-drawer .navigation-icon-coral {
+.navigation-drawer .navigation-icon-coral,
+.navigation-rail .navigation-icon-coral {
   color: #fb7185;
 }
 
-.navigation-drawer .navigation-icon-magenta {
+.navigation-drawer .navigation-icon-magenta,
+.navigation-rail .navigation-icon-magenta {
   color: #e879f9;
 }
 
-.navigation-drawer .navigation-icon-cyan {
+.navigation-drawer .navigation-icon-cyan,
+.navigation-rail .navigation-icon-cyan {
   color: #22d3ee;
 }
 
-.navigation-drawer .navigation-icon-amber {
+.navigation-drawer .navigation-icon-amber,
+.navigation-rail .navigation-icon-amber {
   color: #f59e0b;
 }
 
-.navigation-drawer .navigation-icon-lime {
+.navigation-drawer .navigation-icon-lime,
+.navigation-rail .navigation-icon-lime {
   color: #84cc16;
 }
 
 .navigation-drawer .MuiListItemButton-root:hover,
-.navigation-drawer .MuiListItemButton-root.active {
+.navigation-drawer .MuiListItemButton-root.active,
+.navigation-rail .MuiListItemButton-root:hover,
+.navigation-rail .MuiListItemButton-root.active {
   color: #f0f4f8;
   background: #252c35;
 }
