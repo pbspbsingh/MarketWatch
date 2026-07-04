@@ -41,7 +41,13 @@ pub(crate) struct DailyNoteListRow {
 
 pub struct DailyNoteImage {
     pub bytes: Vec<u8>,
-    pub updated_at: chrono::NaiveDateTime,
+}
+
+pub struct DailyNoteImageEdit {
+    pub source: Vec<u8>,
+    pub annotations_json: String,
+    pub width: i64,
+    pub height: i64,
 }
 
 #[derive(Clone)]

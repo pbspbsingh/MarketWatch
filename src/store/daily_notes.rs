@@ -1,4 +1,4 @@
-use super::{DailyNoteImage, DailyNoteListRow, DailyNoteUpdate, Store};
+use super::{DailyNoteImage, DailyNoteImageEdit, DailyNoteListRow, DailyNoteUpdate, Store};
 use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -217,8 +217,7 @@ impl Store {
     ) -> anyhow::Result<Option<DailyNoteImage>> {
         sqlx::query_as!(
             DailyNoteImage,
-            r#"SELECT COALESCE(ref.rendered_blob, image.source_blob) AS "bytes!: Vec<u8>",
-                      ref.updated_at AS "updated_at: chrono::NaiveDateTime"
+            r#"SELECT COALESCE(ref.rendered_blob, image.source_blob) AS "bytes!: Vec<u8>"
                FROM daily_note_image_refs ref
                JOIN daily_note_images image ON image.id = ref.image_id
                WHERE ref.id = ?"#,
@@ -260,6 +259,46 @@ impl Store {
             .await
             .context("failed to commit image cleanup")?;
         Ok((references, images))
+    }
+
+    pub async fn daily_note_image_edit(
+        &self,
+        reference_id: i64,
+    ) -> anyhow::Result<Option<DailyNoteImageEdit>> {
+        sqlx::query_as!(
+            DailyNoteImageEdit,
+            r#"SELECT image.source_blob AS "source!: Vec<u8>",
+                      ref.annotations_json,
+                      image.width,
+                      image.height
+               FROM daily_note_image_refs ref
+               JOIN daily_note_images image ON image.id = ref.image_id
+               WHERE ref.id = ?"#,
+            reference_id,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load image annotation data")
+    }
+
+    pub async fn update_daily_note_image_annotations(
+        &self,
+        reference_id: i64,
+        annotations_json: &str,
+        rendered: &[u8],
+    ) -> anyhow::Result<bool> {
+        sqlx::query!(
+            r#"UPDATE daily_note_image_refs
+               SET annotations_json = ?, rendered_blob = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?"#,
+            annotations_json,
+            rendered,
+            reference_id,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to save image annotations")
+        .map(|result| result.rows_affected() == 1)
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::DailyNote;
 use crate::services::daily_notes::{
-    DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
+    DailyNoteImageEdit, DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
 };
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -11,6 +11,7 @@ use axum::{Json, Router};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::hash::{Hash, Hasher};
 use tracing::error;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<Value>)>;
@@ -53,8 +54,94 @@ pub fn router() -> Router<AppState> {
             axum::routing::post(upload_image),
         )
         .route("/daily-notes/image-refs/{id}", get(image))
+        .route("/daily-notes/image-refs/{id}/edit", get(image_edit))
+        .route(
+            "/daily-notes/image-refs/{id}/edit/source",
+            get(image_source),
+        )
+        .route(
+            "/daily-notes/image-refs/{id}/annotations",
+            axum::routing::put(save_annotations),
+        )
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
+}
+
+async fn image_edit(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<DailyNoteImageEdit> {
+    state
+        .daily_notes
+        .image_edit(id)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn image_source(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, (StatusCode, Json<Value>)> {
+    let bytes = state
+        .daily_notes
+        .image_source(id)
+        .await
+        .map_err(api_error)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/webp"),
+            (header::CACHE_CONTROL, "private, no-cache"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn save_annotations(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    mut multipart: Multipart,
+) -> ApiResult<DailyNoteImageEdit> {
+    let mut annotations = None;
+    let mut image = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?
+    {
+        let name = field.name().unwrap_or_default().to_owned();
+        let content_type = field.content_type().unwrap_or_default().to_owned();
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?;
+        match name.as_str() {
+            "annotations" if content_type == "application/json" => annotations = Some(bytes),
+            "image" if content_type == "image/webp" => image = Some(bytes),
+            _ => {
+                return Err(api_error(DailyNotesError::Validation(
+                    "expected annotations JSON and image WebP fields".to_owned(),
+                )));
+            }
+        }
+    }
+    let annotations = annotations.ok_or_else(|| {
+        api_error(DailyNotesError::Validation(
+            "annotations field is required".to_owned(),
+        ))
+    })?;
+    let image = image.ok_or_else(|| {
+        api_error(DailyNotesError::Validation(
+            "image field is required".to_owned(),
+        ))
+    })?;
+    state
+        .daily_notes
+        .save_annotations(id, &annotations, &image)
+        .await
+        .map(Json)
+        .map_err(api_error)
 }
 
 async fn render(
@@ -105,12 +192,9 @@ async fn image(
     headers: HeaderMap,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let image = state.daily_notes.image(id).await.map_err(api_error)?;
-    let timestamp = image.updated_at.and_utc();
-    let etag = format!(
-        "\"{id}-{}-{}\"",
-        timestamp.timestamp(),
-        timestamp.timestamp_subsec_nanos()
-    );
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    image.bytes.hash(&mut hasher);
+    let etag = format!("\"{id}-{:x}\"", hasher.finish());
     if headers
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok())
