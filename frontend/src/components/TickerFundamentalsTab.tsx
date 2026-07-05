@@ -64,7 +64,6 @@ function GrowthChart({
     growthPercent(quarter[field], quarters[index]?.[field]),
   );
   const forecastGrowth = growthPercent(forecast, quarters.at(-4)?.[field] ?? null);
-  const movingAverage = simpleMovingAverage(historical, 3);
   const forecastValues = Array<number | null>(historical.length + 1).fill(null);
   if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
   forecastValues[historical.length] = forecastGrowth;
@@ -102,16 +101,6 @@ function GrowthChart({
               pointBorderColor: color,
               pointBorderWidth: 2,
               tension: 0.25,
-            },
-            {
-              label: "3Q MA",
-              data: [...movingAverage, null],
-              borderColor: "rgba(179, 136, 255, 0.78)",
-              backgroundColor: "rgba(179, 136, 255, 0.78)",
-              borderWidth: 1.5,
-              pointRadius: 2,
-              pointHoverRadius: 3,
-              tension: 0.35,
             },
           ],
         },
@@ -278,15 +267,6 @@ function growthPercent(current: number | null, prior: number | null) {
   return current === null || prior === null || prior === 0
     ? null
     : ((current - prior) / Math.abs(prior)) * 100;
-}
-
-function simpleMovingAverage(values: Array<number | null>, periods: number) {
-  return values.map((_, index) => {
-    if (index < periods - 1) return null;
-    const window = values.slice(index - periods + 1, index + 1);
-    if (window.some((value) => value === null)) return null;
-    return window.reduce<number>((sum, value) => sum + value!, 0) / periods;
-  });
 }
 
 function surprisePercent(actual: number | null, estimate: number | null) {
