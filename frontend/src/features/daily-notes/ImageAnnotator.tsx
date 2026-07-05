@@ -22,7 +22,7 @@ const enabledTools = [
   "redo",
   "delete",
 ] as const;
-const maximumImageBytes = 5 * 1024 * 1024;
+const maximumEditedImageBytes = 16 * 1024 * 1024;
 
 export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnnotatorProps) {
   const editorRef = useRef<AnnotationToolRef>(null);
@@ -71,7 +71,7 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
     try {
       const rendered = editorRef.current?.getCanvasDataURL("png");
       if (rendered === undefined) throw new Error("Image editor did not produce an image");
-      const image = await dataUrlToWebp(rendered, sourceSize.width, sourceSize.height);
+      const image = await dataUrlToPng(rendered);
       await updateDailyNoteImage(imageId, image);
       onSaved();
       onClose();
@@ -143,20 +143,9 @@ function isEditableTarget(target: EventTarget | null) {
     && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
-async function dataUrlToWebp(dataUrl: string, width: number, height: number) {
-  const bitmap = await createImageBitmap(await fetch(dataUrl).then((response) => response.blob()));
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (context === null) throw new Error("Canvas is unavailable");
-    context.drawImage(bitmap, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 1));
-    if (blob === null) throw new Error("Failed to encode annotated image");
-    if (blob.size > maximumImageBytes) throw new Error("Annotated image exceeds 5 MiB");
-    return blob;
-  } finally {
-    bitmap.close();
-  }
+async function dataUrlToPng(dataUrl: string) {
+  const blob = await fetch(dataUrl).then((response) => response.blob());
+  if (blob.type !== "image/png") throw new Error("Image editor did not export PNG");
+  if (blob.size > maximumEditedImageBytes) throw new Error("Annotated image exceeds 16 MiB");
+  return blob;
 }

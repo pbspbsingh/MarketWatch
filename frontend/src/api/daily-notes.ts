@@ -69,7 +69,7 @@ export async function updateDailyNote(date: string, markdown: string, revision: 
 
 export async function uploadDailyNoteImage(date: string, image: Blob, signal?: AbortSignal) {
   const body = new FormData();
-  body.append("image", image, "chart.webp");
+  body.append("image", image, "image");
   return request<DailyNoteImageUpload>(`/api/daily-notes/${date}/images`, {
     method: "POST",
     body,
@@ -83,7 +83,7 @@ export async function updateDailyNoteImage(
   signal?: AbortSignal,
 ) {
   const body = new FormData();
-  body.append("image", image, "annotated.webp");
+  body.append("image", image, "annotated.png");
   return request<void>(`/api/daily-notes/images/${id}`, {
     method: "PUT",
     body,

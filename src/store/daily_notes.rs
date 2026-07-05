@@ -238,7 +238,7 @@ impl Store {
     pub async fn daily_note_image(&self, image_id: i64) -> anyhow::Result<Option<DailyNoteImage>> {
         sqlx::query_as!(
             DailyNoteImage,
-            r#"SELECT image_blob AS "bytes!: Vec<u8>", width, height
+            r#"SELECT image_blob AS "bytes!: Vec<u8>"
                FROM daily_note_images
                WHERE id = ?"#,
             image_id,
@@ -264,12 +264,16 @@ impl Store {
         &self,
         image_id: i64,
         image: &[u8],
+        width: i64,
+        height: i64,
     ) -> anyhow::Result<bool> {
         sqlx::query!(
             r#"UPDATE daily_note_images
-               SET image_blob = ?, updated_at = CURRENT_TIMESTAMP
+               SET image_blob = ?, width = ?, height = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?"#,
             image,
+            width,
+            height,
             image_id,
         )
         .execute(&self.pool)

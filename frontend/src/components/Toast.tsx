@@ -13,6 +13,7 @@ export function Toast({ message, severity = "error", onClose }: ToastProps) {
       autoHideDuration={6000}
       onClose={onClose}
       anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      sx={{ zIndex: 1800 }}
     >
       <Alert severity={severity} variant="filled" onClose={onClose}>
         {message}
@@ -20,4 +21,3 @@ export function Toast({ message, severity = "error", onClose }: ToastProps) {
     </Snackbar>
   );
 }
-

@@ -11,6 +11,7 @@ use axum::{Json, Router};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use tracing::error;
 
@@ -55,7 +56,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/daily-notes/images/{id}", get(image).put(update_image))
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
-        .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(17 * 1024 * 1024))
 }
 
 async fn update_image(
@@ -76,10 +77,10 @@ async fn update_image(
             .await
             .map_err(|error| api_error(DailyNotesError::Validation(error.to_string())))?;
         match name.as_str() {
-            "image" if content_type == "image/webp" => image = Some(bytes),
+            "image" if content_type == "image/png" => image = Some(bytes),
             _ => {
                 return Err(api_error(DailyNotesError::Validation(
-                    "expected one image WebP field".to_owned(),
+                    "expected one image PNG field".to_owned(),
                 )));
             }
         }
@@ -122,9 +123,12 @@ async fn upload_image(
                 "image field is required".to_owned(),
             ))
         })?;
-    if field.content_type() != Some("image/webp") {
+    if !matches!(
+        field.content_type(),
+        Some("image/jpeg" | "image/png" | "image/webp")
+    ) {
         return Err(api_error(DailyNotesError::Validation(
-            "image content type must be image/webp".to_owned(),
+            "image content type must be image/jpeg, image/png, or image/webp".to_owned(),
         )));
     }
     let bytes = field
@@ -145,7 +149,7 @@ async fn image(
     headers: HeaderMap,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let image = state.daily_notes.image(id).await.map_err(api_error)?;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = DefaultHasher::new();
     image.bytes.hash(&mut hasher);
     let etag = format!("\"{id}-{:x}\"", hasher.finish());
     if headers

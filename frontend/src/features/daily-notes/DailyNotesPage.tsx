@@ -23,7 +23,6 @@ import {
 import { Toast } from "../../components/Toast";
 import { SplitPane } from "../../components/SplitPane";
 import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
-import { compressClipboardImage } from "./clipboard-image";
 import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNoteImagePreview } from "./DailyNoteImagePreview";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
@@ -387,8 +386,7 @@ export function DailyNotesPage() {
     setSaveStatus("saving");
     const promise = (async () => {
       try {
-        const compressed = await compressClipboardImage(source);
-        const uploaded = await uploadDailyNoteImage(date, compressed);
+        const uploaded = await uploadDailyNoteImage(date, source);
         editorRef.current?.replaceSelection(`\n${uploaded.markdown}\n`);
         return true;
       } catch (requestError) {
