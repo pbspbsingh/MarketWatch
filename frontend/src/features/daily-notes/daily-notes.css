@@ -12,6 +12,14 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.daily-notes-page-with-contents {
+  grid-template-columns: 18rem 13rem minmax(0, 1fr);
+}
+
+.daily-notes-page-sidebar-collapsed.daily-notes-page-with-contents {
+  grid-template-columns: 13rem minmax(0, 1fr);
+}
+
 .daily-notes-sidebar {
   display: flex;
   min-width: 0;
@@ -19,6 +27,71 @@
   border-right: 0.0625rem solid #2a3038;
   background: #191e24;
   flex-direction: column;
+}
+
+.daily-note-contents {
+  min-width: 0;
+  min-height: 0;
+  border-right: 0.0625rem solid #2a3038;
+  background: #151a20;
+  overflow: auto;
+
+  & header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.75rem;
+    border-bottom: 0.0625rem solid #2a3038;
+    color: #aeb7c2;
+    background: #191e24;
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  & nav {
+    display: flex;
+    padding: 0.5rem 0;
+    flex-direction: column;
+  }
+
+  & button {
+    width: 100%;
+    padding: 0.35rem 0.75rem;
+    border: 0;
+    color: #aeb7c2;
+    background: transparent;
+    overflow: hidden;
+    font-size: 0.76rem;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  & button[data-level="2"] {
+    padding-left: 1.25rem;
+  }
+
+  & button[data-level="3"] {
+    padding-left: 1.75rem;
+    color: #8f9aa7;
+    font-size: 0.71rem;
+  }
+
+  & button:hover,
+  & button:focus-visible {
+    color: #f0f4f8;
+    background: #252c35;
+  }
+}
+
+.daily-note-contents-empty {
+  display: block;
+  padding: 0.75rem;
+  color: #65758a;
+  font-size: 0.72rem;
 }
 
 .daily-notes-sidebar-header {
@@ -670,6 +743,14 @@ body.daily-note-image-editor-open [data-radix-popper-content-wrapper] {
 
   .daily-notes-page-sidebar-collapsed {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .daily-notes-page-with-contents {
+    grid-template-columns: 12rem 10rem minmax(0, 1fr);
+  }
+
+  .daily-notes-page-sidebar-collapsed.daily-notes-page-with-contents {
+    grid-template-columns: 10rem minmax(0, 1fr);
   }
 
   .daily-note-preview {

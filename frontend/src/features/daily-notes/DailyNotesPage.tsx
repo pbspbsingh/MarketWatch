@@ -24,6 +24,7 @@ import {
 import { Toast } from "../../components/Toast";
 import { SplitPane } from "../../components/SplitPane";
 import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
+import { DailyNoteContents } from "./DailyNoteContents";
 import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNoteImagePreview } from "./DailyNoteImagePreview";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
@@ -440,8 +441,15 @@ export function DailyNotesPage() {
     setSaveStatus(conflictBlockedRef.current ? "failed" : "unsaved");
   };
 
+  const showContents = mode === "read" && document !== undefined;
+  const scrollToHeading = (sourcePosition: string) => {
+    const heading = [...(previewRef.current?.querySelectorAll<HTMLElement>("h1, h2, h3") ?? [])]
+      .find((candidate) => candidate.dataset.sourcepos === sourcePosition);
+    heading?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
-    <section className={`daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}`}>
+    <section className={`daily-notes-page${sidebarCollapsed ? " daily-notes-page-sidebar-collapsed" : ""}${showContents ? " daily-notes-page-with-contents" : ""}`}>
       {!sidebarCollapsed && (
         <DailyNotesSidebar
           notes={visibleNotes}
@@ -454,6 +462,9 @@ export function DailyNotesPage() {
           onCreate={create}
           onDelete={setDeleteTarget}
         />
+      )}
+      {showContents && (
+        <DailyNoteContents html={document.html} onSelect={scrollToHeading} />
       )}
       <main className="daily-note-workspace">
         <DailyNoteHeader
