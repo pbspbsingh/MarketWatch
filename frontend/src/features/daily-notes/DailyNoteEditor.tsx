@@ -33,14 +33,18 @@ export interface DailyNoteEditorHandle {
 export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
   value: string;
   onChange: (value: string) => void;
+  onCursorLineChange: (line: number) => void;
   onPasteImage: (image: Blob) => void;
-}>(function DailyNoteEditor({ value, onChange, onPasteImage }, ref) {
+}>(function DailyNoteEditor({ value, onChange, onCursorLineChange, onPasteImage }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
   const onChangeRef = useRef(onChange);
+  const onCursorLineChangeRef = useRef(onCursorLineChange);
   const onPasteImageRef = useRef(onPasteImage);
+  const cursorLineRef = useRef(0);
   const synchronizingRef = useRef(false);
   onChangeRef.current = onChange;
+  onCursorLineChangeRef.current = onCursorLineChange;
   onPasteImageRef.current = onPasteImage;
 
   useImperativeHandle(ref, () => ({
@@ -55,6 +59,12 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
 
   useEffect(() => {
     if (hostRef.current === null) return;
+    const reportCursorLine = (view: EditorView) => {
+      const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+      if (line === cursorLineRef.current) return;
+      cursorLineRef.current = line;
+      onCursorLineChangeRef.current(line);
+    };
     const view = new EditorView({
       parent: hostRef.current,
       state: EditorState.create({
@@ -103,11 +113,13 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
             if (update.docChanged && !synchronizingRef.current) {
               onChangeRef.current(update.state.doc.toString());
             }
+            if (update.selectionSet) reportCursorLine(update.view);
           }),
         ],
       }),
     });
     viewRef.current = view;
+    reportCursorLine(view);
     view.focus();
     return () => {
       view.destroy();

@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
+import { applyImageRevision } from "./image-revision";
 
 interface DailyNoteImagePreviewProps {
   html: string;
   imageRevision: number;
+  cursorLine: number;
   onResize: (sourcePosition: string, width: number) => void;
   onAnnotate: (imageId: number) => void;
 }
 
-export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotate }: DailyNoteImagePreviewProps) {
+export function DailyNoteImagePreview({ html, imageRevision, cursorLine, onResize, onAnnotate }: DailyNoteImagePreviewProps) {
   const previewRef = useRef<HTMLElement>(null);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
@@ -19,13 +21,9 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
     const { signal } = controller;
     const wrappedImages: Array<{ image: HTMLImageElement; wrapper: HTMLSpanElement; width: string }> = [];
     const enhanceImages = () => {
+      applyImageRevision(preview, imageRevision);
       for (const image of preview.querySelectorAll<HTMLImageElement>("img[data-sourcepos]")) {
         if (image.closest(".daily-note-resizable-image") !== null) continue;
-        const sourceUrl = new URL(image.src, window.location.href);
-        if (sourceUrl.pathname.startsWith("/api/daily-notes/images/")) {
-          sourceUrl.searchParams.set("preview", String(imageRevision));
-          image.src = sourceUrl.toString();
-        }
         const sourcePosition = image.dataset.sourcepos;
         if (sourcePosition === undefined) continue;
         const wrapper = document.createElement("span");
@@ -75,6 +73,7 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
       }
     };
     enhanceImages();
+    scrollToSourceLine(preview, cursorLine, "auto");
     return () => {
       controller.abort();
       for (const { image, wrapper, width } of wrappedImages) {
@@ -83,6 +82,13 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
       }
     };
   }, [html, imageRevision]);
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (preview === null) return;
+    const timeout = window.setTimeout(() => scrollToSourceLine(preview, cursorLine, "smooth"), 250);
+    return () => window.clearTimeout(timeout);
+  }, [cursorLine]);
 
   return (
     <article
@@ -96,6 +102,30 @@ export function DailyNoteImagePreview({ html, imageRevision, onResize, onAnnotat
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
+}
+
+function scrollToSourceLine(preview: HTMLElement, line: number, behavior: ScrollBehavior) {
+  const candidates = [...preview.querySelectorAll<HTMLElement>("[data-sourcepos]")]
+    .map((element) => ({ element, range: sourceLineRange(element.dataset.sourcepos) }))
+    .filter((candidate): candidate is { element: HTMLElement; range: [number, number] } => candidate.range !== undefined);
+  const target = candidates
+    .filter(({ range }) => range[0] <= line && line <= range[1])
+    .sort((left, right) => right.range[0] - left.range[0] || left.range[1] - right.range[1])[0]
+    ?? candidates.filter(({ range }) => range[0] <= line).at(-1)
+    ?? candidates[0];
+  if (target === undefined) return;
+  const previewBounds = preview.getBoundingClientRect();
+  const targetBounds = target.element.getBoundingClientRect();
+  preview.scrollTo({
+    top: preview.scrollTop + targetBounds.top - previewBounds.top
+      - preview.clientHeight / 2 + targetBounds.height / 2,
+    behavior,
+  });
+}
+
+function sourceLineRange(sourcePosition?: string): [number, number] | undefined {
+  const match = /^(\d+):\d+-(\d+):\d+$/.exec(sourcePosition ?? "");
+  return match === null ? undefined : [Number(match[1]), Number(match[2])];
 }
 
 function imageReferenceId(url: string) {

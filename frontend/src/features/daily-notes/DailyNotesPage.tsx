@@ -26,6 +26,7 @@ import type { DailyNoteEditorHandle } from "./DailyNoteEditor";
 import { DailyNoteHeader } from "./DailyNoteHeader";
 import { DailyNoteImagePreview } from "./DailyNoteImagePreview";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
+import { applyImageRevision } from "./image-revision";
 import "./daily-notes.css";
 
 type SaveStatus = "saved" | "unsaved" | "saving" | "failed";
@@ -56,6 +57,7 @@ export function DailyNotesPage() {
   const [imageUploading, setImageUploading] = useState(false);
   const [annotationImageId, setAnnotationImageId] = useState<number>();
   const [annotationRevision, setAnnotationRevision] = useState(0);
+  const [cursorLine, setCursorLine] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [highlightQuery, setHighlightQuery] = useState<string>();
@@ -95,6 +97,7 @@ export function DailyNotesPage() {
     conflictBlockedRef.current = false;
     setConflictRevision(undefined);
     setHighlightQuery(undefined);
+    setCursorLine(1);
     setMode("edit");
   };
 
@@ -255,6 +258,12 @@ export function DailyNotesPage() {
       controller.abort();
     };
   }, [draft, mode]);
+
+  useEffect(() => {
+    if (mode === "read" && previewRef.current !== null) {
+      applyImageRevision(previewRef.current, annotationRevision);
+    }
+  }, [annotationRevision, document?.html, mode]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -484,7 +493,13 @@ export function DailyNotesPage() {
               first={(
                 <div className="daily-note-editor-pane">
                   <Suspense fallback={<CircularProgress className="daily-note-document-loading" size="1.5rem" />}>
-                    <DailyNoteEditor ref={editorRef} value={draft} onPasteImage={pasteImage} onChange={changeDraft} />
+                    <DailyNoteEditor
+                      ref={editorRef}
+                      value={draft}
+                      onPasteImage={pasteImage}
+                      onChange={changeDraft}
+                      onCursorLineChange={setCursorLine}
+                    />
                   </Suspense>
                   {imageUploading && (
                     <div className="daily-note-image-uploading" role="status">
@@ -498,6 +513,7 @@ export function DailyNotesPage() {
                 <DailyNoteImagePreview
                   html={previewHtml}
                   imageRevision={annotationRevision}
+                  cursorLine={cursorLine}
                   onAnnotate={setAnnotationImageId}
                   onResize={(sourcePosition, width) => {
                     const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);

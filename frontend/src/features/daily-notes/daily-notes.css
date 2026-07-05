@@ -274,25 +274,156 @@
   margin: 0 auto;
   padding: 2rem;
   color: #d7dde5;
+  font-size: 0.9rem;
   line-height: 1.6;
 
+  & > :first-child {
+    margin-top: 0;
+  }
+
+  & > :last-child {
+    margin-bottom: 0;
+  }
+
+  & h1,
+  & h2,
+  & h3,
+  & h4,
+  & h5,
+  & h6 {
+    margin: 1.5em 0 0.55em;
+    color: #f0f4f8;
+    font-weight: 650;
+    line-height: 1.25;
+  }
+
+  & h1 {
+    padding-bottom: 0.35rem;
+    border-bottom: 0.0625rem solid #343b45;
+    font-size: 1.65rem;
+  }
+
+  & h2 {
+    padding-bottom: 0.25rem;
+    border-bottom: 0.0625rem solid #2a3038;
+    font-size: 1.3rem;
+  }
+
+  & h3 {
+    font-size: 1.1rem;
+  }
+
+  & h4,
+  & h5,
+  & h6 {
+    font-size: 0.95rem;
+  }
+
+  & p,
+  & ul,
+  & ol,
+  & blockquote,
+  & pre,
+  & table {
+    margin: 0 0 1rem;
+  }
+
+  & ul,
+  & ol {
+    padding-left: 1.5rem;
+  }
+
+  & li + li {
+    margin-top: 0.2rem;
+  }
+
+  & li > ul,
+  & li > ol {
+    margin: 0.2rem 0 0;
+  }
+
+  & blockquote {
+    padding: 0.25rem 1rem;
+    border-left: 0.2rem solid #596779;
+    color: #aeb7c2;
+    background: #151a20;
+  }
+
+  & blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  & hr {
+    height: 0.0625rem;
+    margin: 1.5rem 0;
+    border: 0;
+    background: #343b45;
+  }
+
   & img {
+    display: block;
     max-width: 100%;
     height: auto;
+    border-radius: 0.25rem;
   }
 
   & a {
     color: #58a6ff;
+    text-decoration: none;
   }
 
-  & pre,
+  & a:hover {
+    text-decoration: underline;
+  }
+
   & code {
+    padding: 0.12rem 0.3rem;
+    border-radius: 0.2rem;
     background: #191e24;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.85em;
   }
 
   & pre {
     padding: 0.75rem;
+    border: 0.0625rem solid #2a3038;
+    border-radius: 0.3rem;
+    background: #151a20;
     overflow: auto;
+  }
+
+  & pre code {
+    padding: 0;
+    background: transparent;
+    font-size: 0.8rem;
+  }
+
+  & table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  & th,
+  & td {
+    padding: 0.4rem 0.55rem;
+    border: 0.0625rem solid #343b45;
+    text-align: left;
+  }
+
+  & th {
+    color: #f0f4f8;
+    background: #20262e;
+    font-weight: 650;
+  }
+
+  & tbody tr:nth-child(even) {
+    background: #151a20;
+  }
+
+  & input[type="checkbox"] {
+    margin: 0 0.4rem 0 0;
+    accent-color: #58a6ff;
   }
 
   & mark {
