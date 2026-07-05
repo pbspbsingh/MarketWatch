@@ -35,6 +35,13 @@ pub struct DailyNoteImageUpload {
     pub markdown: String,
 }
 
+pub struct DailyNoteImageCrop {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Debug, Error)]
 pub enum DailyNotesError {
     #[error("{0}")]
@@ -227,6 +234,37 @@ impl DailyNotesService {
         if !self
             .store
             .update_daily_note_image(id, &webp, i64::from(width), i64::from(height))
+            .await
+            .map_err(DailyNotesError::Persistence)?
+        {
+            return Err(DailyNotesError::ImageNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub async fn crop_image(
+        &self,
+        id: i64,
+        crop: DailyNoteImageCrop,
+    ) -> Result<(), DailyNotesError> {
+        let current = self.image(id).await?;
+        let image = decode_uploaded_image(&current.bytes)?;
+        let right = crop.x.checked_add(crop.width);
+        let bottom = crop.y.checked_add(crop.height);
+        if crop.width == 0
+            || crop.height == 0
+            || right.is_none_or(|right| right > image.width())
+            || bottom.is_none_or(|bottom| bottom > image.height())
+        {
+            return Err(DailyNotesError::Validation(
+                "crop must be within the image bounds".to_owned(),
+            ));
+        }
+        let cropped = image.crop_imm(crop.x, crop.y, crop.width, crop.height);
+        let webp = encode_lossless_webp(cropped)?;
+        if !self
+            .store
+            .update_daily_note_image(id, &webp, i64::from(crop.width), i64::from(crop.height))
             .await
             .map_err(DailyNotesError::Persistence)?
         {
@@ -542,6 +580,50 @@ mod tests {
         assert!(matches!(
             service.update_image(999, &rendered).await,
             Err(DailyNotesError::ImageNotFound(999))
+        ));
+    }
+
+    #[tokio::test]
+    async fn crops_images_and_validates_bounds() {
+        use image::ImageEncoder;
+
+        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let note_date = date("2026-07-03");
+        service.create(note_date).await.unwrap();
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[255; 4 * 4 * 2], 4, 2, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        let uploaded = service.upload_image(note_date, &png).await.unwrap();
+
+        service
+            .crop_image(
+                uploaded.id,
+                DailyNoteImageCrop {
+                    x: 1,
+                    y: 0,
+                    width: 2,
+                    height: 2,
+                },
+            )
+            .await
+            .unwrap();
+        let stored = service.image(uploaded.id).await.unwrap();
+        let cropped = image::load_from_memory(&stored.bytes).unwrap();
+        assert_eq!((cropped.width(), cropped.height()), (2, 2));
+        assert!(matches!(
+            service
+                .crop_image(
+                    uploaded.id,
+                    DailyNoteImageCrop {
+                        x: 1,
+                        y: 0,
+                        width: 2,
+                        height: 2,
+                    },
+                )
+                .await,
+            Err(DailyNotesError::Validation(_))
         ));
     }
 

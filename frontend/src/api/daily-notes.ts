@@ -91,6 +91,19 @@ export async function updateDailyNoteImage(
   });
 }
 
+export async function cropDailyNoteImage(
+  id: number,
+  crop: { x: number; y: number; width: number; height: number },
+  signal?: AbortSignal,
+) {
+  return request<void>(`/api/daily-notes/images/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(crop),
+    signal,
+  });
+}
+
 export async function renderDailyNote(markdown: string, query?: string, signal?: AbortSignal) {
   return request<RenderedMarkdown>("/api/daily-notes/render", {
     method: "POST",

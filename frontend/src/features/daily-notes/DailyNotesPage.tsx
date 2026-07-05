@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import {
   createDailyNote,
+  cropDailyNoteImage,
   deleteDailyNote,
   fetchDailyNote,
   fetchDailyNotes,
@@ -514,7 +515,13 @@ export function DailyNotesPage() {
                   html={previewHtml}
                   imageRevision={annotationRevision}
                   cursorLine={cursorLine}
+                  interactionsDisabled={annotationImageId !== undefined}
                   onAnnotate={setAnnotationImageId}
+                  onCrop={(imageId, crop) => {
+                    void cropDailyNoteImage(imageId, crop)
+                      .then(() => setAnnotationRevision((revision) => revision + 1))
+                      .catch((requestError: unknown) => setError(message(requestError)));
+                  }}
                   onResize={(sourcePosition, width) => {
                     const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);
                     if (resized !== undefined) changeDraft(resized);

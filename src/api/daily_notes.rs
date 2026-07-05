@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::DailyNote;
 use crate::services::daily_notes::{
-    DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
+    DailyNoteImageCrop, DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
 };
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -39,6 +39,14 @@ struct RenderInput {
     query: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct CropImageInput {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
 #[derive(Serialize)]
 struct NoteDocument {
     #[serde(flatten)]
@@ -54,7 +62,10 @@ pub fn router() -> Router<AppState> {
             "/daily-notes/{date}/images",
             axum::routing::post(upload_image),
         )
-        .route("/daily-notes/images/{id}", get(image).put(update_image))
+        .route(
+            "/daily-notes/images/{id}",
+            get(image).put(update_image).patch(crop_image),
+        )
         .route("/daily-notes/{date}", get(note).put(update).delete(remove))
         .layer(DefaultBodyLimit::max(17 * 1024 * 1024))
 }
@@ -93,6 +104,27 @@ async fn update_image(
     state
         .daily_notes
         .update_image(id, &image)
+        .await
+        .map_err(api_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn crop_image(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(input): Json<CropImageInput>,
+) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    state
+        .daily_notes
+        .crop_image(
+            id,
+            DailyNoteImageCrop {
+                x: input.x,
+                y: input.y,
+                width: input.width,
+                height: input.height,
+            },
+        )
         .await
         .map_err(api_error)?;
     Ok(StatusCode::NO_CONTENT)

@@ -474,8 +474,99 @@
   touch-action: none;
 }
 
-.daily-note-resizable-image-selected .daily-note-image-resize-handle {
+.daily-note-image-crop-actions {
+  z-index: 3;
+  display: flex;
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  gap: 0.3rem;
+}
+
+.daily-note-image-crop-button,
+.daily-note-image-crop-cancel {
+  display: none;
+  padding: 0.2rem 0.4rem;
+  border: 0.0625rem solid #65758a;
+  border-radius: 0.2rem;
+  color: #f0f4f8;
+  background: #252c35;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.daily-note-image-crop-button:disabled {
+  color: #8f9aa7;
+  cursor: default;
+}
+
+.daily-note-image-crop-cancel {
+  color: #d7dde5;
+}
+
+.daily-note-resizable-image-selected .daily-note-image-resize-handle,
+.daily-note-resizable-image-selected .daily-note-image-crop-button {
   display: block;
+}
+
+.daily-note-image-cropping img {
+  cursor: crosshair;
+}
+
+.daily-note-image-cropping {
+  overflow: hidden;
+}
+
+.daily-note-image-cropping .daily-note-image-resize-handle {
+  display: none;
+  pointer-events: none;
+}
+
+.daily-note-image-cropping .daily-note-image-crop-cancel {
+  display: block;
+}
+
+.daily-note-image-crop-region {
+  position: absolute;
+  z-index: 2;
+  border: 0.125rem solid #4fc1ff;
+  background: rgb(79 193 255 / 18%);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%);
+  cursor: move;
+}
+
+.daily-note-image-crop-handle {
+  width: 0.65rem;
+  height: 0.65rem;
+  position: absolute;
+  border: 0.125rem solid #111418;
+  border-radius: 50%;
+  background: #4fc1ff;
+}
+
+.daily-note-image-crop-handle-nw {
+  top: -0.4rem;
+  left: -0.4rem;
+  cursor: nwse-resize;
+}
+
+.daily-note-image-crop-handle-ne {
+  top: -0.4rem;
+  right: -0.4rem;
+  cursor: nesw-resize;
+}
+
+.daily-note-image-crop-handle-sw {
+  bottom: -0.4rem;
+  left: -0.4rem;
+  cursor: nesw-resize;
+}
+
+.daily-note-image-crop-handle-se {
+  right: -0.4rem;
+  bottom: -0.4rem;
+  cursor: nwse-resize;
 }
 
 .daily-note-image-editor {
