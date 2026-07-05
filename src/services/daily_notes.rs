@@ -3,7 +3,6 @@ use crate::store::{DailyNoteImage, DailyNoteUpdate, Store};
 use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
-use image::ImageEncoder;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -16,6 +15,8 @@ const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_INPUT_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_IMAGE_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 1920;
+const INITIAL_IMAGE_WEBP_QUALITY: f32 = 90.0;
+const LOSSLESS_WEBP_EFFORT: f32 = 75.0;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DailyNoteSummary {
     pub note_date: NaiveDate,
@@ -198,7 +199,7 @@ impl DailyNotesService {
         self.get(date).await?;
         let decoded = fit_image(decode_uploaded_image(bytes)?);
         let (width, height) = (decoded.width(), decoded.height());
-        let webp = encode_lossless_webp(decoded)?;
+        let webp = encode_initial_webp(decoded)?;
         let id = self
             .store
             .create_daily_note_image(date, &webp, i64::from(width), i64::from(height))
@@ -285,17 +286,29 @@ fn fit_image(image: image::DynamicImage) -> image::DynamicImage {
 }
 
 fn encode_lossless_webp(image: image::DynamicImage) -> Result<Vec<u8>, DailyNotesError> {
+    encode_webp(image, true, LOSSLESS_WEBP_EFFORT)
+}
+
+fn encode_initial_webp(image: image::DynamicImage) -> Result<Vec<u8>, DailyNotesError> {
+    encode_webp(image, false, INITIAL_IMAGE_WEBP_QUALITY)
+}
+
+fn encode_webp(
+    image: image::DynamicImage,
+    lossless: bool,
+    quality: f32,
+) -> Result<Vec<u8>, DailyNotesError> {
     let (width, height) = (image.width(), image.height());
     let rgba = image.into_rgba8();
-    let mut webp = Vec::new();
-    image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
-        .write_image(&rgba, width, height, image::ExtendedColorType::Rgba8)
+    let webp = webp::Encoder::from_rgba(&rgba, width, height)
+        .encode_simple(lossless, quality)
         .map_err(|error| {
-            DailyNotesError::Validation(format!("failed to encode image as WebP: {error}"))
-        })?;
+            DailyNotesError::Validation(format!("failed to encode image as WebP: {error:?}"))
+        })?
+        .to_vec();
     if webp.len() > MAX_IMAGE_BYTES {
         return Err(DailyNotesError::Validation(
-            "image exceeds 5 MiB after lossless WebP encoding".to_owned(),
+            "image exceeds 5 MiB after WebP encoding".to_owned(),
         ));
     }
     Ok(webp)
@@ -501,6 +514,7 @@ mod tests {
         let rendered = png([0, 0, 255, 255]);
         let first = service.upload_image(note_date, &source).await.unwrap();
         let second = service.upload_image(note_date, &source).await.unwrap();
+        let second_before = service.image(second.id).await.unwrap().bytes;
         service.update_image(first.id, &rendered).await.unwrap();
         let stored = service.image(first.id).await.unwrap();
         let stored = stored.bytes;
@@ -515,7 +529,7 @@ mod tests {
                 .get_pixel(0, 0),
             image::Rgba([0, 0, 255, 255]),
         );
-        assert_eq!(service.image(second.id).await.unwrap().bytes, source);
+        assert_eq!(service.image(second.id).await.unwrap().bytes, second_before);
         assert!(matches!(
             service.update_image(second.id, &source).await,
             Err(DailyNotesError::Validation(_))
@@ -545,6 +559,7 @@ mod tests {
             .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
             .unwrap();
         let source = service.upload_image(source_date, &webp).await.unwrap();
+        let stored_source = service.image(source.id).await.unwrap().bytes;
 
         let saved = service
             .update(target_date, &source.markdown, target.revision)
@@ -553,7 +568,7 @@ mod tests {
         assert_ne!(saved.markdown, source.markdown);
         let copied_id = owned_image_ids(&saved.markdown)[0];
         assert_ne!(copied_id, source.id);
-        assert_eq!(service.image(copied_id).await.unwrap().bytes, webp);
-        assert_eq!(service.image(source.id).await.unwrap().bytes, webp);
+        assert_eq!(service.image(copied_id).await.unwrap().bytes, stored_source);
+        assert_eq!(service.image(source.id).await.unwrap().bytes, stored_source);
     }
 }
