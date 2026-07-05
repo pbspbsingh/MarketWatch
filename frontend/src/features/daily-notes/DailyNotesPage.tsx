@@ -517,10 +517,14 @@ export function DailyNotesPage() {
                   cursorLine={cursorLine}
                   interactionsDisabled={annotationImageId !== undefined}
                   onAnnotate={setAnnotationImageId}
-                  onCrop={(imageId, crop) => {
-                    void cropDailyNoteImage(imageId, crop)
-                      .then(() => setAnnotationRevision((revision) => revision + 1))
-                      .catch((requestError: unknown) => setError(message(requestError)));
+                  onCrop={async (imageId, crop) => {
+                    try {
+                      await cropDailyNoteImage(imageId, crop);
+                      setAnnotationRevision((revision) => revision + 1);
+                    } catch (requestError) {
+                      setError(message(requestError));
+                      throw requestError;
+                    }
                   }}
                   onResize={(sourcePosition, width) => {
                     const resized = resizeMarkdownImage(draftRef.current, sourcePosition, width);

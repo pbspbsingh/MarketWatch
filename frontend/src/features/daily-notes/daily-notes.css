@@ -496,7 +496,8 @@
   cursor: pointer;
 }
 
-.daily-note-image-crop-button:disabled {
+.daily-note-image-crop-button:disabled,
+.daily-note-image-crop-cancel:disabled {
   color: #8f9aa7;
   cursor: default;
 }
