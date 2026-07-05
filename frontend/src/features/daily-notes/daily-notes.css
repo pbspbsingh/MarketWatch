@@ -347,8 +347,10 @@
   margin: 0 auto;
   padding: 2rem;
   color: #d7dde5;
-  font-size: 0.9rem;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
 
   & > :first-child {
     margin-top: 0;
@@ -371,25 +373,32 @@
   }
 
   & h1 {
-    padding-bottom: 0.35rem;
+    padding-bottom: 0.3em;
     border-bottom: 0.0625rem solid #343b45;
-    font-size: 1.65rem;
+    font-size: 2em;
   }
 
   & h2 {
-    padding-bottom: 0.25rem;
+    padding-bottom: 0.3em;
     border-bottom: 0.0625rem solid #2a3038;
-    font-size: 1.3rem;
+    font-size: 1.5em;
   }
 
   & h3 {
-    font-size: 1.1rem;
+    font-size: 1.25em;
   }
 
-  & h4,
-  & h5,
+  & h4 {
+    font-size: 1em;
+  }
+
+  & h5 {
+    font-size: 0.875em;
+  }
+
   & h6 {
-    font-size: 0.95rem;
+    color: #aeb7c2;
+    font-size: 0.85em;
   }
 
   & p,
@@ -404,6 +413,27 @@
   & ul,
   & ol {
     padding-left: 1.5rem;
+    list-style-position: outside;
+  }
+
+  & ul {
+    list-style-type: disc;
+  }
+
+  & ol {
+    list-style-type: decimal;
+  }
+
+  & ul ul {
+    list-style-type: circle;
+  }
+
+  & ul ul ul {
+    list-style-type: square;
+  }
+
+  & li.task-list-item {
+    list-style-type: none;
   }
 
   & li + li {
@@ -416,10 +446,9 @@
   }
 
   & blockquote {
-    padding: 0.25rem 1rem;
-    border-left: 0.2rem solid #596779;
+    padding: 0 1rem;
+    border-left: 0.25rem solid #596779;
     color: #aeb7c2;
-    background: #151a20;
   }
 
   & blockquote > :last-child {
@@ -449,6 +478,10 @@
     text-decoration: underline;
   }
 
+  & strong {
+    font-weight: 600;
+  }
+
   & code {
     padding: 0.12rem 0.3rem;
     border-radius: 0.2rem;
@@ -468,13 +501,16 @@
   & pre code {
     padding: 0;
     background: transparent;
-    font-size: 0.8rem;
+    font-size: 100%;
+    white-space: pre;
   }
 
   & table {
+    display: block;
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.82rem;
+    overflow-x: auto;
+    font-size: 0.875em;
   }
 
   & th,
