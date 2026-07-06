@@ -6,7 +6,7 @@ export interface TopStocksSelection {
 }
 
 export type TopStocksSource =
-  | { kind: "periods"; selections: TopStocksSelection[] }
+  | { kind: "periods"; selections: TopStocksSelection[]; apply_additional_filters: boolean }
   | { kind: "custom_screen"; screen_id: number };
 
 export interface TopStocksSnapshot {

@@ -19,4 +19,5 @@ max_delay_ms = 1000
 
 [finviz]
 industry_membership_filters = ["cap_smallover", "sh_avgvol_o400", "sh_price_o3"]
+top_stocks_additional_filters = []
 membership_fresh_days = 15

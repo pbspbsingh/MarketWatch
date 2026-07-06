@@ -1,3 +1,4 @@
+use crate::config::FinvizConfig;
 use crate::models::TopStockScreen;
 use crate::providers::FinvizClient;
 use crate::store::Store;
@@ -44,8 +45,14 @@ pub struct TopStocksSelection {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TopStocksSource {
-    Periods { selections: Vec<TopStocksSelection> },
-    CustomScreen { screen_id: i64 },
+    Periods {
+        selections: Vec<TopStocksSelection>,
+        #[serde(default)]
+        apply_additional_filters: bool,
+    },
+    CustomScreen {
+        screen_id: i64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,6 +91,7 @@ pub enum TopStocksError {
 pub struct TopStocksService {
     store: Store,
     finviz: Arc<FinvizClient>,
+    additional_filters: Vec<String>,
     snapshot: Mutex<Option<TopStocksSnapshot>>,
     period_selections: Mutex<Vec<TopStocksSelection>>,
     cache: Mutex<Cache>,
@@ -91,13 +99,19 @@ pub struct TopStocksService {
 
 #[derive(Default)]
 struct Cache {
-    periods: HashMap<TopStocksPeriod, CachedPeriod>,
+    periods: HashMap<PeriodCacheKey, CachedPeriod>,
     screens: HashMap<ScreenCacheKey, Vec<String>>,
 }
 
 struct CachedPeriod {
     requested_count: usize,
     symbols: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PeriodCacheKey {
+    period: TopStocksPeriod,
+    apply_additional_filters: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -108,10 +122,11 @@ struct ScreenCacheKey {
 }
 
 impl TopStocksService {
-    pub fn new(store: Store, finviz: Arc<FinvizClient>) -> Self {
+    pub fn new(store: Store, finviz: Arc<FinvizClient>, finviz_config: &FinvizConfig) -> Self {
         Self {
             store,
             finviz,
+            additional_filters: finviz_config.top_stocks_additional_filters.clone(),
             snapshot: Mutex::new(None),
             period_selections: Mutex::new(Vec::new()),
             cache: Mutex::new(Cache::default()),
@@ -129,7 +144,7 @@ impl TopStocksService {
         validate_source(&source)?;
         let symbols = self.fetch(&source).await?;
         let period_selections = match &source {
-            TopStocksSource::Periods { selections } => {
+            TopStocksSource::Periods { selections, .. } => {
                 *self.period_selections.lock().await = selections.clone();
                 selections.clone()
             }
@@ -236,7 +251,13 @@ impl TopStocksService {
 
     async fn fetch(&self, source: &TopStocksSource) -> Result<Vec<String>, TopStocksError> {
         match source {
-            TopStocksSource::Periods { selections } => self.fetch_periods(selections).await,
+            TopStocksSource::Periods {
+                selections,
+                apply_additional_filters,
+            } => {
+                self.fetch_periods(selections, *apply_additional_filters)
+                    .await
+            }
             TopStocksSource::CustomScreen { screen_id } => self.fetch_screen(*screen_id).await,
         }
     }
@@ -244,34 +265,40 @@ impl TopStocksService {
     async fn fetch_periods(
         &self,
         selections: &[TopStocksSelection],
+        apply_additional_filters: bool,
     ) -> Result<Vec<String>, TopStocksError> {
         let mut cache = self.cache.lock().await;
         let mut symbols = Vec::new();
         let mut seen = HashSet::new();
         for selection in selections {
+            let key = PeriodCacheKey {
+                period: selection.period,
+                apply_additional_filters,
+            };
             let needs_fetch = cache
                 .periods
-                .get(&selection.period)
+                .get(&key)
                 .is_none_or(|cached| cached.requested_count < selection.count);
             if needs_fetch {
+                let additional_filters = if apply_additional_filters {
+                    self.additional_filters.as_slice()
+                } else {
+                    &[]
+                };
                 let symbols = self
                     .finviz
-                    .top_stocks(selection.period.sort(), selection.count)
+                    .top_stocks(selection.period.sort(), selection.count, additional_filters)
                     .await
                     .map_err(TopStocksError::Finviz)?;
                 cache.periods.insert(
-                    selection.period,
+                    key,
                     CachedPeriod {
                         requested_count: selection.count,
                         symbols,
                     },
                 );
             }
-            for symbol in cache.periods[&selection.period]
-                .symbols
-                .iter()
-                .take(selection.count)
-            {
+            for symbol in cache.periods[&key].symbols.iter().take(selection.count) {
                 if seen.insert(symbol.clone()) {
                     symbols.push(symbol.clone());
                 }
@@ -303,9 +330,15 @@ impl TopStocksService {
     async fn invalidate_source(&self, source: &TopStocksSource) -> Result<(), TopStocksError> {
         let mut cache = self.cache.lock().await;
         match source {
-            TopStocksSource::Periods { selections } => {
+            TopStocksSource::Periods {
+                selections,
+                apply_additional_filters,
+            } => {
                 for selection in selections {
-                    cache.periods.remove(&selection.period);
+                    cache.periods.remove(&PeriodCacheKey {
+                        period: selection.period,
+                        apply_additional_filters: *apply_additional_filters,
+                    });
                 }
             }
             TopStocksSource::CustomScreen { screen_id } => {
@@ -343,7 +376,7 @@ impl TopStocksService {
 }
 
 fn validate_source(source: &TopStocksSource) -> Result<(), TopStocksError> {
-    if let TopStocksSource::Periods { selections } = source {
+    if let TopStocksSource::Periods { selections, .. } = source {
         let mut periods = HashSet::new();
         for selection in selections {
             if selection.count == 0 || selection.count > MAX_PERIOD_COUNT {
@@ -471,6 +504,7 @@ mod tests {
                         count: 50,
                     },
                 ],
+                apply_additional_filters: false,
             })
             .is_err()
         );

@@ -160,17 +160,23 @@ impl FinvizClient {
         Ok(tickers)
     }
 
-    pub async fn top_stocks(&self, sort: &str, count: usize) -> anyhow::Result<Vec<String>> {
+    pub async fn top_stocks(
+        &self,
+        sort: &str,
+        count: usize,
+        additional_filters: &[String],
+    ) -> anyhow::Result<Vec<String>> {
         anyhow::ensure!(!sort.trim().is_empty(), "Finviz sort is required");
         anyhow::ensure!(count > 0, "top stock count must be positive");
 
-        let tickers = self
-            .screener_tickers(
-                &self.industry_membership_filters.join(","),
-                Some(sort),
-                count,
-            )
-            .await?;
+        let filters = self
+            .industry_membership_filters
+            .iter()
+            .chain(additional_filters)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
+        let tickers = self.screener_tickers(&filters, Some(sort), count).await?;
         info!(
             sort,
             ticker_count = tickers.len(),

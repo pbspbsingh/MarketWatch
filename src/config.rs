@@ -46,6 +46,8 @@ pub struct ProviderConfig {
 #[derive(Clone, Debug, Deserialize)]
 pub struct FinvizConfig {
     pub industry_membership_filters: Vec<String>,
+    #[serde(default)]
+    pub top_stocks_additional_filters: Vec<String>,
     pub membership_fresh_days: u16,
 }
 
@@ -110,14 +112,12 @@ impl Config {
             "providers.max_delay_ms must not be below providers.min_delay_ms"
         );
         anyhow::ensure!(
-            self.finviz
-                .industry_membership_filters
-                .iter()
-                .all(|filter| !filter.is_empty()
-                    && filter
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric() || character == '_')),
+            valid_finviz_filters(&self.finviz.industry_membership_filters),
             "finviz.industry_membership_filters must contain valid Finviz filter tokens"
+        );
+        anyhow::ensure!(
+            valid_finviz_filters(&self.finviz.top_stocks_additional_filters),
+            "finviz.top_stocks_additional_filters must contain valid Finviz filter tokens"
         );
         anyhow::ensure!(
             self.finviz.membership_fresh_days > 0,
@@ -128,6 +128,15 @@ impl Config {
         }
         Ok(())
     }
+}
+
+fn valid_finviz_filters(filters: &[String]) -> bool {
+    filters.iter().all(|filter| {
+        !filter.is_empty()
+            && filter
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    })
 }
 
 impl AiConfig {

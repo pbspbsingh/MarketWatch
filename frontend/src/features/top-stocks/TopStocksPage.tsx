@@ -29,9 +29,8 @@ export function TopStocksPage() {
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
   const [screens, setScreens] = useState<TopStockScreen[]>([]);
   const [periodSelections, setPeriodSelections] = useState<TopStocksSelection[]>([]);
-  const [draftCounts, setDraftCounts] = useState<Record<TopStocksPeriod, string>>(() =>
-    Object.fromEntries(periods.map(({ period }) => [period, String(defaultCount)])) as Record<TopStocksPeriod, string>,
-  );
+  const [draftCount, setDraftCount] = useState(String(defaultCount));
+  const [applyAdditionalFilters, setApplyAdditionalFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
   const [editor, setEditor] = useState<TopStockScreen | null>();
@@ -49,9 +48,10 @@ export function TopStocksPage() {
           || nextScreens.some((screen) => screen.id === source.screen_id) ? nextSnapshot : null;
         setSnapshot(validSnapshot);
         const rememberedSelections = nextSnapshot?.period_selections ?? [];
+        if (source?.kind === "periods") setApplyAdditionalFilters(source.apply_additional_filters);
         setPeriodSelections(rememberedSelections);
         if (rememberedSelections.length > 0) {
-          setDraftCounts((counts) => ({ ...counts, ...Object.fromEntries(rememberedSelections.map(({ period, count }) => [period, String(count)])) }));
+          setDraftCount(String(rememberedSelections[0].count));
         }
       })
       .catch((requestError: unknown) => { if (!controller.signal.aborted) { setSnapshot(null); setError(message(requestError)); } })
@@ -70,14 +70,22 @@ export function TopStocksPage() {
       const next = await replaceTopStocks(source);
       setSnapshot(next);
       setPeriodSelections(next.period_selections);
+      if (next.source.kind === "periods") setApplyAdditionalFilters(next.source.apply_additional_filters);
     }
     catch (requestError) { setError(message(requestError)); }
     finally { setLoading(false); }
   };
-  const countFor = (period: TopStocksPeriod) => {
-    const value = Number(draftCounts[period]);
+  const countForPeriods = () => {
+    const value = Number(draftCount);
     return Number.isInteger(value) && value > 0 ? value : defaultCount;
   };
+  const selectionsWithCount = (items: TopStocksSelection[], count = countForPeriods()) =>
+    items.map((item) => ({ ...item, count }));
+  const periodSource = (items: TopStocksSelection[], filters = applyAdditionalFilters): TopStocksSource => ({
+    kind: "periods",
+    selections: items,
+    apply_additional_filters: filters,
+  });
 
   const saveScreen = async (input: TopStockScreenInput) => {
     try {
@@ -103,23 +111,31 @@ export function TopStocksPage() {
       <header className="panel-header top-stocks-header">
         <Typography component="h1">Top Stocks</Typography>
         <div className="top-stocks-actions"><div className="top-stocks-controls">
+          {loading && <CircularProgress size="0.8rem" />}
+          {selectedMode === periodMode && <TextField className="top-stocks-period-count" size="small" type="number" value={draftCount} disabled={loading}
+            slotProps={{ htmlInput: { min: 1, max: 1000, "aria-label": "Stock count" } }}
+            onChange={(event) => setDraftCount(event.target.value)}
+            onBlur={() => {
+              const count = countForPeriods();
+              setDraftCount(String(count));
+              if (selections.some((item) => item.count !== count)) void save(periodSource(selectionsWithCount(selections, count)));
+            }} />}
+          {selectedMode === periodMode && <FormControlLabel className="top-stocks-additional-filters"
+            control={<Checkbox size="small" checked={applyAdditionalFilters} disabled={loading}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setApplyAdditionalFilters(checked);
+                void save(periodSource(selections, checked));
+              }} />}
+            label="Additional Filters" />}
           {selectedMode === periodMode && periods.map(({ period, label }) => (
             <div className="top-stocks-period" key={period}>
               <FormControlLabel control={<Checkbox size="small" checked={selections.some((item) => item.period === period)} disabled={loading}
-                onChange={(event) => void save({ kind: "periods", selections: event.target.checked
-                  ? [...selections, { period, count: countFor(period) }]
-                  : selections.filter((item) => item.period !== period) })} />} label={label} />
-              <TextField size="small" type="number" value={draftCounts[period]} disabled={loading}
-                slotProps={{ htmlInput: { min: 1, max: 1000, "aria-label": `${label} count` } }}
-                onChange={(event) => setDraftCounts((counts) => ({ ...counts, [period]: event.target.value }))}
-                onBlur={() => {
-                  const current = selections.find((item) => item.period === period); if (current === undefined) return;
-                  const count = countFor(period); setDraftCounts((counts) => ({ ...counts, [period]: String(count) }));
-                  if (current.count !== count) void save({ kind: "periods", selections: selections.map((item) => item.period === period ? { ...item, count } : item) });
-                }} />
+                onChange={(event) => void save(periodSource(event.target.checked
+                  ? [...selectionsWithCount(selections), { period, count: countForPeriods() }]
+                  : selections.filter((item) => item.period !== period)))} />} label={label} />
             </div>
           ))}
-          {loading && <CircularProgress size="0.8rem" />}
           <div className="top-stocks-screen-controls">
             <Select size="small" value={selectedMode} disabled={loading} aria-label="Top stocks source"
               open={screenMenuOpen} onOpen={() => setScreenMenuOpen(true)} onClose={() => setScreenMenuOpen(false)}
@@ -127,7 +143,7 @@ export function TopStocksPage() {
                 ? "Performance periods"
                 : screens.find((screen) => String(screen.id) === value)?.name ?? "Custom screen"}
               onChange={(event) => void save(event.target.value === periodMode
-                ? { kind: "periods", selections }
+                ? periodSource(selections)
                 : { kind: "custom_screen", screen_id: Number(event.target.value) })}>
               <MenuItem value={periodMode}>Performance periods</MenuItem>
               {screens.map((screen) => <MenuItem key={screen.id} value={String(screen.id)} className="top-stocks-screen-option">

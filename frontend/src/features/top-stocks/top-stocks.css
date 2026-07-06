@@ -13,6 +13,8 @@
 .top-stocks-actions,
 .top-stocks-controls,
 .top-stocks-period,
+.top-stocks-period-count,
+.top-stocks-additional-filters,
 .top-stocks-action-buttons {
   display: flex;
   align-items: center;
@@ -107,13 +109,27 @@
     padding: 0.125rem;
   }
 
-  & .MuiTextField-root {
-    width: 3.7rem;
-  }
+}
+
+.top-stocks-period-count {
+  width: 3.7rem;
 
   & .MuiInputBase-input {
     padding: 0.125rem 0.25rem;
     font-size: 0.7rem;
+  }
+}
+
+.top-stocks-additional-filters {
+  flex-shrink: 0;
+  margin-right: 0 !important;
+
+  & .MuiFormControlLabel-label {
+    font-size: 0.7rem;
+  }
+
+  & .MuiCheckbox-root {
+    padding: 0.125rem;
   }
 }
 
