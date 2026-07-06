@@ -9,6 +9,22 @@ export type GroupMode = "industry" | "theme";
 
 export type RevealRequest<T> = { value: T; revision: number };
 
+export type TickerFilters = {
+  adr: {
+    enabled: boolean;
+    min: number;
+  };
+  dollarVolume: {
+    enabled: boolean;
+    min: number;
+  };
+};
+
+export type TickerFilterCounts = {
+  total: number;
+  filtered: number;
+};
+
 export type GroupRanking = {
   key: string;
   name: string;

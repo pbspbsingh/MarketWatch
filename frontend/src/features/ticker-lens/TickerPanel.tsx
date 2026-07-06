@@ -51,6 +51,8 @@ import type {
   GroupMode,
   ResolveTickersRequest,
   RevealRequest,
+  TickerFilterCounts,
+  TickerFilters,
   TickerSortKey,
   TickerSortSetting,
 } from "./types";
@@ -75,6 +77,8 @@ interface TickerPanelProps {
   providedWatchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onTickersChange?: (symbols: string[]) => void;
+  onFilterCountsChange?: (counts: TickerFilterCounts) => void;
+  tickerFilters?: TickerFilters;
   revealTicker?: RevealRequest<string>;
 }
 
@@ -158,6 +162,8 @@ export function TickerPanel({
   providedWatchlists,
   onWatchlistsChange,
   onTickersChange,
+  onFilterCountsChange,
+  tickerFilters,
   revealTicker,
 }: TickerPanelProps) {
   const focusRevision = useFocusRefresh();
@@ -173,7 +179,11 @@ export function TickerPanel({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const groupKey = [...groupKeys].sort().join(",");
-  const metricsActive = groupKeys.size > 0;
+  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled);
+  const filterKey = tickerFilters === undefined
+    ? ""
+    : `${tickerFilters.adr.enabled}:${tickerFilters.adr.min}:${tickerFilters.dollarVolume.enabled}:${tickerFilters.dollarVolume.min}`;
+  const metricsActive = groupKeys.size > 0 || filtersActive;
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({ mode, groupKeys, signal }),
     [groupKeys, mode, resolveTickers],
@@ -230,6 +240,8 @@ export function TickerPanel({
           performance: null,
           relative_strength: null,
           adr_percent: null,
+          latest_close: null,
+          average_volume: null,
         })));
       })
       .catch((requestError: unknown) => {
@@ -270,23 +282,29 @@ export function TickerPanel({
     return () => controller.abort();
   }, [focusRevision]);
 
-  const sortedTickers = useMemo(
-    () => sortTickers(tickers, sortSetting, metricsActive),
-    [metricsActive, sortSetting, tickers],
+  const filteredTickers = useMemo(
+    () => filterTickers(tickers, tickerFilters),
+    [filterKey, tickerFilters, tickers],
   );
-  const tickerSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
+  const sortedTickers = useMemo(
+    () => sortTickers(filteredTickers, sortSetting, metricsActive),
+    [filteredTickers, metricsActive, sortSetting],
+  );
+  const tickerSymbolsKey = filteredTickers.map((ticker) => ticker.symbol).join("\0");
 
   useEffect(() => {
     if (panelLoading) return;
-    const availableSymbols = new Set(tickers.map((ticker) => ticker.symbol));
+    const availableSymbols = new Set(filteredTickers.map((ticker) => ticker.symbol));
     setSelectedTicker((current) =>
       current !== undefined && !availableSymbols.has(current) ? undefined : current,
     );
-  }, [panelLoading, setSelectedTicker, tickerSymbolsKey]);
+  }, [filteredTickers, panelLoading, setSelectedTicker, tickerSymbolsKey]);
 
   useEffect(() => {
-    onTickersChange?.(tickers.map((ticker) => ticker.symbol));
-  }, [onTickersChange, tickerSymbolsKey]);
+    const symbols = filteredTickers.map((ticker) => ticker.symbol);
+    onTickersChange?.(symbols);
+    onFilterCountsChange?.({ total: tickers.length, filtered: filteredTickers.length });
+  }, [filteredTickers, onFilterCountsChange, onTickersChange, tickerSymbolsKey, tickers.length]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
@@ -494,7 +512,12 @@ export function TickerPanel({
           No known tickers
         </Typography>
       )}
-      {tickers.length > 0 && (
+      {!panelLoading && !panelError && tickers.length > 0 && sortedTickers.length === 0 && (
+        <Typography className="panel-empty" color="text.secondary">
+          No tickers match filters
+        </Typography>
+      )}
+      {sortedTickers.length > 0 && (
         <List
           tagName="ol"
           className="ticker-ranked-list"
@@ -536,4 +559,24 @@ export function TickerPanel({
       }} />
     </section>
   );
+}
+
+function filterTickers(tickers: TickerRanking[], filters: TickerFilters | undefined) {
+  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled)) return tickers;
+  const adrMin = clamp(filters.adr.min, 0, 20);
+  const dollarVolumeMin = clamp(filters.dollarVolume.min, 0, 1_000_000_000);
+  return tickers.filter((ticker) => {
+    if (filters.adr.enabled && (ticker.adr_percent ?? -Infinity) < adrMin) return false;
+    if (filters.dollarVolume.enabled && dollarVolume(ticker) < dollarVolumeMin) return false;
+    return true;
+  });
+}
+
+function dollarVolume(ticker: TickerRanking) {
+  if (ticker.latest_close === null || ticker.average_volume === null) return -Infinity;
+  return ticker.latest_close * ticker.average_volume;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }

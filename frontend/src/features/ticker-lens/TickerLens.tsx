@@ -12,6 +12,7 @@ import {
 import { ChartPanel } from "./ChartPanel";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
+import { readTickerFilters, TickerLensFilters, writeTickerFilterValues } from "./TickerLensFilters";
 import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
@@ -19,6 +20,8 @@ import type {
   RevealRequest,
   ResolveTickersRequest,
   SelectedTickerContext,
+  TickerFilterCounts,
+  TickerFilters,
   TickerUniverse,
 } from "./types";
 import {
@@ -70,6 +73,8 @@ export function TickerLens({
   const [groupsError, setGroupsError] = useState<string>();
   const [groupsWarning, setGroupsWarning] = useState<string>();
   const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
+  const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
+  const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string>>();
   const [revealTicker, setRevealTicker] = useState<RevealRequest<string>>();
   const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
@@ -86,8 +91,13 @@ export function TickerLens({
   const marketResolveGroupCounts =
     universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
   const selectedGroupKey = [...selectedGroupKeys].sort().join(",");
+  const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
+
+  useEffect(() => {
+    writeTickerFilterValues(tickerFilters);
+  }, [tickerFilters.adr.min, tickerFilters.dollarVolume.min]);
 
   useEffect(() => {
     const mode = searchGroupMode(searchParams);
@@ -218,6 +228,7 @@ export function TickerLens({
         .join(" ")}
       aria-label={bounded ? "Ticker collection" : "Market Watch"}
     >
+      <TickerLensFilters filters={tickerFilters} enabled={hasGroupSelection} counts={tickerFilterCounts} onChange={setTickerFilters} />
       <GroupPanel
         mode={groupMode}
         setMode={setMode}
@@ -242,6 +253,8 @@ export function TickerLens({
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
         onTickersChange={setSearchTickerSymbols}
+        onFilterCountsChange={setTickerFilterCounts}
+        tickerFilters={hasGroupSelection ? tickerFilters : undefined}
         revealTicker={revealTicker}
       />
       <ChartPanel

@@ -41,6 +41,8 @@ pub struct TickerRanking {
     pub performance: Option<PerformancePeriods>,
     pub relative_strength: Option<f64>,
     pub adr_percent: Option<f64>,
+    pub latest_close: Option<f64>,
+    pub average_volume: Option<i64>,
 }
 
 impl PerformancePeriods {
@@ -81,6 +83,13 @@ pub fn average_daily_range_percent(candles: &[DailyCandle]) -> f64 {
             .map(|candle| (candle.high / candle.low) - 1.0)
             .sum::<f64>()
         / candles.len() as f64
+}
+
+pub fn average_volume(candles: &[DailyCandle]) -> i64 {
+    if candles.is_empty() {
+        return 0;
+    }
+    candles.iter().map(|candle| candle.volume).sum::<i64>() / candles.len() as i64
 }
 
 fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {

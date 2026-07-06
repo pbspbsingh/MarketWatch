@@ -6,6 +6,8 @@ export interface TickerRanking {
   performance: PerformancePeriods | null;
   relative_strength: number | null;
   adr_percent: number | null;
+  latest_close: number | null;
+  average_volume: number | null;
 }
 
 export interface TickerGroupSummaryItem {

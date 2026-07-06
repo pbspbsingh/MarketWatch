@@ -1,7 +1,7 @@
 use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
 use crate::models::{
-    DailyCandle, TickerRanking, average_daily_range_percent, candle_performance,
+    DailyCandle, TickerRanking, average_daily_range_percent, average_volume, candle_performance,
     candle_relative_strength,
 };
 use crate::providers::FinvizClient;
@@ -25,6 +25,7 @@ pub struct TickerCatalogService {
     market_schedule: MarketSchedule,
     membership_fresh_days: i64,
     adr_sessions: usize,
+    average_volume_sessions: usize,
     membership_locks: KeyedLock,
 }
 
@@ -44,6 +45,7 @@ impl TickerCatalogService {
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             membership_fresh_days: i64::from(finviz_config.membership_fresh_days),
             adr_sessions: usize::from(market.adr_sessions),
+            average_volume_sessions: usize::from(market.average_volume_sessions),
             membership_locks: KeyedLock::new(),
         })
     }
@@ -100,12 +102,17 @@ impl TickerCatalogService {
         let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
         let performance = candle_performance(&candles, as_of);
         let adr_percent = average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
+        let latest_close = candles.last().map(|candle| candle.close);
+        let average_volume =
+            average_volume(latest_sessions(&candles, self.average_volume_sessions));
         Ok(TickerRanking {
             symbol,
             watchlist_ids,
             relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
             performance: Some(performance),
             adr_percent: Some(adr_percent),
+            latest_close,
+            average_volume: Some(average_volume),
         })
     }
 
@@ -170,6 +177,8 @@ impl TickerCatalogService {
                     performance: None,
                     relative_strength: None,
                     adr_percent: None,
+                    latest_close: None,
+                    average_volume: None,
                 })
                 .await
                 .is_err()
@@ -198,6 +207,9 @@ impl TickerCatalogService {
                     let performance = candle_performance(&candles, as_of);
                     let adr_percent =
                         average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
+                    let latest_close = candles.last().map(|candle| candle.close);
+                    let average_volume =
+                        average_volume(latest_sessions(&candles, self.average_volume_sessions));
                     TickerRanking {
                         watchlist_ids: watchlists_by_symbol
                             .get(&symbol)
@@ -210,6 +222,8 @@ impl TickerCatalogService {
                         )),
                         performance: Some(performance),
                         adr_percent: Some(adr_percent),
+                        latest_close,
+                        average_volume: Some(average_volume),
                     }
                 }
                 Err(error) => {
@@ -223,6 +237,8 @@ impl TickerCatalogService {
                         performance: None,
                         relative_strength: None,
                         adr_percent: None,
+                        latest_close: None,
+                        average_volume: None,
                     }
                 }
             };

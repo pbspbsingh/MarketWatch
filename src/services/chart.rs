@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::{DailyCandle, average_daily_range_percent};
+use crate::models::{DailyCandle, average_daily_range_percent, average_volume};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use serde::Serialize;
@@ -112,13 +112,6 @@ impl ChartService {
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
     &candles[candles.len().saturating_sub(sessions)..]
-}
-
-fn average_volume(candles: &[DailyCandle]) -> i64 {
-    if candles.is_empty() {
-        return 0;
-    }
-    candles.iter().map(|candle| candle.volume).sum::<i64>() / candles.len() as i64
 }
 
 fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option<f64> {
