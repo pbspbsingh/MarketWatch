@@ -27,7 +27,7 @@
   z-index: 5;
   top: 0;
   left: 50%;
-  width: 3.5rem;
+  width: 3rem;
   height: 1.15rem;
   border: 0.0625rem solid #343b45 !important;
   border-top: 0 !important;
@@ -37,7 +37,7 @@
 }
 
 .ticker-lens-filter-toggle-count {
-  font-size: 0.62rem;
+  font-size: 0.55rem;
   font-weight: 700;
   line-height: 1;
 }

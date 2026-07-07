@@ -137,7 +137,7 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
           onClick={() => setOpen(true)}
         >
           {active ? <FilterListIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
-          <span className="ticker-lens-filter-toggle-count">{counts.filtered}</span>
+          <span className="ticker-lens-filter-toggle-count">{counts.total}</span>
         </IconButton>
       </Tooltip>
     );
