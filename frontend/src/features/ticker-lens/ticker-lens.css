@@ -126,6 +126,10 @@
   }
 }
 
+.ticker-lens-filter-pin-active {
+  color: #2fbf71 !important;
+}
+
 .ticker-lens-filter-slider {
   display: grid;
   grid-template-columns: 8rem minmax(0, 1fr);

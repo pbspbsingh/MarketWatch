@@ -3,12 +3,15 @@ import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
+import PushPinIcon from "@mui/icons-material/PushPin";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { Checkbox, IconButton, Slider, Tooltip, Typography } from "@mui/material";
 import type { TickerFilterCounts, TickerFilters } from "./types";
 import { formatVolume } from "./utils";
 
 const filterValuesStorageKey = "market-watch.ticker-filter-values";
+const filterStateStorageKey = "market-watch.ticker-filter-state";
 
 export const defaultTickerFilters: TickerFilters = {
   adr: {
@@ -26,20 +29,33 @@ export const defaultTickerFilters: TickerFilters = {
 
 export function readTickerFilters(): TickerFilters {
   const stored = localStorage.getItem(filterValuesStorageKey);
-  if (stored === null) return defaultTickerFilters;
+  const persistedState = readPersistedFilterState();
+  if (stored === null) return {
+    adr: {
+      enabled: persistedState?.adr ?? false,
+      min: 0,
+    },
+    dollarVolume: {
+      enabled: persistedState?.dollarVolume ?? false,
+      min: 0,
+    },
+    above200Sma: {
+      enabled: persistedState?.above200Sma ?? false,
+    },
+  };
   try {
     const values = JSON.parse(stored) as { adrMin?: unknown; dollarVolumeMin?: unknown };
     return {
       adr: {
-        enabled: false,
+        enabled: persistedState?.adr ?? false,
         min: validNumber(values.adrMin),
       },
       dollarVolume: {
-        enabled: false,
+        enabled: persistedState?.dollarVolume ?? false,
         min: validNumber(values.dollarVolumeMin),
       },
       above200Sma: {
-        enabled: false,
+        enabled: persistedState?.above200Sma ?? false,
       },
     };
   } catch {
@@ -54,14 +70,32 @@ export function writeTickerFilterValues(filters: TickerFilters) {
   }));
 }
 
+export function readTickerFilterPersisted() {
+  return readPersistedFilterState() !== undefined;
+}
+
+export function writeTickerFilterState(filters: TickerFilters, persisted: boolean) {
+  if (!persisted) {
+    localStorage.removeItem(filterStateStorageKey);
+    return;
+  }
+  localStorage.setItem(filterStateStorageKey, JSON.stringify({
+    adr: filters.adr.enabled,
+    dollarVolume: filters.dollarVolume.enabled,
+    above200Sma: filters.above200Sma.enabled,
+  }));
+}
+
 interface TickerLensFiltersProps {
   filters: TickerFilters;
   enabled: boolean;
+  persisted: boolean;
   counts: TickerFilterCounts;
   onChange: (filters: TickerFilters) => void;
+  onPersistedChange: (persisted: boolean) => void;
 }
 
-export function TickerLensFilters({ filters, enabled, counts, onChange }: TickerLensFiltersProps) {
+export function TickerLensFilters({ filters, enabled, persisted, counts, onChange, onPersistedChange }: TickerLensFiltersProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled) + Number(filters.above200Sma.enabled);
@@ -125,6 +159,16 @@ export function TickerLensFilters({ filters, enabled, counts, onChange }: Ticker
           )
         </Typography>
         <div>
+          <Tooltip title={persisted ? "Stop persisting filter state" : "Persist filter state"}>
+            <IconButton
+              size="small"
+              aria-label={persisted ? "Stop persisting filter state" : "Persist filter state"}
+              className={persisted ? "ticker-lens-filter-pin-active" : undefined}
+              onClick={() => onPersistedChange(!persisted)}
+            >
+              {persisted ? <PushPinIcon fontSize="small" /> : <PushPinOutlinedIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Reset filters">
             <span>
               <IconButton
@@ -243,4 +287,19 @@ function validNumber(value: unknown) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function readPersistedFilterState() {
+  const stored = localStorage.getItem(filterStateStorageKey);
+  if (stored === null) return undefined;
+  try {
+    const state = JSON.parse(stored) as { adr?: unknown; dollarVolume?: unknown; above200Sma?: unknown };
+    return {
+      adr: state.adr === true,
+      dollarVolume: state.dollarVolume === true,
+      above200Sma: state.above200Sma === true,
+    };
+  } catch {
+    return undefined;
+  }
 }

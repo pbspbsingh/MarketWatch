@@ -12,7 +12,13 @@ import {
 import { ChartPanel } from "./ChartPanel";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
-import { readTickerFilters, TickerLensFilters, writeTickerFilterValues } from "./TickerLensFilters";
+import {
+  readTickerFilterPersisted,
+  readTickerFilters,
+  TickerLensFilters,
+  writeTickerFilterState,
+  writeTickerFilterValues,
+} from "./TickerLensFilters";
 import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
@@ -75,6 +81,7 @@ export function TickerLens({
   const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
+  const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string>>();
   const [revealTicker, setRevealTicker] = useState<RevealRequest<string>>();
   const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
@@ -98,6 +105,15 @@ export function TickerLens({
   useEffect(() => {
     writeTickerFilterValues(tickerFilters);
   }, [tickerFilters.adr.min, tickerFilters.dollarVolume.min]);
+
+  useEffect(() => {
+    writeTickerFilterState(tickerFilters, tickerFiltersPersisted);
+  }, [
+    tickerFilters.adr.enabled,
+    tickerFilters.dollarVolume.enabled,
+    tickerFilters.above200Sma.enabled,
+    tickerFiltersPersisted,
+  ]);
 
   useEffect(() => {
     const mode = searchGroupMode(searchParams);
@@ -228,7 +244,14 @@ export function TickerLens({
         .join(" ")}
       aria-label={bounded ? "Ticker collection" : "Market Watch"}
     >
-      <TickerLensFilters filters={tickerFilters} enabled={hasGroupSelection} counts={tickerFilterCounts} onChange={setTickerFilters} />
+      <TickerLensFilters
+        filters={tickerFilters}
+        enabled={hasGroupSelection}
+        persisted={tickerFiltersPersisted}
+        counts={tickerFilterCounts}
+        onChange={setTickerFilters}
+        onPersistedChange={setTickerFiltersPersisted}
+      />
       <GroupPanel
         mode={groupMode}
         setMode={setMode}
