@@ -8,12 +8,14 @@ export function SplitPane({
   second,
   orientation = "vertical",
   initialSplit = 50,
+  secondVisible = true,
   onSplitChange,
 }: {
   first: ReactNode;
   second: ReactNode;
   orientation?: SplitOrientation;
   initialSplit?: number;
+  secondVisible?: boolean;
   onSplitChange?: (split: number) => void;
 }) {
   const [split, setSplit] = useState(initialSplit);
@@ -35,7 +37,9 @@ export function SplitPane({
     event.currentTarget.releasePointerCapture(event.pointerId);
     onSplitChange?.(splitRef.current);
   };
-  const template = `minmax(0, ${split}fr) 2px minmax(0, ${100 - split}fr)`;
+  const template = secondVisible
+    ? `minmax(0, ${split}fr) 2px minmax(0, ${100 - split}fr)`
+    : "minmax(0, 1fr) 0 minmax(0, 0)";
 
   return (
     <div
@@ -49,7 +53,9 @@ export function SplitPane({
         role="separator"
         aria-orientation={orientation === "vertical" ? "horizontal" : "vertical"}
         aria-valuenow={Math.round(split)}
+        aria-hidden={!secondVisible}
         onPointerDown={(event) => {
+          if (!secondVisible) return;
           event.currentTarget.setPointerCapture(event.pointerId);
           updateSplit(event);
         }}
@@ -59,7 +65,9 @@ export function SplitPane({
         onPointerUp={release}
         onPointerCancel={release}
       />
-      {second}
+      <div className={secondVisible ? "split-pane-slot" : "split-pane-slot split-pane-slot-hidden"}>
+        {second}
+      </div>
     </div>
   );
 }

@@ -50,13 +50,13 @@ export function StudyCharts({
   useEffect(() => {
     const top = topRef.current;
     const bottom = bottomRef.current;
-    if (top === null || (tickerBVisible && bottom === null) || result.series.length !== 2) return;
+    if (top === null || bottom === null || result.series.length !== 2) return;
     const dates = [...new Set(result.series.flatMap((series) => series.candles.map((candle) => candle.date)))].sort();
     const candleSeries: ISeriesApi<"Candlestick">[] = [];
     const candlesByDate = result.series.map(
       (series) => new Map(series.candles.map((candle) => [candle.date, candle])),
     );
-    const containers = tickerBVisible ? [top, bottom!] : [top];
+    const containers = [top, bottom];
     const charts = containers.map((container, index) => {
       const chart = createChart(container, {
         autoSize: true,
@@ -165,24 +165,19 @@ export function StudyCharts({
     if (initialRange !== null && charts[1]) charts[1].timeScale().setVisibleLogicalRange(initialRange);
 
     return () => {
-      if (charts[1]) {
-        charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
-        charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
-        charts[0].unsubscribeCrosshairMove(topCrosshairHandler);
-        charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
-      }
+      charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
+      charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
+      charts[0].unsubscribeCrosshairMove(topCrosshairHandler);
+      charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
     };
-  }, [result, tickerBVisible]);
-
-  if (!tickerBVisible) {
-    return <ChartContainer containerRef={topRef} symbol={result.series[0]?.symbol ?? ""} />;
-  }
+  }, [result]);
 
   return (
     <SplitPane
       orientation={orientation}
+      secondVisible={tickerBVisible}
       first={<ChartContainer containerRef={topRef} symbol={result.series[0]?.symbol ?? ""} />}
       second={<ChartContainer containerRef={bottomRef} symbol={result.series[1]?.symbol ?? ""} />}
     />
