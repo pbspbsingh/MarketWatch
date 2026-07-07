@@ -43,6 +43,7 @@ pub struct TickerRanking {
     pub adr_percent: Option<f64>,
     pub latest_close: Option<f64>,
     pub average_volume: Option<i64>,
+    pub above_200_sma: Option<bool>,
 }
 
 impl PerformancePeriods {
@@ -90,6 +91,20 @@ pub fn average_volume(candles: &[DailyCandle]) -> i64 {
         return 0;
     }
     candles.iter().map(|candle| candle.volume).sum::<i64>() / candles.len() as i64
+}
+
+pub fn close_above_sma(candles: &[DailyCandle], sessions: usize) -> Option<bool> {
+    let latest_close = candles.last()?.close;
+    let sma_candles = latest_sessions(candles, sessions);
+    if sma_candles.len() < sessions {
+        return None;
+    }
+    let sma = sma_candles.iter().map(|candle| candle.close).sum::<f64>() / sessions as f64;
+    Some(latest_close > sma)
+}
+
+fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
+    &candles[candles.len().saturating_sub(sessions)..]
 }
 
 fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {

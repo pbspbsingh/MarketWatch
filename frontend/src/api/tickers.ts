@@ -8,6 +8,7 @@ export interface TickerRanking {
   adr_percent: number | null;
   latest_close: number | null;
   average_volume: number | null;
+  above_200_sma: boolean | null;
 }
 
 export interface TickerGroupSummaryItem {

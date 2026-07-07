@@ -18,6 +18,9 @@ export type TickerFilters = {
     enabled: boolean;
     min: number;
   };
+  above200Sma: {
+    enabled: boolean;
+  };
 };
 
 export type TickerFilterCounts = {

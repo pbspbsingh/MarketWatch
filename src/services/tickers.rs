@@ -2,7 +2,7 @@ use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
 use crate::models::{
     DailyCandle, TickerRanking, average_daily_range_percent, average_volume, candle_performance,
-    candle_relative_strength,
+    candle_relative_strength, close_above_sma,
 };
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
+const TWO_HUNDRED_SESSION_SMA: usize = 200;
 
 pub struct TickerCatalogService {
     store: Store,
@@ -113,6 +114,7 @@ impl TickerCatalogService {
             adr_percent: Some(adr_percent),
             latest_close,
             average_volume: Some(average_volume),
+            above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
         })
     }
 
@@ -179,6 +181,7 @@ impl TickerCatalogService {
                     adr_percent: None,
                     latest_close: None,
                     average_volume: None,
+                    above_200_sma: None,
                 })
                 .await
                 .is_err()
@@ -224,6 +227,7 @@ impl TickerCatalogService {
                         adr_percent: Some(adr_percent),
                         latest_close,
                         average_volume: Some(average_volume),
+                        above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
                     }
                 }
                 Err(error) => {
@@ -239,6 +243,7 @@ impl TickerCatalogService {
                         adr_percent: None,
                         latest_close: None,
                         average_volume: None,
+                        above_200_sma: None,
                     }
                 }
             };

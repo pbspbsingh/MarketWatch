@@ -15,7 +15,7 @@ pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use performance::{
     IndustryRanking, PerformancePeriods, ThemeRanking, TickerRanking, average_daily_range_percent,
-    average_volume, candle_performance, candle_relative_strength,
+    average_volume, candle_performance, candle_relative_strength, close_above_sma,
 };
 pub use rrg::{
     RrgInterval, ThemeRrgSeries, aggregate_weekly, compute_rrg_series, normalize_universe,

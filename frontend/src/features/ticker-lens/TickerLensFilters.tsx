@@ -19,6 +19,9 @@ export const defaultTickerFilters: TickerFilters = {
     enabled: false,
     min: 0,
   },
+  above200Sma: {
+    enabled: false,
+  },
 };
 
 export function readTickerFilters(): TickerFilters {
@@ -34,6 +37,9 @@ export function readTickerFilters(): TickerFilters {
       dollarVolume: {
         enabled: false,
         min: validNumber(values.dollarVolumeMin),
+      },
+      above200Sma: {
+        enabled: false,
       },
     };
   } catch {
@@ -58,7 +64,7 @@ interface TickerLensFiltersProps {
 export function TickerLensFilters({ filters, enabled, counts, onChange }: TickerLensFiltersProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
-  const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled);
+  const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled) + Number(filters.above200Sma.enabled);
   const active = activeCount > 0;
   const hasValues = filters.adr.min > 0 || filters.dollarVolume.min > 0;
   const effective = active && enabled;
@@ -97,6 +103,7 @@ export function TickerLensFilters({ filters, enabled, counts, onChange }: Ticker
           onClick={() => setOpen(true)}
         >
           {active ? <FilterListIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
+          <span className="ticker-lens-filter-toggle-count">{counts.filtered}</span>
         </IconButton>
       </Tooltip>
     );
@@ -161,6 +168,19 @@ export function TickerLensFilters({ filters, enabled, counts, onChange }: Ticker
         onCheckedChange={(checked) => onChange({ ...filters, dollarVolume: { ...filters.dollarVolume, enabled: checked } })}
         onChange={(value) => onChange({ ...filters, dollarVolume: { ...filters.dollarVolume, min: value * 1_000_000 } })}
       />
+      <label className={[
+        "ticker-lens-filter-checkbox",
+        filters.above200Sma.enabled && enabled ? "ticker-lens-filter-slider-active" : "",
+        filters.above200Sma.enabled && !enabled ? "ticker-lens-filter-slider-pending" : "",
+      ].filter(Boolean).join(" ")}>
+        <Checkbox
+          size="small"
+          checked={filters.above200Sma.enabled}
+          slotProps={{ input: { "aria-label": "Enable 200SMA filter" } }}
+          onChange={(event) => onChange({ ...filters, above200Sma: { enabled: event.target.checked } })}
+        />
+        <Typography component="span">Close &gt; 200SMA</Typography>
+      </label>
     </section>
   );
 }

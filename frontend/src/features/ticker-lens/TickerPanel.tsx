@@ -180,10 +180,10 @@ export function TickerPanel({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const groupKey = [...groupKeys].sort().join(",");
-  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled);
+  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
   const filterKey = tickerFilters === undefined
     ? ""
-    : `${tickerFilters.adr.enabled}:${tickerFilters.adr.min}:${tickerFilters.dollarVolume.enabled}:${tickerFilters.dollarVolume.min}`;
+    : `${tickerFilters.adr.enabled}:${tickerFilters.adr.min}:${tickerFilters.dollarVolume.enabled}:${tickerFilters.dollarVolume.min}:${tickerFilters.above200Sma.enabled}`;
   const metricsActive = groupKeys.size > 0 || filtersActive;
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({ mode, groupKeys, signal }),
@@ -243,6 +243,7 @@ export function TickerPanel({
           adr_percent: null,
           latest_close: null,
           average_volume: null,
+          above_200_sma: null,
         })));
       })
       .catch((requestError: unknown) => {
@@ -565,12 +566,13 @@ export function TickerPanel({
 }
 
 function filterTickers(tickers: TickerRanking[], filters: TickerFilters | undefined) {
-  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled)) return tickers;
+  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled)) return tickers;
   const adrMin = clamp(filters.adr.min, 0, 20);
   const dollarVolumeMin = clamp(filters.dollarVolume.min, 0, 1_000_000_000);
   return tickers.filter((ticker) => {
     if (filters.adr.enabled && (ticker.adr_percent ?? -Infinity) < adrMin) return false;
     if (filters.dollarVolume.enabled && dollarVolume(ticker) < dollarVolumeMin) return false;
+    if (filters.above200Sma.enabled && ticker.above_200_sma === false) return false;
     return true;
   });
 }
