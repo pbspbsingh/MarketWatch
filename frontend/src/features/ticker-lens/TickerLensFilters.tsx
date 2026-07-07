@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
@@ -57,6 +57,7 @@ interface TickerLensFiltersProps {
 
 export function TickerLensFilters({ filters, enabled, counts, onChange }: TickerLensFiltersProps) {
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
   const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled);
   const active = activeCount > 0;
   const hasValues = filters.adr.min > 0 || filters.dollarVolume.min > 0;
@@ -67,6 +68,16 @@ export function TickerLensFilters({ filters, enabled, counts, onChange }: Ticker
     () => clamp(Math.round(filters.dollarVolume.min / 1_000_000), 0, 1_000),
     [filters.dollarVolume.min],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
 
   if (!open) {
     return (
@@ -92,7 +103,7 @@ export function TickerLensFilters({ filters, enabled, counts, onChange }: Ticker
   }
 
   return (
-    <section className={[
+    <section ref={panelRef} className={[
       "ticker-lens-filters",
       effective ? "ticker-lens-filters-active" : "",
       pending ? "ticker-lens-filters-pending" : "",

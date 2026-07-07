@@ -23,6 +23,7 @@ import {
   Menu,
   MenuItem,
   Select,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -461,9 +462,11 @@ export function TickerPanel({
       <header className="panel-header panel-list-header">
         <div className="panel-header-title">
           <Typography component="h2">Tickers</Typography>
-          <Typography className="panel-position" color="text.secondary">
-            {selectedTickerPosition}/{sortedTickers.length}
-          </Typography>
+          <Tooltip title={`Total ${tickers.length} · Filtered ${filteredTickers.length}`}>
+            <Typography className="panel-position" color="text.secondary">
+              {selectedTickerPosition}/{sortedTickers.length}
+            </Typography>
+          </Tooltip>
           {panelLoading && <CircularProgress size="0.75rem" />}
         </div>
         <div className="metric-sort-controls">

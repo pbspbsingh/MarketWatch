@@ -42,6 +42,7 @@ export function sortValue(group: GroupRanking, key: SortKey) {
 export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
   if (key === "relative_strength") return ticker.relative_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
+  if (key === "dollar_volume") return dollarVolume(ticker);
   return ticker.performance?.[key] ?? undefined;
 }
 
@@ -104,13 +105,20 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
 export function formatMetric(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return value.toFixed(1);
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
+  if (key === "dollar_volume") return formatWholeVolume(value);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
 export function metricColor(value: number, key: TickerSortKey) {
   if (key === "relative_strength") return rsColor(value).fg;
   if (key === "adr_percent") return adrColor(value);
+  if (key === "dollar_volume") return "#c8d0da";
   return performanceColor(value, key);
+}
+
+function dollarVolume(ticker: TickerRanking) {
+  if (ticker.latest_close === null || ticker.average_volume === null) return undefined;
+  return ticker.latest_close * ticker.average_volume;
 }
 
 function adrColor(adr: number) {
@@ -244,6 +252,13 @@ export function formatVolume(volume: number) {
   return new Intl.NumberFormat("en", {
     notation: "compact",
     maximumFractionDigits: 1,
+  }).format(volume);
+}
+
+function formatWholeVolume(volume: number) {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 0,
   }).format(volume);
 }
 
