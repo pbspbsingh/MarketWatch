@@ -65,6 +65,7 @@ interface GroupPanelProps {
   requestedThemeNames: string[];
   requestedUnassigned: boolean;
   selectedGroupTickerCounts: Map<string, number>;
+  countSortAvailable: boolean;
   groups: GroupRanking[];
   loadingGroups: boolean;
   groupError?: string;
@@ -80,6 +81,7 @@ export function GroupPanel({
   requestedThemeNames,
   requestedUnassigned,
   selectedGroupTickerCounts,
+  countSortAvailable,
   groups,
   loadingGroups,
   groupError,
@@ -97,6 +99,12 @@ export function GroupPanel({
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
+
+  useEffect(() => {
+    if (!countSortAvailable && sortSetting.key === "count") {
+      setSortSetting({ key: "relative_strength", direction: "desc" });
+    }
+  }, [countSortAvailable, sortSetting.key]);
 
   useEffect(() => {
     localStorage.setItem(sectorGroupingKey, String(groupBySector));
@@ -132,9 +140,25 @@ export function GroupPanel({
     setSelectedGroupKeys,
   ]);
 
-  const sortedGroups = useMemo(() => sortGroups(groups, sortSetting), [groups, sortSetting]);
+  const groupsWithCounts = useMemo(
+    () =>
+      groups.map((group) => ({
+        ...group,
+        ticker_count: group.ticker_count ?? selectedGroupTickerCounts.get(group.key),
+      })),
+    [groups, selectedGroupTickerCounts],
+  );
+  const activeSortSetting =
+    !countSortAvailable && sortSetting.key === "count"
+      ? ({ key: "relative_strength", direction: "desc" } as const)
+      : sortSetting;
+  const sortedGroups = useMemo(() => sortGroups(groupsWithCounts, activeSortSetting), [groupsWithCounts, activeSortSetting]);
+  const availableSortOptions = useMemo(
+    () => sortOptions.filter((option) => countSortAvailable || option.key !== "count"),
+    [countSortAvailable],
+  );
   const sectors = useMemo(() => {
-    const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[]; value?: number }>();
+    const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[]; value?: number; totalCount?: number }>();
     for (const group of sortedGroups) {
       const key = group.sector_key ?? "__other__";
       const sector = byKey.get(key) ?? {
@@ -148,11 +172,21 @@ export function GroupPanel({
     const sectors = [...byKey.values()];
     for (const sector of sectors) {
       const values = sector.groups
-        .map((group) => sortValue(group, sortSetting.key))
+        .map((group) => sortValue(group, activeSortSetting.key))
         .filter((value): value is number => value !== undefined);
       sector.value = values.length === 0
         ? undefined
-        : values.reduce((total, value) => total + value, 0) / values.length;
+        : activeSortSetting.key === "count"
+          ? values.reduce((total, value) => total + value, 0)
+          : values.reduce((total, value) => total + value, 0) / values.length;
+      if (countSortAvailable) {
+        const counts = sector.groups
+          .map((group) => group.ticker_count)
+          .filter((count): count is number => count !== undefined);
+        sector.totalCount = counts.length === 0
+          ? undefined
+          : counts.reduce((total, count) => total + count, 0);
+      }
     }
     return sectors.sort((left, right) => {
       if (left.key === "__other__") return 1;
@@ -162,9 +196,9 @@ export function GroupPanel({
       const comparison = left.value - right.value;
       return comparison === 0
         ? left.name.localeCompare(right.name)
-        : sortSetting.direction === "desc" ? -comparison : comparison;
+        : activeSortSetting.direction === "desc" ? -comparison : comparison;
     });
-  }, [sortedGroups, sortSetting]);
+  }, [countSortAvailable, sortedGroups, activeSortSetting]);
   const sectorKeyByGroup = useMemo(
     () => new Map(sectors.flatMap((sector) => sector.groups.map((group) => [group.key, sector.key]))),
     [sectors],
@@ -301,13 +335,13 @@ export function GroupPanel({
           )}
           <Select
             size="small"
-            value={sortSetting.key}
+            value={activeSortSetting.key}
             aria-label={`Sort ${mode === "industry" ? "industries" : "themes"} by`}
             onChange={(event) =>
               setSortSetting({ key: event.target.value as SortKey, direction: "desc" })
             }
           >
-            {sortOptions.map((option) => (
+            {availableSortOptions.map((option) => (
               <MenuItem key={option.key} value={option.key}>
                 {option.label}
               </MenuItem>
@@ -387,14 +421,19 @@ export function GroupPanel({
                           })
                         }
                       >
-                        <span>{sector.name}</span>
+                        <span>
+                          {sector.name}
+                          {sector.totalCount === undefined ? "" : ` (${sector.totalCount.toLocaleString()})`}
+                        </span>
                         <span
                           className="sector-group-metric"
-                          style={{ color: sector.value === undefined ? undefined : metricColor(sector.value, sortSetting.key) }}
+                          style={{ color: sector.value === undefined ? undefined : metricColor(sector.value, activeSortSetting.key) }}
                         >
-                          {sector.value === undefined ? "—" : formatMetric(sector.value, sortSetting.key)}
+                          {sector.value === undefined ? "—" : formatMetric(sector.value, activeSortSetting.key)}
                         </span>
-                        <span className="sector-group-count">{selectedCount}/{eligibleKeys.length}</span>
+                        <span className="sector-group-count">
+                          {selectedCount}/{eligibleKeys.length}
+                        </span>
                         <ExpandMoreIcon fontSize="small" />
                       </button>
                     </div>
@@ -459,7 +498,7 @@ export function GroupPanel({
   );
 
   function renderGroup(group: GroupRanking) {
-            const metric = sortValue(group, sortSetting.key);
+            const metric = sortValue(group, activeSortSetting.key);
             const highlighted = highlightedGroupKeys.has(group.key);
             const explored = exploredGroupKeys.has(group.key);
             return (
@@ -504,10 +543,10 @@ export function GroupPanel({
                     <span
                       className="ranked-metric"
                       style={{
-                        color: metricColor(metric, sortSetting.key),
+                        color: metricColor(metric, activeSortSetting.key),
                       }}
                     >
-                      {formatMetric(metric, sortSetting.key)}
+                      {formatMetric(metric, activeSortSetting.key)}
                     </span>
                   )}
                 </button>

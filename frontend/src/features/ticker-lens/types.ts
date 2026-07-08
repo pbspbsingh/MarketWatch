@@ -1,7 +1,8 @@
 import type { PerformancePeriods } from "../../api/industries";
 
-export type SortKey = "absolute_strength" | "relative_strength" | keyof PerformancePeriods;
-export type TickerSortKey = SortKey | "adr_percent" | "dollar_volume";
+export type GroupSortKey = "count";
+export type SortKey = GroupSortKey | "absolute_strength" | "relative_strength" | keyof PerformancePeriods;
+export type TickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume";
 export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };

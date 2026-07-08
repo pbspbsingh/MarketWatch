@@ -35,6 +35,7 @@ export function readTickerSortSetting(storageKey: string): TickerSortSetting {
 }
 
 export function sortValue(group: GroupRanking, key: SortKey) {
+  if (key === "count") return group.ticker_count ?? undefined;
   if (key === "absolute_strength") return group.absolute_strength ?? undefined;
   if (key === "relative_strength") return group[key] ?? undefined;
   return group.performance?.[key] ?? undefined;
@@ -104,14 +105,16 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
   });
 }
 
-export function formatMetric(value: number, key: TickerSortKey) {
+export function formatMetric(value: number, key: SortKey | TickerSortKey) {
+  if (key === "count") return value.toLocaleString();
   if (key === "relative_strength") return value.toFixed(1);
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
-export function metricColor(value: number, key: TickerSortKey) {
+export function metricColor(value: number, key: SortKey | TickerSortKey) {
+  if (key === "count") return "#c8d0da";
   if (key === "relative_strength") return rsColor(value).fg;
   if (key === "adr_percent") return adrColor(value);
   if (key === "dollar_volume") return "#c8d0da";
@@ -147,7 +150,7 @@ function rsColor(rs: number) {
   return { fg: "rgb(40,210,80)" };
 }
 
-const performanceCaps: Record<Exclude<SortKey, "relative_strength">, number> = {
+const performanceCaps: Record<Exclude<SortKey, "count" | "relative_strength">, number> = {
   absolute_strength: 0.15,
   day: 0.025,
   week: 0.05,
@@ -157,7 +160,7 @@ const performanceCaps: Record<Exclude<SortKey, "relative_strength">, number> = {
   year: 0.4,
 };
 
-function performanceColor(value: number, key: Exclude<SortKey, "relative_strength">) {
+function performanceColor(value: number, key: Exclude<SortKey, "count" | "relative_strength">) {
   const cap = performanceCaps[key];
   if (value < 0) return interpolateColor([255, 126, 126], [180, 30, 30], -value / cap);
 

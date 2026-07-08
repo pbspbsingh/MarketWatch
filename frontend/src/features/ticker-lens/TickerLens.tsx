@@ -262,6 +262,7 @@ export function TickerLens({
         requestedThemeNames={requestedThemeNames}
         requestedUnassigned={requestedUnassigned}
         selectedGroupTickerCounts={selectedGroupTickerCounts}
+        countSortAvailable={bounded}
         groups={groups}
         loadingGroups={groupsLoading}
         groupError={groupsError}
