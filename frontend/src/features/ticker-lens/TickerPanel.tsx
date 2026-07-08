@@ -239,6 +239,7 @@ export function TickerPanel({
           symbol,
           watchlist_ids: memberships.get(symbol) ?? [],
           performance: null,
+          absolute_strength: null,
           relative_strength: null,
           adr_percent: null,
           latest_close: null,

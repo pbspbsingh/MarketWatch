@@ -22,6 +22,7 @@ pub struct IndustryRanking {
     pub sector_key: Option<String>,
     pub sector_name: Option<String>,
     pub performance: PerformancePeriods,
+    pub absolute_strength: f64,
     pub relative_strength: f64,
 }
 
@@ -31,6 +32,7 @@ pub struct ThemeRanking {
     pub name: String,
     pub etf_symbol: String,
     pub performance: Option<PerformancePeriods>,
+    pub absolute_strength: Option<f64>,
     pub relative_strength: Option<f64>,
 }
 
@@ -39,6 +41,7 @@ pub struct TickerRanking {
     pub symbol: String,
     pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
+    pub absolute_strength: Option<f64>,
     pub relative_strength: Option<f64>,
     pub adr_percent: Option<f64>,
     pub latest_close: Option<f64>,
@@ -47,6 +50,10 @@ pub struct TickerRanking {
 }
 
 impl PerformancePeriods {
+    pub fn absolute_strength(self) -> f64 {
+        0.55 * self.month + 0.45 * self.quarter
+    }
+
     pub fn relative_strength_against(self, benchmark: Self) -> f64 {
         let benchmark = performance_rs_multiplier(benchmark);
         if benchmark == 0.0 {
@@ -183,6 +190,17 @@ mod tests {
         };
 
         assert!((asset.relative_strength_against(benchmark) - (1.31 / 1.155)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn calculates_absolute_strength() {
+        let performance = PerformancePeriods {
+            month: 0.20,
+            quarter: 0.30,
+            ..Default::default()
+        };
+
+        assert!((performance.absolute_strength() - 0.245).abs() < f64::EPSILON);
     }
 
     #[test]

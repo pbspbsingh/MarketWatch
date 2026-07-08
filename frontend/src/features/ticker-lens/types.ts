@@ -1,6 +1,6 @@
 import type { PerformancePeriods } from "../../api/industries";
 
-export type SortKey = "relative_strength" | keyof PerformancePeriods;
+export type SortKey = "absolute_strength" | "relative_strength" | keyof PerformancePeriods;
 export type TickerSortKey = SortKey | "adr_percent" | "dollar_volume";
 export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
@@ -35,6 +35,7 @@ export type GroupRanking = {
   sector_name?: string | null;
   ticker_count?: number;
   performance: PerformancePeriods | null;
+  absolute_strength: number | null;
   relative_strength: number | null;
 };
 

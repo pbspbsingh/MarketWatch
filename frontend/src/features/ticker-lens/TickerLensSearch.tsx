@@ -30,7 +30,7 @@ export function TickerLensSearch({
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const searchableGroups = useMemo(
     () => mode === "theme" && !groups.some((group) => group.key === unassignedGroupKey)
-      ? [...groups, { key: unassignedGroupKey, name: "Unassigned", performance: null, relative_strength: null }]
+      ? [...groups, { key: unassignedGroupKey, name: "Unassigned", performance: null, absolute_strength: null, relative_strength: null }]
       : groups,
     [groups, mode],
   );

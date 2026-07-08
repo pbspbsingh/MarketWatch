@@ -13,6 +13,7 @@ export interface IndustryRanking {
   sector_key: string | null;
   sector_name: string | null;
   performance: PerformancePeriods;
+  absolute_strength: number;
   relative_strength: number;
 }
 
@@ -21,6 +22,7 @@ export interface ThemeRanking {
   name: string;
   etf_symbol: string;
   performance: PerformancePeriods | null;
+  absolute_strength: number | null;
   relative_strength: number | null;
 }
 

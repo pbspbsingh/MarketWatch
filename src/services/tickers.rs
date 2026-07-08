@@ -109,6 +109,7 @@ impl TickerCatalogService {
         Ok(TickerRanking {
             symbol,
             watchlist_ids,
+            absolute_strength: Some(performance.absolute_strength()),
             relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
             performance: Some(performance),
             adr_percent: Some(adr_percent),
@@ -177,6 +178,7 @@ impl TickerCatalogService {
                         .cloned()
                         .unwrap_or_default(),
                     performance: None,
+                    absolute_strength: None,
                     relative_strength: None,
                     adr_percent: None,
                     latest_close: None,
@@ -219,6 +221,7 @@ impl TickerCatalogService {
                             .cloned()
                             .unwrap_or_default(),
                         symbol,
+                        absolute_strength: Some(performance.absolute_strength()),
                         relative_strength: Some(candle_relative_strength(
                             &candles,
                             &benchmark_candles,
@@ -239,6 +242,7 @@ impl TickerCatalogService {
                             .unwrap_or_default(),
                         symbol,
                         performance: None,
+                        absolute_strength: None,
                         relative_strength: None,
                         adr_percent: None,
                         latest_close: None,

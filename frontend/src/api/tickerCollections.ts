@@ -26,6 +26,7 @@ export interface BoundedTickerGroup {
     half_year: number;
     year: number;
   } | null;
+  absolute_strength: number | null;
   relative_strength: number | null;
   symbols: string[];
 }

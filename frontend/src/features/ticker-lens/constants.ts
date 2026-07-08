@@ -1,6 +1,7 @@
 import type { SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
 
 export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
+  { key: "absolute_strength", label: "AS" },
   { key: "relative_strength", label: "RS" },
   { key: "week", label: "1W" },
   { key: "month", label: "1M" },
@@ -9,10 +10,11 @@ export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: "year", label: "1Y" },
 ];
 export const tickerSortOptions: ReadonlyArray<{ key: TickerSortKey; label: string }> = [
+  { key: "absolute_strength", label: "AS" },
   { key: "relative_strength", label: "RS" },
   { key: "adr_percent", label: "ADR" },
   { key: "dollar_volume", label: "DV" },
-  ...sortOptions.slice(1),
+  ...sortOptions.slice(2),
 ];
 
 export const sortSettingKey = "market-watch.industry-sort";

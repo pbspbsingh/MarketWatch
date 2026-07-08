@@ -52,6 +52,7 @@ const unassignedGroup: GroupRanking = {
   key: unassignedGroupKey,
   name: "Unassigned",
   performance: null,
+  absolute_strength: null,
   relative_strength: null,
 };
 

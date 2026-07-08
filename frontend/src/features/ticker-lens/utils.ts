@@ -35,11 +35,13 @@ export function readTickerSortSetting(storageKey: string): TickerSortSetting {
 }
 
 export function sortValue(group: GroupRanking, key: SortKey) {
+  if (key === "absolute_strength") return group.absolute_strength ?? undefined;
   if (key === "relative_strength") return group[key] ?? undefined;
   return group.performance?.[key] ?? undefined;
 }
 
 export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
+  if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
   if (key === "relative_strength") return ticker.relative_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
@@ -146,6 +148,7 @@ function rsColor(rs: number) {
 }
 
 const performanceCaps: Record<Exclude<SortKey, "relative_strength">, number> = {
+  absolute_strength: 0.15,
   day: 0.025,
   week: 0.05,
   month: 0.1,

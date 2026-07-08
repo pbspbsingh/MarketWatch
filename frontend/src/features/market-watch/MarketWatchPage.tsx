@@ -23,21 +23,23 @@ export function MarketWatchPage() {
   const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
     if (mode === "industry") {
       return fetchIndustries(signal).then((industries) =>
-        industries.map(({ key, name, sector_key, sector_name, performance, relative_strength }) => ({
+        industries.map(({ key, name, sector_key, sector_name, performance, absolute_strength, relative_strength }) => ({
           key,
           name,
           sector_key,
           sector_name,
           performance,
+          absolute_strength,
           relative_strength,
         })),
       );
     }
     return fetchThemeRankings(signal).then((themes) =>
-      themes.map(({ id, name, performance, relative_strength }) => ({
+      themes.map(({ id, name, performance, absolute_strength, relative_strength }) => ({
         key: String(id),
         name,
         performance,
+        absolute_strength,
         relative_strength,
       })),
     );
