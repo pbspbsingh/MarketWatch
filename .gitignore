@@ -1,5 +1,5 @@
 /target/
-/market_watch.db*
+/market_watch.sqlite*
 /.env
 /frontend/node_modules/
 /frontend/dist/
