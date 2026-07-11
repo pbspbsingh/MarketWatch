@@ -56,6 +56,7 @@ export function ChartPanel({
   const [showThemeEtfChart, setShowThemeEtfChart] = useState(() =>
     readEnabled(chartThemeEtfKey),
   );
+  const [selectedThemeEtf, setSelectedThemeEtf] = useState<string>();
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -63,15 +64,19 @@ export function ChartPanel({
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
   const selectedIndustry = summary?.industry?.name ?? "All industries";
-  const bottomChartSymbol =
-    showThemeEtfChart && summary?.theme_benchmark !== null
-      ? summary?.theme_benchmark?.tradingview_symbol
-      : summary?.benchmark_symbol;
+  const selectedThemeBenchmark = summary?.theme_benchmarks.find(
+    (theme) => theme.etf_symbol === selectedThemeEtf,
+  ) ?? summary?.theme_benchmarks[0];
+  const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
+  const bottomChartSymbol = themeEtfChartEnabled
+    ? selectedThemeBenchmark?.tradingview_symbol ?? summary?.benchmark_symbol
+    : summary?.benchmark_symbol;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
 
   useEffect(() => {
+    setSelectedThemeEtf(undefined);
     if (selectedTicker === undefined) {
       setDetailsOpen(false);
       onSelectedTickerContext(undefined);
@@ -175,9 +180,11 @@ export function ChartPanel({
         selectedTicker={selectedTicker}
         selectedIndustry={selectedIndustry}
         interval={interval}
-        showThemeEtfChart={showThemeEtfChart}
+        showThemeEtfChart={themeEtfChartEnabled}
+        selectedThemeEtf={selectedThemeBenchmark?.etf_symbol}
         setInterval={setInterval}
         setShowThemeEtfChart={setShowThemeEtfChart}
+        setSelectedThemeEtf={setSelectedThemeEtf}
         setDetailsOpen={setDetailsOpen}
       />
       {selectedTicker === undefined && (

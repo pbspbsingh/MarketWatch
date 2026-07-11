@@ -129,23 +129,19 @@ impl Store {
         .context("failed to load ticker theme names")
     }
 
-    pub async fn first_theme_etf_for_ticker(
-        &self,
-        symbol: &str,
-    ) -> anyhow::Result<Option<TickerThemeEtf>> {
+    pub async fn theme_etfs_for_ticker(&self, symbol: &str) -> anyhow::Result<Vec<TickerThemeEtf>> {
         sqlx::query_as!(
             TickerThemeEtf,
             r#"SELECT themes.name, themes.etf_symbol
                FROM theme_stocks
                JOIN themes ON themes.id = theme_stocks.theme_id
                WHERE theme_stocks.symbol = ?
-               ORDER BY themes.name COLLATE NOCASE
-               LIMIT 1"#,
+               ORDER BY themes.name COLLATE NOCASE"#,
             symbol,
         )
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await
-        .context("failed to load ticker theme ETF")
+        .context("failed to load ticker theme ETFs")
     }
 
     pub async fn themes_with_assignments(&self) -> anyhow::Result<Vec<Theme>> {

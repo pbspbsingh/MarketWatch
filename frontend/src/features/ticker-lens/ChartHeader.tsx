@@ -31,8 +31,10 @@ interface ChartHeaderProps {
   selectedIndustry: string;
   interval: "D" | "W";
   showThemeEtfChart: boolean;
+  selectedThemeEtf?: string;
   setInterval: (interval: "D" | "W") => void;
   setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
+  setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
   contextLabel?: string;
 }
@@ -44,8 +46,10 @@ export function ChartHeader({
   selectedIndustry,
   interval,
   showThemeEtfChart,
+  selectedThemeEtf,
   setInterval,
   setShowThemeEtfChart,
+  setSelectedThemeEtf,
   setDetailsOpen,
   contextLabel,
 }: ChartHeaderProps) {
@@ -168,21 +172,33 @@ export function ChartHeader({
           <ToggleButton value="D">Daily</ToggleButton>
           <ToggleButton value="W">Weekly</ToggleButton>
         </ToggleButtonGroup>
-        {setShowThemeEtfChart !== undefined && (
-          <ToggleButton
+        {setShowThemeEtfChart !== undefined && summary !== undefined && (
+          <ToggleButtonGroup
+            exclusive
             size="small"
-            value="theme-etf"
-            selected={showThemeEtfChart}
-            aria-label="Toggle theme ETF bottom chart"
-            onChange={() =>
-              setShowThemeEtfChart((enabled) => {
-                localStorage.setItem(chartThemeEtfKey, enabled ? "0" : "1");
-                return !enabled;
-              })
-            }
+            value={showThemeEtfChart ? selectedThemeEtf : "market"}
+            aria-label="Bottom chart benchmark"
+            onChange={(_, value: string | null) => {
+              if (value === null) return;
+              const enabled = value !== "market";
+              localStorage.setItem(chartThemeEtfKey, enabled ? "1" : "0");
+              setShowThemeEtfChart(() => enabled);
+              if (enabled) setSelectedThemeEtf?.(value);
+            }}
           >
-            Theme ETF
-          </ToggleButton>
+            <ToggleButton value="market">
+              {summary.benchmark_symbol.slice(summary.benchmark_symbol.lastIndexOf(":") + 1)}
+            </ToggleButton>
+            {summary.theme_benchmarks.map((theme) => (
+              <ToggleButton
+                key={theme.etf_symbol}
+                value={theme.etf_symbol}
+                title={theme.theme_name}
+              >
+                {theme.etf_symbol}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
         )}
       </div>
     </header>

@@ -23,7 +23,7 @@ pub struct ChartSummary {
     description: Option<String>,
     industry: Option<ChartIndustry>,
     themes: Vec<String>,
-    theme_benchmark: Option<ChartThemeBenchmark>,
+    theme_benchmarks: Vec<ChartThemeBenchmark>,
     tradingview_symbol: String,
     benchmark_symbol: String,
     adr_percent: f64,
@@ -73,9 +73,10 @@ impl ChartService {
             industry
         };
         let themes = self.store.theme_names_for_ticker(symbol).await?;
-        let theme_benchmark = match self.store.first_theme_etf_for_ticker(symbol).await? {
-            Some(theme) => match self.yahoo.profile(&theme.etf_symbol).await {
-                Ok(profile) => Some(ChartThemeBenchmark {
+        let mut theme_benchmarks = Vec::new();
+        for theme in self.store.theme_etfs_for_ticker(symbol).await? {
+            match self.yahoo.profile(&theme.etf_symbol).await {
+                Ok(profile) => theme_benchmarks.push(ChartThemeBenchmark {
                     theme_name: theme.name,
                     etf_symbol: theme.etf_symbol.clone(),
                     tradingview_symbol: format!("{}:{}", profile.exchange, theme.etf_symbol),
@@ -88,11 +89,9 @@ impl ChartService {
                         %error,
                         "failed to load theme ETF profile"
                     );
-                    None
                 }
-            },
-            None => None,
-        };
+            }
+        }
 
         Ok(ChartSummary {
             symbol: symbol.to_owned(),
@@ -100,7 +99,7 @@ impl ChartService {
             description: profile.description.clone(),
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
-            theme_benchmark,
+            theme_benchmarks,
             tradingview_symbol: format!("{}:{symbol}", profile.exchange),
             benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
             adr_percent: average_daily_range_percent(latest_sessions(&candles, self.adr_sessions)),
