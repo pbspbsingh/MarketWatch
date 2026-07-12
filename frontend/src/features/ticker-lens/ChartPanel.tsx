@@ -1,9 +1,13 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import { Button, Checkbox, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import {
   fetchTickerGroupSummary,
@@ -26,6 +30,8 @@ import {
   themeGroupsMarketWatchUrl,
   themeMarketWatchUrl,
 } from "./utils";
+
+const RsChartPanel = lazy(() => import("./RsChartPanel"));
 
 interface ChartPanelProps {
   mode: GroupMode;
@@ -60,6 +66,8 @@ export function ChartPanel({
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [rsOpen, setRsOpen] = useState(false);
+  const [rsClosing, setRsClosing] = useState(false);
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
@@ -82,6 +90,15 @@ export function ChartPanel({
       onSelectedTickerContext(undefined);
     }
   }, [onSelectedTickerContext, selectedTicker]);
+
+  useEffect(() => {
+    if (!rsClosing) return;
+    const timeout = window.setTimeout(() => {
+      setRsOpen(false);
+      setRsClosing(false);
+    }, 140);
+    return () => window.clearTimeout(timeout);
+  }, [rsClosing]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -114,6 +131,28 @@ export function ChartPanel({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [detailsOpen, horizontalDetailsNavigation, selectedTicker]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "r" ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        selectedTicker === undefined ||
+        isArrowKeyControl(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (rsOpen) setRsClosing(true);
+      else setRsOpen(true);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [rsOpen, selectedTicker]);
 
   useEffect(() => {
     setError(undefined);
@@ -173,7 +212,7 @@ export function ChartPanel({
   }, [groupKeysKey, mode, selectedTicker, symbolsKey]);
 
   return (
-    <section className="workspace-panel">
+    <section className="workspace-panel ticker-lens-chart-panel">
       <ChartHeader
         summary={summary}
         summaryLoading={summaryLoading}
@@ -211,6 +250,50 @@ export function ChartPanel({
           onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
           onError={setError}
         />
+      )}
+      <Tooltip title="RS Chart (R)">
+        <span className="ticker-lens-rs-toggle-wrap">
+          <IconButton
+            className="ticker-lens-rs-toggle"
+            size="small"
+            aria-label={rsOpen ? "Close RS Chart" : "Open RS Chart"}
+            disabled={selectedTicker === undefined}
+            onClick={() => {
+              if (rsOpen) setRsClosing(true);
+              else setRsOpen(true);
+            }}
+          >
+            {rsOpen ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowUpIcon fontSize="small" />}
+          </IconButton>
+        </span>
+      </Tooltip>
+      {rsOpen && selectedTicker !== undefined && (
+        <section
+          className={`ticker-lens-rs-panel${rsClosing ? " ticker-lens-rs-panel-closing" : ""}`}
+          aria-label="RS Chart"
+        >
+          {summary?.symbol === selectedTicker ? (
+            <Suspense
+              fallback={
+                <div className="ticker-lens-rs-content">
+                  <CircularProgress size="1rem" />
+                </div>
+              }
+            >
+              <RsChartPanel
+                selectedTicker={selectedTicker}
+                summary={summary}
+                interval={interval}
+                onClose={() => setRsClosing(true)}
+              />
+            </Suspense>
+          ) : (
+            <div className="ticker-lens-rs-content">
+              <CircularProgress size="1rem" />
+              <Typography color="text.secondary">Loading RS chart</Typography>
+            </div>
+          )}
+        </section>
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast

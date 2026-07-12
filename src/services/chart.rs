@@ -2,7 +2,9 @@ use crate::config::MarketConfig;
 use crate::models::{DailyCandle, average_daily_range_percent, average_volume};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
+use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::warn;
 
@@ -42,6 +44,28 @@ pub struct ChartThemeBenchmark {
     theme_name: String,
     etf_symbol: String,
     tradingview_symbol: String,
+}
+
+#[derive(Serialize)]
+pub struct RelativeStrengthSeries {
+    symbol: String,
+    comparison_symbol: String,
+    interval: RelativeStrengthInterval,
+    moving_average_period: usize,
+    points: Vec<RelativeStrengthPoint>,
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthInterval {
+    Daily,
+    Weekly,
+}
+
+#[derive(Serialize)]
+pub struct RelativeStrengthPoint {
+    date: NaiveDate,
+    value: f64,
 }
 
 impl ChartService {
@@ -107,6 +131,94 @@ impl ChartService {
             average_volume: average_volume(latest_sessions(&candles, self.average_volume_sessions)),
         })
     }
+
+    pub async fn relative_strength(
+        &self,
+        symbol: &str,
+        comparison_symbol: &str,
+        interval: RelativeStrengthInterval,
+    ) -> anyhow::Result<RelativeStrengthSeries> {
+        let (ticker, comparison) = tokio::try_join!(
+            self.yahoo.daily_candles_for_year(symbol),
+            self.yahoo.daily_candles_for_year(comparison_symbol),
+        )?;
+        let ticker = closes_by_period(&ticker, interval);
+        let comparison = closes_by_period(&comparison, interval);
+        let latest_common_date = ticker
+            .iter()
+            .filter(|(period, _)| comparison.contains_key(period))
+            .map(|(_, (date, _))| *date)
+            .max()
+            .ok_or_else(|| anyhow::anyhow!("ticker and comparison have no overlapping prices"))?;
+        let lookback_months = match interval {
+            RelativeStrengthInterval::Daily => 3,
+            RelativeStrengthInterval::Weekly => 12,
+        };
+        let start = latest_common_date
+            .checked_sub_months(Months::new(lookback_months))
+            .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?;
+        let ratios = ticker
+            .iter()
+            .filter_map(|(period, (date, ticker_close))| {
+                let (_, comparison_close) = comparison.get(period)?;
+                (*date >= start && *comparison_close > 0.0)
+                    .then_some((*date, ticker_close / comparison_close))
+            })
+            .collect::<Vec<_>>();
+        let base = ratios
+            .first()
+            .map(|(_, ratio)| *ratio)
+            .filter(|ratio| *ratio > 0.0)
+            .ok_or_else(|| anyhow::anyhow!("relative-strength range has no valid prices"))?;
+        let rebased = ratios
+            .into_iter()
+            .map(|(date, ratio)| (date, ratio / base * 100.0))
+            .collect::<Vec<_>>();
+        let moving_average_period = match interval {
+            RelativeStrengthInterval::Daily => 5,
+            RelativeStrengthInterval::Weekly => 3,
+        };
+        let points = simple_moving_average(&rebased, moving_average_period);
+
+        Ok(RelativeStrengthSeries {
+            symbol: symbol.to_owned(),
+            comparison_symbol: comparison_symbol.to_owned(),
+            interval,
+            moving_average_period,
+            points,
+        })
+    }
+}
+
+fn closes_by_period(
+    candles: &[DailyCandle],
+    interval: RelativeStrengthInterval,
+) -> BTreeMap<(i32, u32), (NaiveDate, f64)> {
+    candles
+        .iter()
+        .map(|candle| {
+            let period = match interval {
+                RelativeStrengthInterval::Daily => {
+                    (candle.market_date.year(), candle.market_date.ordinal())
+                }
+                RelativeStrengthInterval::Weekly => {
+                    let week = candle.market_date.iso_week();
+                    (week.year(), week.week())
+                }
+            };
+            (period, (candle.market_date, candle.close))
+        })
+        .collect()
+}
+
+fn simple_moving_average(values: &[(NaiveDate, f64)], period: usize) -> Vec<RelativeStrengthPoint> {
+    values
+        .windows(period)
+        .map(|window| RelativeStrengthPoint {
+            date: window.last().expect("moving-average window is non-empty").0,
+            value: window.iter().map(|(_, value)| value).sum::<f64>() / period as f64,
+        })
+        .collect()
 }
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
@@ -135,7 +247,7 @@ fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Days, NaiveDate};
+    use chrono::Days;
 
     fn candle(day: u32, high: f64, low: f64, close: f64, volume: i64) -> DailyCandle {
         DailyCandle {

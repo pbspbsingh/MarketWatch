@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::services::chart::ChartSummary;
+use crate::services::chart::{ChartSummary, RelativeStrengthInterval, RelativeStrengthSeries};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -13,8 +13,17 @@ struct ChartSummaryRequest {
     industry_keys: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct RelativeStrengthRequest {
+    symbol: String,
+    comparison_symbol: String,
+    interval: RelativeStrengthInterval,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route("/chart-summary", post(summary))
+    Router::new()
+        .route("/chart-summary", post(summary))
+        .route("/relative-strength", post(relative_strength))
 }
 
 async fn summary(
@@ -28,6 +37,30 @@ async fn summary(
         .map(Json)
         .map_err(|error| {
             error!(symbol = request.symbol, %error, "failed to load chart summary");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+async fn relative_strength(
+    State(state): State<AppState>,
+    Json(request): Json<RelativeStrengthRequest>,
+) -> Result<Json<RelativeStrengthSeries>, StatusCode> {
+    state
+        .chart
+        .relative_strength(
+            &request.symbol,
+            &request.comparison_symbol,
+            request.interval,
+        )
+        .await
+        .map(Json)
+        .map_err(|error| {
+            error!(
+                symbol = request.symbol,
+                comparison_symbol = request.comparison_symbol,
+                %error,
+                "failed to load relative strength"
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }

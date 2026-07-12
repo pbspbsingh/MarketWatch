@@ -25,6 +25,100 @@
   transform: translateX(-50%);
 }
 
+.ticker-lens-chart-panel {
+  position: relative;
+}
+
+.ticker-lens-rs-toggle-wrap {
+  position: absolute;
+  z-index: 7;
+  bottom: 0;
+  left: 50%;
+  height: 1.15rem;
+  transform: translateX(-50%);
+}
+
+.ticker-lens-rs-toggle {
+  width: 2.25rem;
+  height: 1.15rem;
+  border: 0.0625rem solid #343b45 !important;
+  border-bottom: 0 !important;
+  border-radius: 0.3rem 0.3rem 0 0 !important;
+  background: #20262e !important;
+}
+
+.ticker-lens-rs-panel {
+  position: absolute;
+  z-index: 6;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  height: min(24rem, 48%);
+  min-height: 12rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.0625rem solid #365f8c;
+  border-radius: 0.3rem;
+  background: #111418;
+  box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 45%);
+  animation: ticker-lens-rs-slide-up 140ms ease-out;
+}
+
+.ticker-lens-rs-header {
+  display: flex;
+  min-width: 0;
+  border-bottom: 0.0625rem solid #2a3038;
+  background: #151a20;
+  align-items: center;
+}
+
+.ticker-lens-rs-header .MuiTabs-root {
+  min-width: 0;
+  min-height: 2rem;
+  flex: 1;
+}
+
+.ticker-lens-rs-header .MuiTab-root {
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.68rem;
+}
+
+.ticker-lens-rs-header > .MuiIconButton-root {
+  margin: 0 0.5rem 0 0.25rem;
+  padding: 0.2rem;
+}
+
+.ticker-lens-rs-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.ticker-lens-rs-chart {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes ticker-lens-rs-slide-up {
+  from { transform: translateY(0.75rem); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.ticker-lens-rs-panel-closing {
+  animation: ticker-lens-rs-slide-down 140ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes ticker-lens-rs-slide-down {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(0.75rem); opacity: 0; }
+}
+
 .ticker-lens-filter-toggle {
   position: absolute !important;
   z-index: 5;
