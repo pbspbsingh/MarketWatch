@@ -214,11 +214,43 @@ body,
   align-items: center;
 }
 
+.navigation-rail-brand,
 .navigation-rail > .MuiIconButton-root {
+  display: flex;
   width: 2rem;
   height: 2rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.navigation-rail-brand {
   margin-bottom: 0.25rem;
+  cursor: pointer;
+}
+
+.navigation-rail-brand img {
+  width: 1.75rem;
+  height: 1.75rem;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.navigation-rail-brand:hover img {
+  filter: drop-shadow(0 0 0.3rem rgb(88 166 255 / 65%));
+  transform: translateY(-0.0625rem) scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-rail-brand img {
+    transition: none;
+  }
+}
+
+.navigation-rail > .MuiIconButton-root {
   color: #7f8b99;
+}
+
+.navigation-rail > .navigation-mode-button {
+  margin-top: auto;
 }
 
 .navigation-rail .MuiList-root {

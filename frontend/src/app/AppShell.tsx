@@ -181,8 +181,15 @@ export function AppShell() {
         </>
       ) : (
         <aside className="navigation-rail">
+          <Tooltip title="Market Watch" placement="right">
+            <span className="navigation-rail-brand">
+              <img src="/favicon.svg" alt="Market Watch" />
+            </span>
+          </Tooltip>
+          <NavigationItems compact />
           <Tooltip title="Use sliding navigation" placement="right">
             <IconButton
+              className="navigation-mode-button"
               size="small"
               aria-label="Use sliding navigation"
               onClick={() => selectNavigationMode("tray")}
@@ -190,7 +197,6 @@ export function AppShell() {
               <PushPinIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <NavigationItems compact />
         </aside>
       )}
 
