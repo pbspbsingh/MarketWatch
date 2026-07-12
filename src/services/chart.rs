@@ -161,24 +161,26 @@ impl ChartService {
             .iter()
             .filter_map(|(period, (date, ticker_close))| {
                 let (_, comparison_close) = comparison.get(period)?;
-                (*date >= start && *comparison_close > 0.0)
+                (*date >= start && *ticker_close > 0.0 && *comparison_close > 0.0)
                     .then_some((*date, ticker_close / comparison_close))
             })
             .collect::<Vec<_>>();
-        let base = ratios
-            .first()
-            .map(|(_, ratio)| *ratio)
-            .filter(|ratio| *ratio > 0.0)
+        let geometric_mean = (!ratios.is_empty())
+            .then(|| {
+                (ratios.iter().map(|(_, ratio)| ratio.ln()).sum::<f64>() / ratios.len() as f64)
+                    .exp()
+            })
+            .filter(|mean| mean.is_finite() && *mean > 0.0)
             .ok_or_else(|| anyhow::anyhow!("relative-strength range has no valid prices"))?;
-        let rebased = ratios
+        let normalized = ratios
             .into_iter()
-            .map(|(date, ratio)| (date, ratio / base * 100.0))
+            .map(|(date, ratio)| (date, ratio / geometric_mean * 100.0))
             .collect::<Vec<_>>();
         let moving_average_period = match interval {
             RelativeStrengthInterval::Daily => 5,
             RelativeStrengthInterval::Weekly => 3,
         };
-        let points = simple_moving_average(&rebased, moving_average_period);
+        let points = simple_moving_average(&normalized, moving_average_period);
 
         Ok(RelativeStrengthSeries {
             symbol: symbol.to_owned(),
