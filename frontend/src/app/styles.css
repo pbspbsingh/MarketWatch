@@ -23,6 +23,22 @@ body,
   background: #111418;
 }
 
+.development-badge {
+  position: fixed;
+  z-index: 1000;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  padding: 0.125rem 0.3rem;
+  border: 0.0625rem solid #ffb74d;
+  border-radius: 0.2rem;
+  color: #ffcc80;
+  background: rgb(45 31 12 / 88%);
+  font: 700 0.6rem/1.2 monospace;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  user-select: none;
+}
+
 .navigation-trigger {
   position: fixed !important;
   z-index: 1100;

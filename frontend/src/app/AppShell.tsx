@@ -197,6 +197,7 @@ export function AppShell() {
       <main className="workspace">
         <Outlet />
       </main>
+      {import.meta.env.DEV && <span className="development-badge" aria-hidden="true">DEV</span>}
     </div>
   );
 }
