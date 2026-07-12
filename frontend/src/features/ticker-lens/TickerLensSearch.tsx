@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import SearchIcon from "@mui/icons-material/Search";
@@ -28,6 +28,12 @@ export function TickerLensSearch({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const focusAndSelectQuery = useCallback(() => {
+    window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  }, []);
   const searchableGroups = useMemo(
     () => mode === "theme" && !groups.some((group) => group.key === unassignedGroupKey)
       ? [...groups, { key: unassignedGroupKey, name: "Unassigned", performance: null, absolute_strength: null, relative_strength: null }]
@@ -74,10 +80,14 @@ export function TickerLensSearch({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "f" &&
+        document.querySelector('[role="dialog"][aria-modal="true"]') === null
+      ) {
         event.preventDefault();
         setOpen(true);
-        window.setTimeout(() => inputRef.current?.focus(), 0);
+        focusAndSelectQuery();
       } else if (event.key === "Escape" && open) {
         event.preventDefault();
         if (query !== "") setQuery("");
@@ -86,7 +96,7 @@ export function TickerLensSearch({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, query]);
+  }, [focusAndSelectQuery, open, query]);
 
   useEffect(() => {
     setQuery("");
@@ -101,7 +111,7 @@ export function TickerLensSearch({
           aria-label="Open search"
           onClick={() => {
             setOpen(true);
-            window.setTimeout(() => inputRef.current?.focus(), 0);
+            focusAndSelectQuery();
           }}
         >
           <KeyboardArrowUpIcon fontSize="small" />
