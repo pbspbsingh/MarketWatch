@@ -24,8 +24,13 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
     return entries;
   }, [summary]);
   const [comparison, setComparison] = useState(comparisons[0]?.symbol ?? "");
-  const [series, setSeries] = useState<RelativeStrengthSeries>();
+  const subjects = useMemo(() => [
+    selectedTicker,
+    ...comparisons.slice(1).map((entry) => entry.symbol),
+  ].filter((symbol, index, values) => values.indexOf(symbol) === index), [comparisons, selectedTicker]);
+  const [series, setSeries] = useState<RelativeStrengthSeries[]>();
   const [error, setError] = useState<string>();
+  const subjectSymbolsKey = subjects.join("\0");
 
   useEffect(() => {
     setComparison(comparisons[0]?.symbol ?? "");
@@ -37,7 +42,7 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
     setSeries(undefined);
     setError(undefined);
     fetchRelativeStrength(
-      selectedTicker,
+      subjects,
       comparison,
       interval === "D" ? "daily" : "weekly",
       controller.signal,
@@ -51,7 +56,7 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
         }
       });
     return () => controller.abort();
-  }, [comparison, interval, selectedTicker]);
+  }, [comparison, interval, subjectSymbolsKey]);
 
   return (
     <>
@@ -75,7 +80,7 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
       </header>
       <div className="ticker-lens-rs-content">
         {series !== undefined ? (
-          <RsLineChart series={series} />
+          <RsLineChart series={series} primarySymbol={selectedTicker} />
         ) : error !== undefined ? (
           <Typography color="error">{error}</Typography>
         ) : (

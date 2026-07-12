@@ -5,20 +5,26 @@ export interface RelativeStrengthSeries {
   comparison_symbol: string;
   interval: RelativeStrengthInterval;
   moving_average_period: number;
-  points: Array<{ date: string; value: number }>;
+  points: Array<{
+    date: string;
+    value: number;
+    ticker_return_percent: number;
+    comparison_return_percent: number;
+    relative_return_percent: number;
+  }>;
 }
 
 export async function fetchRelativeStrength(
-  symbol: string,
+  symbols: string[],
   comparisonSymbol: string,
   interval: RelativeStrengthInterval,
   signal?: AbortSignal,
-): Promise<RelativeStrengthSeries> {
+): Promise<RelativeStrengthSeries[]> {
   const response = await fetch("/api/relative-strength", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      symbol,
+      symbols,
       comparison_symbol: comparisonSymbol,
       interval,
     }),
@@ -27,5 +33,5 @@ export async function fetchRelativeStrength(
   if (!response.ok) {
     throw new Error(`Failed to load RS chart: HTTP ${response.status}`);
   }
-  return response.json() as Promise<RelativeStrengthSeries>;
+  return response.json() as Promise<RelativeStrengthSeries[]>;
 }

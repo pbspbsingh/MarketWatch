@@ -66,6 +66,9 @@ pub enum RelativeStrengthInterval {
 pub struct RelativeStrengthPoint {
     date: NaiveDate,
     value: f64,
+    ticker_return_percent: f64,
+    comparison_return_percent: f64,
+    relative_return_percent: f64,
 }
 
 impl ChartService {
@@ -134,62 +137,94 @@ impl ChartService {
 
     pub async fn relative_strength(
         &self,
-        symbol: &str,
+        symbols: &[String],
         comparison_symbol: &str,
         interval: RelativeStrengthInterval,
-    ) -> anyhow::Result<RelativeStrengthSeries> {
-        let (ticker, comparison) = tokio::try_join!(
-            self.yahoo.daily_candles_for_year(symbol),
-            self.yahoo.daily_candles_for_year(comparison_symbol),
-        )?;
-        let ticker = closes_by_period(&ticker, interval);
-        let comparison = closes_by_period(&comparison, interval);
-        let latest_common_date = ticker
-            .iter()
-            .filter(|(period, _)| comparison.contains_key(period))
-            .map(|(_, (date, _))| *date)
-            .max()
-            .ok_or_else(|| anyhow::anyhow!("ticker and comparison have no overlapping prices"))?;
-        let lookback_months = match interval {
-            RelativeStrengthInterval::Daily => 3,
-            RelativeStrengthInterval::Weekly => 12,
-        };
-        let start = latest_common_date
-            .checked_sub_months(Months::new(lookback_months))
-            .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?;
-        let ratios = ticker
-            .iter()
-            .filter_map(|(period, (date, ticker_close))| {
-                let (_, comparison_close) = comparison.get(period)?;
-                (*date >= start && *ticker_close > 0.0 && *comparison_close > 0.0)
-                    .then_some((*date, ticker_close / comparison_close))
-            })
-            .collect::<Vec<_>>();
-        let geometric_mean = (!ratios.is_empty())
-            .then(|| {
-                (ratios.iter().map(|(_, ratio)| ratio.ln()).sum::<f64>() / ratios.len() as f64)
-                    .exp()
-            })
-            .filter(|mean| mean.is_finite() && *mean > 0.0)
-            .ok_or_else(|| anyhow::anyhow!("relative-strength range has no valid prices"))?;
-        let normalized = ratios
-            .into_iter()
-            .map(|(date, ratio)| (date, ratio / geometric_mean * 100.0))
-            .collect::<Vec<_>>();
-        let moving_average_period = match interval {
-            RelativeStrengthInterval::Daily => 5,
-            RelativeStrengthInterval::Weekly => 3,
-        };
-        let points = simple_moving_average(&normalized, moving_average_period);
-
-        Ok(RelativeStrengthSeries {
-            symbol: symbol.to_owned(),
-            comparison_symbol: comparison_symbol.to_owned(),
-            interval,
-            moving_average_period,
-            points,
-        })
+    ) -> anyhow::Result<Vec<RelativeStrengthSeries>> {
+        let comparison = self.yahoo.daily_candles_for_year(comparison_symbol).await?;
+        let mut series = Vec::with_capacity(symbols.len());
+        for symbol in symbols {
+            if symbol != comparison_symbol {
+                let candles = self.yahoo.daily_candles_for_year(symbol).await?;
+                series.push(calculate_relative_strength(
+                    symbol,
+                    comparison_symbol,
+                    &candles,
+                    &comparison,
+                    interval,
+                )?);
+            }
+        }
+        Ok(series)
     }
+}
+
+fn calculate_relative_strength(
+    symbol: &str,
+    comparison_symbol: &str,
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: RelativeStrengthInterval,
+) -> anyhow::Result<RelativeStrengthSeries> {
+    let ticker = closes_by_period(&ticker, interval);
+    let comparison = closes_by_period(&comparison, interval);
+    let latest_common_date = ticker
+        .iter()
+        .filter(|(period, _)| comparison.contains_key(period))
+        .map(|(_, (date, _))| *date)
+        .max()
+        .ok_or_else(|| anyhow::anyhow!("ticker and comparison have no overlapping prices"))?;
+    let lookback_months = match interval {
+        RelativeStrengthInterval::Daily => 3,
+        RelativeStrengthInterval::Weekly => 12,
+    };
+    let start = latest_common_date
+        .checked_sub_months(Months::new(lookback_months))
+        .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?;
+    let aligned = ticker
+        .iter()
+        .filter_map(|(period, (date, ticker_close))| {
+            let (_, comparison_close) = comparison.get(period)?;
+            (*date >= start && *ticker_close > 0.0 && *comparison_close > 0.0).then_some((
+                *date,
+                *ticker_close,
+                *comparison_close,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let geometric_mean = (!aligned.is_empty())
+        .then(|| {
+            (aligned
+                .iter()
+                .map(|(_, ticker_close, comparison_close)| (ticker_close / comparison_close).ln())
+                .sum::<f64>()
+                / aligned.len() as f64)
+                .exp()
+        })
+        .filter(|mean| mean.is_finite() && *mean > 0.0)
+        .ok_or_else(|| anyhow::anyhow!("relative-strength range has no valid prices"))?;
+    let normalized = aligned
+        .iter()
+        .map(|(date, ticker_close, comparison_close)| {
+            (
+                *date,
+                ticker_close / comparison_close / geometric_mean * 100.0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let moving_average_period = match interval {
+        RelativeStrengthInterval::Daily => 5,
+        RelativeStrengthInterval::Weekly => 3,
+    };
+    let points = relative_strength_points(&aligned, &normalized, moving_average_period);
+
+    Ok(RelativeStrengthSeries {
+        symbol: symbol.to_owned(),
+        comparison_symbol: comparison_symbol.to_owned(),
+        interval,
+        moving_average_period,
+        points,
+    })
 }
 
 fn closes_by_period(
@@ -213,12 +248,29 @@ fn closes_by_period(
         .collect()
 }
 
-fn simple_moving_average(values: &[(NaiveDate, f64)], period: usize) -> Vec<RelativeStrengthPoint> {
-    values
-        .windows(period)
-        .map(|window| RelativeStrengthPoint {
-            date: window.last().expect("moving-average window is non-empty").0,
-            value: window.iter().map(|(_, value)| value).sum::<f64>() / period as f64,
+fn relative_strength_points(
+    aligned: &[(NaiveDate, f64, f64)],
+    normalized: &[(NaiveDate, f64)],
+    period: usize,
+) -> Vec<RelativeStrengthPoint> {
+    (period..aligned.len())
+        .map(|index| {
+            let (date, ticker_close, comparison_close) = aligned[index];
+            let (_, previous_ticker_close, previous_comparison_close) = aligned[index - period];
+            let ticker_return = ticker_close / previous_ticker_close - 1.0;
+            let comparison_return = comparison_close / previous_comparison_close - 1.0;
+            RelativeStrengthPoint {
+                date,
+                value: normalized[index + 1 - period..=index]
+                    .iter()
+                    .map(|(_, value)| value)
+                    .sum::<f64>()
+                    / period as f64,
+                ticker_return_percent: ticker_return * 100.0,
+                comparison_return_percent: comparison_return * 100.0,
+                relative_return_percent: ((1.0 + ticker_return) / (1.0 + comparison_return) - 1.0)
+                    * 100.0,
+            }
         })
         .collect()
 }

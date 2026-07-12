@@ -15,7 +15,7 @@ struct ChartSummaryRequest {
 
 #[derive(Deserialize)]
 struct RelativeStrengthRequest {
-    symbol: String,
+    symbols: Vec<String>,
     comparison_symbol: String,
     interval: RelativeStrengthInterval,
 }
@@ -44,11 +44,11 @@ async fn summary(
 async fn relative_strength(
     State(state): State<AppState>,
     Json(request): Json<RelativeStrengthRequest>,
-) -> Result<Json<RelativeStrengthSeries>, StatusCode> {
+) -> Result<Json<Vec<RelativeStrengthSeries>>, StatusCode> {
     state
         .chart
         .relative_strength(
-            &request.symbol,
+            &request.symbols,
             &request.comparison_symbol,
             request.interval,
         )
@@ -56,7 +56,7 @@ async fn relative_strength(
         .map(Json)
         .map_err(|error| {
             error!(
-                symbol = request.symbol,
+                symbols = ?request.symbols,
                 comparison_symbol = request.comparison_symbol,
                 %error,
                 "failed to load relative strength"
