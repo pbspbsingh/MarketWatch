@@ -12,6 +12,11 @@
   background: #343b45;
   touch-action: none;
 
+  &::before {
+    position: absolute;
+    content: "";
+  }
+
   &:hover,
   &:focus-visible {
     background: #65758a;
@@ -42,8 +47,16 @@
 
 .split-pane-vertical .split-pane-divider {
   cursor: row-resize;
+
+  &::before {
+    inset: -0.35rem 0;
+  }
 }
 
 .split-pane-horizontal .split-pane-divider {
   cursor: col-resize;
+
+  &::before {
+    inset: 0 -0.35rem;
+  }
 }

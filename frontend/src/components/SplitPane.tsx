@@ -38,7 +38,7 @@ export function SplitPane({
     onSplitChange?.(splitRef.current);
   };
   const template = secondVisible
-    ? `minmax(0, ${split}fr) 2px minmax(0, ${100 - split}fr)`
+    ? `minmax(0, ${split}fr) 1px minmax(0, ${100 - split}fr)`
     : "minmax(0, 1fr) 0 minmax(0, 0)";
 
   return (
@@ -56,6 +56,7 @@ export function SplitPane({
         aria-hidden={!secondVisible}
         onPointerDown={(event) => {
           if (!secondVisible) return;
+          event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
           updateSplit(event);
         }}
