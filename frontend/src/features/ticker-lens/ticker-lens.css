@@ -142,8 +142,8 @@
 .ticker-lens-rs-price-symbol {
   position: absolute;
   z-index: 1;
-  top: 0.35rem;
-  left: 0.5rem;
+  top: 1rem;
+  left: 5.0rem;
   color: #d7dce2;
   font-size: 0.7rem;
   pointer-events: none;
