@@ -1,7 +1,7 @@
 use crate::config::MarketConfig;
 use crate::models::{
     RrgInterval, ThemeRanking, ThemeRrgSeries, aggregate_weekly, candle_performance,
-    candle_relative_strength, compute_rrg_series, normalize_universe,
+    candle_relative_strength_trend, compute_rrg_series, normalize_universe,
 };
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
@@ -83,7 +83,7 @@ impl ThemeAnalysisService {
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
                         absolute_strength: Some(performance.absolute_strength()),
-                        relative_strength: Some(candle_relative_strength(&candles, benchmark)),
+                        relative_strength: candle_relative_strength_trend(&candles, benchmark),
                         performance: Some(performance),
                     });
                 }

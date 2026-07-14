@@ -1,4 +1,4 @@
-import type { RelativeStrengthSeries } from "../../api/relativeStrength";
+import type { RelativeStrengthMode, RelativeStrengthSeries } from "../../api/relativeStrength";
 
 export const secondaryRsColors = ["#58a6ff", "#9b7ede"] as const;
 export const positiveRsColor = "#2fbf71";
@@ -15,10 +15,12 @@ export interface RsTooltipState {
 
 export function RsChartTooltip({
   tooltip,
+  mode,
   series,
   primarySymbol,
 }: {
   tooltip: RsTooltipState;
+  mode: RelativeStrengthMode;
   series: RelativeStrengthSeries[];
   primarySymbol: string;
 }) {
@@ -32,6 +34,30 @@ export function RsChartTooltip({
   });
   const comparisonPoint = entries[0]?.point;
 
+  if (mode === "trend") {
+    return (
+      <div
+        className={[
+          "ticker-lens-rs-tooltip",
+          tooltip.leftward ? "leftward" : "",
+          tooltip.downward ? "downward" : "",
+        ].filter(Boolean).join(" ")}
+        style={{ left: tooltip.x, top: tooltip.y }}
+      >
+        <strong>{tooltip.date} · RS Trend</strong>
+        {entries.map(({ item, point }, index) => (
+          <span key={item.symbol}>
+            <i style={{ background: seriesColor(series, index, primarySymbol, point.value) }} />
+            {item.symbol} vs {item.comparison_symbol}{" "}
+            <em className={point.value >= 0 ? "positive" : "negative"}>
+              {signedPercent(point.value)}
+            </em>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       className={[
@@ -42,18 +68,21 @@ export function RsChartTooltip({
       style={{ left: tooltip.x, top: tooltip.y }}
     >
       <strong>{tooltip.date} · {periodLabel}</strong>
-      {firstSeries !== undefined && comparisonPoint !== undefined && (
+      {firstSeries !== undefined && comparisonPoint?.comparison_return_percent != null && (
         <span>{firstSeries.comparison_symbol} {signedPercent(comparisonPoint.comparison_return_percent)}</span>
       )}
-      {entries.map(({ item, point }, index) => (
-        <span key={item.symbol}>
-          <i style={{ background: seriesColor(series, index, primarySymbol, point.relative_return_percent) }} />
-          {item.symbol} {signedPercent(point.ticker_return_percent)} ·{" "}
-          <em className={point.relative_return_percent >= 0 ? "positive" : "negative"}>
-            vs {item.comparison_symbol} {signedPercent(point.relative_return_percent)}
-          </em>
-        </span>
-      ))}
+      {entries.map(({ item, point }, index) => {
+        if (point.ticker_return_percent == null || point.relative_return_percent == null) return null;
+        return (
+          <span key={item.symbol}>
+            <i style={{ background: seriesColor(series, index, primarySymbol, point.relative_return_percent) }} />
+            {item.symbol} {signedPercent(point.ticker_return_percent)} ·{" "}
+            <em className={point.relative_return_percent >= 0 ? "positive" : "negative"}>
+              vs {item.comparison_symbol} {signedPercent(point.relative_return_percent)}
+            </em>
+          </span>
+        );
+      })}
     </div>
   );
 }

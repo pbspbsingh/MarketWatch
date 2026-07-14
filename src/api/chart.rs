@@ -1,5 +1,7 @@
 use crate::app::AppState;
-use crate::services::chart::{ChartSummary, RelativeStrengthChart, RelativeStrengthInterval};
+use crate::services::chart::{
+    ChartSummary, RelativeStrengthChart, RelativeStrengthInterval, RelativeStrengthMode,
+};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -18,6 +20,8 @@ struct RelativeStrengthRequest {
     symbols: Vec<String>,
     comparison_symbol: String,
     interval: RelativeStrengthInterval,
+    #[serde(default)]
+    mode: RelativeStrengthMode,
 }
 
 pub fn router() -> Router<AppState> {
@@ -51,6 +55,7 @@ async fn relative_strength(
             &request.symbols,
             &request.comparison_symbol,
             request.interval,
+            request.mode,
         )
         .await
         .map(Json)
@@ -58,6 +63,7 @@ async fn relative_strength(
             error!(
                 symbols = ?request.symbols,
                 comparison_symbol = request.comparison_symbol,
+                mode = ?request.mode,
                 %error,
                 "failed to load relative strength"
             );

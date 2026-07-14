@@ -133,14 +133,19 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
     const chart = chartApiRef.current;
     if (chart === null) return;
     updateRelativeStrengthLines(chart, rsSeriesRef.current, data, primarySymbol);
-  }, [data.series, primarySymbol]);
+  }, [data.mode, data.series, primarySymbol]);
 
   return (
     <div ref={rootRef} className="ticker-lens-rs-chart-stack">
       <div ref={chartRef} className="ticker-lens-rs-chart" />
       <strong className="ticker-lens-rs-price-symbol">{primarySymbol}</strong>
       {tooltip !== undefined && (
-        <RsChartTooltip tooltip={tooltip} series={data.series} primarySymbol={primarySymbol} />
+        <RsChartTooltip
+          tooltip={tooltip}
+          mode={data.mode}
+          series={data.series}
+          primarySymbol={primarySymbol}
+        />
       )}
     </div>
   );
@@ -168,14 +173,21 @@ function updateRelativeStrengthLines(
       lines.set(item.symbol, line);
     }
     line.applyOptions({
-        color: isPrimary ? neutralRsColor : secondaryRsColor(data.series, index, primarySymbol),
-        lineWidth: isPrimary ? 2 : 1,
-        priceLineVisible: false,
+      color: isPrimary ? neutralRsColor : secondaryRsColor(data.series, index, primarySymbol),
+      lineWidth: isPrimary ? 2 : 1,
+      priceFormat: data.mode === "trend"
+        ? { type: "custom", formatter: (value: number) => `${value.toFixed(1)}%` }
+        : { type: "price", precision: 2, minMove: 0.01 },
+      priceLineVisible: false,
     });
     line.setData(item.points.map((point) => ({
       time: point.date,
       value: point.value,
-      ...(isPrimary ? { color: relativeRsColor(point.relative_return_percent) } : {}),
+      ...(isPrimary ? {
+        color: relativeRsColor(
+          data.mode === "trend" ? point.value : (point.relative_return_percent ?? 0),
+        ),
+      } : {}),
     })));
   });
 }

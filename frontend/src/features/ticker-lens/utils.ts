@@ -107,7 +107,7 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
 
 export function formatMetric(value: number, key: SortKey | TickerSortKey) {
   if (key === "count") return value.toLocaleString();
-  if (key === "relative_strength") return value.toFixed(1);
+  if (key === "relative_strength") return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
@@ -134,20 +134,12 @@ function adrColor(adr: number) {
 }
 
 function rsColor(rs: number) {
-  if (rs <= 0.85) return { fg: "rgb(180,30,30)" };
-  if (rs < 1.0) {
-    const t = (rs - 0.85) / 0.15;
-    return {
-      fg: `rgb(${Math.round(180 + t * 40)},${Math.round(30 + t * 170)},20)`,
-    };
-  }
-  if (rs <= 1.3) {
-    const t = (rs - 1.0) / 0.3;
-    return {
-      fg: `rgb(${Math.round(220 - t * 180)},${Math.round(200 + t * 10)},${Math.round(20 + t * 60)})`,
-    };
-  }
-  return { fg: "rgb(40,210,80)" };
+  const cap = 5;
+  return {
+    fg: rs < 0
+      ? interpolateColor([255, 126, 126], [180, 30, 30], -rs / cap)
+      : interpolateColor([230, 200, 79], [40, 210, 80], rs / cap),
+  };
 }
 
 const performanceCaps: Record<Exclude<SortKey, "count" | "relative_strength">, number> = {

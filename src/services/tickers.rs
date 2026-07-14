@@ -2,7 +2,7 @@ use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
 use crate::models::{
     DailyCandle, TickerRanking, average_daily_range_percent, average_volume, candle_performance,
-    candle_relative_strength, close_above_sma,
+    candle_relative_strength_trend, close_above_sma,
 };
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
@@ -110,7 +110,7 @@ impl TickerCatalogService {
             symbol,
             watchlist_ids,
             absolute_strength: Some(performance.absolute_strength()),
-            relative_strength: Some(candle_relative_strength(&candles, &benchmark_candles)),
+            relative_strength: candle_relative_strength_trend(&candles, &benchmark_candles),
             performance: Some(performance),
             adr_percent: Some(adr_percent),
             latest_close,
@@ -222,10 +222,10 @@ impl TickerCatalogService {
                             .unwrap_or_default(),
                         symbol,
                         absolute_strength: Some(performance.absolute_strength()),
-                        relative_strength: Some(candle_relative_strength(
+                        relative_strength: candle_relative_strength_trend(
                             &candles,
                             &benchmark_candles,
-                        )),
+                        ),
                         performance: Some(performance),
                         adr_percent: Some(adr_percent),
                         latest_close,

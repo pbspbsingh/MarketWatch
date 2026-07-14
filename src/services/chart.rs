@@ -1,5 +1,7 @@
 use crate::config::MarketConfig;
-use crate::models::{DailyCandle, average_daily_range_percent, average_volume};
+use crate::models::{
+    DailyCandle, average_daily_range_percent, average_volume, candle_relative_strength_trend_series,
+};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use chrono::{Datelike, Months, NaiveDate};
@@ -57,6 +59,7 @@ pub struct RelativeStrengthSeries {
 
 #[derive(Serialize)]
 pub struct RelativeStrengthChart {
+    mode: RelativeStrengthMode,
     candles: Vec<RelativeStrengthCandle>,
     series: Vec<RelativeStrengthSeries>,
 }
@@ -78,13 +81,21 @@ pub enum RelativeStrengthInterval {
     Weekly,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthMode {
+    #[default]
+    Ratio,
+    Trend,
+}
+
+#[derive(Clone, Serialize)]
 pub struct RelativeStrengthPoint {
     date: NaiveDate,
     value: f64,
-    ticker_return_percent: f64,
-    comparison_return_percent: f64,
-    relative_return_percent: f64,
+    ticker_return_percent: Option<f64>,
+    comparison_return_percent: Option<f64>,
+    relative_return_percent: Option<f64>,
 }
 
 impl ChartService {
@@ -156,10 +167,15 @@ impl ChartService {
         symbols: &[String],
         comparison_symbol: &str,
         interval: RelativeStrengthInterval,
+        mode: RelativeStrengthMode,
     ) -> anyhow::Result<RelativeStrengthChart> {
         let selected_symbol = symbols
             .first()
             .ok_or_else(|| anyhow::anyhow!("relative-strength chart requires a selected ticker"))?;
+        let comparison_symbol = match mode {
+            RelativeStrengthMode::Ratio => comparison_symbol,
+            RelativeStrengthMode::Trend => &self.benchmark,
+        };
         let comparison = self.yahoo.daily_candles_for_year(comparison_symbol).await?;
         let selected_candles = if selected_symbol == comparison_symbol {
             comparison.clone()
@@ -174,20 +190,75 @@ impl ChartService {
                 } else {
                     self.yahoo.daily_candles_for_year(symbol).await?
                 };
-                series.push(calculate_relative_strength(
-                    symbol,
-                    comparison_symbol,
-                    &candles,
-                    &comparison,
-                    interval,
-                )?);
+                series.push(match mode {
+                    RelativeStrengthMode::Ratio => calculate_relative_strength(
+                        symbol,
+                        comparison_symbol,
+                        &candles,
+                        &comparison,
+                        interval,
+                    )?,
+                    RelativeStrengthMode::Trend => calculate_relative_strength_trend(
+                        symbol,
+                        comparison_symbol,
+                        &candles,
+                        &comparison,
+                        interval,
+                    ),
+                });
             }
         }
         Ok(RelativeStrengthChart {
+            mode,
             candles: chart_candles(&selected_candles, interval)?,
             series,
         })
     }
+}
+
+fn calculate_relative_strength_trend(
+    symbol: &str,
+    comparison_symbol: &str,
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: RelativeStrengthInterval,
+) -> RelativeStrengthSeries {
+    let points = candle_relative_strength_trend_series(ticker, comparison)
+        .into_iter()
+        .map(|(date, value)| RelativeStrengthPoint {
+            date,
+            value,
+            ticker_return_percent: None,
+            comparison_return_percent: None,
+            relative_return_percent: None,
+        })
+        .collect::<Vec<_>>();
+    let points = sample_trend_points(points, interval);
+    RelativeStrengthSeries {
+        symbol: symbol.to_owned(),
+        comparison_symbol: comparison_symbol.to_owned(),
+        interval,
+        moving_average_period: 5,
+        points,
+    }
+}
+
+fn sample_trend_points(
+    points: Vec<RelativeStrengthPoint>,
+    interval: RelativeStrengthInterval,
+) -> Vec<RelativeStrengthPoint> {
+    if matches!(interval, RelativeStrengthInterval::Daily) {
+        return points;
+    }
+    points
+        .into_iter()
+        .map(|point| {
+            let week = point.date.iso_week();
+            ((week.year(), week.week()), point)
+        })
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect()
 }
 
 fn calculate_relative_strength(
@@ -342,10 +413,11 @@ fn relative_strength_points(
                     .map(|(_, value)| value)
                     .sum::<f64>()
                     / period as f64,
-                ticker_return_percent: ticker_return * 100.0,
-                comparison_return_percent: comparison_return * 100.0,
-                relative_return_percent: ((1.0 + ticker_return) / (1.0 + comparison_return) - 1.0)
-                    * 100.0,
+                ticker_return_percent: Some(ticker_return * 100.0),
+                comparison_return_percent: Some(comparison_return * 100.0),
+                relative_return_percent: Some(
+                    ((1.0 + ticker_return) / (1.0 + comparison_return) - 1.0) * 100.0,
+                ),
             }
         })
         .collect()
@@ -443,5 +515,27 @@ mod tests {
         assert_eq!(weekly[0].low, 98.0);
         assert_eq!(weekly[0].close, 103.0);
         assert_eq!(weekly[0].volume, 300);
+    }
+
+    #[test]
+    fn weekly_trend_uses_the_last_daily_score() {
+        let point = |date: NaiveDate, value| RelativeStrengthPoint {
+            date,
+            value,
+            ticker_return_percent: None,
+            comparison_return_percent: None,
+            relative_return_percent: None,
+        };
+        let points = vec![
+            point(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), 1.0),
+            point(NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(), 2.0),
+            point(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), 3.0),
+        ];
+
+        let weekly = sample_trend_points(points, RelativeStrengthInterval::Weekly);
+
+        assert_eq!(weekly.len(), 2);
+        assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
+        assert_eq!(weekly[0].value, 2.0);
     }
 }

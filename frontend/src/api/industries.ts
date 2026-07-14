@@ -14,7 +14,6 @@ export interface IndustryRanking {
   sector_name: string | null;
   performance: PerformancePeriods;
   absolute_strength: number;
-  relative_strength: number;
 }
 
 export interface ThemeRanking {

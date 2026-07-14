@@ -1,35 +1,21 @@
-use crate::models::{IndustryRanking, PerformancePeriods, candle_performance};
-use crate::services::yahoo::{YahooService, YahooServiceError};
+use crate::models::{IndustryRanking, PerformancePeriods};
 use crate::store::Store;
-use chrono::TimeDelta;
 use std::collections::HashMap;
-use std::sync::Arc;
 use thiserror::Error;
-
-const BENCHMARK_HISTORY_DAYS: i64 = 380;
 
 pub struct IndustryAnalysisService {
     store: Store,
-    yahoo: Arc<YahooService>,
-    benchmark: String,
 }
 
 #[derive(Debug, Error)]
 pub enum IndustryAnalysisError {
     #[error("industry persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
-
-    #[error(transparent)]
-    Yahoo(#[from] YahooServiceError),
 }
 
 impl IndustryAnalysisService {
-    pub fn new(store: Store, yahoo: Arc<YahooService>, benchmark: String) -> Self {
-        Self {
-            store,
-            yahoo,
-            benchmark,
-        }
+    pub fn new(store: Store) -> Self {
+        Self { store }
     }
 
     pub async fn latest_rankings(&self) -> Result<Vec<IndustryRanking>, IndustryAnalysisError> {
@@ -41,13 +27,6 @@ impl IndustryAnalysisService {
         else {
             return Ok(Vec::new());
         };
-        let end = snapshot.market_date + TimeDelta::days(1);
-        let start = snapshot.market_date - TimeDelta::days(BENCHMARK_HISTORY_DAYS);
-        let benchmark_candles = self
-            .yahoo
-            .daily_candles(&self.benchmark, start, end)
-            .await?;
-        let benchmark = candle_performance(&benchmark_candles, snapshot.market_date);
         let classifications = self
             .store
             .industry_classifications()
@@ -76,45 +55,9 @@ impl IndustryAnalysisService {
                     sector_key: classification.map(|value| value.sector_key.clone()),
                     sector_name: classification.map(|value| value.sector_name.clone()),
                     absolute_strength: performance.absolute_strength(),
-                    relative_strength: performance.relative_strength_against(benchmark),
                     performance,
                 }
             })
             .collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::DailyCandle;
-    use chrono::NaiveDate;
-
-    fn candle(date: &str, close: f64) -> DailyCandle {
-        DailyCandle {
-            symbol: "QQQ".to_owned(),
-            market_date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
-            open: close,
-            high: close,
-            low: close,
-            close,
-            volume: 1,
-        }
-    }
-
-    #[test]
-    fn calculates_benchmark_returns_from_closest_prior_candle() {
-        let candles = vec![
-            candle("2025-06-12", 100.0),
-            candle("2026-06-05", 180.0),
-            candle("2026-06-12", 200.0),
-        ];
-
-        let performance =
-            candle_performance(&candles, NaiveDate::from_ymd_opt(2026, 6, 12).unwrap());
-
-        assert!((performance.week - 0.111_111_111_111_111_16).abs() < f64::EPSILON);
-        assert!((performance.year - 1.0).abs() < f64::EPSILON);
-        assert_eq!(performance.month, 1.0);
     }
 }

@@ -157,7 +157,7 @@ impl TickerCollectionService {
                     sector_name: ranking.and_then(|ranking| ranking.sector_name.clone()),
                     performance: ranking.map(|ranking| ranking.performance),
                     absolute_strength: ranking.map(|ranking| ranking.absolute_strength),
-                    relative_strength: ranking.map(|ranking| ranking.relative_strength),
+                    relative_strength: None,
                     symbols,
                 }
             })

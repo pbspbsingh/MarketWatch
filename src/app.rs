@@ -71,11 +71,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         yahoo.clone(),
     ));
-    let industry_analysis = Arc::new(IndustryAnalysisService::new(
-        store.clone(),
-        yahoo.clone(),
-        config.market.benchmark.clone(),
-    ));
+    let industry_analysis = Arc::new(IndustryAnalysisService::new(store.clone()));
     let ticker_catalog = Arc::new(TickerCatalogService::new(
         store.clone(),
         finviz.clone(),
