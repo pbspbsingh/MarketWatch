@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::services::chart::{ChartSummary, RelativeStrengthInterval, RelativeStrengthSeries};
+use crate::services::chart::{ChartSummary, RelativeStrengthChart, RelativeStrengthInterval};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -44,7 +44,7 @@ async fn summary(
 async fn relative_strength(
     State(state): State<AppState>,
     Json(request): Json<RelativeStrengthRequest>,
-) -> Result<Json<Vec<RelativeStrengthSeries>>, StatusCode> {
+) -> Result<Json<RelativeStrengthChart>, StatusCode> {
     state
         .chart
         .relative_strength(

@@ -54,7 +54,7 @@
   bottom: 0.5rem;
   left: 0.5rem;
   display: flex;
-  height: min(24rem, 48%);
+  max-height: 90%;
   min-height: 12rem;
   flex-direction: column;
   overflow: hidden;
@@ -63,6 +63,23 @@
   background: #111418;
   box-shadow: 0 -0.35rem 1.1rem rgb(0 0 0 / 45%);
   animation: ticker-lens-rs-slide-up 140ms ease-out;
+}
+
+.ticker-lens-rs-resize-handle {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0.0625rem;
+  cursor: row-resize;
+  touch-action: none;
+
+  &::before {
+    position: absolute;
+    inset: -0.35rem 0;
+    content: "";
+  }
 }
 
 .ticker-lens-rs-header {
@@ -85,6 +102,16 @@
   font-size: 0.68rem;
 }
 
+.ticker-lens-rs-interval {
+  flex-shrink: 0;
+}
+
+.ticker-lens-rs-interval .MuiToggleButton-root {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.6rem;
+  line-height: 1.2;
+}
+
 .ticker-lens-rs-header > .MuiIconButton-root {
   margin: 0 0.5rem 0 0.25rem;
   padding: 0.2rem;
@@ -99,15 +126,27 @@
   gap: 0.5rem;
 }
 
-.ticker-lens-rs-chart-wrap {
+.ticker-lens-rs-chart-stack {
   position: relative;
   width: 100%;
   height: 100%;
+  min-height: 0;
 }
 
 .ticker-lens-rs-chart {
   width: 100%;
   height: 100%;
+  min-height: 0;
+}
+
+.ticker-lens-rs-price-symbol {
+  position: absolute;
+  z-index: 1;
+  top: 0.35rem;
+  left: 0.5rem;
+  color: #d7dce2;
+  font-size: 0.7rem;
+  pointer-events: none;
 }
 
 .ticker-lens-rs-tooltip {

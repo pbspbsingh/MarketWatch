@@ -3,7 +3,9 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
@@ -68,6 +70,8 @@ export function ChartPanel({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [rsOpen, setRsOpen] = useState(false);
   const [rsClosing, setRsClosing] = useState(false);
+  const [rsHeight, setRsHeight] = useState(48);
+  const chartPanelRef = useRef<HTMLElement>(null);
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
@@ -82,6 +86,13 @@ export function ChartPanel({
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
+
+  const resizeRsPanel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = chartPanelRef.current?.getBoundingClientRect();
+    if (bounds === undefined || bounds.height === 0) return;
+    const minimum = Math.min(90, (192 / bounds.height) * 100);
+    setRsHeight(Math.max(minimum, Math.min(90, ((bounds.bottom - event.clientY) / bounds.height) * 100)));
+  };
 
   useEffect(() => {
     setSelectedThemeEtf(undefined);
@@ -212,7 +223,7 @@ export function ChartPanel({
   }, [groupKeysKey, mode, selectedTicker, symbolsKey]);
 
   return (
-    <section className="workspace-panel ticker-lens-chart-panel">
+    <section ref={chartPanelRef} className="workspace-panel ticker-lens-chart-panel">
       <ChartHeader
         summary={summary}
         summaryLoading={summaryLoading}
@@ -271,7 +282,33 @@ export function ChartPanel({
         <section
           className={`ticker-lens-rs-panel${rsClosing ? " ticker-lens-rs-panel-closing" : ""}`}
           aria-label="RS Chart"
+          style={{ height: `${rsHeight}%` }}
         >
+          <div
+            className="ticker-lens-rs-resize-handle"
+            role="separator"
+            aria-label="Resize RS Chart"
+            aria-orientation="horizontal"
+            aria-valuenow={Math.round(rsHeight)}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              resizeRsPanel(event);
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) resizeRsPanel(event);
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+            }}
+            onPointerCancel={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+            }}
+          />
           {summary?.symbol === selectedTicker ? (
             <Suspense
               fallback={
