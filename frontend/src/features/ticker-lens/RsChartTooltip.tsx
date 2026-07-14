@@ -1,4 +1,4 @@
-import type { RelativeStrengthMode, RelativeStrengthSeries } from "../../api/relativeStrength";
+import type { RelativeStrengthSeries } from "../../api/relativeStrength";
 
 export const secondaryRsColors = ["#58a6ff", "#9b7ede"] as const;
 export const positiveRsColor = "#2fbf71";
@@ -15,13 +15,13 @@ export interface RsTooltipState {
 
 export function RsChartTooltip({
   tooltip,
-  mode,
   series,
+  trend,
   primarySymbol,
 }: {
   tooltip: RsTooltipState;
-  mode: RelativeStrengthMode;
   series: RelativeStrengthSeries[];
+  trend: RelativeStrengthSeries | null;
   primarySymbol: string;
 }) {
   const firstSeries = series[0];
@@ -33,30 +33,7 @@ export function RsChartTooltip({
     return point === undefined ? [] : [{ item, point }];
   });
   const comparisonPoint = entries[0]?.point;
-
-  if (mode === "trend") {
-    return (
-      <div
-        className={[
-          "ticker-lens-rs-tooltip",
-          tooltip.leftward ? "leftward" : "",
-          tooltip.downward ? "downward" : "",
-        ].filter(Boolean).join(" ")}
-        style={{ left: tooltip.x, top: tooltip.y }}
-      >
-        <strong>{tooltip.date} · RS Trend</strong>
-        {entries.map(({ item, point }, index) => (
-          <span key={item.symbol}>
-            <i style={{ background: seriesColor(series, index, primarySymbol, point.value) }} />
-            {item.symbol} vs {item.comparison_symbol}{" "}
-            <em className={point.value >= 0 ? "positive" : "negative"}>
-              {signedPercent(point.value)}
-            </em>
-          </span>
-        ))}
-      </div>
-    );
-  }
+  const trendPoint = trend?.points.find((point) => point.date === tooltip.date);
 
   return (
     <div
@@ -68,6 +45,15 @@ export function RsChartTooltip({
       style={{ left: tooltip.x, top: tooltip.y }}
     >
       <strong>{tooltip.date} · {periodLabel}</strong>
+      {trend !== null && trendPoint !== undefined && (
+        <span>
+          <i className="trend" style={{ borderTopColor: relativeRsColor(trendPoint.value) }} />
+          RS Trend vs {trend.comparison_symbol}{" "}
+          <em className={trendPoint.value >= 0 ? "positive" : "negative"}>
+            {signedPercent(trendPoint.value)}
+          </em>
+        </span>
+      )}
       {firstSeries !== undefined && comparisonPoint?.comparison_return_percent != null && (
         <span>{firstSeries.comparison_symbol} {signedPercent(comparisonPoint.comparison_return_percent)}</span>
       )}

@@ -14,34 +14,22 @@ interface RsChartPanelProps {
 }
 
 export default function RsChartPanel({ selectedTicker, summary, interval, onClose }: RsChartPanelProps) {
-  const tabs = useMemo(() => {
+  const comparisons = useMemo(() => {
     const benchmark = summary.benchmark_symbol.slice(summary.benchmark_symbol.lastIndexOf(":") + 1);
-    const entries = [
-      { value: benchmark, label: benchmark, comparison: benchmark, mode: "ratio" as const, title: "Market benchmark" },
-    ];
+    const entries = [{ symbol: benchmark, title: "Market benchmark" }];
     for (const theme of summary.theme_benchmarks) {
-      if (!entries.some((entry) => entry.comparison === theme.etf_symbol)) {
-        entries.push({
-          value: theme.etf_symbol,
-          label: theme.etf_symbol,
-          comparison: theme.etf_symbol,
-          mode: "ratio",
-          title: theme.theme_name,
-        });
+      if (!entries.some((entry) => entry.symbol === theme.etf_symbol)) {
+        entries.push({ symbol: theme.etf_symbol, title: theme.theme_name });
       }
     }
-    return [
-      ...entries,
-      { value: "__rs_trend__", label: "RS Trend", comparison: benchmark, mode: "trend" as const, title: `RS trend versus ${benchmark}` },
-    ];
+    return entries;
   }, [summary]);
-  const [selectedTab, setSelectedTab] = useState(tabs[0]?.value ?? "");
+  const [comparison, setComparison] = useState(comparisons[0]?.symbol ?? "");
   const [rsInterval, setRsInterval] = useState(interval);
   const subjects = useMemo(() => [
     selectedTicker,
-    ...summary.theme_benchmarks.map((theme) => theme.etf_symbol),
-  ].filter((symbol, index, values) => values.indexOf(symbol) === index), [selectedTicker, summary]);
-  const activeTab = tabs.find((tab) => tab.value === selectedTab) ?? tabs[0];
+    ...comparisons.slice(1).map((entry) => entry.symbol),
+  ].filter((symbol, index, values) => values.indexOf(symbol) === index), [comparisons, selectedTicker]);
   const [data, setData] = useState<RelativeStrengthChart>();
   const [dataContext, setDataContext] = useState<string>();
   const [error, setError] = useState<string>();
@@ -49,22 +37,21 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
   const chartContext = `${selectedTicker}\0${rsInterval}\0${subjectSymbolsKey}`;
 
   useEffect(() => {
-    setSelectedTab(tabs[0]?.value ?? "");
-  }, [tabs, selectedTicker]);
+    setComparison(comparisons[0]?.symbol ?? "");
+  }, [comparisons, selectedTicker]);
 
   useEffect(() => {
     setRsInterval(interval);
   }, [interval]);
 
   useEffect(() => {
-    if (activeTab === undefined) return;
+    if (comparison === "") return;
     const controller = new AbortController();
     setError(undefined);
     fetchRelativeStrength(
       subjects,
-      activeTab.comparison,
+      comparison,
       rsInterval === "D" ? "daily" : "weekly",
-      activeTab.mode,
       controller.signal,
     )
       .then((result) => {
@@ -79,20 +66,20 @@ export default function RsChartPanel({ selectedTicker, summary, interval, onClos
         }
       });
     return () => controller.abort();
-  }, [activeTab, rsInterval, selectedTicker, subjectSymbolsKey]);
+  }, [comparison, rsInterval, selectedTicker, subjectSymbolsKey]);
 
   return (
     <>
       <header className="ticker-lens-rs-header">
         <Tabs
-          value={selectedTab}
-          onChange={(_, value: string) => setSelectedTab(value)}
+          value={comparison}
+          onChange={(_, value: string) => setComparison(value)}
           variant="scrollable"
           scrollButtons="auto"
-          aria-label="Relative strength view"
+          aria-label="Relative strength comparison"
         >
-          {tabs.map((entry) => (
-            <Tab key={entry.value} value={entry.value} label={entry.label} title={entry.title} />
+          {comparisons.map((entry) => (
+            <Tab key={entry.symbol} value={entry.symbol} label={entry.symbol} title={entry.title} />
           ))}
         </Tabs>
         <ToggleButtonGroup

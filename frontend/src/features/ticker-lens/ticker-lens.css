@@ -185,6 +185,11 @@
   vertical-align: middle;
 }
 
+.ticker-lens-rs-tooltip i.trend {
+  height: 0;
+  border-top: 0.125rem dashed #e6c84f;
+}
+
 .ticker-lens-rs-tooltip.leftward {
   transform: translate(calc(-100% - 0.75rem), calc(-100% - 0.75rem));
 }

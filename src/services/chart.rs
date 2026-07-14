@@ -59,9 +59,9 @@ pub struct RelativeStrengthSeries {
 
 #[derive(Serialize)]
 pub struct RelativeStrengthChart {
-    mode: RelativeStrengthMode,
     candles: Vec<RelativeStrengthCandle>,
     series: Vec<RelativeStrengthSeries>,
+    trend: Option<RelativeStrengthSeries>,
 }
 
 #[derive(Clone, Serialize)]
@@ -79,14 +79,6 @@ pub struct RelativeStrengthCandle {
 pub enum RelativeStrengthInterval {
     Daily,
     Weekly,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RelativeStrengthMode {
-    #[default]
-    Ratio,
-    Trend,
 }
 
 #[derive(Clone, Serialize)]
@@ -167,15 +159,10 @@ impl ChartService {
         symbols: &[String],
         comparison_symbol: &str,
         interval: RelativeStrengthInterval,
-        mode: RelativeStrengthMode,
     ) -> anyhow::Result<RelativeStrengthChart> {
         let selected_symbol = symbols
             .first()
             .ok_or_else(|| anyhow::anyhow!("relative-strength chart requires a selected ticker"))?;
-        let comparison_symbol = match mode {
-            RelativeStrengthMode::Ratio => comparison_symbol,
-            RelativeStrengthMode::Trend => &self.benchmark,
-        };
         let comparison = self.yahoo.daily_candles_for_year(comparison_symbol).await?;
         let selected_candles = if selected_symbol == comparison_symbol {
             comparison.clone()
@@ -190,28 +177,36 @@ impl ChartService {
                 } else {
                     self.yahoo.daily_candles_for_year(symbol).await?
                 };
-                series.push(match mode {
-                    RelativeStrengthMode::Ratio => calculate_relative_strength(
-                        symbol,
-                        comparison_symbol,
-                        &candles,
-                        &comparison,
-                        interval,
-                    )?,
-                    RelativeStrengthMode::Trend => calculate_relative_strength_trend(
-                        symbol,
-                        comparison_symbol,
-                        &candles,
-                        &comparison,
-                        interval,
-                    ),
-                });
+                series.push(calculate_relative_strength(
+                    symbol,
+                    comparison_symbol,
+                    &candles,
+                    &comparison,
+                    interval,
+                )?);
             }
         }
+        let trend = if selected_symbol == &self.benchmark {
+            None
+        } else {
+            let benchmark = if comparison_symbol == self.benchmark {
+                comparison
+            } else {
+                self.yahoo.daily_candles_for_year(&self.benchmark).await?
+            };
+            let trend = calculate_relative_strength_trend(
+                selected_symbol,
+                &self.benchmark,
+                &selected_candles,
+                &benchmark,
+                interval,
+            );
+            (!trend.points.is_empty()).then_some(trend)
+        };
         Ok(RelativeStrengthChart {
-            mode,
             candles: chart_candles(&selected_candles, interval)?,
             series,
+            trend,
         })
     }
 }

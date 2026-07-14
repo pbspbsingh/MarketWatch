@@ -1,5 +1,4 @@
 export type RelativeStrengthInterval = "daily" | "weekly";
-export type RelativeStrengthMode = "ratio" | "trend";
 
 export interface RelativeStrengthSeries {
   symbol: string;
@@ -16,7 +15,6 @@ export interface RelativeStrengthSeries {
 }
 
 export interface RelativeStrengthChart {
-  mode: RelativeStrengthMode;
   candles: Array<{
     date: string;
     open: number;
@@ -26,13 +24,13 @@ export interface RelativeStrengthChart {
     volume: number;
   }>;
   series: RelativeStrengthSeries[];
+  trend: RelativeStrengthSeries | null;
 }
 
 export async function fetchRelativeStrength(
   symbols: string[],
   comparisonSymbol: string,
   interval: RelativeStrengthInterval,
-  mode: RelativeStrengthMode,
   signal?: AbortSignal,
 ): Promise<RelativeStrengthChart> {
   const response = await fetch("/api/relative-strength", {
@@ -42,7 +40,6 @@ export async function fetchRelativeStrength(
       symbols,
       comparison_symbol: comparisonSymbol,
       interval,
-      mode,
     }),
     signal,
   });

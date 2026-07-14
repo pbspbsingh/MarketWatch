@@ -5,6 +5,7 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -27,6 +28,7 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
   const chartApiRef = useRef<IChartApi | null>(null);
   const priceSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const trendSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rsSeriesRef = useRef(new Map<string, ISeriesApi<"Line">>());
   const candleKeyRef = useRef<string | null>(null);
   const [tooltip, setTooltip] = useState<RsTooltipState>();
@@ -52,6 +54,7 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
         vertLines: { color: "#20262e" },
         horzLines: { color: "#20262e" },
       },
+      leftPriceScale: { visible: false, borderColor: "#343b45" },
       rightPriceScale: { borderColor: "#343b45" },
       timeScale: { borderColor: "#343b45", timeVisible: false },
     });
@@ -59,6 +62,7 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
       upColor: "#26a69a",
       downColor: "#ef5350",
       borderVisible: false,
+      priceLineVisible: false,
       wickUpColor: "#26a69a",
       wickDownColor: "#ef5350",
     });
@@ -68,6 +72,21 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
       0,
     );
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    const trend = chart.addSeries(
+      LineSeries,
+      {
+        color: neutralRsColor,
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+        lineStyle: LineStyle.LargeDashed,
+        lineWidth: 1,
+        priceFormat: { type: "custom", formatter: (value: number) => `${value.toFixed(1)}%` },
+        priceLineVisible: false,
+        priceScaleId: "left",
+      },
+      0,
+    );
+    trend.priceScale().applyOptions({ scaleMargins: { top: 0.03, bottom: 0.67 } });
     chart.addPane();
     const panes = chart.panes();
     panes[0]?.setStretchFactor(0.7);
@@ -75,6 +94,7 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
     chartApiRef.current = chart;
     priceSeriesRef.current = priceSeries;
     volumeSeriesRef.current = volume;
+    trendSeriesRef.current = trend;
 
     const handleCrosshair = (event: MouseEventParams<Time>) => {
       const date = event.time === undefined ? undefined : timeKey(event.time);
@@ -97,6 +117,7 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
       chartApiRef.current = null;
       priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      trendSeriesRef.current = null;
       rsSeriesRef.current.clear();
       candleKeyRef.current = null;
     };
@@ -131,9 +152,21 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
 
   useEffect(() => {
     const chart = chartApiRef.current;
+    const trendSeries = trendSeriesRef.current;
+    if (chart === null || trendSeries === null) return;
+    chart.applyOptions({ leftPriceScale: { visible: data.trend !== null } });
+    trendSeries.setData((data.trend?.points ?? []).map((point) => ({
+      time: point.date,
+      value: point.value,
+      color: relativeRsColor(point.value),
+    })));
+  }, [data.trend]);
+
+  useEffect(() => {
+    const chart = chartApiRef.current;
     if (chart === null) return;
     updateRelativeStrengthLines(chart, rsSeriesRef.current, data, primarySymbol);
-  }, [data.mode, data.series, primarySymbol]);
+  }, [data.series, primarySymbol]);
 
   return (
     <div ref={rootRef} className="ticker-lens-rs-chart-stack">
@@ -142,8 +175,8 @@ export function RsChartView({ data, primarySymbol }: { data: RelativeStrengthCha
       {tooltip !== undefined && (
         <RsChartTooltip
           tooltip={tooltip}
-          mode={data.mode}
           series={data.series}
+          trend={data.trend}
           primarySymbol={primarySymbol}
         />
       )}
@@ -175,18 +208,14 @@ function updateRelativeStrengthLines(
     line.applyOptions({
       color: isPrimary ? neutralRsColor : secondaryRsColor(data.series, index, primarySymbol),
       lineWidth: isPrimary ? 2 : 1,
-      priceFormat: data.mode === "trend"
-        ? { type: "custom", formatter: (value: number) => `${value.toFixed(1)}%` }
-        : { type: "price", precision: 2, minMove: 0.01 },
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       priceLineVisible: false,
     });
     line.setData(item.points.map((point) => ({
       time: point.date,
       value: point.value,
       ...(isPrimary ? {
-        color: relativeRsColor(
-          data.mode === "trend" ? point.value : (point.relative_return_percent ?? 0),
-        ),
+        color: relativeRsColor(point.relative_return_percent ?? 0),
       } : {}),
     })));
   });
