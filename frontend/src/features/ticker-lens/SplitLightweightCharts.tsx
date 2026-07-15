@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { MarketChartContainer } from "../charts/MarketChartContainer";
 import { SplitPane } from "../../components/SplitPane";
+import {
+  ChartContextMenu,
+  type ChartMenuPosition,
+} from "../../components/lightweight-chart/ChartContextMenu";
 import {
   subscribeChartViewport,
   setHorizontalCrosshairVisible,
@@ -19,6 +29,8 @@ interface SplitLightweightChartsProps {
   onError: (source: "top" | "bottom", message: string | undefined) => void;
 }
 
+const viewportPersistenceDebounceMs = 200;
+
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -29,6 +41,7 @@ export default function SplitLightweightCharts({
 }: SplitLightweightChartsProps) {
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
+  const [menuPosition, setMenuPosition] = useState<ChartMenuPosition | null>(null);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
   const viewportsRef = useRef<{
     D: ChartViewport | undefined;
@@ -50,13 +63,12 @@ export default function SplitLightweightCharts({
 
   useEffect(() => {
     if (topContext === null) return;
-    return subscribeChartViewport(topContext, saveViewport);
+    return subscribeChartViewport(
+      topContext,
+      saveViewport,
+      viewportPersistenceDebounceMs,
+    );
   }, [saveViewport, topContext]);
-
-  useEffect(() => {
-    if (bottomContext === null) return;
-    return subscribeChartViewport(bottomContext, saveViewport);
-  }, [bottomContext, saveViewport]);
 
   useEffect(() => {
     if (topContext === null || bottomContext === null) return;
@@ -73,6 +85,17 @@ export default function SplitLightweightCharts({
     [bottomContext, topContext],
   );
 
+  const openContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setMenuPosition({ left: event.clientX, top: event.clientY });
+  }, []);
+
+  const resetChartView = useCallback(() => {
+    setMenuPosition(null);
+    const source = topContext ?? bottomContext;
+    source?.chart.timeScale().fitContent();
+  }, [bottomContext, topContext]);
+
   useEffect(() => {
     if (topContext === null || bottomContext === null) return;
     setCrosshairOwner(crosshairOwnerRef.current);
@@ -88,37 +111,46 @@ export default function SplitLightweightCharts({
   }, [bottomContext, topContext]);
 
   return (
-    <SplitPane
-      initialSplit={initialSplit}
-      onSplitChange={onSplitChange}
-      first={(
-        <div
-          onPointerEnter={() => setCrosshairOwner("top")}
-          style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
-        >
-          <MarketChartContainer
-            symbol={topSymbol}
-            interval={interval === "D" ? "daily" : "weekly"}
-            initialViewport={initialViewport}
-            onChartContext={setTopContext}
-            onError={(message) => onError("top", message)}
-          />
-        </div>
-      )}
-      second={(
-        <div
-          onPointerEnter={() => setCrosshairOwner("bottom")}
-          style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
-        >
-          <MarketChartContainer
-            symbol={bottomSymbol}
-            interval={interval === "D" ? "daily" : "weekly"}
-            initialViewport={initialViewport}
-            onChartContext={setBottomContext}
-            onError={(message) => onError("bottom", message)}
-          />
-        </div>
-      )}
-    />
+    <>
+      <SplitPane
+        initialSplit={initialSplit}
+        onSplitChange={onSplitChange}
+        first={(
+          <div
+            onPointerEnter={() => setCrosshairOwner("top")}
+            onContextMenu={openContextMenu}
+            style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
+          >
+            <MarketChartContainer
+              symbol={topSymbol}
+              interval={interval === "D" ? "daily" : "weekly"}
+              initialViewport={initialViewport}
+              onChartContext={setTopContext}
+              onError={(message) => onError("top", message)}
+            />
+          </div>
+        )}
+        second={(
+          <div
+            onPointerEnter={() => setCrosshairOwner("bottom")}
+            onContextMenu={openContextMenu}
+            style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
+          >
+            <MarketChartContainer
+              symbol={bottomSymbol}
+              interval={interval === "D" ? "daily" : "weekly"}
+              initialViewport={initialViewport}
+              onChartContext={setBottomContext}
+              onError={(message) => onError("bottom", message)}
+            />
+          </div>
+        )}
+      />
+      <ChartContextMenu
+        position={menuPosition}
+        onClose={() => setMenuPosition(null)}
+        onResetView={resetChartView}
+      />
+    </>
   );
 }

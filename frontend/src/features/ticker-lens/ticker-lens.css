@@ -29,6 +29,21 @@
   position: relative;
 }
 
+.ticker-lens-chart-stage {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.ticker-lens-chart-loading-overlay {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  background: #111418;
+}
+
 .ticker-lens-rs-toggle-wrap {
   position: absolute;
   z-index: 7;

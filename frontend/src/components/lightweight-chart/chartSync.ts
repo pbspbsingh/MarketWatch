@@ -9,7 +9,6 @@ import { chartTimeToMarketDate, marketDateToChartTime } from "./chartTime";
 
 export interface ChartViewport {
   barSpacing: number;
-  rightOffset: number;
 }
 
 export interface ChartSyncTarget {
@@ -127,35 +126,44 @@ function translateLogicalRange(
 ): LogicalRange | null {
   const candles = source.candleSeries.data();
   if (candles.length === 0) return null;
-  const fromAnchor = clampIndex(Math.floor(range.from), candles.length);
-  const toAnchor = clampIndex(Math.ceil(range.to), candles.length);
-  const targetFrom = target.chart.timeScale().timeToIndex(candles[fromAnchor].time, true);
-  const targetTo = target.chart.timeScale().timeToIndex(candles[toAnchor].time, true);
-  if (targetFrom === null || targetTo === null) return null;
-  return {
-    from: targetFrom + range.from - fromAnchor,
-    to: targetTo + range.to - toAnchor,
-  } as LogicalRange;
-}
-
-function clampIndex(index: number, length: number) {
-  return Math.max(0, Math.min(length - 1, index));
+  const firstVisible = Math.max(0, Math.ceil(range.from));
+  const lastVisible = Math.min(candles.length - 1, Math.floor(range.to));
+  for (let sourceIndex = lastVisible; sourceIndex >= firstVisible; sourceIndex -= 1) {
+    const targetIndex = target.chart.timeScale().timeToIndex(
+      candles[sourceIndex].time,
+      false,
+    );
+    if (targetIndex === null) continue;
+    const offset = targetIndex - sourceIndex;
+    return {
+      from: range.from + offset,
+      to: range.to + offset,
+    } as LogicalRange;
+  }
+  return null;
 }
 
 export function subscribeChartViewport(
   target: ChartSyncTarget,
   listener: (viewport: ChartViewport) => void,
+  debounceMs = 0,
 ): () => void {
+  let timeout: number | undefined;
   const handler = () => {
     if (target.isDisposed()) return;
     const timeScale = target.chart.timeScale();
-    listener({
+    const viewport = {
       barSpacing: timeScale.options().barSpacing,
-      rightOffset: timeScale.scrollPosition(),
-    });
+    };
+    window.clearTimeout(timeout);
+    timeout = window.setTimeout(() => {
+      timeout = undefined;
+      if (!target.isDisposed()) listener(viewport);
+    }, debounceMs);
   };
   target.chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
   return () => {
+    window.clearTimeout(timeout);
     if (!target.isDisposed()) {
       target.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
     }

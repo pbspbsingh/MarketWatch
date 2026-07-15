@@ -38,6 +38,7 @@ export function MarketChartContainer({
   const generationRef = useRef(0);
   const onErrorRef = useRef(onError);
   const [loadState, setLoadState] = useState<LoadState>();
+  const [snapshot, setSnapshot] = useState<MarketChartSnapshot>();
   const [retryVersion, setRetryVersion] = useState(0);
   onErrorRef.current = onError;
 
@@ -50,6 +51,7 @@ export function MarketChartContainer({
     void fetchMarketChartSnapshot(symbol, interval, controller.signal)
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
+        setSnapshot(snapshot);
         setLoadState({ key: requestKey, status: "ready", snapshot });
       })
       .catch((error: unknown) => {
@@ -76,23 +78,28 @@ export function MarketChartContainer({
   const state = loadState?.key === requestKey ? loadState : undefined;
   return (
     <div className={["market-chart-container", className].filter(Boolean).join(" ")}>
-      {state?.status === "ready" ? (
+      {snapshot !== undefined && (
         <MarketChart
-          data={state.snapshot}
+          data={snapshot}
           initialViewport={initialViewport}
           onChartContext={onChartContext}
         />
-      ) : state?.status === "error" ? (
-        <div className="panel-status">
+      )}
+      {state?.status !== "ready" && (
+        <div className="panel-status market-chart-overlay">
+          {state?.status === "error" ? (
+            <>
           <Typography color="error">{state.message}</Typography>
           <Button size="small" variant="outlined" onClick={() => setRetryVersion((value) => value + 1)}>
             Retry
           </Button>
-        </div>
-      ) : (
-        <div className="panel-status">
-          <CircularProgress size="1rem" />
-          <Typography color="text.secondary">Loading chart</Typography>
+            </>
+          ) : (
+            <>
+              <CircularProgress size="1rem" />
+              <Typography color="text.secondary">Loading chart</Typography>
+            </>
+          )}
         </div>
       )}
     </div>

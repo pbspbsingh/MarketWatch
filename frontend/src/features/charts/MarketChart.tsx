@@ -58,8 +58,11 @@ export function MarketChart({
   const chartDisposedRef = useRef(true);
   const contextReportedRef = useRef(false);
   const initialViewportRef = useRef(initialViewport);
+  const datasetKeyRef = useRef<string | undefined>(undefined);
+  const datasetIntervalRef = useRef<MarketChartData["interval"] | undefined>(undefined);
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
+  initialViewportRef.current = initialViewport;
   onChartContextRef.current = onChartContext;
 
   const initializeSeries = useCallback((chart: IChartApi) => {
@@ -116,17 +119,6 @@ export function MarketChart({
 
     candleSeriesRef.current?.setData(candles);
     volumeSeriesRef.current?.setData(volume);
-    if (!initializedRef.current && candles.length > 0) {
-      const timeScale = hostRef.current?.getChart()?.timeScale();
-      const viewport = initialViewportRef.current;
-      if (viewport === undefined) timeScale?.fitContent();
-      else timeScale?.scrollToPosition(viewport.rightOffset, false);
-      initializedRef.current = true;
-    }
-    if (!contextReportedRef.current && chartContextRef.current !== null) {
-      onChartContextRef.current?.(chartContextRef.current);
-      contextReportedRef.current = true;
-    }
   }, [data.candles]);
 
   useEffect(() => {
@@ -148,6 +140,31 @@ export function MarketChart({
       line.setData(lineData(byPeriod.get(spec.period)));
     });
   }, [data.interval, data.moving_averages]);
+
+  useEffect(() => {
+    if (data.candles.length === 0) return;
+    const datasetKey = `${data.symbol}\0${data.interval}`;
+    if (datasetKeyRef.current === datasetKey) return;
+    const timeScale = hostRef.current?.getChart()?.timeScale();
+    const viewport = initialViewportRef.current;
+    const intervalChanged = datasetIntervalRef.current !== data.interval;
+    if (viewport === undefined && (!initializedRef.current || intervalChanged)) {
+      timeScale?.fitContent();
+    }
+    else {
+      if (viewport !== undefined) {
+        timeScale?.applyOptions({ barSpacing: viewport.barSpacing });
+      }
+      timeScale?.scrollToPosition(0, false);
+    }
+    datasetKeyRef.current = datasetKey;
+    datasetIntervalRef.current = data.interval;
+    initializedRef.current = true;
+    if (!contextReportedRef.current && chartContextRef.current !== null) {
+      onChartContextRef.current?.(chartContextRef.current);
+      contextReportedRef.current = true;
+    }
+  }, [data.candles, data.interval, data.moving_averages, data.volume_average]);
 
   return (
     <ChartHost

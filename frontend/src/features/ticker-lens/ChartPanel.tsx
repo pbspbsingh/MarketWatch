@@ -82,14 +82,15 @@ export function ChartPanel({
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
-  const selectedIndustry = summary?.industry?.name ?? "All industries";
-  const selectedThemeBenchmark = summary?.theme_benchmarks.find(
+  const activeSummary = summary?.symbol === selectedTicker ? summary : undefined;
+  const selectedIndustry = activeSummary?.industry?.name ?? "All industries";
+  const selectedThemeBenchmark = activeSummary?.theme_benchmarks.find(
     (theme) => theme.etf_symbol === selectedThemeEtf,
-  ) ?? summary?.theme_benchmarks[0];
+  ) ?? activeSummary?.theme_benchmarks[0];
   const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
   const bottomChartSymbol = themeEtfChartEnabled
-    ? selectedThemeBenchmark?.tradingview_symbol ?? summary?.benchmark_symbol
-    : summary?.benchmark_symbol;
+    ? selectedThemeBenchmark?.tradingview_symbol ?? activeSummary?.benchmark_symbol
+    : activeSummary?.benchmark_symbol;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
@@ -246,7 +247,7 @@ export function ChartPanel({
   return (
     <section ref={chartPanelRef} className="workspace-panel ticker-lens-chart-panel">
       <ChartHeader
-        summary={summary}
+        summary={activeSummary}
         summaryLoading={summaryLoading}
         selectedTicker={selectedTicker}
         selectedIndustry={selectedIndustry}
@@ -269,40 +270,44 @@ export function ChartPanel({
           relatedGroupMode={relatedGroupMode}
         />
       )}
-      {selectedTicker !== undefined && summary === undefined && error === undefined && (
-        <div className="panel-status">
-          <CircularProgress size="1rem" />
-          <Typography color="text.secondary">Loading chart</Typography>
-        </div>
-      )}
-      {summary !== undefined && chartEngine === "tradingview" && (
-        <SplitTradingViewCharts
-          topSymbol={summary.tradingview_symbol}
-          bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
-          interval={interval}
-          initialSplit={readChartSplit(chartSplitKey)}
-          onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-          onError={setError}
-        />
-      )}
-      {summary !== undefined && chartEngine === "lightweight" && (
-        <Suspense
-          fallback={(
-            <div className="panel-status">
+      {selectedTicker !== undefined && (
+        <div className="ticker-lens-chart-stage">
+          {summary !== undefined && chartEngine === "tradingview" && (
+            <SplitTradingViewCharts
+              topSymbol={summary.tradingview_symbol}
+              bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+              interval={interval}
+              initialSplit={readChartSplit(chartSplitKey)}
+              onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+              onError={setError}
+            />
+          )}
+          {summary !== undefined && chartEngine === "lightweight" && (
+            <Suspense
+              fallback={(
+                <div className="panel-status">
+                  <CircularProgress size="1rem" />
+                  <Typography color="text.secondary">Loading chart module</Typography>
+                </div>
+              )}
+            >
+              <SplitLightweightCharts
+                topSymbol={summary.symbol}
+                bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+                interval={interval}
+                initialSplit={readChartSplit(chartSplitKey)}
+                onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+                onError={handleChartError}
+              />
+            </Suspense>
+          )}
+          {activeSummary === undefined && error === undefined && (
+            <div className="panel-status ticker-lens-chart-loading-overlay">
               <CircularProgress size="1rem" />
-              <Typography color="text.secondary">Loading chart module</Typography>
+              <Typography color="text.secondary">Loading chart</Typography>
             </div>
           )}
-        >
-          <SplitLightweightCharts
-            topSymbol={summary.symbol}
-            bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
-            interval={interval}
-            initialSplit={readChartSplit(chartSplitKey)}
-            onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-            onError={handleChartError}
-          />
-        </Suspense>
+        </div>
       )}
       <Tooltip title="RS Chart (R)">
         <span className="ticker-lens-rs-toggle-wrap">
@@ -351,7 +356,7 @@ export function ChartPanel({
               }
             }}
           />
-          {summary?.symbol === selectedTicker ? (
+          {activeSummary !== undefined ? (
             <Suspense
               fallback={
                 <div className="ticker-lens-rs-content">
@@ -361,7 +366,7 @@ export function ChartPanel({
             >
               <RsChartPanel
                 selectedTicker={selectedTicker}
-                summary={summary}
+                summary={activeSummary}
                 interval={interval}
                 onClose={() => setRsClosing(true)}
               />

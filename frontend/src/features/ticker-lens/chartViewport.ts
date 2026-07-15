@@ -4,19 +4,15 @@ const dailyViewportKey = "market-watch.chart-viewport.daily";
 const weeklyViewportKey = "market-watch.chart-viewport.weekly";
 const minimumBarSpacing = 0.5;
 const maximumBarSpacing = 100;
-const maximumOffset = 10_000;
 
 export function readChartViewport(interval: "D" | "W"): ChartViewport | undefined {
   const stored = localStorage.getItem(viewportKey(interval));
   if (stored === null) return undefined;
   try {
     const value = JSON.parse(stored) as Partial<ChartViewport>;
-    if (!Number.isFinite(value.barSpacing) || !Number.isFinite(value.rightOffset)) {
-      return undefined;
-    }
+    if (!Number.isFinite(value.barSpacing)) return undefined;
     return {
       barSpacing: clamp(value.barSpacing as number, minimumBarSpacing, maximumBarSpacing),
-      rightOffset: clamp(value.rightOffset as number, -maximumOffset, maximumOffset),
     };
   } catch {
     return undefined;
@@ -24,10 +20,9 @@ export function readChartViewport(interval: "D" | "W"): ChartViewport | undefine
 }
 
 export function writeChartViewport(interval: "D" | "W", viewport: ChartViewport) {
-  if (!Number.isFinite(viewport.barSpacing) || !Number.isFinite(viewport.rightOffset)) return;
+  if (!Number.isFinite(viewport.barSpacing)) return;
   localStorage.setItem(viewportKey(interval), JSON.stringify({
     barSpacing: clamp(viewport.barSpacing, minimumBarSpacing, maximumBarSpacing),
-    rightOffset: clamp(viewport.rightOffset, -maximumOffset, maximumOffset),
   }));
 }
 
