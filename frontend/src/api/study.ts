@@ -1,21 +1,11 @@
-export interface StudyCandle {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
+import type { MarketChartCandle, MarketChartSeries } from "./marketChart";
 
 export interface StudyResult {
   date: string;
   series: Array<{
     symbol: string;
-    candles: StudyCandle[];
-    moving_averages: Array<{
-      period: number;
-      points: Array<{ date: string; value: number }>;
-    }>;
+    candles: MarketChartCandle[];
+    moving_averages: MarketChartSeries[];
   }>;
 }
 

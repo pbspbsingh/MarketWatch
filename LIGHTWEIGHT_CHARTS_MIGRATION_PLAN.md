@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 2.2 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 2.3 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -23,13 +23,13 @@ The existing TradingView implementation remains available on the feature branch 
 - Synchronize time range and crosshair between the top and bottom charts.
 - Daily overlays: SMA 10, 20, 50, 100, and 200.
 - Weekly overlays: EMA 10, 20, and 40.
-- Volume overlay: 20-session average on Daily; 5-session average on Weekly.
+- Volume overlay: 50-session average on Daily; 10-session average on Weekly.
 - The top chart can display either RS Line or RS Trend in the upper 30% of the candle pane, selected from the existing header.
 - RS Line is the default; persist the selected RS mode.
 - Do not render a current-price horizontal line.
 - Do not render a top-left symbol/OHLC/return/volume/indicator legend or crosshair-updated values. Keep native crosshair axis labels.
 - Persist approximately 500 completed daily candles per symbol after a one-time candle-table purge.
-- Fetch older history lazily from Yahoo without saving it to the database.
+- Fetch additional history lazily from Yahoo without saving it to the database: backward-only for TickerLens and bidirectional for Studies.
 - Compute candles, Daily/Weekly aggregation, all moving averages, volume averages, RS Line, and RS Trend on the backend. The frontend renders returned series and performs no financial calculations.
 - Live quote/WebSocket data is chart presentation data only. It must not affect persistence, RS/AS, sorting, summaries, notes, or any other analytical flow.
 
@@ -44,7 +44,7 @@ The TradingView widget toolbar and drawing tools are explicitly not required and
 ```text
 Yahoo chart API ──> persisted completed candles ──> chart snapshot API ──> MarketChart
        │
-       └──────────> ephemeral older candles ──────> history API ────────> prepend
+       └──────────> ephemeral candle ranges ─────> history API ────────> merge
 
 Yahoo quote API ──> current-session snapshot ─┐
 Yahoo WebSocket ──> live ticks ───────────────┼─> LiveChartManager ─> app WebSocket ─> series.update()
@@ -54,11 +54,12 @@ Yahoo WebSocket ──> live ticks ───────────────
 ### Ownership boundaries
 
 - `YahooClient`: Yahoo protocol, decoding, throttling, and provider errors.
-- Historical candle service: persisted recent range plus explicitly non-persisting older-range fetches.
+- Historical candle service: persisted recent range plus explicitly non-persisting supplemental range fetches.
 - Backend chart calculation module: Daily/Weekly aggregation, SMA/EMA, volume averages, RS Line, and RS Trend.
 - `LiveChartManager` (deferred): Yahoo WebSocket lifecycle, quote reconciliation, subscriptions, and provisional candles.
 - Chart API: provider-independent snapshot, history, and live message contracts.
 - `MarketChartContainer`: one symbol's independent snapshot/history request, cancellation, generation, and error state.
+- Study history controller: coordinated two-symbol range requests and bidirectional availability.
 - `MarketChart`: Lightweight Charts lifecycle and rendering only; no fetching or calculations.
 - TickerLens composition: top/bottom symbols, header controls, split state, synchronization, and error toasts.
 
@@ -85,7 +86,7 @@ frontend/src/features/charts/
 
 The new TickerLens chart implementation is a lazy feature boundary. Load it through `React.lazy` so Vite emits the feature separately; verify the production build contains both the feature chunk and the shared `lightweight-charts` chunk before cutover.
 
-Build TickerLens on this foundation first. Migrate `StudyCharts` and `RsChartView` to it in later focused commits only where it removes real duplication without changing their behavior.
+Build TickerLens on this foundation first. Migrate `StudyCharts` in the focused bidirectional-history tasks below; migrate `RsChartView` later only where it removes real duplication without changing behavior.
 
 ## Data contracts
 
@@ -101,20 +102,22 @@ Each response includes:
 - SMA/EMA series and volume-average series required for the interval.
 - Optional RS Line and RS Trend series for the top chart.
 - Earliest and latest available dates.
-- Whether additional older history may exist.
+- Whether additional history may exist before and after the returned range.
 - Per-symbol error information; one chart's failure must not remove the other chart.
 
-### Lazy historical page
+### Lazy historical range
 
-Add a separate endpoint with a provider-neutral contract. It returns a complete recalculated chart snapshot for the requested expanded range, not only a raw page, because prepending history changes Weekly EMA seeds and later values.
+Add a separate endpoint with a provider-neutral contract. It returns a complete recalculated chart snapshot for the requested expanded range, not only raw candles, because changing the range can change indicator values.
 
 - `symbol`
 - interval and configured benchmark when RS is requested
-- requested earlier boundary or candle target
+- requested start/end boundaries or candle targets
 - ordered candles and all recalculated indicator/RS series
-- `has_more`
+- `has_more_before` and `has_more_after`
 
-This path combines persisted recent candles with Yahoo-fetched older candles on the backend, without saving the older range. It must retain the existing provider concurrency limit, retry policy, and error mapping. Concurrent duplicate requests for the same symbol/range should be coalesced only while in flight; no historical cache is required. Re-requesting older data is acceptable.
+TickerLens combines persisted recent candles with Yahoo-fetched older candles without saving the older range; its `has_more_after` is always false because its range ends at the latest completed session. Studies uses the same range-fetch foundation without persistence and may expand in either direction around its selected historical date, never beyond the latest completed session. A Study expansion reloads both displayed symbols together so synchronized date coverage remains stable.
+
+This path must retain the existing provider concurrency limit, retry policy, and error mapping. Concurrent duplicate requests for the same symbol/range should be coalesced only while in flight; no historical cache is required. Re-requesting data is acceptable.
 
 ### Deferred live chart stream
 
@@ -166,7 +169,7 @@ Crosshair synchronization maps the date to the target chart’s candle and uses 
 
 Price axes remain independently auto-scaled. Absolute vertical ranges must not be copied between differently priced symbols.
 
-Before the initial request, estimate required visible candles from the measured chart width and saved `barSpacing`, then add backend indicator warm-up and a small buffer. After rendering and on container resize, verify coverage and automatically request an expanded backend snapshot until the viewport is filled or Yahoo reports no more history. A wide screen or small saved candle width must not require the user to scroll before missing history loads.
+Before the initial request, estimate required visible candles from the measured chart width and saved `barSpacing`, then add backend indicator warm-up and a small buffer. After rendering and on container resize, verify coverage and automatically request an expanded backend snapshot until the viewport is filled or Yahoo reports no more history in the required direction. A wide screen or small saved candle width must not require the user to scroll before missing history loads.
 
 Each chart owns an `AbortController` and monotonic dataset generation. Symbol/interval changes abort obsolete requests; every snapshot, history response, RS result, and future live message is validated against the active symbol and generation before application. History cursors belong to one generation and cannot leak across ticker changes.
 
@@ -195,9 +198,9 @@ The backend maintains one ordered collection for each request, keyed by market d
 
 1. Provisional live candle for the current session.
 2. Persisted finalized snapshot candle.
-3. Ephemeral lazy-history candle.
+3. Ephemeral lazy-range candle.
 
-Lazy history must merge by date, deduplicate, validate OHLCV, sort ascending, aggregate the requested interval, and recompute all returned series on the backend. Before requesting an expanded snapshot, the frontend captures the visible date range and viewport settings. After replacing series data, it restores the same viewport so candles do not jump.
+Lazy ranges must merge by date, deduplicate, validate OHLCV, sort ascending, aggregate the requested interval, and recompute all returned series on the backend. Before requesting an expanded snapshot, the frontend captures the visible date range and viewport settings. After replacing series data, it restores the same viewport so candles do not jump.
 
 The frontend replaces data on existing candle/volume/indicator series; it never recreates the chart. Full backend recomputation is intentional: the dataset is small, and prepending history can change the EMA seed and therefore every later Weekly EMA value.
 
@@ -297,6 +300,7 @@ Progress:
 - [x] 1.7 — Shared candle history horizon increased to 760 calendar days.
 - [x] 2.1 — Shared Lightweight chart styling and time helpers.
 - [x] 2.2 — Shared chart lifecycle host and stable API access.
+- [x] 2.3 — Reusable candle and volume chart renderer.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -353,18 +357,22 @@ Progress:
 | 4.4 | Add the independent RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; labels do not cover chart content; no custom tooltip is added. |
 | 4.5 | Update RS mode/symbol/interval data without recreating either chart. | Toggle and ticker changes are immediate and free of distracting data-change animation. |
 
-### 5 — Non-persisted lazy history
+### 5 — Non-persisted lazy ranges and Studies reuse
 
 | ID | Atomic task | Completion check |
 |---|---|---|
 | 5.1 | Add a Yahoo historical-range fetch method that bypasses candle persistence while reusing throttling/retry/error behavior. | Code review confirms the method has no store dependency/write path; format/build checks pass. |
-| 5.2 | Add backend merge/deduplication of ephemeral older candles with persisted recent candles. | Date precedence, ascending order, OHLCV validation, overlap, and empty-page fixtures pass. |
+| 5.2 | Add backend merge/deduplication of ephemeral candle ranges with canonical candles. | Date precedence, ascending order, OHLCV validation, overlap, and empty-page fixtures pass. |
 | 5.3 | Build expanded-snapshot calculation over the merged backend dataset. | Weekly aggregation, SMA/EMA, volume average, RS Line, and RS Trend are fully recalculated for the requested range. |
-| 5.4 | Expose the provider-neutral expanded-snapshot endpoint with bounded requests and `has_more`. | Manual database comparison confirms repeated calls do not change `daily_candles`; invalid ranges/limits are rejected. |
+| 5.4 | Expose a bounded provider-neutral range contract with `has_more_before` and `has_more_after`. | TickerLens always reports no forward range; Study ranges stop at the latest completed session; invalid bounds/limits are rejected. |
 | 5.5 | Estimate initial candle demand from container width, saved `barSpacing`, indicator warm-up, and buffer. | Wide screens and small saved candle widths request enough data without initial user scrolling. |
-| 5.6 | Proactively request expansion after initial render and container resize. | Loading continues until both viewport and warm-up are covered or `has_more` is false; duplicate requests are suppressed. |
-| 5.7 | Trigger further expansion near the left edge. | Scrolling left loads history once per cursor/generation and stops cleanly at provider exhaustion. |
+| 5.6 | Proactively expand TickerLens history after initial render and container resize. | Loading continues until viewport and warm-up are covered or `has_more_before` is false; duplicate requests are suppressed. |
+| 5.7 | Trigger TickerLens expansion near the left edge only. | Scrolling left loads once per cursor/generation; right-edge movement never requests future candles. |
 | 5.8 | Replace all returned series while preserving visible date range, bar spacing, and right offset. | No viewport jump; stale expanded snapshots cannot cross symbol/interval generations. |
+| 5.9 | Extend the Study service/API with bounded start/end ranges and bidirectional availability for both symbols. | Expansions remain non-persisted, reload both symbols together, and never cross the latest completed session. |
+| 5.10 | Add a Study history controller that requests backward or forward expansion near either visible edge. | Directional requests are deduplicated/abortable and stop independently when the corresponding availability flag is false. |
+| 5.11 | Replace Study chart internals with two shared `MarketChart` instances and shared date synchronization. | Existing selected-date marker, layout toggle, visibility toggle, crosshair sync, and initial viewport remain manually equivalent. |
+| 5.12 | Preserve the Study viewport while merging bidirectional expansions. | Either direction adds candles without jumping the selected date or changing the visible candle width. |
 
 ### 6 — Data reset, parity approval, and cutover
 
@@ -409,7 +417,7 @@ Manual checks:
 - Identical candle width after ticker switch and application reload.
 - Crosshair and zoom synchronization in both directions.
 - RS toggle persistence, scaling, and no chart recreation.
-- Lazy history without jumps.
+- TickerLens backward-only and Studies bidirectional lazy loading without jumps.
 - Narrow and wide screens.
 - User confirmation after every atomic task before proceeding.
 
@@ -427,6 +435,7 @@ Manual checks:
 - Preserve existing on-demand population after the explicit purge; no bulk preload.
 - Synchronize charts by date.
 - Use independent chart containers and robust abort/generation validation.
+- Keep lazy direction policy outside `MarketChart`: TickerLens loads backward only; Studies loads both directions for both symbols together.
 - RS always compares the top ticker with the configured market benchmark.
 - Backend computes every financial series, including lazily expanded history.
 - Default to RS Line and persist the toggle.
