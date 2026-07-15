@@ -30,6 +30,7 @@ export const tickerSortSettingKey = "market-watch.ticker-sort";
 export const chartSplitKey = "market-watch.chart-split";
 export const chartIntervalKey = "market-watch.chart-interval";
 export const chartThemeEtfKey = "market-watch.theme-etf-chart";
+export const chartEngineKey = "market-watch.chart-engine";
 export const defaultSortSetting: SortSetting = {
   key: "relative_strength",
   direction: "desc",

@@ -7,6 +7,7 @@ export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };
 export type GroupMode = "industry" | "theme";
+export type ChartEngine = "tradingview" | "lightweight";
 
 export type RevealRequest<T> = { value: T; revision: number };
 

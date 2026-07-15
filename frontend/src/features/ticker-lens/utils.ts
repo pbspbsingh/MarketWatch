@@ -1,6 +1,10 @@
 import type { TickerRanking } from "../../api/tickers";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+import type { ChartEngine, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+
+export function readChartEngine(storageKey: string): ChartEngine {
+  return localStorage.getItem(storageKey) === "lightweight" ? "lightweight" : "tradingview";
+}
 
 export function readSortSetting(storageKey: string): SortSetting {
   const value = localStorage.getItem(storageKey);

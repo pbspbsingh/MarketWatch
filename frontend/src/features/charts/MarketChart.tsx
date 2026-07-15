@@ -9,7 +9,7 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import type { MarketChartData } from "../../api/marketChart";
+import type { MarketChartCandle, MarketChartData } from "../../api/marketChart";
 import {
   ChartHost,
   type ChartHostHandle,
@@ -23,6 +23,10 @@ import {
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
 import { marketDateToChartTime } from "../../components/lightweight-chart/chartTime";
+import type {
+  ChartSyncTarget,
+  ChartViewport,
+} from "../../components/lightweight-chart/chartSync";
 import {
   lineData,
   movingAverageSeriesCount,
@@ -33,18 +37,39 @@ interface MarketChartProps {
   data: MarketChartData;
   className?: string;
   ariaLabel?: string;
+  initialViewport?: ChartViewport;
+  onChartContext?: (context: ChartSyncTarget | null) => void;
 }
 
-export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
+export function MarketChart({
+  data,
+  className,
+  ariaLabel,
+  initialViewport,
+  onChartContext,
+}: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
+  const chartContextRef = useRef<ChartSyncTarget>(null);
+  const chartDisposedRef = useRef(true);
+  const contextReportedRef = useRef(false);
+  const initialViewportRef = useRef(initialViewport);
+  const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
+  onChartContextRef.current = onChartContext;
 
   const initializeSeries = useCallback((chart: IChartApi) => {
-    candleSeriesRef.current = chart.addSeries(CandlestickSeries, candleSeriesOptions);
+    chartDisposedRef.current = false;
+    const viewport = initialViewportRef.current;
+    if (viewport !== undefined) {
+      chart.timeScale().applyOptions({ barSpacing: viewport.barSpacing });
+    }
+    const candleSeries = chart.addSeries(CandlestickSeries, candleSeriesOptions);
+    candleSeriesRef.current = candleSeries;
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
     volumeSeriesRef.current = volumeSeries;
@@ -56,10 +81,26 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
       { length: movingAverageSeriesCount },
       () => chart.addSeries(LineSeries, indicatorSeriesOptions),
     );
+    chartContextRef.current = {
+      chart,
+      candleSeries,
+      candleAt: (date) => candlesByDateRef.current.get(date),
+      isDisposed: () => chartDisposedRef.current,
+    };
+    contextReportedRef.current = false;
     initializedRef.current = false;
   }, []);
 
+  const destroyChart = useCallback(() => {
+    chartDisposedRef.current = true;
+    if (contextReportedRef.current) onChartContextRef.current?.(null);
+    contextReportedRef.current = false;
+  }, []);
+
   useEffect(() => {
+    candlesByDateRef.current = new Map(
+      data.candles.map((candle) => [candle.date, candle]),
+    );
     const candles = data.candles.map((candle): CandlestickData<Time> => ({
       time: marketDateToChartTime(candle.date),
       open: candle.open,
@@ -76,8 +117,15 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
     candleSeriesRef.current?.setData(candles);
     volumeSeriesRef.current?.setData(volume);
     if (!initializedRef.current && candles.length > 0) {
-      hostRef.current?.getChart()?.timeScale().fitContent();
+      const timeScale = hostRef.current?.getChart()?.timeScale();
+      const viewport = initialViewportRef.current;
+      if (viewport === undefined) timeScale?.fitContent();
+      else timeScale?.scrollToPosition(viewport.rightOffset, false);
       initializedRef.current = true;
+    }
+    if (!contextReportedRef.current && chartContextRef.current !== null) {
+      onChartContextRef.current?.(chartContextRef.current);
+      contextReportedRef.current = true;
     }
   }, [data.candles]);
 
@@ -107,6 +155,7 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
       className={className}
       ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
       onChartReady={initializeSeries}
+      onChartDestroy={destroyChart}
     />
   );
 }

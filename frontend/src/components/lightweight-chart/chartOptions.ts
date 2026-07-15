@@ -1,5 +1,6 @@
 import {
   ColorType,
+  CrosshairMode,
   LineStyle,
   type ChartOptions,
   type DeepPartial,
@@ -42,6 +43,7 @@ export const baseChartOptions = {
     vertLines: { color: chartColors.grid },
     horzLines: { color: chartColors.grid },
   },
+  crosshair: { mode: CrosshairMode.Normal },
   leftPriceScale: { visible: false, borderColor: chartColors.border },
   rightPriceScale: {
     borderColor: chartColors.border,

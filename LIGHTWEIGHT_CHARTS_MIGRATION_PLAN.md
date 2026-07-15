@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 2.7 implemented and reviewed; awaiting commit approval.
+Current checkpoint: phase 3 UI integration reviewed; awaiting manual drag verification and commit approval.
 
 ## Objective
 
@@ -305,6 +305,12 @@ Progress:
 - [x] 2.5 — Shared-scale yellow dotted volume-average rendering.
 - [x] 2.6 — Independent chart loading, errors, cancellation, and stale-response protection.
 - [x] 2.7 — Lazy top-chart comparison mode and verified Vite chunks.
+- [x] 3.1 — Independent top and bottom Lightweight chart containers.
+- [x] 3.2 — Guarded visible-range synchronization by market date.
+- [x] 3.3 — Guarded crosshair synchronization by market date and target close.
+- [x] 3.4 — Validated Daily/Weekly viewport persistence.
+- [x] 3.5 — TickerLens controls, benchmark switching, and external links preserved.
+- [x] 3.6 — Independent chart loading, retry, inline errors, and source-specific toasts.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 

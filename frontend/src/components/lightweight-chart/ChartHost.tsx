@@ -22,14 +22,17 @@ interface ChartHostProps {
   ariaLabel?: string;
   options?: DeepPartial<ChartOptions>;
   onChartReady?: (chart: IChartApi) => void;
+  onChartDestroy?: (chart: IChartApi) => void;
 }
 
 export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
-  function ChartHost({ className, ariaLabel, options, onChartReady }, ref) {
+  function ChartHost({ className, ariaLabel, options, onChartReady, onChartDestroy }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
     const onChartReadyRef = useRef(onChartReady);
+    const onChartDestroyRef = useRef(onChartDestroy);
     onChartReadyRef.current = onChartReady;
+    onChartDestroyRef.current = onChartDestroy;
 
     useImperativeHandle(ref, () => ({
       getChart: () => chartRef.current,
@@ -44,8 +47,12 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       onChartReadyRef.current?.(chart);
 
       return () => {
-        chartRef.current = null;
-        chart.remove();
+        try {
+          onChartDestroyRef.current?.(chart);
+        } finally {
+          chartRef.current = null;
+          chart.remove();
+        }
       };
     }, []);
 

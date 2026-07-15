@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -19,14 +20,14 @@ import {
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
-import { chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
+import { chartEngineKey, chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
 import { ChartHeader } from "./ChartHeader";
-import { SplitChartComparison } from "./SplitChartComparison";
-import type { GroupMode, SelectedTickerContext } from "./types";
+import type { ChartEngine, GroupMode, SelectedTickerContext } from "./types";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
   isArrowKeyControl,
+  readChartEngine,
   readChartInterval,
   readChartSplit,
   readEnabled,
@@ -35,6 +36,7 @@ import {
 } from "./utils";
 
 const RsChartPanel = lazy(() => import("./RsChartPanel"));
+const SplitLightweightCharts = lazy(() => import("./SplitLightweightCharts"));
 
 interface ChartPanelProps {
   mode: GroupMode;
@@ -68,12 +70,13 @@ export function ChartPanel({
   const [selectedThemeEtf, setSelectedThemeEtf] = useState<string>();
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
+  const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [rsOpen, setRsOpen] = useState(false);
   const [rsClosing, setRsClosing] = useState(false);
   const [rsHeight, setRsHeight] = useState(48);
-  const [chartEngine, setChartEngine] = useState<"tradingview" | "lightweight">(
-    "tradingview",
+  const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
+    readChartEngine(chartEngineKey),
   );
   const chartPanelRef = useRef<HTMLElement>(null);
   const [summaryVersion, setSummaryVersion] = useState(0);
@@ -90,6 +93,20 @@ export function ChartPanel({
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
+  const chartError = chartErrors.top ?? chartErrors.bottom;
+
+  const handleChartError = useCallback((
+    source: "top" | "bottom",
+    message: string | undefined,
+  ) => {
+    setChartErrors((current) => {
+      if (current[source] === message) return current;
+      const next = { ...current };
+      if (message === undefined) delete next[source];
+      else next[source] = message;
+      return next;
+    });
+  }, []);
 
   const resizeRsPanel = (event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = chartPanelRef.current?.getBoundingClientRect();
@@ -269,14 +286,23 @@ export function ChartPanel({
         />
       )}
       {summary !== undefined && chartEngine === "lightweight" && (
-        <SplitChartComparison
-          topSymbol={summary.symbol}
-          bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
-          interval={interval}
-          initialSplit={readChartSplit(chartSplitKey)}
-          onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-          onError={setError}
-        />
+        <Suspense
+          fallback={(
+            <div className="panel-status">
+              <CircularProgress size="1rem" />
+              <Typography color="text.secondary">Loading chart module</Typography>
+            </div>
+          )}
+        >
+          <SplitLightweightCharts
+            topSymbol={summary.symbol}
+            bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+            interval={interval}
+            initialSplit={readChartSplit(chartSplitKey)}
+            onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+            onError={handleChartError}
+          />
+        </Suspense>
       )}
       <Tooltip title="RS Chart (R)">
         <span className="ticker-lens-rs-toggle-wrap">
@@ -348,7 +374,14 @@ export function ChartPanel({
           )}
         </section>
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={error ?? chartError}
+        onClose={() => {
+          if (error !== undefined) setError(undefined);
+          else if (chartErrors.top !== undefined) handleChartError("top", undefined);
+          else handleChartError("bottom", undefined);
+        }}
+      />
       <Toast
         message={warning}
         severity="warning"
