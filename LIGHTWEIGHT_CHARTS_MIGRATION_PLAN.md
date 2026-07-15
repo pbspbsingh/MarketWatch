@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.1 consolidation reviewed; awaiting amend approval.
+Current checkpoint: task 1.2 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -286,6 +286,7 @@ Progress:
 - [x] 0.4 — Isolated Yahoo WebSocket probe.
 - [x] 0.5 — POC review; deferred production live phase approved as feasible.
 - [x] 1.1 — Provider-independent chart interval, candle, and series models.
+- [x] 1.2 — Shared Daily close-SMA and volume-average calculations.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
