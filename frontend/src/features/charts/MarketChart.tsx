@@ -17,6 +17,7 @@ import {
 import {
   candleSeriesOptions,
   indicatorSeriesOptions,
+  volumeAverageSeriesOptions,
   volumeScaleMargins,
   volumeSeriesOptions,
   volumeColor,
@@ -38,6 +39,7 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
+  const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const initializedRef = useRef(false);
 
@@ -46,6 +48,10 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
     volumeSeriesRef.current = volumeSeries;
+    volumeAverageSeriesRef.current = chart.addSeries(
+      LineSeries,
+      volumeAverageSeriesOptions,
+    );
     movingAverageSeriesRef.current = Array.from(
       { length: movingAverageSeriesCount },
       () => chart.addSeries(LineSeries, indicatorSeriesOptions),
@@ -74,6 +80,10 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
       initializedRef.current = true;
     }
   }, [data.candles]);
+
+  useEffect(() => {
+    volumeAverageSeriesRef.current?.setData(lineData(data.volume_average));
+  }, [data.volume_average]);
 
   useEffect(() => {
     const specs = movingAverageSpecs(data.interval);

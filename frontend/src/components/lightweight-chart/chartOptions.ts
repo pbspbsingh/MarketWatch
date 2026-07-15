@@ -1,5 +1,6 @@
 import {
   ColorType,
+  LineStyle,
   type ChartOptions,
   type DeepPartial,
 } from "lightweight-charts";
@@ -58,9 +59,11 @@ export const candleSeriesOptions = {
   priceLineVisible: false,
 };
 
+export const volumePriceScaleId = "volume";
+
 export const volumeSeriesOptions = {
   priceFormat: { type: "volume" as const },
-  priceScaleId: "",
+  priceScaleId: volumePriceScaleId,
   priceLineVisible: false,
   lastValueVisible: false,
 };
@@ -72,6 +75,14 @@ export const indicatorSeriesOptions = {
   priceLineVisible: false,
   lastValueVisible: false,
   crosshairMarkerVisible: false,
+};
+
+export const volumeAverageSeriesOptions = {
+  ...indicatorSeriesOptions,
+  color: chartColors.volumeAverage,
+  lineStyle: LineStyle.Dotted,
+  priceFormat: { type: "volume" as const },
+  priceScaleId: volumePriceScaleId,
 };
 
 export function volumeColor(open: number, close: number) {
