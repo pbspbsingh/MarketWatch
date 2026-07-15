@@ -3,6 +3,7 @@ mod daily_notes;
 mod details;
 mod industries;
 mod market;
+mod market_chart;
 mod study;
 mod themes;
 mod ticker_collections;
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .merge(details::router())
         .merge(industries::router())
         .merge(market::router())
+        .merge(market_chart::router())
         .merge(study::router())
         .merge(tickers::router())
         .merge(ticker_collections::router())

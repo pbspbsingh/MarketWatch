@@ -46,7 +46,6 @@ pub struct MarketChartSeries {
     pub points: Vec<MarketChartPoint>,
 }
 
-#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MarketChartSnapshot {
     pub symbol: String,
@@ -87,7 +86,6 @@ pub fn close_sma(
     })
 }
 
-#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
 pub fn close_ema(
     candles: &[MarketChartCandle],
     period: usize,
@@ -132,7 +130,6 @@ pub fn close_ema(
     Ok(MarketChartSeries { period, points })
 }
 
-#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
 pub fn volume_sma(
     candles: &[MarketChartCandle],
     period: usize,

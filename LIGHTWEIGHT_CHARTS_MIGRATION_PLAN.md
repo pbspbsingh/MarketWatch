@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: completed-session Yahoo quote repair complete; task 1.6 remains paused.
+Current checkpoint: task 1.6 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -291,6 +291,7 @@ Progress:
 - [x] 1.3 — Shared market-week OHLCV aggregation.
 - [x] 1.4 — Weekly EMA and volume-average calculations.
 - [x] 1.5 — Persistence-backed Daily/Weekly chart snapshot service.
+- [x] 1.6 — Independent one-symbol chart snapshot API.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
