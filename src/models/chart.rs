@@ -49,7 +49,6 @@ pub struct MarketChartSeries {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MarketChartSnapshot {
     pub symbol: String,
-    pub exchange: String,
     pub interval: MarketChartInterval,
     pub candles: Vec<MarketChartCandle>,
     pub moving_averages: Vec<MarketChartSeries>,

@@ -34,21 +34,13 @@ impl MarketChartService {
         symbol: &str,
         interval: MarketChartInterval,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
-        let profile = self.yahoo.profile(symbol).await?;
-        let candles = self.yahoo.daily_candles_for_year(&profile.symbol).await?;
-        build_snapshot(
-            profile.symbol,
-            profile.exchange.to_string(),
-            interval,
-            &candles,
-        )
-        .map_err(Into::into)
+        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
+        build_snapshot(symbol.to_owned(), interval, &candles).map_err(Into::into)
     }
 }
 
 fn build_snapshot(
     symbol: String,
-    exchange: String,
     interval: MarketChartInterval,
     daily: &[DailyCandle],
 ) -> Result<MarketChartSnapshot, ChartCalculationError> {
@@ -80,7 +72,6 @@ fn build_snapshot(
 
     Ok(MarketChartSnapshot {
         symbol,
-        exchange,
         interval,
         candles,
         moving_averages,
@@ -115,7 +106,6 @@ mod tests {
     fn builds_complete_daily_snapshot_in_date_order() {
         let snapshot = build_snapshot(
             "TEST".to_owned(),
-            "NASDAQ".to_owned(),
             MarketChartInterval::Daily,
             &candles(220, 1),
         )
@@ -142,7 +132,6 @@ mod tests {
     fn builds_complete_weekly_snapshot_in_date_order() {
         let snapshot = build_snapshot(
             "TEST".to_owned(),
-            "NASDAQ".to_owned(),
             MarketChartInterval::Weekly,
             &candles(50, 7),
         )

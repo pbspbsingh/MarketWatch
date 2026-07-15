@@ -1,5 +1,5 @@
-use super::market_data::DAILY_CANDLE_HISTORY_DAYS;
 use crate::config::MarketConfig;
+use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, Quote, YahooClient, YahooError};
 use crate::store::Store;
@@ -86,7 +86,7 @@ impl YahooService {
             .ok_or(YahooServiceError::InvalidRange)?;
         self.daily_candles(
             symbol,
-            end - TimeDelta::days(DAILY_CANDLE_HISTORY_DAYS),
+            end - TimeDelta::days(DAILY_CANDLE_HISTORY_CALENDAR_DAYS),
             end,
         )
         .await

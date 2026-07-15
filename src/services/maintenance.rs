@@ -1,8 +1,7 @@
+use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::store::Store;
 use chrono::{TimeDelta, Utc};
 use std::time::Duration;
-
-use super::market_data::DAILY_CANDLE_HISTORY_DAYS;
 
 const INITIAL_DELAY: Duration = Duration::from_secs(30);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -18,7 +17,8 @@ pub fn spawn(store: Store) {
 }
 
 async fn run(store: &Store) {
-    let candle_cutoff = Utc::now().date_naive() - TimeDelta::days(DAILY_CANDLE_HISTORY_DAYS);
+    let candle_cutoff =
+        Utc::now().date_naive() - TimeDelta::days(DAILY_CANDLE_HISTORY_CALENDAR_DAYS);
     let images = match store.cleanup_daily_note_images().await {
         Ok(images) => images,
         Err(error) => {

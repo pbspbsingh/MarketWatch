@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.6 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 1.7 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -94,7 +94,7 @@ Add a chart-snapshot endpoint requested independently by each `MarketChartContai
 Each response includes:
 
 - Symbol.
-- Exchange separately from the provider symbol. Use canonical symbols such as `AAPL` internally; derive display/external identifiers such as `NASDAQ:AAPL` only at presentation boundaries.
+- Bare provider symbol. Exchange/display identifiers remain owned by the existing chart summary contract.
 - Ordered Daily or Weekly OHLCV candles.
 - SMA/EMA series and volume-average series required for the interval.
 - Optional RS Line and RS Trend series for the top chart.
@@ -292,6 +292,7 @@ Progress:
 - [x] 1.4 — Weekly EMA and volume-average calculations.
 - [x] 1.5 — Persistence-backed Daily/Weekly chart snapshot service.
 - [x] 1.6 — Independent one-symbol chart snapshot API.
+- [x] 1.7 — Shared candle history horizon increased to 760 calendar days.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
