@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 2.3 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 2.4 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -301,6 +301,7 @@ Progress:
 - [x] 2.1 — Shared Lightweight chart styling and time helpers.
 - [x] 2.2 — Shared chart lifecycle host and stable API access.
 - [x] 2.3 — Reusable candle and volume chart renderer.
+- [x] 2.4 — Backend-provided Daily SMA and Weekly EMA rendering.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 

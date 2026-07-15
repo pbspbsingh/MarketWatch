@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -15,11 +16,17 @@ import {
 } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
+  indicatorSeriesOptions,
   volumeScaleMargins,
   volumeSeriesOptions,
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
 import { marketDateToChartTime } from "../../components/lightweight-chart/chartTime";
+import {
+  lineData,
+  movingAverageSeriesCount,
+  movingAverageSpecs,
+} from "./chartSeries";
 
 interface MarketChartProps {
   data: MarketChartData;
@@ -31,6 +38,7 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
+  const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const initializedRef = useRef(false);
 
   const initializeSeries = useCallback((chart: IChartApi) => {
@@ -38,6 +46,10 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
     volumeSeriesRef.current = volumeSeries;
+    movingAverageSeriesRef.current = Array.from(
+      { length: movingAverageSeriesCount },
+      () => chart.addSeries(LineSeries, indicatorSeriesOptions),
+    );
     initializedRef.current = false;
   }, []);
 
@@ -62,6 +74,22 @@ export function MarketChart({ data, className, ariaLabel }: MarketChartProps) {
       initializedRef.current = true;
     }
   }, [data.candles]);
+
+  useEffect(() => {
+    const specs = movingAverageSpecs(data.interval);
+    const byPeriod = new Map(
+      data.moving_averages.map((series) => [series.period, series]),
+    );
+    movingAverageSeriesRef.current.forEach((line, index) => {
+      const spec = specs[index];
+      if (spec === undefined) {
+        line.setData([]);
+        return;
+      }
+      line.applyOptions({ color: spec.color });
+      line.setData(lineData(byPeriod.get(spec.period)));
+    });
+  }, [data.interval, data.moving_averages]);
 
   return (
     <ChartHost
