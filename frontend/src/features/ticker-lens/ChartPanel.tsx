@@ -21,6 +21,7 @@ import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts"
 import { Toast } from "../../components/Toast";
 import { chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
 import { ChartHeader } from "./ChartHeader";
+import { SplitChartComparison } from "./SplitChartComparison";
 import type { GroupMode, SelectedTickerContext } from "./types";
 import {
   industriesMarketWatchUrl,
@@ -71,6 +72,9 @@ export function ChartPanel({
   const [rsOpen, setRsOpen] = useState(false);
   const [rsClosing, setRsClosing] = useState(false);
   const [rsHeight, setRsHeight] = useState(48);
+  const [chartEngine, setChartEngine] = useState<"tradingview" | "lightweight">(
+    "tradingview",
+  );
   const chartPanelRef = useRef<HTMLElement>(null);
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join(",");
@@ -236,6 +240,8 @@ export function ChartPanel({
         setShowThemeEtfChart={setShowThemeEtfChart}
         setSelectedThemeEtf={setSelectedThemeEtf}
         setDetailsOpen={setDetailsOpen}
+        chartEngine={chartEngine}
+        setChartEngine={setChartEngine}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
@@ -252,9 +258,19 @@ export function ChartPanel({
           <Typography color="text.secondary">Loading chart</Typography>
         </div>
       )}
-      {summary !== undefined && (
+      {summary !== undefined && chartEngine === "tradingview" && (
         <SplitTradingViewCharts
           topSymbol={summary.tradingview_symbol}
+          bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+          interval={interval}
+          initialSplit={readChartSplit(chartSplitKey)}
+          onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+          onError={setError}
+        />
+      )}
+      {summary !== undefined && chartEngine === "lightweight" && (
+        <SplitChartComparison
+          topSymbol={summary.symbol}
           bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
           interval={interval}
           initialSplit={readChartSplit(chartSplitKey)}

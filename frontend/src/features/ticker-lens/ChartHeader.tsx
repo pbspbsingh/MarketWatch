@@ -37,6 +37,8 @@ interface ChartHeaderProps {
   setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
   contextLabel?: string;
+  chartEngine?: "tradingview" | "lightweight";
+  setChartEngine?: (engine: "tradingview" | "lightweight") => void;
 }
 
 export function ChartHeader({
@@ -52,6 +54,8 @@ export function ChartHeader({
   setSelectedThemeEtf,
   setDetailsOpen,
   contextLabel,
+  chartEngine,
+  setChartEngine,
 }: ChartHeaderProps) {
   return (
     <header className="panel-header chart-header">
@@ -117,6 +121,20 @@ export function ChartHeader({
         )}
       </div>
       <div className="chart-header-controls">
+        {chartEngine !== undefined && setChartEngine !== undefined && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={chartEngine}
+            aria-label="Chart implementation"
+            onChange={(_, value: "tradingview" | "lightweight" | null) => {
+              if (value !== null) setChartEngine(value);
+            }}
+          >
+            <ToggleButton value="tradingview" title="TradingView">TV</ToggleButton>
+            <ToggleButton value="lightweight" title="Lightweight Charts">LW</ToggleButton>
+          </ToggleButtonGroup>
+        )}
         {summaryLoading && (
           <div className="chart-header-loading">
             <CircularProgress size="0.75rem" />

@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 2.6 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 2.7 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -304,6 +304,7 @@ Progress:
 - [x] 2.4 — Backend-provided Daily SMA and Weekly EMA rendering.
 - [x] 2.5 — Shared-scale yellow dotted volume-average rendering.
 - [x] 2.6 — Independent chart loading, errors, cancellation, and stale-response protection.
+- [x] 2.7 — Lazy top-chart comparison mode and verified Vite chunks.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
