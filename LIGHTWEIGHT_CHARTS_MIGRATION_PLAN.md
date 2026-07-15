@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 2.1 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 2.2 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -82,6 +82,8 @@ frontend/src/features/charts/
 ```
 
 `ChartHost` must stay presentation-neutral: it owns lifecycle and shared defaults, not market data, indicators, RS logic, or TickerLens state. Avoid a large prop-driven “universal chart” component. Domain components compose the host and own their series.
+
+The new TickerLens chart implementation is a lazy feature boundary. Load it through `React.lazy` so Vite emits the feature separately; verify the production build contains both the feature chunk and the shared `lightweight-charts` chunk before cutover.
 
 Build TickerLens on this foundation first. Migrate `StudyCharts` and `RsChartView` to it in later focused commits only where it removes real duplication without changing their behavior.
 
@@ -294,6 +296,7 @@ Progress:
 - [x] 1.6 — Independent one-symbol chart snapshot API.
 - [x] 1.7 — Shared candle history horizon increased to 760 calendar days.
 - [x] 2.1 — Shared Lightweight chart styling and time helpers.
+- [x] 2.2 — Shared chart lifecycle host and stable API access.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -327,7 +330,7 @@ Progress:
 | 2.4 | Add backend-series adapters and render Daily SMA/Weekly EMA lines. | Correct series/colors appear; updating data does not recreate the chart. |
 | 2.5 | Render the yellow dotted Daily-50/Weekly-10 volume-average line. | Line shares the volume region and updates through existing series APIs. |
 | 2.6 | Add `MarketChartContainer` with independent loading/error state, `AbortController`, and monotonic generation validation. | Rapid symbol/interval changes cannot display stale responses. |
-| 2.7 | Add a temporary TickerLens implementation switch and render only the top Lightweight chart behind it. | TradingView remains the default; the new top chart can be manually compared without changing production behavior. |
+| 2.7 | Add a temporary TickerLens implementation switch and lazily render only the top Lightweight chart behind it. | TradingView remains the default; production build output verifies separate feature and shared library chunks. |
 
 ### 3 — Two-chart TickerLens integration
 
