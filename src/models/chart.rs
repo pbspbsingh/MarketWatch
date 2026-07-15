@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -39,9 +39,12 @@ pub enum ChartCalculationError {
     DatesNotAscending,
     #[error("invalid close price on {0}")]
     InvalidClose(NaiveDate),
-    #[expect(dead_code, reason = "used by the chart snapshot service in task 1.5")]
     #[error("invalid volume on {0}")]
     InvalidVolume(NaiveDate),
+    #[error("invalid OHLC values on {0}")]
+    InvalidOhlc(NaiveDate),
+    #[error("weekly volume overflow on {0}")]
+    VolumeOverflow(NaiveDate),
 }
 
 pub fn close_sma(
@@ -55,7 +58,7 @@ pub fn close_sma(
     })
 }
 
-#[expect(dead_code, reason = "used by the chart snapshot service in task 1.5")]
+#[allow(dead_code, reason = "used by the chart snapshot service in task 1.5")]
 pub fn volume_sma(
     candles: &[MarketChartCandle],
     period: usize,
@@ -75,13 +78,11 @@ fn moving_average(
     if period == 0 {
         return Err(ChartCalculationError::InvalidPeriod);
     }
+    validate_date_order(candles)?;
 
     let mut points = Vec::with_capacity(candles.len().saturating_sub(period).saturating_add(1));
     let mut sum = 0.0;
     for (index, candle) in candles.iter().enumerate() {
-        if index > 0 && candles[index - 1].date >= candle.date {
-            return Err(ChartCalculationError::DatesNotAscending);
-        }
         sum += value(candle)?;
         if index >= period {
             sum -= value(&candles[index - period])?;
@@ -95,6 +96,63 @@ fn moving_average(
     }
 
     Ok(MarketChartSeries { period, points })
+}
+
+pub fn aggregate_market_weeks(
+    candles: &[MarketChartCandle],
+) -> Result<Vec<MarketChartCandle>, ChartCalculationError> {
+    validate_date_order(candles)?;
+    let mut weekly = Vec::<MarketChartCandle>::new();
+
+    for candle in candles {
+        validate_candle(candle)?;
+        let week = candle.date.iso_week();
+        let week_key = (week.year(), week.week());
+        let current_key = weekly.last().map(|current| {
+            let current_week = current.date.iso_week();
+            (current_week.year(), current_week.week())
+        });
+
+        if current_key == Some(week_key) {
+            let current = weekly.last_mut().expect("current week exists");
+            current.date = candle.date;
+            current.high = current.high.max(candle.high);
+            current.low = current.low.min(candle.low);
+            current.close = candle.close;
+            current.volume = current
+                .volume
+                .checked_add(candle.volume)
+                .ok_or(ChartCalculationError::VolumeOverflow(candle.date))?;
+        } else {
+            weekly.push(candle.clone());
+        }
+    }
+
+    Ok(weekly)
+}
+
+fn validate_date_order(candles: &[MarketChartCandle]) -> Result<(), ChartCalculationError> {
+    if candles.windows(2).any(|pair| pair[0].date >= pair[1].date) {
+        return Err(ChartCalculationError::DatesNotAscending);
+    }
+    Ok(())
+}
+
+fn validate_candle(candle: &MarketChartCandle) -> Result<(), ChartCalculationError> {
+    let prices = [candle.open, candle.high, candle.low, candle.close];
+    if prices
+        .iter()
+        .any(|price| !price.is_finite() || *price <= 0.0)
+        || candle.low > candle.open.min(candle.close)
+        || candle.high < candle.open.max(candle.close)
+        || candle.low > candle.high
+    {
+        return Err(ChartCalculationError::InvalidOhlc(candle.date));
+    }
+    if candle.volume < 0 {
+        return Err(ChartCalculationError::InvalidVolume(candle.date));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -165,6 +223,80 @@ mod tests {
         assert_eq!(
             volume_sma(&invalid, 1),
             Err(ChartCalculationError::InvalidVolume(invalid[0].date))
+        );
+    }
+
+    #[test]
+    fn aggregates_market_weeks_across_year_boundary_and_missing_sessions() {
+        let candle = |date, open, high, low, close, volume| MarketChartCandle {
+            date,
+            open,
+            high,
+            low,
+            close,
+            volume,
+        };
+        let daily = vec![
+            candle(
+                NaiveDate::from_ymd_opt(2025, 12, 29).unwrap(),
+                100.0,
+                103.0,
+                99.0,
+                102.0,
+                100,
+            ),
+            candle(
+                NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                102.0,
+                105.0,
+                101.0,
+                104.0,
+                200,
+            ),
+            candle(
+                NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+                104.0,
+                106.0,
+                98.0,
+                99.0,
+                300,
+            ),
+            candle(
+                NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(),
+                99.0,
+                101.0,
+                97.0,
+                100.0,
+                400,
+            ),
+        ];
+
+        let weekly = aggregate_market_weeks(&daily).unwrap();
+
+        assert_eq!(weekly.len(), 2);
+        assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
+        assert_eq!(weekly[0].open, 100.0);
+        assert_eq!(weekly[0].high, 106.0);
+        assert_eq!(weekly[0].low, 98.0);
+        assert_eq!(weekly[0].close, 99.0);
+        assert_eq!(weekly[0].volume, 600);
+        assert_eq!(weekly[1], daily[3]);
+    }
+
+    #[test]
+    fn rejects_invalid_weekly_candles_and_volume_overflow() {
+        let mut invalid = candles(1);
+        invalid[0].high = invalid[0].close - 1.0;
+        assert_eq!(
+            aggregate_market_weeks(&invalid),
+            Err(ChartCalculationError::InvalidOhlc(invalid[0].date))
+        );
+
+        let mut overflow = candles(2);
+        overflow[0].volume = i64::MAX;
+        assert_eq!(
+            aggregate_market_weeks(&overflow),
+            Err(ChartCalculationError::VolumeOverflow(overflow[1].date))
         );
     }
 }

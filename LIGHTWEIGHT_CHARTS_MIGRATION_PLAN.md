@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.2 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 1.3 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -276,7 +276,7 @@ Yahoo subscriptions have a hard cap of 100 symbols.
 
 Perform tasks strictly in order. Work on only one task at a time. Each code task is one focused commit unless review shows two adjacent tasks are inseparable. Every task must leave the branch buildable; TradingView remains the default until cutover.
 
-After each task: review the diff, run proportional format/type/build checks, report the result, and wait for explicit user confirmation before starting the next task. Do not add automated UI, component, endpoint, or integration tests. Add tests only for pure deterministic calculations such as aggregation, indicators, RS, and candle merging; the user performs visual UI verification.
+After each task: review the diff, run proportional format/type/build checks, report the result, and wait for explicit user approval before committing. After an approved commit, start the next task without requiring separate confirmation. Do not add automated UI, component, endpoint, or integration tests. Add tests only for pure deterministic calculations such as aggregation, indicators, RS, and candle merging; the user performs visual UI verification.
 
 Progress:
 
@@ -287,6 +287,7 @@ Progress:
 - [x] 0.5 — POC review; deferred production live phase approved as feasible.
 - [x] 1.1 — Provider-independent chart interval, candle, and series models.
 - [x] 1.2 — Shared Daily close-SMA and volume-average calculations.
+- [x] 1.3 — Shared market-week OHLCV aggregation.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 

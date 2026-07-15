@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::chart::{MarketChartCandle, MarketChartInterval};
+use crate::models::chart::{MarketChartCandle, MarketChartInterval, aggregate_market_weeks};
 use crate::models::{
     DailyCandle, average_daily_range_percent, average_volume, candle_relative_strength_trend_series,
 };
@@ -315,42 +315,22 @@ fn chart_candles(
     let start = latest_date
         .checked_sub_months(Months::new(12))
         .ok_or_else(|| anyhow::anyhow!("invalid candle chart date range"))?;
-    let candles = candles.iter().filter(|candle| candle.market_date >= start);
-    if matches!(interval, MarketChartInterval::Daily) {
-        return Ok(candles
-            .map(|candle| MarketChartCandle {
-                date: candle.market_date,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                volume: candle.volume,
-            })
-            .collect());
+    let candles = candles
+        .iter()
+        .filter(|candle| candle.market_date >= start)
+        .map(|candle| MarketChartCandle {
+            date: candle.market_date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume,
+        })
+        .collect::<Vec<_>>();
+    match interval {
+        MarketChartInterval::Daily => Ok(candles),
+        MarketChartInterval::Weekly => Ok(aggregate_market_weeks(&candles)?),
     }
-
-    let mut weeks = BTreeMap::<(i32, u32), MarketChartCandle>::new();
-    for candle in candles {
-        let week = candle.market_date.iso_week();
-        weeks
-            .entry((week.year(), week.week()))
-            .and_modify(|weekly| {
-                weekly.date = candle.market_date;
-                weekly.high = weekly.high.max(candle.high);
-                weekly.low = weekly.low.min(candle.low);
-                weekly.close = candle.close;
-                weekly.volume += candle.volume;
-            })
-            .or_insert_with(|| MarketChartCandle {
-                date: candle.market_date,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                volume: candle.volume,
-            });
-    }
-    Ok(weeks.into_values().collect())
 }
 
 fn closes_by_period(
