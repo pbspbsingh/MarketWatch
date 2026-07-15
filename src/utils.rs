@@ -56,6 +56,10 @@ impl MarketSchedule {
         }
     }
 
+    pub fn market_date(&self, timestamp: DateTime<Utc>) -> NaiveDate {
+        timestamp.with_timezone(&self.timezone).date_naive()
+    }
+
     pub fn previous_trading_day(&self, date: NaiveDate) -> NaiveDate {
         let mut previous = date;
         loop {

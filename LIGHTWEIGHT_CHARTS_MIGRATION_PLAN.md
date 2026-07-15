@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.5 complete; paused before task 1.6 for YahooService work.
+Current checkpoint: completed-session Yahoo quote repair complete; task 1.6 remains paused.
 
 ## Objective
 
@@ -212,15 +212,17 @@ The frontend replaces data on existing candle/volume/indicator series; it never 
 - The existing standalone RS panel remains unchanged by this migration.
 - Historical delivery contains no provisional candles. A future live chart phase will update the chart-only RS point without entering ranking or persisted analytical flows.
 
-## Deferred: latest-candle repair and live data
+## Completed-session repair and deferred live data
 
-This is not part of the first historical-chart delivery. Before chart implementation begins, complete only a small feasibility POC covering Yahoo quote fields, WebSocket connection/subscription format, heartbeat, and message decoding. Keep the POC isolated from production chart flows.
+Yahoo chart occasionally omits the latest completed row when its close is unavailable. Historical loading now detects that missing date, fetches an authenticated quote, and persists a complete replacement only when its regular-market timestamp exactly matches the requested completed trading day. Failed or mismatched quote repair remains non-fatal and is retried on the next request. The existing seven-session overlap corrects a previously stored inaccurate candle on a later refresh.
+
+Active-session/provisional repair remains deferred. Before chart implementation began, isolated POCs covered Yahoo quote fields, WebSocket connection/subscription format, heartbeat, and message decoding.
 
 Observed POC results are recorded in `YAHOO_LIVE_POC.md`.
 
 Do not move Yahoo into a separate crate before the POC. First make the existing provider crate-ready with focused `chart`, `profile`, `quote`, `live`, and shared authentication modules. Extract a crate later only if the stabilized provider has another consumer or a clear isolation benefit.
 
-In the later production phase, Yahoo sometimes omits one or more fields from the latest chart row; the current parser drops any incomplete row. Preserve the latest partial provider row internally and treat quote/WebSocket data as a provisional chart repair, not finalized history.
+In the later production phase, preserve partial active-session provider rows internally and treat quote/WebSocket data as provisional chart repair, not finalized history.
 
 Quote handling must deserialize optional Yahoo fields including:
 
@@ -234,7 +236,6 @@ Rules:
 - Validate the provider timestamp against the market calendar/session before assigning a market date.
 - Never fabricate OHLCV values.
 - If a complete current-session candle can be constructed, publish it as provisional.
-- If only a previous close is available, use it only to repair a missing close for the matching completed session; do not manufacture the rest of a candle.
 - Refresh quote after WebSocket reconnect to repair missed ticks.
 - Final Yahoo chart data supersedes provisional data after it becomes available.
 - No provisional candle is written to `daily_candles`.
@@ -376,7 +377,7 @@ The POC informs this work, but none of these tasks block the historical migratio
 | ID | Atomic task | Completion check |
 |---|---|---|
 | L.1 | Refactor Yahoo provider internals into focused chart/profile/quote/live/auth modules without extracting a crate. | Existing provider behavior and tests remain unchanged. |
-| L.2 | Preserve the latest partial chart row and implement validated quote reconciliation for regular sessions. | Review and recorded fixtures confirm missing close repair never fabricates other OHLCV fields. |
+| L.2 | Preserve active-session partial rows and extend quote reconciliation for provisional regular-session candles. | Review and recorded fixtures confirm live repair never fabricates missing OHLCV fields or writes provisional data. |
 | L.3 | Implement the Yahoo WebSocket connection state machine and complete provisional candle snapshots. | Recorded-fixture/manual verification covers reconnect, heartbeat, and session rollover. |
 | L.4 | Add symbol refcounts, five-minute symbol/connection idle deadlines, and cached current candles. | Re-subscription during grace reuses state; abnormal client disconnect releases refs. |
 | L.5 | Add the 100-symbol capacity-aware LRU policy. | Idle symbols evict first; active symbols are never silently evicted; overflow reports historical-only status. |
@@ -425,4 +426,4 @@ Manual checks:
 - Default to RS Line and persist the toggle.
 - Omit custom chart legends/value tooltips and the current-price horizontal line.
 - Use a yellow dotted volume-average line.
-- Deliver historical charts first; production quote/live repair follows later.
+- Persist validated quote repair for a missing completed-session candle; keep active-session quote/live data deferred and non-persistent.

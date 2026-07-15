@@ -60,8 +60,8 @@ Observed regular-market fixtures:
 - `regularMarketPreviousClose` can identify the prior completed close.
 - Every quote field must remain optional; pre/post fields varied with market state and Yahoo has no stable public contract.
 - Market state alone is insufficient. Validate `regularMarketTime` against the configured market schedule before assigning a market date.
-- Quote data is suitable for future chart-only provisional repair, but it must not be persisted or used by ranking/performance flows.
-- No production integration is part of the historical Lightweight Charts delivery.
+- A complete quote whose timestamp exactly matches a missing completed trading day can repair and persist that historical candle.
+- Active-session quote data remains suitable only for future chart-only provisional repair and must not enter ranking/performance persistence.
 
 ## WebSocket probe
 

@@ -1,13 +1,12 @@
 use super::market_data::DAILY_CANDLE_HISTORY_DAYS;
 use crate::config::MarketConfig;
 use crate::models::{CompanyProfile, DailyCandle};
-use crate::providers::{Candle, ChartInterval, YahooClient, YahooError};
+use crate::providers::{Candle, ChartInterval, Quote, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
-use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone, Utc};
-use std::collections::{HashMap, HashSet};
+use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
@@ -17,19 +16,12 @@ const REFRESH_OVERLAP_SESSIONS: usize = 7;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
-const INCOMPLETE_CURRENT_DAY_REFRESH_TTL: Duration = Duration::from_secs(15 * 60);
 
 pub struct YahooService {
     store: Store,
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock,
-    incomplete_refreshes: Mutex<HashMap<String, IncompleteRefresh>>,
-}
-
-struct IncompleteRefresh {
-    requested_last_date: NaiveDate,
-    attempted_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Error)]
@@ -62,7 +54,6 @@ impl YahooService {
             yahoo,
             market_schedule: MarketSchedule::with_holidays(market, POST_CLOSE_DELAY, holidays)?,
             daily_candle_locks: KeyedLock::new(),
-            incomplete_refreshes: Mutex::new(HashMap::new()),
         })
     }
 
@@ -134,14 +125,7 @@ impl YahooService {
         let fetch_end_date = end.min(eligible_end);
         let requested_last_date = self.market_schedule.previous_trading_day(fetch_end_date);
 
-        if start < fetch_end_date
-            && latest.is_none_or(|latest| latest < requested_last_date)
-            && !self.recently_attempted_incomplete_current_day_refresh(
-                symbol,
-                requested_last_date,
-                recent_trading_day,
-            )
-        {
+        if start < fetch_end_date && latest.is_none_or(|latest| latest < requested_last_date) {
             let fetch_start = latest
                 .map(|latest| {
                     self.market_schedule
@@ -158,12 +142,12 @@ impl YahooService {
                     .and_hms_opt(0, 0, 0)
                     .expect("midnight is a valid time"),
             );
-            let candles = self
+            let mut candles = self
                 .fetch_chart(symbol, fetch_start, fetch_end)
                 .await?
                 .into_iter()
                 .map(|candle| {
-                    let market_date = candle.timestamp.date_naive();
+                    let market_date = self.market_schedule.market_date(candle.timestamp);
                     let volume = i64::try_from(candle.volume).map_err(|_| {
                         YahooServiceError::InvalidVolume {
                             symbol: symbol.to_owned(),
@@ -181,24 +165,46 @@ impl YahooService {
                     })
                 })
                 .collect::<Result<Vec<_>, YahooServiceError>>()?;
+            if requested_last_date == recent_trading_day
+                && !candles
+                    .iter()
+                    .any(|candle| candle.market_date == requested_last_date)
+            {
+                match self.fetch_quote(symbol).await {
+                    Ok(quote) => {
+                        let quote_date = self.market_schedule.market_date(quote.timestamp);
+                        let active_session = quote
+                            .market_state
+                            .as_deref()
+                            .is_some_and(|state| state.eq_ignore_ascii_case("REGULAR"));
+                        if active_session {
+                            warn!(symbol, "refusing active-session Yahoo quote candle repair");
+                        } else if quote_date == requested_last_date {
+                            match quote_candle(symbol, quote_date, quote) {
+                                Ok(candle) => candles.push(candle),
+                                Err(error) => {
+                                    warn!(symbol, %error, "failed to repair missing Yahoo chart candle from quote")
+                                }
+                            }
+                        } else {
+                            warn!(
+                                symbol,
+                                %quote_date,
+                                %requested_last_date,
+                                "Yahoo quote does not match missing completed session"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        warn!(symbol, %error, "failed to fetch Yahoo quote for missing chart candle");
+                    }
+                }
+            }
+            candles.sort_unstable_by_key(|candle| candle.market_date);
             self.store
                 .upsert_daily_candles(&candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
-            let latest_after_fetch = self
-                .store
-                .latest_daily_candle_date(symbol)
-                .await
-                .map_err(YahooServiceError::Persistence)?;
-            if latest_after_fetch.is_some_and(|latest| latest >= requested_last_date) {
-                self.clear_incomplete_refresh(symbol);
-            } else {
-                self.remember_incomplete_current_day_refresh(
-                    symbol,
-                    requested_last_date,
-                    recent_trading_day,
-                );
-            }
         }
 
         self.store
@@ -250,60 +256,42 @@ impl YahooService {
         unreachable!("Yahoo chart retry loop always returns")
     }
 
-    fn recently_attempted_incomplete_current_day_refresh(
-        &self,
-        symbol: &str,
-        requested_last_date: NaiveDate,
-        recent_trading_day: NaiveDate,
-    ) -> bool {
-        if requested_last_date != recent_trading_day {
-            return false;
+    async fn fetch_quote(&self, symbol: &str) -> Result<Quote, YahooError> {
+        let mut delay = INITIAL_RETRY_DELAY;
+        for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
+            match self.yahoo.quote(symbol).await {
+                Ok(quote) => return Ok(quote),
+                Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
+                    let delay = jitter(delay);
+                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo quote request");
+                    sleep(delay).await;
+                }
+                Err(error) => return Err(error),
+            }
+            delay *= 2;
         }
-
-        let now = Utc::now();
-        let mut refreshes = self
-            .incomplete_refreshes
-            .lock()
-            .expect("incomplete refresh mutex is not poisoned");
-        refreshes.retain(|_, refresh| {
-            (now - refresh.attempted_at)
-                .to_std()
-                .is_ok_and(|age| age < INCOMPLETE_CURRENT_DAY_REFRESH_TTL)
-        });
-
-        refreshes
-            .get(symbol)
-            .is_some_and(|refresh| refresh.requested_last_date >= requested_last_date)
+        unreachable!("Yahoo quote retry loop always returns")
     }
+}
 
-    fn remember_incomplete_current_day_refresh(
-        &self,
-        symbol: &str,
-        requested_last_date: NaiveDate,
-        recent_trading_day: NaiveDate,
-    ) {
-        if requested_last_date != recent_trading_day {
-            return;
-        }
-
-        self.incomplete_refreshes
-            .lock()
-            .expect("incomplete refresh mutex is not poisoned")
-            .insert(
-                symbol.to_owned(),
-                IncompleteRefresh {
-                    requested_last_date,
-                    attempted_at: Utc::now(),
-                },
-            );
-    }
-
-    fn clear_incomplete_refresh(&self, symbol: &str) {
-        self.incomplete_refreshes
-            .lock()
-            .expect("incomplete refresh mutex is not poisoned")
-            .remove(symbol);
-    }
+fn quote_candle(
+    symbol: &str,
+    market_date: NaiveDate,
+    quote: Quote,
+) -> Result<DailyCandle, YahooServiceError> {
+    let volume = i64::try_from(quote.volume).map_err(|_| YahooServiceError::InvalidVolume {
+        symbol: symbol.to_owned(),
+        market_date,
+    })?;
+    Ok(DailyCandle {
+        symbol: symbol.to_owned(),
+        market_date,
+        open: quote.open,
+        high: quote.high,
+        low: quote.low,
+        close: quote.close,
+        volume,
+    })
 }
 
 fn jitter(delay: Duration) -> Duration {
