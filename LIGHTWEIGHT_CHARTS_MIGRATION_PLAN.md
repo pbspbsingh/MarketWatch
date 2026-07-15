@@ -1,0 +1,411 @@
+# TickerLens Lightweight Charts Migration Plan
+
+Status: Active
+
+Implementation branch: `feature/lightweight-ticker-lens-charts`
+
+Merge target: `main` only after manual parity approval
+
+## Objective
+
+Replace the two TradingView widgets in TickerLens with maintainable Lightweight Charts while preserving the current user workflow. The first delivery is historical-only: synchronized charts, backend-computed indicators, RS overlays, and lazy history. Production live data is a later phase, preceded by a small Yahoo quote/WebSocket feasibility POC.
+
+The existing TradingView implementation remains available on the feature branch until the replacement passes manual parity testing. Work proceeds in small, independently reviewable commits.
+
+## Non-negotiable requirements
+
+- Top chart displays the selected company ticker.
+- Bottom chart displays the configured benchmark or selected theme ETF.
+- Preserve Daily/Weekly switching, split resizing, symbol switching, theme selection, current styling, loading/error handling, and external TradingView links.
+- Preserve candle width and right offset across ticker changes and application restarts.
+- Synchronize time range and crosshair between the top and bottom charts.
+- Daily overlays: SMA 10, 20, 50, 100, and 200.
+- Weekly overlays: EMA 10, 20, and 40.
+- Volume overlay: 20-session average on Daily; 5-session average on Weekly.
+- The top chart can display either RS Line or RS Trend in the upper 30% of the candle pane, selected from the existing header.
+- RS Line is the default; persist the selected RS mode.
+- Do not render a current-price horizontal line.
+- Do not render a top-left symbol/OHLC/return/volume/indicator legend or crosshair-updated values. Keep native crosshair axis labels.
+- Persist approximately 500 completed daily candles per symbol after a one-time candle-table purge.
+- Fetch older history lazily from Yahoo without saving it to the database.
+- Compute candles, Daily/Weekly aggregation, all moving averages, volume averages, RS Line, and RS Trend on the backend. The frontend renders returned series and performs no financial calculations.
+- Live quote/WebSocket data is chart presentation data only. It must not affect persistence, RS/AS, sorting, summaries, notes, or any other analytical flow.
+
+## Accepted parity boundary
+
+Lightweight Charts provides candles, series, panes, scales, pan/zoom, crosshair control, and realtime updates. It does not provide the complete TradingView widget toolbar, drawing suite, or built-in indicator configuration UI.
+
+The TradingView widget toolbar and drawing tools are explicitly not required and will not be recreated. “No noticeable difference” applies to the TickerLens chart workflow, controls, indicators, layout, and interactions defined in this plan.
+
+## Architecture
+
+```text
+Yahoo chart API ──> persisted completed candles ──> chart snapshot API ──> MarketChart
+       │
+       └──────────> ephemeral older candles ──────> history API ────────> prepend
+
+Yahoo quote API ──> current-session snapshot ─┐
+Yahoo WebSocket ──> live ticks ───────────────┼─> LiveChartManager ─> app WebSocket ─> series.update()
+                                              └─> memory only
+```
+
+### Ownership boundaries
+
+- `YahooClient`: Yahoo protocol, decoding, throttling, and provider errors.
+- Historical candle service: persisted recent range plus explicitly non-persisting older-range fetches.
+- Backend chart calculation module: Daily/Weekly aggregation, SMA/EMA, volume averages, RS Line, and RS Trend.
+- `LiveChartManager` (deferred): Yahoo WebSocket lifecycle, quote reconciliation, subscriptions, and provisional candles.
+- Chart API: provider-independent snapshot, history, and live message contracts.
+- `MarketChartContainer`: one symbol's independent snapshot/history request, cancellation, generation, and error state.
+- `MarketChart`: Lightweight Charts lifecycle and rendering only; no fetching or calculations.
+- TickerLens composition: top/bottom symbols, header controls, split state, synchronization, and error toasts.
+
+No chart component may call Yahoo directly.
+
+### Shared frontend chart foundation
+
+Create a small shared Lightweight Charts layer rather than another feature-local wrapper:
+
+```text
+frontend/src/components/lightweight-chart/
+  ChartHost.tsx          chart creation, cleanup, autosize, theme, API ref
+  chartOptions.ts        shared colors, grid, scales, attribution defaults
+  chartSync.ts           guarded date-range and crosshair synchronization
+  chartTime.ts           Time/date conversion helpers
+
+frontend/src/features/charts/
+  MarketChartContainer.tsx  independent data request, races, history, errors
+  MarketChart.tsx           candles, volume, returned series, viewport
+  chartSeries.ts            backend-series to Lightweight adapters
+```
+
+`ChartHost` must stay presentation-neutral: it owns lifecycle and shared defaults, not market data, indicators, RS logic, or TickerLens state. Avoid a large prop-driven “universal chart” component. Domain components compose the host and own their series.
+
+Build TickerLens on this foundation first. Migrate `StudyCharts` and `RsChartView` to it in later focused commits only where it removes real duplication without changing their behavior.
+
+## Data contracts
+
+### Initial chart snapshot
+
+Add a chart-snapshot endpoint requested independently by each `MarketChartContainer`. It returns interval-specific candles and every fully calculated chart series for one symbol. The top-chart request also asks for both RS modes against the configured market benchmark.
+
+Each response includes:
+
+- Symbol.
+- Exchange separately from the provider symbol. Use canonical symbols such as `AAPL` internally; derive display/external identifiers such as `NASDAQ:AAPL` only at presentation boundaries.
+- Ordered Daily or Weekly OHLCV candles.
+- SMA/EMA series and volume-average series required for the interval.
+- Optional RS Line and RS Trend series for the top chart.
+- Earliest and latest available dates.
+- Whether additional older history may exist.
+- Per-symbol error information; one chart's failure must not remove the other chart.
+
+### Lazy historical page
+
+Add a separate endpoint with a provider-neutral contract. It returns a complete recalculated chart snapshot for the requested expanded range, not only a raw page, because prepending history changes Weekly EMA seeds and later values.
+
+- `symbol`
+- interval and configured benchmark when RS is requested
+- requested earlier boundary or candle target
+- ordered candles and all recalculated indicator/RS series
+- `has_more`
+
+This path combines persisted recent candles with Yahoo-fetched older candles on the backend, without saving the older range. It must retain the existing provider concurrency limit, retry policy, and error mapping. Concurrent duplicate requests for the same symbol/range should be coalesced only while in flight; no historical cache is required. Re-requesting older data is acceptable.
+
+### Deferred live chart stream
+
+Use one application WebSocket per browser session and multiplex symbols.
+
+Client messages:
+
+- Replace desired symbol set.
+- Unsubscribe/close.
+
+Server messages:
+
+- Complete provisional daily candle keyed by `symbol + market_date`.
+- Per-symbol live status.
+- Recoverable connection/capacity error.
+
+The first message after subscribing or reconnecting must be a complete candle snapshot, not a price delta. Later messages replace the same candle idempotently.
+
+## Candle history policy
+
+The working target is approximately 500 trading candles. Implement this using an approximately 760-calendar-day retained/requested range; exact session counts vary by holidays and listings.
+
+- Change the recent-candle horizon only when the new chart endpoint is ready.
+- Do not purge during ordinary startup or schema migration.
+- At cutover, run one explicit, user-approved purge of `daily_candles` so the existing fetch flow repopulates the expanded range cleanly.
+- Keep the purge out of application code and out of automatic migrations.
+- Do not persist lazy history.
+- After the purge, preserve the current on-demand population behavior; do not add a bulk preload job.
+- The expanded global range is acceptable for existing analytical flows.
+
+Approximately 500 candles support one visible trading year plus the 199 preceding sessions required to produce a valid SMA 200 at the left edge.
+
+## Chart state and synchronization
+
+Persist separate Daily and Weekly viewport state in `localStorage`:
+
+- `barSpacing`: exact candle width in pixels.
+- `rightOffset`/scroll position.
+
+Do not key viewport state by ticker; the purpose is to preserve the same visual scale while scanning symbols. Validate and clamp stored values before applying them.
+
+Top and bottom charts synchronize by market date, never by raw logical index. They share:
+
+- Visible calendar-date range.
+- Wheel/pan changes.
+- Crosshair date.
+
+Crosshair synchronization maps the date to the target chart’s candle and uses that candle’s price. Missing dates clear the target crosshair instead of inventing a value. Use a reentrancy guard to prevent feedback loops.
+
+Price axes remain independently auto-scaled. Absolute vertical ranges must not be copied between differently priced symbols.
+
+Before the initial request, estimate required visible candles from the measured chart width and saved `barSpacing`, then add backend indicator warm-up and a small buffer. After rendering and on container resize, verify coverage and automatically request an expanded backend snapshot until the viewport is filled or Yahoo reports no more history. A wide screen or small saved candle width must not require the user to scroll before missing history loads.
+
+Each chart owns an `AbortController` and monotonic dataset generation. Symbol/interval changes abort obsolete requests; every snapshot, history response, RS result, and future live message is validated against the active symbol and generation before application. History cursors belong to one generation and cannot leak across ticker changes.
+
+## Indicator definitions
+
+Indicators are pure backend calculations over canonical candles.
+
+- Daily SMA: arithmetic mean over 10/20/50/100/200 sessions.
+- Weekly EMA: aggregate daily OHLCV by market week, then calculate EMA 10/20/40 using `alpha = 2 / (period + 1)` and seed with the first full-period SMA.
+- Daily volume average: SMA 20 of volume.
+- Weekly volume average: SMA 5 of aggregated weekly volume.
+- Do not render points before the required warm-up exists.
+
+Keep calculations separate from API serialization so they can be unit-tested and reused.
+
+Colors and styles:
+
+- Daily SMA 10/20/50/100/200: `#3179f5`, `#f6c309`, `#fb9800`, `#fb6500`, `#f60c0c`.
+- Weekly EMA 10/20/40: existing app blue, purple, and red.
+- Volume-average line: yellow and dotted.
+- Candle, volume, grid, scale, and line-width defaults follow the existing Studies chart and the supplied screenshot.
+
+### Candle merge and indicator updates
+
+The backend maintains one ordered collection for each request, keyed by market date. Data precedence is:
+
+1. Provisional live candle for the current session.
+2. Persisted finalized snapshot candle.
+3. Ephemeral lazy-history candle.
+
+Lazy history must merge by date, deduplicate, validate OHLCV, sort ascending, aggregate the requested interval, and recompute all returned series on the backend. Before requesting an expanded snapshot, the frontend captures the visible date range and viewport settings. After replacing series data, it restores the same viewport so candles do not jump.
+
+The frontend replaces data on existing candle/volume/indicator series; it never recreates the chart. Full backend recomputation is intentional: the dataset is small, and prepending history can change the EMA seed and therefore every later Weekly EMA value.
+
+## RS overlay
+
+- Reuse the existing backend RS Line and RS Trend formulas; do not create parallel formulas in the frontend.
+- Compare the top ticker against the configured market benchmark, regardless of the symbol displayed in the bottom chart.
+- Return RS across lazily loaded history as part of each complete backend snapshot.
+- Preserve RS Line's current latest-12-month geometric-mean normalization anchor and apply that fixed anchor to older returned ratios. Expanding history must not rescale or change already visible recent RS values.
+- Render on an independent left scale constrained to the upper 30% of the top candle pane; candles may overlap it.
+- Header toggle: `RS Line | RS Trend`; default to RS Line and persist the preference.
+- Update the RS series without recreating either chart.
+- Keep the existing color semantics. Do not add a custom crosshair tooltip/value legend.
+- The existing standalone RS panel remains unchanged by this migration.
+- Historical delivery contains no provisional candles. A future live chart phase will update the chart-only RS point without entering ranking or persisted analytical flows.
+
+## Deferred: latest-candle repair and live data
+
+This is not part of the first historical-chart delivery. Before chart implementation begins, complete only a small feasibility POC covering Yahoo quote fields, WebSocket connection/subscription format, heartbeat, and message decoding. Keep the POC isolated from production chart flows.
+
+Do not move Yahoo into a separate crate before the POC. First make the existing provider crate-ready with focused `chart`, `profile`, `quote`, `live`, and shared authentication modules. Extract a crate later only if the stabilized provider has another consumer or a clear isolation benefit.
+
+In the later production phase, Yahoo sometimes omits one or more fields from the latest chart row; the current parser drops any incomplete row. Preserve the latest partial provider row internally and treat quote/WebSocket data as a provisional chart repair, not finalized history.
+
+Quote handling must deserialize optional Yahoo fields including:
+
+- Regular market price and timestamp.
+- Previous regular close.
+- Market state/session boundaries.
+- Current-session open, high, low, and volume when supplied.
+
+Rules:
+
+- Validate the provider timestamp against the market calendar/session before assigning a market date.
+- Never fabricate OHLCV values.
+- If a complete current-session candle can be constructed, publish it as provisional.
+- If only a previous close is available, use it only to repair a missing close for the matching completed session; do not manufacture the rest of a candle.
+- Refresh quote after WebSocket reconnect to repair missed ticks.
+- Final Yahoo chart data supersedes provisional data after it becomes available.
+- No provisional candle is written to `daily_candles`.
+
+## Yahoo live subscription manager
+
+Deferred from the first delivery. One shared backend manager will own the Yahoo WebSocket after the POC establishes feasibility.
+
+Connection states:
+
+```text
+Disconnected -> Connecting -> Connected -> Backoff -> Connecting
+```
+
+Required behavior:
+
+- Exponential reconnect backoff with jitter.
+- Detect closed/stale connections and restore desired subscriptions.
+- Maintain `symbol -> local subscriber count, last-used time, latest provisional candle, Yahoo subscription state`.
+- First local subscriber activates the Yahoo symbol.
+- Additional subscribers share the subscription and receive the cached current candle immediately.
+- Zero local subscribers starts a five-minute idle timer.
+- Reuse the symbol subscription/candle if requested during the grace period.
+- After five idle minutes, unsubscribe the symbol and remove its live state.
+- If no symbols have local consumers for five minutes, close the Yahoo WebSocket at the same deadline, not five additional minutes later.
+- Any new subscriber cancels relevant idle timers and reconnects as needed.
+
+### Capacity policy
+
+Yahoo subscriptions have a hard cap of 100 symbols.
+
+1. Normally retain zero-consumer symbols for the five-minute grace period.
+2. When symbol 101 is requested, immediately evict the least-recently-used zero-consumer symbol, bypassing its remaining grace period.
+3. Never silently evict a symbol with active local consumers.
+4. If all 100 symbols have active consumers, keep the additional chart on historical data and return an explicit live-capacity status.
+5. Log connection transitions, subscription counts, idle eviction, capacity eviction, rejection, and reconnect attempts without logging every tick.
+
+## Atomic implementation sequence
+
+Perform tasks strictly in order. Work on only one task at a time. Each code task is one focused commit unless review shows two adjacent tasks are inseparable. Every task must leave the branch buildable; TradingView remains the default until cutover.
+
+After each task: review the diff, run proportional format/type/build checks, report the result, and wait for explicit user confirmation before starting the next task. Do not add automated UI, component, endpoint, or integration tests. Add tests only for pure deterministic calculations such as aggregation, indicators, RS, and candle merging; the user performs visual UI verification.
+
+### 0 — Establish the branch and de-risk Yahoo live access
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 0.1 | Create `feature/lightweight-ticker-lens-charts`; add this plan and the reference screenshot. | Branch starts from current `main`; planning artifacts are committed; worktree is clean. |
+| 0.2 | Record a short parity checklist for current TickerLens: symbols, D/W, theme ETF, split, loading/error, keyboard/panel interactions, and external links. | Checklist is reviewable without changing runtime behavior. |
+| 0.3 | Build an isolated Yahoo quote probe outside production modules. | Verified response fields, authentication/crumb requirements, rate-limit behavior, and sample fixtures are documented. |
+| 0.4 | Build an isolated Yahoo WebSocket probe outside production modules. | Connection URL, encoding, subscribe/unsubscribe messages, heartbeat, timestamps, volume semantics, reconnect behavior, and 100-symbol assumption are documented from observed traffic. |
+| 0.5 | Review the POC and make a go/no-go decision for the deferred live phase. | Historical chart work can proceed regardless; no POC code is wired into the application. |
+
+### 1 — Backend chart calculations and snapshot API
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 1.1 | Add provider-independent chart candle/series/interval models and canonical symbol handling. | Yahoo receives bare symbols; exchange-prefixed display identifiers remain presentation-only; formats/build checks pass. |
+| 1.2 | Implement Daily SMA and volume-average calculations as pure Rust functions. | Fixtures cover periods 10/20/50/100/200, volume 20, insufficient history, and invalid/empty input. |
+| 1.3 | Implement market-week OHLCV aggregation. | Fixtures cover week/year boundaries, missing sessions, OHLC rules, and summed volume. |
+| 1.4 | Implement Weekly EMA and volume-average calculations. | EMA 10/20/40 uses the documented SMA seed; volume 5 and insufficient-history fixtures pass. |
+| 1.5 | Build a chart calculation service that reads existing persisted candles and returns one complete interval snapshot. | Daily and Weekly snapshots contain candles plus all requested MA/EMA/volume series in ascending date order. |
+| 1.6 | Add a one-symbol chart snapshot API endpoint. | Top and bottom can call it independently; one request failure cannot affect the other; format/build checks pass. |
+| 1.7 | Change retained/requested history from 380 to approximately 760 calendar days. | Existing analytical flows still pass; maintenance uses the same new horizon; no purge runs automatically. |
+
+### 2 — Shared Lightweight Charts foundation and one chart
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 2.1 | Add shared chart options and time/date helpers using Studies styling and the reference screenshot. | No feature behavior changes; shared constants cover candles, volume, grid, scales, and indicator colors. |
+| 2.2 | Add `ChartHost` for create/remove, autosize, attribution, and stable API access. | Mount/unmount and resize do not leak chart instances or observers. |
+| 2.3 | Add `MarketChart` candle and volume rendering from an already-computed snapshot. | Candles and lower volume overlay render without custom legend/value tooltip or current-price line. |
+| 2.4 | Add backend-series adapters and render Daily SMA/Weekly EMA lines. | Correct series/colors appear; updating data does not recreate the chart. |
+| 2.5 | Render the yellow dotted Daily-20/Weekly-5 volume-average line. | Line shares the volume region and updates through existing series APIs. |
+| 2.6 | Add `MarketChartContainer` with independent loading/error state, `AbortController`, and monotonic generation validation. | Rapid symbol/interval changes cannot display stale responses. |
+| 2.7 | Add a temporary TickerLens implementation switch and render only the top Lightweight chart behind it. | TradingView remains the default; the new top chart can be manually compared without changing production behavior. |
+
+### 3 — Two-chart TickerLens integration
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 3.1 | Render independent top and bottom `MarketChartContainer` instances inside the existing split layout. | Ticker and benchmark/theme ETF load independently; split resizing/persistence remains unchanged. |
+| 3.2 | Synchronize visible ranges by calendar date with a reentrancy guard. | Pan/zoom in either chart aligns dates in the other; missing/short history does not create feedback loops. |
+| 3.3 | Synchronize crosshairs by date and target candle price. | Native axis labels align; missing target dates clear the peer crosshair; no custom values are displayed. |
+| 3.4 | Persist validated Daily and Weekly `barSpacing` and right offset. | Candle width survives ticker changes and application reload; D/W states remain independent. |
+| 3.5 | Preserve all TickerLens header behavior and external links with canonical symbols. | Benchmark/theme switching, D/W, details, and external TradingView links match the parity checklist. |
+| 3.6 | Complete independent failure/loading UX and toast handling. | Either chart remains usable when its peer fails; retries and ticker changes clear only relevant errors. |
+
+### 4 — Top-chart RS overlay
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 4.1 | Make existing RS Line and RS Trend calculations accept the requested historical range while keeping the configured benchmark. | Latest values match existing behavior; older returned dates have RS where warm-up permits. |
+| 4.2 | Extend top-chart snapshots with both configured-benchmark RS series. | Backend fixtures cover Daily, Weekly, warm-up, and range extension; bottom symbol does not affect comparison. |
+| 4.3 | Add the header RS mode toggle, defaulting to RS Line with validated `localStorage` persistence. | Preference survives reload and invalid stored values fall back to RS Line. |
+| 4.4 | Add the independent RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; labels do not cover chart content; no custom tooltip is added. |
+| 4.5 | Update RS mode/symbol/interval data without recreating either chart. | Toggle and ticker changes are immediate and free of distracting data-change animation. |
+
+### 5 — Non-persisted lazy history
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 5.1 | Add a Yahoo historical-range fetch method that bypasses candle persistence while reusing throttling/retry/error behavior. | Code review confirms the method has no store dependency/write path; format/build checks pass. |
+| 5.2 | Add backend merge/deduplication of ephemeral older candles with persisted recent candles. | Date precedence, ascending order, OHLCV validation, overlap, and empty-page fixtures pass. |
+| 5.3 | Build expanded-snapshot calculation over the merged backend dataset. | Weekly aggregation, SMA/EMA, volume average, RS Line, and RS Trend are fully recalculated for the requested range. |
+| 5.4 | Expose the provider-neutral expanded-snapshot endpoint with bounded requests and `has_more`. | Manual database comparison confirms repeated calls do not change `daily_candles`; invalid ranges/limits are rejected. |
+| 5.5 | Estimate initial candle demand from container width, saved `barSpacing`, indicator warm-up, and buffer. | Wide screens and small saved candle widths request enough data without initial user scrolling. |
+| 5.6 | Proactively request expansion after initial render and container resize. | Loading continues until both viewport and warm-up are covered or `has_more` is false; duplicate requests are suppressed. |
+| 5.7 | Trigger further expansion near the left edge. | Scrolling left loads history once per cursor/generation and stops cleanly at provider exhaustion. |
+| 5.8 | Replace all returned series while preserving visible date range, bar spacing, and right offset. | No viewport jump; stale expanded snapshots cannot cross symbol/interval generations. |
+
+### 6 — Data reset, parity approval, and cutover
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| 6.1 | Request explicit approval, then purge `daily_candles` once and allow current on-demand population to rebuild it. | No automatic purge code exists; accessed symbols populate the approximately 760-day range. |
+| 6.2 | Run backend/frontend automated checks and the full manual parity checklist on narrow/wide screens and both intervals. | All gates pass or deviations are explicitly approved. |
+| 6.3 | Make Lightweight Charts the TickerLens default and remove the temporary switch after approval. | TickerLens no longer instantiates TradingView widgets; RRG and other TradingView consumers remain intact. |
+| 6.4 | Remove only TickerLens-dead code/CSS/fields and update documentation. | No shared TradingView component used elsewhere is removed; worktree/build/tests are clean. |
+| 6.5 | Review the complete branch and merge it to `main`. | User approves final diff and manual UI behavior before merge. |
+
+### Future delivery — Production live charts
+
+The POC informs this work, but none of these tasks block the historical migration.
+
+| ID | Atomic task | Completion check |
+|---|---|---|
+| L.1 | Refactor Yahoo provider internals into focused chart/profile/quote/live/auth modules without extracting a crate. | Existing provider behavior and tests remain unchanged. |
+| L.2 | Preserve the latest partial chart row and implement validated quote reconciliation for regular sessions. | Review and recorded fixtures confirm missing close repair never fabricates other OHLCV fields. |
+| L.3 | Implement the Yahoo WebSocket connection state machine and complete provisional candle snapshots. | Recorded-fixture/manual verification covers reconnect, heartbeat, and session rollover. |
+| L.4 | Add symbol refcounts, five-minute symbol/connection idle deadlines, and cached current candles. | Re-subscription during grace reuses state; abnormal client disconnect releases refs. |
+| L.5 | Add the 100-symbol capacity-aware LRU policy. | Idle symbols evict first; active symbols are never silently evicted; overflow reports historical-only status. |
+| L.6 | Add the multiplexed application WebSocket endpoint and reconnecting frontend client. | Desired symbols restore after either connection reconnects; slow clients receive coalesced latest snapshots. |
+| L.7 | Calculate provisional candles and every chart-only indicator/RS series on the backend. | Live display updates without database writes or changes to ranking/performance results. |
+| L.8 | Integrate live updates with both `MarketChartContainer` instances. | Historical fallback always works; live updates are idempotent and generation-safe. |
+
+## Verification gates
+
+Automated checks:
+
+- Rust formatting/build checks.
+- Frontend type-check and production build.
+- Pure backend calculation tests only: SMA, EMA, weekly aggregation, volume averages, RS, and candle merge/deduplication.
+- No automated UI, component, endpoint, or integration tests.
+
+Manual checks:
+
+- Daily and Weekly visual parity.
+- All requested indicators and colors.
+- Ticker, benchmark, and theme switching.
+- Split resizing and saved height.
+- Identical candle width after ticker switch and application reload.
+- Crosshair and zoom synchronization in both directions.
+- RS toggle persistence, scaling, and no chart recreation.
+- Lazy history without jumps.
+- Narrow and wide screens.
+- User confirmation after every atomic task before proceeding.
+
+## Rollback strategy
+
+- Do not delete TradingView support until task 6.3 approval.
+- Keep each atomic code task as a focused commit so it can be reverted independently.
+- Snapshot/history API additions are additive until cutover.
+- The one-time candle purge contains no irreplaceable data; Yahoo repopulates completed candles. Still require explicit confirmation immediately before executing it.
+- Live data is explicitly deferred and cannot block the historical Lightweight Charts migration.
+
+## Resolved decisions
+
+- Use an approximately 760-calendar-day global persisted horizon and accept the additional local analytical load.
+- Preserve existing on-demand population after the explicit purge; no bulk preload.
+- Synchronize charts by date.
+- Use independent chart containers and robust abort/generation validation.
+- RS always compares the top ticker with the configured market benchmark.
+- Backend computes every financial series, including lazily expanded history.
+- Default to RS Line and persist the toggle.
+- Omit custom chart legends/value tooltips and the current-price horizontal line.
+- Use a yellow dotted volume-average line.
+- Deliver historical charts first; production quote/live repair follows later.
