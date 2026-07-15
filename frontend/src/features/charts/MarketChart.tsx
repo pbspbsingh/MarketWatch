@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
   CandlestickSeries,
+  createTextWatermark,
   HistogramSeries,
   LineSeries,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type ITextWatermarkPluginApi,
   type Time,
 } from "lightweight-charts";
 import type { MarketChartCandle, MarketChartData } from "../../api/marketChart";
@@ -41,6 +43,15 @@ interface MarketChartProps {
   onChartContext?: (context: ChartSyncTarget | null) => void;
 }
 
+function watermarkLines(symbol: string) {
+  return [{
+    text: symbol,
+    color: "rgba(143, 154, 167, 0.14)",
+    fontSize: 48,
+    fontStyle: "bold",
+  }];
+}
+
 export function MarketChart({
   data,
   className,
@@ -53,6 +64,8 @@ export function MarketChart({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
+  const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
   const chartContextRef = useRef<ChartSyncTarget>(null);
   const chartDisposedRef = useRef(true);
@@ -62,6 +75,7 @@ export function MarketChart({
   const datasetIntervalRef = useRef<MarketChartData["interval"] | undefined>(undefined);
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
+  symbolRef.current = data.symbol;
   initialViewportRef.current = initialViewport;
   onChartContextRef.current = onChartContext;
 
@@ -84,6 +98,11 @@ export function MarketChart({
       { length: movingAverageSeriesCount },
       () => chart.addSeries(LineSeries, indicatorSeriesOptions),
     );
+    watermarkRef.current = createTextWatermark(chart.panes()[0], {
+      horzAlign: "center",
+      vertAlign: "center",
+      lines: watermarkLines(symbolRef.current),
+    });
     chartContextRef.current = {
       chart,
       candleSeries,
@@ -95,10 +114,18 @@ export function MarketChart({
   }, []);
 
   const destroyChart = useCallback(() => {
+    watermarkRef.current?.detach();
+    watermarkRef.current = null;
     chartDisposedRef.current = true;
     if (contextReportedRef.current) onChartContextRef.current?.(null);
     contextReportedRef.current = false;
   }, []);
+
+  useEffect(() => {
+    watermarkRef.current?.applyOptions({
+      lines: watermarkLines(data.symbol),
+    });
+  }, [data.symbol]);
 
   useEffect(() => {
     candlesByDateRef.current = new Map(
