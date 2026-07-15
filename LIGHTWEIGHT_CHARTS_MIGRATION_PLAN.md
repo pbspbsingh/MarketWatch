@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 0.5 complete; awaiting confirmation for task 1.1.
+Current checkpoint: task 1.1 consolidation reviewed; awaiting amend approval.
 
 ## Objective
 
@@ -285,6 +285,7 @@ Progress:
 - [x] 0.3 — Isolated Yahoo quote probe.
 - [x] 0.4 — Isolated Yahoo WebSocket probe.
 - [x] 0.5 — POC review; deferred production live phase approved as feasible.
+- [x] 1.1 — Provider-independent chart interval, candle, and series models.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -300,7 +301,7 @@ Progress:
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 1.1 | Add provider-independent chart candle/series/interval models and canonical symbol handling. | Yahoo receives bare symbols; exchange-prefixed display identifiers remain presentation-only; formats/build checks pass. |
+| 1.1 | Add provider-independent chart candle/series/interval models. | Models contain no provider or display identifiers; formats/build checks pass. |
 | 1.2 | Implement Daily SMA and volume-average calculations as pure Rust functions. | Fixtures cover periods 10/20/50/100/200, volume 20, insufficient history, and invalid/empty input. |
 | 1.3 | Implement market-week OHLCV aggregation. | Fixtures cover week/year boundaries, missing sessions, OHLC rules, and summed volume. |
 | 1.4 | Implement Weekly EMA and volume-average calculations. | EMA 10/20/40 uses the documented SMA seed; volume 5 and insufficient-history fixtures pass. |
@@ -328,7 +329,7 @@ Progress:
 | 3.2 | Synchronize visible ranges by calendar date with a reentrancy guard. | Pan/zoom in either chart aligns dates in the other; missing/short history does not create feedback loops. |
 | 3.3 | Synchronize crosshairs by date and target candle price. | Native axis labels align; missing target dates clear the peer crosshair; no custom values are displayed. |
 | 3.4 | Persist validated Daily and Weekly `barSpacing` and right offset. | Candle width survives ticker changes and application reload; D/W states remain independent. |
-| 3.5 | Preserve all TickerLens header behavior and external links with canonical symbols. | Benchmark/theme switching, D/W, details, and external TradingView links match the parity checklist. |
+| 3.5 | Preserve all TickerLens header behavior and external links; strip exchange prefixes in the client API adapter. | Yahoo receives bare symbols; benchmark/theme switching, D/W, details, and external TradingView links match the parity checklist. |
 | 3.6 | Complete independent failure/loading UX and toast handling. | Either chart remains usable when its peer fails; retries and ticker changes clear only relevant errors. |
 
 ### 4 — Top-chart RS overlay

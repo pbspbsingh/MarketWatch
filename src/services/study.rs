@@ -1,3 +1,4 @@
+use crate::models::chart::{MarketChartCandle, MarketChartPoint, MarketChartSeries};
 use crate::providers::{ChartInterval, YahooClient, YahooError};
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
@@ -6,32 +7,10 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize)]
-pub struct StudyCandle {
-    pub date: NaiveDate,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct StudySeries {
     pub symbol: String,
-    pub candles: Vec<StudyCandle>,
-    pub moving_averages: Vec<StudyMovingAverage>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct StudyMovingAverage {
-    pub period: usize,
-    pub points: Vec<StudyMovingAveragePoint>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct StudyMovingAveragePoint {
-    pub date: NaiveDate,
-    pub value: f64,
+    pub candles: Vec<MarketChartCandle>,
+    pub moving_averages: Vec<MarketChartSeries>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -50,7 +29,7 @@ struct CacheKey {
 #[derive(Clone, Debug)]
 struct CacheEntry {
     key: CacheKey,
-    candles: Vec<StudyCandle>,
+    candles: Vec<MarketChartCandle>,
 }
 
 #[derive(Default)]
@@ -65,6 +44,8 @@ pub enum StudyError {
     InvalidInput(String),
     #[error(transparent)]
     Provider(#[from] YahooError),
+    #[error("Yahoo returned an invalid volume for {symbol} on {date}")]
+    InvalidVolume { symbol: String, date: NaiveDate },
 }
 
 pub struct StudyService {
@@ -145,15 +126,24 @@ impl StudyService {
                         .chart(&symbol, ChartInterval::OneDay, fetch_start, fetch_end)
                         .await?
                         .into_iter()
-                        .map(|candle| StudyCandle {
-                            date: candle.timestamp.date_naive(),
-                            open: candle.open,
-                            high: candle.high,
-                            low: candle.low,
-                            close: candle.close,
-                            volume: candle.volume,
+                        .map(|candle| {
+                            let date = candle.timestamp.date_naive();
+                            let volume = i64::try_from(candle.volume).map_err(|_| {
+                                StudyError::InvalidVolume {
+                                    symbol: symbol.clone(),
+                                    date,
+                                }
+                            })?;
+                            Ok(MarketChartCandle {
+                                date,
+                                open: candle.open,
+                                high: candle.high,
+                                low: candle.low,
+                                close: candle.close,
+                                volume,
+                            })
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Result<Vec<_>, StudyError>>()?
                 }
             };
             next_cache.push(CacheEntry {
@@ -162,7 +152,7 @@ impl StudyService {
             });
             let moving_averages = [10, 20, 50, 100, 200]
                 .into_iter()
-                .map(|period| StudyMovingAverage {
+                .map(|period| MarketChartSeries {
                     period,
                     points: simple_moving_average(&candles, period),
                 })
@@ -191,7 +181,7 @@ impl StudyService {
     }
 }
 
-fn simple_moving_average(candles: &[StudyCandle], period: usize) -> Vec<StudyMovingAveragePoint> {
+fn simple_moving_average(candles: &[MarketChartCandle], period: usize) -> Vec<MarketChartPoint> {
     let mut points = Vec::with_capacity(candles.len().saturating_sub(period - 1));
     let mut sum = 0.0;
     for (index, candle) in candles.iter().enumerate() {
@@ -200,7 +190,7 @@ fn simple_moving_average(candles: &[StudyCandle], period: usize) -> Vec<StudyMov
             sum -= candles[index - period].close;
         }
         if index >= period - 1 {
-            points.push(StudyMovingAveragePoint {
+            points.push(MarketChartPoint {
                 date: candle.date,
                 value: sum / period as f64,
             });
@@ -262,7 +252,7 @@ mod tests {
     #[test]
     fn calculates_simple_moving_average() {
         let candles = (1..=4)
-            .map(|day| StudyCandle {
+            .map(|day| MarketChartCandle {
                 date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
                 open: 0.0,
                 high: 0.0,

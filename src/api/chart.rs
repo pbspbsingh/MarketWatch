@@ -1,5 +1,6 @@
 use crate::app::AppState;
-use crate::services::chart::{ChartSummary, RelativeStrengthChart, RelativeStrengthInterval};
+use crate::models::chart::MarketChartInterval;
+use crate::services::chart::{ChartSummary, RelativeStrengthChart};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -17,7 +18,7 @@ struct ChartSummaryRequest {
 struct RelativeStrengthRequest {
     symbols: Vec<String>,
     comparison_symbol: String,
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
 }
 
 pub fn router() -> Router<AppState> {

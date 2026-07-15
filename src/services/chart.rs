@@ -1,4 +1,5 @@
 use crate::config::MarketConfig;
+use crate::models::chart::{MarketChartCandle, MarketChartInterval};
 use crate::models::{
     DailyCandle, average_daily_range_percent, average_volume, candle_relative_strength_trend_series,
 };
@@ -52,33 +53,16 @@ pub struct ChartThemeBenchmark {
 pub struct RelativeStrengthSeries {
     symbol: String,
     comparison_symbol: String,
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
     moving_average_period: usize,
     points: Vec<RelativeStrengthPoint>,
 }
 
 #[derive(Serialize)]
 pub struct RelativeStrengthChart {
-    candles: Vec<RelativeStrengthCandle>,
+    candles: Vec<MarketChartCandle>,
     series: Vec<RelativeStrengthSeries>,
     trend: Option<RelativeStrengthSeries>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct RelativeStrengthCandle {
-    date: NaiveDate,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    volume: i64,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RelativeStrengthInterval {
-    Daily,
-    Weekly,
 }
 
 #[derive(Clone, Serialize)]
@@ -158,7 +142,7 @@ impl ChartService {
         &self,
         symbols: &[String],
         comparison_symbol: &str,
-        interval: RelativeStrengthInterval,
+        interval: MarketChartInterval,
     ) -> anyhow::Result<RelativeStrengthChart> {
         let selected_symbol = symbols
             .first()
@@ -216,7 +200,7 @@ fn calculate_relative_strength_trend(
     comparison_symbol: &str,
     ticker: &[DailyCandle],
     comparison: &[DailyCandle],
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
 ) -> RelativeStrengthSeries {
     let points = candle_relative_strength_trend_series(ticker, comparison)
         .into_iter()
@@ -240,9 +224,9 @@ fn calculate_relative_strength_trend(
 
 fn sample_trend_points(
     points: Vec<RelativeStrengthPoint>,
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
 ) -> Vec<RelativeStrengthPoint> {
-    if matches!(interval, RelativeStrengthInterval::Daily) {
+    if matches!(interval, MarketChartInterval::Daily) {
         return points;
     }
     points
@@ -261,7 +245,7 @@ fn calculate_relative_strength(
     comparison_symbol: &str,
     ticker: &[DailyCandle],
     comparison: &[DailyCandle],
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
 ) -> anyhow::Result<RelativeStrengthSeries> {
     let ticker = closes_by_period(&ticker, interval);
     let comparison = closes_by_period(&comparison, interval);
@@ -306,8 +290,8 @@ fn calculate_relative_strength(
         })
         .collect::<Vec<_>>();
     let moving_average_period = match interval {
-        RelativeStrengthInterval::Daily => 5,
-        RelativeStrengthInterval::Weekly => 3,
+        MarketChartInterval::Daily => 5,
+        MarketChartInterval::Weekly => 3,
     };
     let points = relative_strength_points(&aligned, &normalized, moving_average_period);
 
@@ -322,8 +306,8 @@ fn calculate_relative_strength(
 
 fn chart_candles(
     candles: &[DailyCandle],
-    interval: RelativeStrengthInterval,
-) -> anyhow::Result<Vec<RelativeStrengthCandle>> {
+    interval: MarketChartInterval,
+) -> anyhow::Result<Vec<MarketChartCandle>> {
     let latest_date = candles
         .last()
         .map(|candle| candle.market_date)
@@ -332,9 +316,9 @@ fn chart_candles(
         .checked_sub_months(Months::new(12))
         .ok_or_else(|| anyhow::anyhow!("invalid candle chart date range"))?;
     let candles = candles.iter().filter(|candle| candle.market_date >= start);
-    if matches!(interval, RelativeStrengthInterval::Daily) {
+    if matches!(interval, MarketChartInterval::Daily) {
         return Ok(candles
-            .map(|candle| RelativeStrengthCandle {
+            .map(|candle| MarketChartCandle {
                 date: candle.market_date,
                 open: candle.open,
                 high: candle.high,
@@ -345,7 +329,7 @@ fn chart_candles(
             .collect());
     }
 
-    let mut weeks = BTreeMap::<(i32, u32), RelativeStrengthCandle>::new();
+    let mut weeks = BTreeMap::<(i32, u32), MarketChartCandle>::new();
     for candle in candles {
         let week = candle.market_date.iso_week();
         weeks
@@ -357,7 +341,7 @@ fn chart_candles(
                 weekly.close = candle.close;
                 weekly.volume += candle.volume;
             })
-            .or_insert_with(|| RelativeStrengthCandle {
+            .or_insert_with(|| MarketChartCandle {
                 date: candle.market_date,
                 open: candle.open,
                 high: candle.high,
@@ -371,16 +355,16 @@ fn chart_candles(
 
 fn closes_by_period(
     candles: &[DailyCandle],
-    interval: RelativeStrengthInterval,
+    interval: MarketChartInterval,
 ) -> BTreeMap<(i32, u32), (NaiveDate, f64)> {
     candles
         .iter()
         .map(|candle| {
             let period = match interval {
-                RelativeStrengthInterval::Daily => {
+                MarketChartInterval::Daily => {
                     (candle.market_date.year(), candle.market_date.ordinal())
                 }
-                RelativeStrengthInterval::Weekly => {
+                MarketChartInterval::Weekly => {
                     let week = candle.market_date.iso_week();
                     (week.year(), week.week())
                 }
@@ -501,7 +485,7 @@ mod tests {
             candle(2, 104.0, 99.0, 103.0, 200),
             candle(5, 106.0, 100.0, 105.0, 300),
         ];
-        let weekly = chart_candles(&candles, RelativeStrengthInterval::Weekly).unwrap();
+        let weekly = chart_candles(&candles, MarketChartInterval::Weekly).unwrap();
 
         assert_eq!(weekly.len(), 2);
         assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
@@ -527,7 +511,7 @@ mod tests {
             point(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), 3.0),
         ];
 
-        let weekly = sample_trend_points(points, RelativeStrengthInterval::Weekly);
+        let weekly = sample_trend_points(points, MarketChartInterval::Weekly);
 
         assert_eq!(weekly.len(), 2);
         assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());

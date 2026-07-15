@@ -1,3 +1,4 @@
+pub mod chart;
 mod daily_notes;
 mod exchange;
 mod fundamentals;
