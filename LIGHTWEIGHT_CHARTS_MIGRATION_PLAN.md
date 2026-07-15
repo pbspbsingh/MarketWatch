@@ -6,6 +6,8 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
+Current checkpoint: task 0.4 complete; awaiting confirmation for task 0.5.
+
 ## Objective
 
 Replace the two TradingView widgets in TickerLens with maintainable Lightweight Charts while preserving the current user workflow. The first delivery is historical-only: synchronized charts, backend-computed indicators, RS overlays, and lazy history. Production live data is a later phase, preceded by a small Yahoo quote/WebSocket feasibility POC.
@@ -214,6 +216,8 @@ The frontend replaces data on existing candle/volume/indicator series; it never 
 
 This is not part of the first historical-chart delivery. Before chart implementation begins, complete only a small feasibility POC covering Yahoo quote fields, WebSocket connection/subscription format, heartbeat, and message decoding. Keep the POC isolated from production chart flows.
 
+Observed POC results are recorded in `YAHOO_LIVE_POC.md`.
+
 Do not move Yahoo into a separate crate before the POC. First make the existing provider crate-ready with focused `chart`, `profile`, `quote`, `live`, and shared authentication modules. Extract a crate later only if the stabilized provider has another consumer or a clear isolation benefit.
 
 In the later production phase, Yahoo sometimes omits one or more fields from the latest chart row; the current parser drops any incomplete row. Preserve the latest partial provider row internally and treat quote/WebSocket data as a provisional chart repair, not finalized history.
@@ -274,6 +278,14 @@ Perform tasks strictly in order. Work on only one task at a time. Each code task
 
 After each task: review the diff, run proportional format/type/build checks, report the result, and wait for explicit user confirmation before starting the next task. Do not add automated UI, component, endpoint, or integration tests. Add tests only for pure deterministic calculations such as aggregation, indicators, RS, and candle merging; the user performs visual UI verification.
 
+Progress:
+
+- [x] 0.1 — Branch, plan, and reference screenshot.
+- [x] 0.2 — Current TickerLens parity checklist.
+- [x] 0.3 — Isolated Yahoo quote probe.
+- [x] 0.4 — Isolated Yahoo WebSocket probe.
+- [ ] 0.5 — POC review and live-phase go/no-go decision.
+
 ### 0 — Establish the branch and de-risk Yahoo live access
 
 | ID | Atomic task | Completion check |
@@ -281,7 +293,7 @@ After each task: review the diff, run proportional format/type/build checks, rep
 | 0.1 | Create `feature/lightweight-ticker-lens-charts`; add this plan and the reference screenshot. | Branch starts from current `main`; planning artifacts are committed; worktree is clean. |
 | 0.2 | Record a short parity checklist for current TickerLens: symbols, D/W, theme ETF, split, loading/error, keyboard/panel interactions, and external links. | Checklist is reviewable without changing runtime behavior. |
 | 0.3 | Build an isolated Yahoo quote probe outside production modules. | Verified response fields, authentication/crumb requirements, rate-limit behavior, and sample fixtures are documented. |
-| 0.4 | Build an isolated Yahoo WebSocket probe outside production modules. | Connection URL, encoding, subscribe/unsubscribe messages, heartbeat, timestamps, volume semantics, reconnect behavior, and 100-symbol assumption are documented from observed traffic. |
+| 0.4 | Build an isolated Yahoo WebSocket probe outside production modules. | Connection URL, encoding, subscribe/unsubscribe messages, heartbeat, timestamps, volume semantics, reconnect behavior, and the unverified 100-symbol app cap are documented from observed traffic. |
 | 0.5 | Review the POC and make a go/no-go decision for the deferred live phase. | Historical chart work can proceed regardless; no POC code is wired into the application. |
 
 ### 1 — Backend chart calculations and snapshot API
