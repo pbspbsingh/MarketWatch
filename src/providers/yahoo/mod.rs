@@ -416,11 +416,6 @@ fn parse_quote(response: QuoteResponse, symbol: &str) -> Result<Quote, YahooErro
     let volume = quote
         .regular_market_volume
         .ok_or_else(|| invalid(format!("quote has no regular-market volume for {symbol}")))?;
-    if low > open.min(close) || high < open.max(close) || low > high {
-        return Err(invalid(format!(
-            "quote has invalid OHLC values for {symbol}"
-        )));
-    }
 
     Ok(Quote {
         market_state: quote.market_state,
@@ -590,6 +585,35 @@ mod tests {
         assert_eq!(quote.timestamp.timestamp(), 1_782_864_000);
     }
 
+    #[test]
+    fn accepts_reported_quote_fields_without_cross_field_validation() {
+        let response = serde_json::from_str::<QuoteResponse>(
+            r#"{
+                "quoteResponse": {
+                    "result": [{
+                        "symbol": "PBJ",
+                        "marketState": "POST",
+                        "regularMarketTime": 1784073600,
+                        "regularMarketPrice": 48.1333,
+                        "regularMarketOpen": 48.73,
+                        "regularMarketDayHigh": 48.48,
+                        "regularMarketDayLow": 48.04,
+                        "regularMarketVolume": 12345
+                    }],
+                    "error": null
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let quote = parse_quote(response, "PBJ").unwrap();
+
+        assert_eq!(quote.open, 48.73);
+        assert_eq!(quote.high, 48.48);
+        assert_eq!(quote.low, 48.04);
+        assert_eq!(quote.close, 48.1333);
+    }
+
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_chart_and_profile() -> Result<(), YahooError> {
@@ -617,11 +641,17 @@ mod tests {
         let config = Config::load("config.toml").expect("default config is valid");
         let client = YahooClient::new(&config.providers);
 
-        let quote = client.quote("SPY").await?;
-        println!("Fetched SPY regular-market quote: {quote:?}");
-        assert!(quote.close > 0.0);
-        assert!(quote.high >= quote.close);
-        assert!(quote.low <= quote.close);
+        let mut failures = Vec::new();
+        for symbol in ["SPY", "REMX", "PBJ", "FXG"] {
+            match client.quote(symbol).await {
+                Ok(quote) => println!("Fetched {symbol} regular-market quote: {quote:?}"),
+                Err(error) => {
+                    println!("Failed {symbol} regular-market quote: {error}");
+                    failures.push((symbol, error));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "quote failures: {failures:?}");
 
         Ok(())
     }
