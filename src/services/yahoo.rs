@@ -92,6 +92,40 @@ impl YahooService {
         .await
     }
 
+    /// Fetches completed daily candles directly from Yahoo without reading or writing storage.
+    pub async fn historical_daily_candles(
+        &self,
+        symbol: &str,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        if start >= end {
+            return Err(YahooServiceError::InvalidRange);
+        }
+        let completed_end = self
+            .market_schedule
+            .recent_trading_day(Utc::now())
+            .succ_opt()
+            .ok_or(YahooServiceError::InvalidRange)?;
+        let end = end.min(completed_end);
+        if start >= end {
+            return Err(YahooServiceError::InvalidRange);
+        }
+        let start_time = Utc.from_utc_datetime(
+            &start
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is a valid time"),
+        );
+        let end_time =
+            Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
+
+        self.fetch_chart(symbol, start_time, end_time)
+            .await?
+            .into_iter()
+            .map(|candle| self.provider_daily_candle(symbol, candle))
+            .collect()
+    }
+
     pub async fn daily_candles(
         &self,
         symbol: &str,
@@ -146,24 +180,7 @@ impl YahooService {
                 .fetch_chart(symbol, fetch_start, fetch_end)
                 .await?
                 .into_iter()
-                .map(|candle| {
-                    let market_date = self.market_schedule.market_date(candle.timestamp);
-                    let volume = i64::try_from(candle.volume).map_err(|_| {
-                        YahooServiceError::InvalidVolume {
-                            symbol: symbol.to_owned(),
-                            market_date,
-                        }
-                    })?;
-                    Ok(DailyCandle {
-                        symbol: symbol.to_owned(),
-                        market_date,
-                        open: candle.open,
-                        high: candle.high,
-                        low: candle.low,
-                        close: candle.close,
-                        volume,
-                    })
-                })
+                .map(|candle| self.provider_daily_candle(symbol, candle))
                 .collect::<Result<Vec<_>, YahooServiceError>>()?;
             if requested_last_date == recent_trading_day
                 && candles
@@ -216,6 +233,28 @@ impl YahooService {
             .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)
+    }
+
+    fn provider_daily_candle(
+        &self,
+        symbol: &str,
+        candle: Candle,
+    ) -> Result<DailyCandle, YahooServiceError> {
+        let market_date = self.market_schedule.market_date(candle.timestamp);
+        let volume =
+            i64::try_from(candle.volume).map_err(|_| YahooServiceError::InvalidVolume {
+                symbol: symbol.to_owned(),
+                market_date,
+            })?;
+        Ok(DailyCandle {
+            symbol: symbol.to_owned(),
+            market_date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume,
+        })
     }
 
     async fn fetch_profile(&self, symbol: &str) -> Result<CompanyProfile, YahooError> {

@@ -1,9 +1,11 @@
 use crate::models::DailyCandle;
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartSeries,
-    MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma, volume_sma,
+    MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma,
+    validate_market_chart_candle, volume_sma,
 };
 use crate::services::yahoo::{YahooService, YahooServiceError};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -35,8 +37,37 @@ impl MarketChartService {
         interval: MarketChartInterval,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        build_snapshot(symbol.to_owned(), interval, &candles).map_err(Into::into)
+        build_expanded_snapshot(symbol.to_owned(), interval, &candles, &[]).map_err(Into::into)
     }
+}
+
+fn merge_daily_candles(
+    persisted: &[DailyCandle],
+    ephemeral: &[DailyCandle],
+) -> Result<Vec<DailyCandle>, ChartCalculationError> {
+    let mut by_date = BTreeMap::new();
+
+    for candle in ephemeral.iter().chain(persisted) {
+        by_date.insert(candle.market_date, candle.clone());
+    }
+
+    by_date
+        .into_values()
+        .map(|candle| {
+            validate_market_chart_candle(&MarketChartCandle::from(&candle))?;
+            Ok(candle)
+        })
+        .collect()
+}
+
+fn build_expanded_snapshot(
+    symbol: String,
+    interval: MarketChartInterval,
+    persisted: &[DailyCandle],
+    ephemeral: &[DailyCandle],
+) -> Result<MarketChartSnapshot, ChartCalculationError> {
+    let daily = merge_daily_candles(persisted, ephemeral)?;
+    build_snapshot(symbol, interval, &daily)
 }
 
 fn build_snapshot(
@@ -100,6 +131,113 @@ mod tests {
                 volume: index as i64 + 1,
             })
             .collect()
+    }
+
+    #[test]
+    fn merges_candles_in_date_order_with_persisted_precedence() {
+        let mut persisted = candles(2, 2);
+        persisted[1].close = 30.0;
+        persisted[1].high = 30.0;
+        let mut ephemeral = candles(3, 1);
+        ephemeral.reverse();
+
+        let merged = merge_daily_candles(&persisted, &ephemeral).unwrap();
+
+        assert_eq!(merged.len(), 3);
+        assert!(
+            merged
+                .windows(2)
+                .all(|pair| pair[0].market_date < pair[1].market_date)
+        );
+        assert_eq!(merged[2], persisted[1]);
+    }
+
+    #[test]
+    fn merges_empty_pages_and_deduplicates_each_source() {
+        let mut ephemeral = candles(2, 1);
+        let mut duplicate = ephemeral[0].clone();
+        duplicate.close = 10.0;
+        duplicate.high = 10.0;
+        ephemeral.push(duplicate.clone());
+
+        assert_eq!(merge_daily_candles(&[], &ephemeral).unwrap()[0], duplicate);
+        assert_eq!(merge_daily_candles(&ephemeral, &[]).unwrap().len(), 2);
+        assert!(merge_daily_candles(&[], &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_ohlcv_in_merged_data() {
+        let mut invalid_price = candles(1, 1);
+        invalid_price[0].high = 0.0;
+        assert_eq!(
+            merge_daily_candles(&[], &invalid_price),
+            Err(ChartCalculationError::InvalidOhlc(
+                invalid_price[0].market_date
+            ))
+        );
+
+        let mut invalid_volume = candles(1, 1);
+        invalid_volume[0].volume = -1;
+        assert_eq!(
+            merge_daily_candles(&invalid_volume, &[]),
+            Err(ChartCalculationError::InvalidVolume(
+                invalid_volume[0].market_date
+            ))
+        );
+    }
+
+    #[test]
+    fn ignores_invalid_lower_precedence_overlap() {
+        let persisted = candles(1, 1);
+        let mut ephemeral = persisted.clone();
+        ephemeral[0].close = 0.0;
+
+        assert_eq!(
+            merge_daily_candles(&persisted, &ephemeral).unwrap(),
+            persisted
+        );
+    }
+
+    #[test]
+    fn recomputes_daily_indicators_over_merged_history() {
+        let all = candles(220, 1);
+        let mut persisted = all[200..].to_vec();
+        persisted.last_mut().unwrap().close = 440.0;
+        persisted.last_mut().unwrap().high = 440.0;
+
+        let snapshot = build_expanded_snapshot(
+            "TEST".to_owned(),
+            MarketChartInterval::Daily,
+            &persisted,
+            &all,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.candles.len(), 220);
+        assert_eq!(snapshot.moving_averages[4].points.len(), 21);
+        assert_eq!(
+            snapshot.moving_averages[0].points.last().unwrap().value,
+            237.5
+        );
+        assert_eq!(snapshot.volume_average.points.len(), 171);
+    }
+
+    #[test]
+    fn recomputes_weekly_indicators_over_merged_history() {
+        let all = candles(50, 7);
+        let snapshot = build_expanded_snapshot(
+            "TEST".to_owned(),
+            MarketChartInterval::Weekly,
+            &all[30..],
+            &all[..30],
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.candles.len(), 50);
+        assert_eq!(snapshot.moving_averages[2].points.len(), 11);
+        assert_eq!(snapshot.volume_average.points.len(), 41);
+        assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
+        assert_eq!(snapshot.latest_date, Some(snapshot.candles[49].date));
     }
 
     #[test]

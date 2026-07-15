@@ -175,7 +175,7 @@ pub fn aggregate_market_weeks(
     let mut weekly = Vec::<MarketChartCandle>::new();
 
     for candle in candles {
-        validate_candle(candle)?;
+        validate_market_chart_candle(candle)?;
         let week = candle.date.iso_week();
         let week_key = (week.year(), week.week());
         let current_key = weekly.last().map(|current| {
@@ -208,14 +208,13 @@ fn validate_date_order(candles: &[MarketChartCandle]) -> Result<(), ChartCalcula
     Ok(())
 }
 
-fn validate_candle(candle: &MarketChartCandle) -> Result<(), ChartCalculationError> {
+pub fn validate_market_chart_candle(
+    candle: &MarketChartCandle,
+) -> Result<(), ChartCalculationError> {
     let prices = [candle.open, candle.high, candle.low, candle.close];
     if prices
         .iter()
         .any(|price| !price.is_finite() || *price <= 0.0)
-        || candle.low > candle.open.min(candle.close)
-        || candle.high < candle.open.max(candle.close)
-        || candle.low > candle.high
     {
         return Err(ChartCalculationError::InvalidOhlc(candle.date));
     }
@@ -385,7 +384,7 @@ mod tests {
     #[test]
     fn rejects_invalid_weekly_candles_and_volume_overflow() {
         let mut invalid = candles(1);
-        invalid[0].high = invalid[0].close - 1.0;
+        invalid[0].high = 0.0;
         assert_eq!(
             aggregate_market_weeks(&invalid),
             Err(ChartCalculationError::InvalidOhlc(invalid[0].date))
@@ -397,5 +396,13 @@ mod tests {
             aggregate_market_weeks(&overflow),
             Err(ChartCalculationError::VolumeOverflow(overflow[1].date))
         );
+    }
+
+    #[test]
+    fn accepts_reported_ohlc_without_cross_field_validation() {
+        let mut reported = candles(1);
+        reported[0].high = reported[0].close - 0.5;
+
+        assert_eq!(aggregate_market_weeks(&reported).unwrap(), reported);
     }
 }
