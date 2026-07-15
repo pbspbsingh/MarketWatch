@@ -1,6 +1,6 @@
 # Yahoo Quote and WebSocket POC Findings
 
-Status: Quote and WebSocket probes complete.
+Status: Quote and WebSocket probes complete; deferred production live phase approved as feasible.
 
 The probes are isolated tools. They are not imported by application code and do not change persistence, chart APIs, or analytical flows.
 
@@ -124,3 +124,26 @@ References used only to validate the observed wire layout:
 
 - `https://github.com/ranaroussi/yfinance/blob/main/yfinance/pricing.proto`
 - `https://github.com/ranaroussi/yfinance/blob/main/yfinance/live.py`
+
+## Task 0.5 decision
+
+Decision: **GO**, deferred until after the historical Lightweight Charts migration.
+
+The POC resolved the transport-level risks. Production work remains isolated from the current migration and must preserve these constraints:
+
+- Seed/reconcile each current-session equity candle from authenticated REST quote data; do not expect every WebSocket message to contain OHLCV.
+- Merge optional WebSocket fields as snapshots, never as increments and never as instructions to clear absent fields.
+- Normalize quote timestamps in seconds and WebSocket timestamps in milliseconds before market-session validation.
+- Restrict chart candles to regular market sessions; keep pre/post prices separate.
+- Re-send the complete desired symbol set every 15 seconds and after every reconnect.
+- Keep the 100-symbol limit as an application policy, with idle-LRU eviction and no active-symbol eviction.
+- Use one shared backend Yahoo connection and publish complete idempotent provisional candles to UI clients.
+- Keep all provisional data in memory and outside persistence/ranking/performance flows.
+- Keep historical chart operation independent from live availability.
+
+Recommended future Rust implementation:
+
+- Add a direct outbound WebSocket dependency only when the deferred phase begins; `tokio-tungstenite` is already present transitively but must not be relied on transitively.
+- Decode the minimal checked-in `PricingData` model with `prost`; avoid runtime schema discovery or a broad third-party Yahoo client.
+- Keep Yahoo protocol code in focused provider modules first. Do not extract a separate crate until the stabilized provider has a real second consumer.
+- Build reconnect/refcount/capacity behavior around the documented state machine, not inside chart services or WebSocket request handlers.

@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 0.4 complete; awaiting confirmation for task 0.5.
+Current checkpoint: task 0.5 complete; awaiting confirmation for task 1.1.
 
 ## Objective
 
@@ -284,7 +284,7 @@ Progress:
 - [x] 0.2 — Current TickerLens parity checklist.
 - [x] 0.3 — Isolated Yahoo quote probe.
 - [x] 0.4 — Isolated Yahoo WebSocket probe.
-- [ ] 0.5 — POC review and live-phase go/no-go decision.
+- [x] 0.5 — POC review; deferred production live phase approved as feasible.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
