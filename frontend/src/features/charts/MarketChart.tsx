@@ -30,6 +30,10 @@ import type {
   ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
 import {
+  captureAnchoredLogicalRange,
+  restoreAnchoredLogicalRange,
+} from "../../components/lightweight-chart/chartRange";
+import {
   lineData,
   movingAverageSeriesCount,
   movingAverageSpecs,
@@ -75,6 +79,7 @@ export function MarketChart({
   const datasetIntervalRef = useRef<MarketChartData["interval"] | undefined>(undefined);
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
+  const seriesDatasetKeyRef = useRef<string | undefined>(undefined);
   symbolRef.current = data.symbol;
   initialViewportRef.current = initialViewport;
   onChartContextRef.current = onChartContext;
@@ -128,6 +133,14 @@ export function MarketChart({
   }, [data.symbol]);
 
   useEffect(() => {
+    const datasetKey = `${data.symbol}\0${data.interval}`;
+    const chart = hostRef.current?.getChart();
+    const visibleRange = chart !== null
+      && chart !== undefined
+      && candleSeriesRef.current !== null
+      && seriesDatasetKeyRef.current === datasetKey
+      ? captureAnchoredLogicalRange(chart, candleSeriesRef.current)
+      : undefined;
     candlesByDateRef.current = new Map(
       data.candles.map((candle) => [candle.date, candle]),
     );
@@ -146,7 +159,11 @@ export function MarketChart({
 
     candleSeriesRef.current?.setData(candles);
     volumeSeriesRef.current?.setData(volume);
-  }, [data.candles]);
+    seriesDatasetKeyRef.current = datasetKey;
+    if (chart !== null && chart !== undefined && visibleRange !== undefined) {
+      restoreAnchoredLogicalRange(chart, visibleRange);
+    }
+  }, [data.candles, data.interval, data.symbol]);
 
   useEffect(() => {
     volumeAverageSeriesRef.current?.setData(lineData(data.volume_average));

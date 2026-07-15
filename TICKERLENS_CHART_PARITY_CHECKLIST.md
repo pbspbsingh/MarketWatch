@@ -81,7 +81,7 @@ Use this checklist for manual comparison while TradingView and Lightweight Chart
 - [ ] Default the top overlay to RS Line versus the configured benchmark.
 - [ ] Toggle between RS Line and RS Trend from the header and persist the choice.
 - [ ] Constrain the RS overlay to the upper 30% of the top candle pane while allowing candle overlap.
-- [ ] Fill wide screens proactively and lazy-load older history without viewport jumps.
+- [ ] Lazy-load older history only on a user scroll near the left edge, without viewport jumps.
 - [ ] Rapid ticker/interval changes never display stale snapshot, RS, or history results.
 - [ ] Backend provides every financial series; frontend performs rendering and viewport coordination only.
 

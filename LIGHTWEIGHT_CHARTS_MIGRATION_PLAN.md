@@ -169,7 +169,7 @@ Crosshair synchronization maps the date to the target chart’s candle and uses 
 
 Price axes remain independently auto-scaled. Absolute vertical ranges must not be copied between differently priced symbols.
 
-Before the initial request, estimate required visible candles from the measured chart width and saved `barSpacing`, then add backend indicator warm-up and a small buffer. After rendering and on container resize, verify coverage and automatically request an expanded backend snapshot until the viewport is filled or Yahoo reports no more history in the required direction. A wide screen or small saved candle width must not require the user to scroll before missing history loads.
+Use the retained approximately two-year snapshot for initial rendering. Do not fetch lazy history on mount or container resize. Request older history only after an explicit user pan/scroll reaches the left edge; synchronized chart instances expand independently from the same interaction.
 
 Each chart owns an `AbortController` and monotonic dataset generation. Symbol/interval changes abort obsolete requests; every snapshot, history response, RS result, and future live message is validated against the active symbol and generation before application. History cursors belong to one generation and cannot leak across ticker changes.
 
@@ -375,9 +375,9 @@ Progress:
 | 5.2 | Add backend merge/deduplication of ephemeral candle ranges with canonical candles. | Date precedence, ascending order, OHLCV validation, overlap, and empty-page fixtures pass. |
 | 5.3 | Build expanded-snapshot calculation over the merged backend dataset. | Weekly aggregation, SMA/EMA, volume average, RS Line, and RS Trend are fully recalculated for the requested range. |
 | 5.4 | Expose a bounded provider-neutral range contract with `has_more_before` and `has_more_after`. | TickerLens always reports no forward range; Study ranges stop at the latest completed session; invalid bounds/limits are rejected. |
-| 5.5 | Estimate initial candle demand from container width, saved `barSpacing`, indicator warm-up, and buffer. | Wide screens and small saved candle widths request enough data without initial user scrolling. |
-| 5.6 | Proactively expand TickerLens history after initial render and container resize. | Loading continues until viewport and warm-up are covered or `has_more_before` is false; duplicate requests are suppressed. |
-| 5.7 | Trigger TickerLens expansion near the left edge only. | Scrolling left loads once per cursor/generation; right-edge movement never requests future candles. |
+| 5.5 | Define bounded backward range expansion over the complete snapshot. | Each request expands the date span by 50% without exceeding the API bound. |
+| 5.6 | Trigger TickerLens expansion only from an explicit user pan/scroll near the left edge. | Mount, resize, and right-edge movement never request lazy history; synchronized charts expand independently. |
+| 5.7 | Stop backward loading when the provider reports exhaustion or returns no new candle dates. | Duplicate/stale requests are suppressed and a no-op response never calls `setData()`. |
 | 5.8 | Replace all returned series while preserving visible date range, bar spacing, and right offset. | No viewport jump; stale expanded snapshots cannot cross symbol/interval generations. |
 | 5.9 | Extend the Study service/API with bounded start/end ranges and bidirectional availability for both symbols. | Expansions remain non-persisted, reload both symbols together, and never cross the latest completed session. |
 | 5.10 | Add a Study history controller that requests backward or forward expansion near either visible edge. | Directional requests are deduplicated/abortable and stop independently when the corresponding availability flag is false. |

@@ -5,7 +5,10 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { MarketChartContainer } from "../charts/MarketChartContainer";
+import {
+  MarketChartContainer,
+  type ChartHistoryInteractionTracker,
+} from "../charts/MarketChartContainer";
 import { SplitPane } from "../../components/SplitPane";
 import {
   ChartContextMenu,
@@ -43,6 +46,10 @@ export default function SplitLightweightCharts({
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [menuPosition, setMenuPosition] = useState<ChartMenuPosition | null>(null);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
+  const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
+    sequence: 0,
+    occurredAt: 0,
+  });
   const viewportsRef = useRef<{
     D: ChartViewport | undefined;
     W: ChartViewport | undefined;
@@ -125,6 +132,7 @@ export default function SplitLightweightCharts({
               symbol={topSymbol}
               interval={interval === "D" ? "daily" : "weekly"}
               initialViewport={initialViewport}
+              historyInteractionTracker={historyInteractionTrackerRef.current}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
             />
@@ -140,6 +148,7 @@ export default function SplitLightweightCharts({
               symbol={bottomSymbol}
               interval={interval === "D" ? "daily" : "weekly"}
               initialViewport={initialViewport}
+              historyInteractionTracker={historyInteractionTrackerRef.current}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
             />

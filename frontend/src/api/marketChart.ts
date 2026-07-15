@@ -1,5 +1,7 @@
 export type MarketChartInterval = "daily" | "weekly";
 
+export const maximumMarketChartHistoryDays = 10_000;
+
 export interface MarketChartCandle {
   date: string;
   open: number;

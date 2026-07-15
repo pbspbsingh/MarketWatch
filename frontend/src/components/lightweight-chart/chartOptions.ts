@@ -18,7 +18,7 @@ export const chartColors = {
   volumeAverage: "#f6c309",
 } as const;
 
-export const defaultChartBarSpacing = 6;
+const defaultChartBarSpacing = 6;
 
 export const dailySmaColors = {
   10: "#3179f5",
