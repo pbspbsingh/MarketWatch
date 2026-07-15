@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.3 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 1.4 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -288,6 +288,7 @@ Progress:
 - [x] 1.1 — Provider-independent chart interval, candle, and series models.
 - [x] 1.2 — Shared Daily close-SMA and volume-average calculations.
 - [x] 1.3 — Shared market-week OHLCV aggregation.
+- [x] 1.4 — Weekly EMA and volume-average calculations.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 

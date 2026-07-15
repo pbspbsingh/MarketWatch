@@ -59,6 +59,51 @@ pub fn close_sma(
 }
 
 #[allow(dead_code, reason = "used by the chart snapshot service in task 1.5")]
+pub fn close_ema(
+    candles: &[MarketChartCandle],
+    period: usize,
+) -> Result<MarketChartSeries, ChartCalculationError> {
+    if period == 0 {
+        return Err(ChartCalculationError::InvalidPeriod);
+    }
+    validate_date_order(candles)?;
+    for candle in candles {
+        if !candle.close.is_finite() || candle.close <= 0.0 {
+            return Err(ChartCalculationError::InvalidClose(candle.date));
+        }
+    }
+    if candles.len() < period {
+        return Ok(MarketChartSeries {
+            period,
+            points: Vec::new(),
+        });
+    }
+
+    let seed = candles[..period]
+        .iter()
+        .map(|candle| candle.close)
+        .sum::<f64>()
+        / period as f64;
+    let mut points = Vec::with_capacity(candles.len() + 1 - period);
+    points.push(MarketChartPoint {
+        date: candles[period - 1].date,
+        value: seed,
+    });
+
+    let alpha = 2.0 / (period as f64 + 1.0);
+    let mut previous = seed;
+    for candle in &candles[period..] {
+        previous = alpha * candle.close + (1.0 - alpha) * previous;
+        points.push(MarketChartPoint {
+            date: candle.date,
+            value: previous,
+        });
+    }
+
+    Ok(MarketChartSeries { period, points })
+}
+
+#[allow(dead_code, reason = "used by the chart snapshot service in task 1.5")]
 pub fn volume_sma(
     candles: &[MarketChartCandle],
     period: usize,
@@ -193,6 +238,35 @@ mod tests {
 
         assert_eq!(series.points.len(), 181);
         assert_eq!(series.points.last().unwrap().value, 190.5);
+    }
+
+    #[test]
+    fn calculates_required_weekly_close_emas_with_sma_seed() {
+        let candles = candles(50);
+
+        for period in [10, 20, 40] {
+            let series = close_ema(&candles, period).unwrap();
+            let seed = (period + 1) as f64 / 2.0;
+            let alpha = 2.0 / (period as f64 + 1.0);
+            assert_eq!(series.period, period);
+            assert_eq!(series.points.len(), 51 - period);
+            assert_eq!(series.points[0].value, seed);
+            assert_eq!(
+                series.points[1].value,
+                alpha * (period + 1) as f64 + (1.0 - alpha) * seed
+            );
+        }
+    }
+
+    #[test]
+    fn calculates_weekly_volume_average_and_handles_insufficient_history() {
+        let candles = candles(50);
+
+        let volume = volume_sma(&candles, 5).unwrap();
+        assert_eq!(volume.points.len(), 46);
+        assert_eq!(volume.points.last().unwrap().value, 48.0);
+        assert!(close_ema(&candles[..9], 10).unwrap().points.is_empty());
+        assert!(volume_sma(&candles[..4], 5).unwrap().points.is_empty());
     }
 
     #[test]
