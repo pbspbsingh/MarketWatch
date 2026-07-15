@@ -166,10 +166,15 @@ impl YahooService {
                 })
                 .collect::<Result<Vec<_>, YahooServiceError>>()?;
             if requested_last_date == recent_trading_day
-                && !candles
-                    .iter()
-                    .any(|candle| candle.market_date == requested_last_date)
+                && candles
+                    .last()
+                    .is_none_or(|candle| candle.market_date < requested_last_date)
             {
+                warn!(
+                    symbol,
+                    %requested_last_date,
+                    "Yahoo chart omitted completed candle; attempting quote repair"
+                );
                 match self.fetch_quote(symbol).await {
                     Ok(quote) => {
                         let quote_date = self.market_schedule.market_date(quote.timestamp);
