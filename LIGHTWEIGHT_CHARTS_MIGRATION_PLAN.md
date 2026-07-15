@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.7 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 2.1 implemented and reviewed; awaiting commit approval.
 
 ## Objective
 
@@ -293,6 +293,7 @@ Progress:
 - [x] 1.5 — Persistence-backed Daily/Weekly chart snapshot service.
 - [x] 1.6 — Independent one-symbol chart snapshot API.
 - [x] 1.7 — Shared candle history horizon increased to 760 calendar days.
+- [x] 2.1 — Shared Lightweight chart styling and time helpers.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
