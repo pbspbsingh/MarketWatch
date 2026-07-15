@@ -1,7 +1,7 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::models::{CompanyProfile, DailyCandle};
-use crate::providers::{Candle, ChartInterval, Quote, YahooClient, YahooError};
+use crate::providers::{Candle, ChartInterval, ChartRange, Quote, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
@@ -22,6 +22,11 @@ pub struct YahooService {
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock,
+}
+
+pub struct HistoricalDailyCandles {
+    pub candles: Vec<DailyCandle>,
+    pub has_more_before: bool,
 }
 
 #[derive(Debug, Error)]
@@ -98,7 +103,7 @@ impl YahooService {
         symbol: &str,
         start: NaiveDate,
         end: NaiveDate,
-    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+    ) -> Result<HistoricalDailyCandles, YahooServiceError> {
         if start >= end {
             return Err(YahooServiceError::InvalidRange);
         }
@@ -119,11 +124,22 @@ impl YahooService {
         let end_time =
             Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
 
-        self.fetch_chart(symbol, start_time, end_time)
-            .await?
+        let range = self.fetch_chart(symbol, start_time, end_time).await?;
+        let first_trade_date = range
+            .first_trade_at
+            .map(|timestamp| self.market_schedule.market_date(timestamp));
+        let candles = range
+            .candles
             .into_iter()
             .map(|candle| self.provider_daily_candle(symbol, candle))
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more_before = first_trade_date
+            .map(|first_trade_date| first_trade_date < start)
+            .unwrap_or(!candles.is_empty());
+        Ok(HistoricalDailyCandles {
+            candles,
+            has_more_before,
+        })
     }
 
     pub async fn daily_candles(
@@ -179,6 +195,7 @@ impl YahooService {
             let mut candles = self
                 .fetch_chart(symbol, fetch_start, fetch_end)
                 .await?
+                .candles
                 .into_iter()
                 .map(|candle| self.provider_daily_candle(symbol, candle))
                 .collect::<Result<Vec<_>, YahooServiceError>>()?;
@@ -279,12 +296,12 @@ impl YahooService {
         symbol: &str,
         start: chrono::DateTime<Utc>,
         end: chrono::DateTime<Utc>,
-    ) -> Result<Vec<Candle>, YahooError> {
+    ) -> Result<ChartRange, YahooError> {
         let mut delay = INITIAL_RETRY_DELAY;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
             match self
                 .yahoo
-                .chart(symbol, ChartInterval::OneDay, start, end)
+                .chart_range(symbol, ChartInterval::OneDay, start, end)
                 .await
             {
                 Ok(candles) => return Ok(candles),

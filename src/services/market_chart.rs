@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
 
+const MAX_HISTORY_RANGE_DAYS: i64 = 10_000;
 const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
 const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
 const DAILY_VOLUME_PERIOD: usize = 50;
@@ -20,6 +21,10 @@ pub struct MarketChartService {
 
 #[derive(Debug, Error)]
 pub enum MarketChartError {
+    #[error(
+        "market chart history range must be increasing and at most {MAX_HISTORY_RANGE_DAYS} days"
+    )]
+    InvalidRange,
     #[error(transparent)]
     Data(#[from] YahooServiceError),
     #[error(transparent)]
@@ -37,18 +42,63 @@ impl MarketChartService {
         interval: MarketChartInterval,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        build_expanded_snapshot(symbol.to_owned(), interval, &candles, &[]).map_err(Into::into)
+        build_expanded_snapshot(symbol.to_owned(), interval, candles, Vec::new())
+            .map_err(Into::into)
+    }
+
+    pub async fn history_snapshot(
+        &self,
+        symbol: &str,
+        interval: MarketChartInterval,
+        start: chrono::NaiveDate,
+        end: chrono::NaiveDate,
+    ) -> Result<MarketChartSnapshot, MarketChartError> {
+        validate_history_range(start, end)?;
+        let persisted = self.yahoo.daily_candles_for_year(symbol).await?;
+        let history = self
+            .yahoo
+            .historical_daily_candles(symbol, start, end)
+            .await?;
+        let has_more_before = history.has_more_before;
+        let mut snapshot = build_expanded_snapshot(
+            symbol.to_owned(),
+            interval,
+            candles_in_range(persisted, start, end),
+            history.candles,
+        )?;
+        snapshot.has_more_before = has_more_before;
+        Ok(snapshot)
     }
 }
 
+fn validate_history_range(
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+) -> Result<(), MarketChartError> {
+    let days = (end - start).num_days();
+    if days <= 0 || days > MAX_HISTORY_RANGE_DAYS {
+        return Err(MarketChartError::InvalidRange);
+    }
+    Ok(())
+}
+
+fn candles_in_range(
+    mut candles: Vec<DailyCandle>,
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+) -> Vec<DailyCandle> {
+    candles.retain(|candle| candle.market_date >= start && candle.market_date < end);
+    candles
+}
+
 fn merge_daily_candles(
-    persisted: &[DailyCandle],
-    ephemeral: &[DailyCandle],
+    persisted: Vec<DailyCandle>,
+    ephemeral: Vec<DailyCandle>,
 ) -> Result<Vec<DailyCandle>, ChartCalculationError> {
     let mut by_date = BTreeMap::new();
 
-    for candle in ephemeral.iter().chain(persisted) {
-        by_date.insert(candle.market_date, candle.clone());
+    for candle in ephemeral.into_iter().chain(persisted) {
+        by_date.insert(candle.market_date, candle);
     }
 
     by_date
@@ -63,8 +113,8 @@ fn merge_daily_candles(
 fn build_expanded_snapshot(
     symbol: String,
     interval: MarketChartInterval,
-    persisted: &[DailyCandle],
-    ephemeral: &[DailyCandle],
+    persisted: Vec<DailyCandle>,
+    ephemeral: Vec<DailyCandle>,
 ) -> Result<MarketChartSnapshot, ChartCalculationError> {
     let daily = merge_daily_candles(persisted, ephemeral)?;
     build_snapshot(symbol, interval, &daily)
@@ -109,7 +159,8 @@ fn build_snapshot(
         volume_average,
         earliest_date,
         latest_date,
-        has_more: earliest_date.is_some(),
+        has_more_before: earliest_date.is_some(),
+        has_more_after: false,
     })
 }
 
@@ -134,14 +185,47 @@ mod tests {
     }
 
     #[test]
+    fn validates_bounded_history_ranges() {
+        let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+
+        assert!(validate_history_range(start, start + Days::new(1)).is_ok());
+        assert!(
+            validate_history_range(start, start + Days::new(MAX_HISTORY_RANGE_DAYS as u64)).is_ok()
+        );
+        assert!(matches!(
+            validate_history_range(start, start),
+            Err(MarketChartError::InvalidRange)
+        ));
+        assert!(matches!(
+            validate_history_range(start, start - Days::new(1)),
+            Err(MarketChartError::InvalidRange)
+        ));
+        assert!(matches!(
+            validate_history_range(start, start + Days::new(MAX_HISTORY_RANGE_DAYS as u64 + 1)),
+            Err(MarketChartError::InvalidRange)
+        ));
+    }
+
+    #[test]
+    fn filters_candles_with_half_open_date_bounds() {
+        let all = candles(3, 1);
+        let start = all[1].market_date;
+        let end = all[2].market_date;
+        let expected = all[1].clone();
+
+        assert_eq!(candles_in_range(all, start, end), vec![expected]);
+    }
+
+    #[test]
     fn merges_candles_in_date_order_with_persisted_precedence() {
         let mut persisted = candles(2, 2);
         persisted[1].close = 30.0;
         persisted[1].high = 30.0;
+        let expected = persisted[1].clone();
         let mut ephemeral = candles(3, 1);
         ephemeral.reverse();
 
-        let merged = merge_daily_candles(&persisted, &ephemeral).unwrap();
+        let merged = merge_daily_candles(persisted, ephemeral).unwrap();
 
         assert_eq!(merged.len(), 3);
         assert!(
@@ -149,7 +233,7 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].market_date < pair[1].market_date)
         );
-        assert_eq!(merged[2], persisted[1]);
+        assert_eq!(merged[2], expected);
     }
 
     #[test]
@@ -160,42 +244,45 @@ mod tests {
         duplicate.high = 10.0;
         ephemeral.push(duplicate.clone());
 
-        assert_eq!(merge_daily_candles(&[], &ephemeral).unwrap()[0], duplicate);
-        assert_eq!(merge_daily_candles(&ephemeral, &[]).unwrap().len(), 2);
-        assert!(merge_daily_candles(&[], &[]).unwrap().is_empty());
+        assert_eq!(
+            merge_daily_candles(Vec::new(), ephemeral.clone()).unwrap()[0],
+            duplicate
+        );
+        assert_eq!(merge_daily_candles(ephemeral, Vec::new()).unwrap().len(), 2);
+        assert!(
+            merge_daily_candles(Vec::new(), Vec::new())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn rejects_invalid_ohlcv_in_merged_data() {
         let mut invalid_price = candles(1, 1);
         invalid_price[0].high = 0.0;
+        let invalid_price_date = invalid_price[0].market_date;
         assert_eq!(
-            merge_daily_candles(&[], &invalid_price),
-            Err(ChartCalculationError::InvalidOhlc(
-                invalid_price[0].market_date
-            ))
+            merge_daily_candles(Vec::new(), invalid_price),
+            Err(ChartCalculationError::InvalidOhlc(invalid_price_date))
         );
 
         let mut invalid_volume = candles(1, 1);
         invalid_volume[0].volume = -1;
+        let invalid_volume_date = invalid_volume[0].market_date;
         assert_eq!(
-            merge_daily_candles(&invalid_volume, &[]),
-            Err(ChartCalculationError::InvalidVolume(
-                invalid_volume[0].market_date
-            ))
+            merge_daily_candles(invalid_volume, Vec::new()),
+            Err(ChartCalculationError::InvalidVolume(invalid_volume_date))
         );
     }
 
     #[test]
     fn ignores_invalid_lower_precedence_overlap() {
         let persisted = candles(1, 1);
+        let expected = persisted.clone();
         let mut ephemeral = persisted.clone();
         ephemeral[0].close = 0.0;
 
-        assert_eq!(
-            merge_daily_candles(&persisted, &ephemeral).unwrap(),
-            persisted
-        );
+        assert_eq!(merge_daily_candles(persisted, ephemeral).unwrap(), expected);
     }
 
     #[test]
@@ -208,8 +295,8 @@ mod tests {
         let snapshot = build_expanded_snapshot(
             "TEST".to_owned(),
             MarketChartInterval::Daily,
-            &persisted,
-            &all,
+            persisted,
+            all,
         )
         .unwrap();
 
@@ -228,8 +315,8 @@ mod tests {
         let snapshot = build_expanded_snapshot(
             "TEST".to_owned(),
             MarketChartInterval::Weekly,
-            &all[30..],
-            &all[..30],
+            all[30..].to_vec(),
+            all[..30].to_vec(),
         )
         .unwrap();
 
@@ -263,7 +350,8 @@ mod tests {
         assert_eq!(snapshot.volume_average.points.len(), 171);
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
         assert_eq!(snapshot.latest_date, Some(snapshot.candles[219].date));
-        assert!(snapshot.has_more);
+        assert!(snapshot.has_more_before);
+        assert!(!snapshot.has_more_after);
     }
 
     #[test]

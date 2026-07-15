@@ -16,8 +16,17 @@ struct SnapshotQuery {
     interval: MarketChartInterval,
 }
 
+#[derive(Deserialize)]
+struct HistoryQuery {
+    interval: MarketChartInterval,
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route("/market-chart/{symbol}", get(snapshot))
+    Router::new()
+        .route("/market-chart/{symbol}", get(snapshot))
+        .route("/market-chart/{symbol}/history", get(history_snapshot))
 }
 
 async fn snapshot(
@@ -35,8 +44,25 @@ async fn snapshot(
         .map_err(|error| map_error(&symbol, error))
 }
 
+async fn history_snapshot(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
+    let symbol =
+        normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    state
+        .market_chart
+        .history_snapshot(&symbol, query.interval, query.start, query.end)
+        .await
+        .map(Json)
+        .map_err(|error| map_error(&symbol, error))
+}
+
 fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
     let status = match &error {
+        MarketChartError::InvalidRange => StatusCode::BAD_REQUEST,
+        MarketChartError::Data(YahooServiceError::InvalidRange) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::Provider(YahooError::NotFound { .. })) => {
             StatusCode::NOT_FOUND
         }

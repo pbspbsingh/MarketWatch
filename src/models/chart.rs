@@ -55,7 +55,8 @@ pub struct MarketChartSnapshot {
     pub volume_average: MarketChartSeries,
     pub earliest_date: Option<NaiveDate>,
     pub latest_date: Option<NaiveDate>,
-    pub has_more: bool,
+    pub has_more_before: bool,
+    pub has_more_after: bool,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq)]

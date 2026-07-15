@@ -18,6 +18,8 @@ export const chartColors = {
   volumeAverage: "#f6c309",
 } as const;
 
+export const defaultChartBarSpacing = 6;
+
 export const dailySmaColors = {
   10: "#3179f5",
   20: "#f6c309",
@@ -49,7 +51,11 @@ export const baseChartOptions = {
     borderColor: chartColors.border,
     scaleMargins: { top: 0.08, bottom: 0.25 },
   },
-  timeScale: { borderColor: chartColors.border, timeVisible: false },
+  timeScale: {
+    barSpacing: defaultChartBarSpacing,
+    borderColor: chartColors.border,
+    timeVisible: false,
+  },
 } satisfies DeepPartial<ChartOptions>;
 
 export const candleSeriesOptions = {

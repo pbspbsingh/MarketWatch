@@ -13,8 +13,15 @@ pub(super) struct ChartResult {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ChartData {
+    pub(super) meta: Option<ChartMeta>,
     pub(super) timestamp: Option<Vec<i64>>,
     pub(super) indicators: Indicators,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ChartMeta {
+    #[serde(rename = "firstTradeDate")]
+    pub(super) first_trade_date: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

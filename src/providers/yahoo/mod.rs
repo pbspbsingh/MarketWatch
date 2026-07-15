@@ -56,6 +56,12 @@ pub struct Candle {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ChartRange {
+    pub candles: Vec<Candle>,
+    pub first_trade_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Quote {
     pub market_state: Option<String>,
     pub timestamp: DateTime<Utc>,
@@ -97,6 +103,18 @@ impl YahooClient {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Candle>, YahooError> {
+        self.chart_range(symbol, interval, start, end)
+            .await
+            .map(|range| range.candles)
+    }
+
+    pub async fn chart_range(
+        &self,
+        symbol: &str,
+        interval: ChartInterval,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<ChartRange, YahooError> {
         if symbol.trim().is_empty() || start >= end {
             return Err(YahooError::InvalidResponse {
                 message: "chart requires a symbol and an increasing time range".to_owned(),
@@ -111,15 +129,15 @@ impl YahooClient {
             .append_pair("includePrePost", "false")
             .append_pair("includeAdjustedClose", "false");
         let response: ChartResponse = self.get_json(url, symbol).await?;
-        let candles = parse_chart(response, symbol, start, end)?;
+        let range = parse_chart_range(response, symbol, start, end)?;
         info!(
             "Fetched Yahoo chart, symbol={:?}, candles={}, range=[{}->{}]",
             symbol,
-            candles.len(),
+            range.candles.len(),
             format_chart_ts(start),
             format_chart_ts(end),
         );
-        Ok(candles)
+        Ok(range)
     }
 
     pub async fn profile(&self, symbol: &str) -> Result<CompanyProfile, YahooError> {
@@ -304,12 +322,12 @@ fn endpoint(base: &str, symbol: &str) -> Url {
         .expect("Yahoo symbol URL is valid")
 }
 
-fn parse_chart(
+fn parse_chart_range(
     response: ChartResponse,
     symbol: &str,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> Result<Vec<Candle>, YahooError> {
+) -> Result<ChartRange, YahooError> {
     if let Some(error) = response.chart.error {
         return Err(api_error(error.code, error.description, symbol));
     }
@@ -318,6 +336,10 @@ fn parse_chart(
         .result
         .and_then(|results| results.into_iter().next())
         .ok_or_else(|| invalid(format!("empty chart result for {symbol}")))?;
+    let first_trade_at = data
+        .meta
+        .and_then(|meta| meta.first_trade_date)
+        .and_then(|timestamp| DateTime::from_timestamp(timestamp, 0));
     let timestamps = data
         .timestamp
         .ok_or_else(|| invalid(format!("chart has no timestamps for {symbol}")))?;
@@ -351,7 +373,10 @@ fn parse_chart(
         })
         .collect::<Vec<_>>();
     candles.sort_unstable_by_key(|candle| candle.timestamp);
-    Ok(candles)
+    Ok(ChartRange {
+        candles,
+        first_trade_at,
+    })
 }
 
 fn parse_profile(
@@ -533,6 +558,7 @@ mod tests {
             r#"{
                 "chart": {
                     "result": [{
+                        "meta": {"firstTradeDate": 728317800},
                         "timestamp": [1782480600],
                         "indicators": {"quote": [{
                             "open": [728.94],
@@ -550,10 +576,11 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 6, 26, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2026, 6, 27, 0, 0, 0).unwrap();
 
-        let candles = parse_chart(response, "SPY", start, end).unwrap();
+        let range = parse_chart_range(response, "SPY", start, end).unwrap();
 
-        assert_eq!(candles.len(), 1);
-        assert_eq!(candles[0].timestamp.date_naive(), start.date_naive());
+        assert_eq!(range.candles.len(), 1);
+        assert_eq!(range.candles[0].timestamp.date_naive(), start.date_naive());
+        assert_eq!(range.first_trade_at.unwrap().timestamp(), 728_317_800);
     }
 
     #[test]
