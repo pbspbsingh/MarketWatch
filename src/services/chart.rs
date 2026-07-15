@@ -318,14 +318,7 @@ fn chart_candles(
     let candles = candles
         .iter()
         .filter(|candle| candle.market_date >= start)
-        .map(|candle| MarketChartCandle {
-            date: candle.market_date,
-            open: candle.open,
-            high: candle.high,
-            low: candle.low,
-            close: candle.close,
-            volume: candle.volume,
-        })
+        .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
     match interval {
         MarketChartInterval::Daily => Ok(candles),

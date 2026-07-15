@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 1.4 implemented and reviewed; awaiting commit approval.
+Current checkpoint: task 1.5 complete; paused before task 1.6 for YahooService work.
 
 ## Objective
 
@@ -174,8 +174,8 @@ Indicators are pure backend calculations over canonical candles.
 
 - Daily SMA: arithmetic mean over 10/20/50/100/200 sessions.
 - Weekly EMA: aggregate daily OHLCV by market week, then calculate EMA 10/20/40 using `alpha = 2 / (period + 1)` and seed with the first full-period SMA.
-- Daily volume average: SMA 20 of volume.
-- Weekly volume average: SMA 5 of aggregated weekly volume.
+- Daily volume average: SMA 50 of volume.
+- Weekly volume average: SMA 10 of aggregated weekly volume.
 - Do not render points before the required warm-up exists.
 
 Keep calculations separate from API serialization so they can be unit-tested and reused.
@@ -289,6 +289,7 @@ Progress:
 - [x] 1.2 — Shared Daily close-SMA and volume-average calculations.
 - [x] 1.3 — Shared market-week OHLCV aggregation.
 - [x] 1.4 — Weekly EMA and volume-average calculations.
+- [x] 1.5 — Persistence-backed Daily/Weekly chart snapshot service.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -305,9 +306,9 @@ Progress:
 | ID | Atomic task | Completion check |
 |---|---|---|
 | 1.1 | Add provider-independent chart candle/series/interval models. | Models contain no provider or display identifiers; formats/build checks pass. |
-| 1.2 | Implement Daily SMA and volume-average calculations as pure Rust functions. | Fixtures cover periods 10/20/50/100/200, volume 20, insufficient history, and invalid/empty input. |
+| 1.2 | Implement Daily SMA and volume-average calculations as pure Rust functions. | Fixtures cover periods 10/20/50/100/200, volume 50, insufficient history, and invalid/empty input. |
 | 1.3 | Implement market-week OHLCV aggregation. | Fixtures cover week/year boundaries, missing sessions, OHLC rules, and summed volume. |
-| 1.4 | Implement Weekly EMA and volume-average calculations. | EMA 10/20/40 uses the documented SMA seed; volume 5 and insufficient-history fixtures pass. |
+| 1.4 | Implement Weekly EMA and volume-average calculations. | EMA 10/20/40 uses the documented SMA seed; volume 10 and insufficient-history fixtures pass. |
 | 1.5 | Build a chart calculation service that reads existing persisted candles and returns one complete interval snapshot. | Daily and Weekly snapshots contain candles plus all requested MA/EMA/volume series in ascending date order. |
 | 1.6 | Add a one-symbol chart snapshot API endpoint. | Top and bottom can call it independently; one request failure cannot affect the other; format/build checks pass. |
 | 1.7 | Change retained/requested history from 380 to approximately 760 calendar days. | Existing analytical flows still pass; maintenance uses the same new horizon; no purge runs automatically. |
@@ -320,7 +321,7 @@ Progress:
 | 2.2 | Add `ChartHost` for create/remove, autosize, attribution, and stable API access. | Mount/unmount and resize do not leak chart instances or observers. |
 | 2.3 | Add `MarketChart` candle and volume rendering from an already-computed snapshot. | Candles and lower volume overlay render without custom legend/value tooltip or current-price line. |
 | 2.4 | Add backend-series adapters and render Daily SMA/Weekly EMA lines. | Correct series/colors appear; updating data does not recreate the chart. |
-| 2.5 | Render the yellow dotted Daily-20/Weekly-5 volume-average line. | Line shares the volume region and updates through existing series APIs. |
+| 2.5 | Render the yellow dotted Daily-50/Weekly-10 volume-average line. | Line shares the volume region and updates through existing series APIs. |
 | 2.6 | Add `MarketChartContainer` with independent loading/error state, `AbortController`, and monotonic generation validation. | Rapid symbol/interval changes cannot display stale responses. |
 | 2.7 | Add a temporary TickerLens implementation switch and render only the top Lightweight chart behind it. | TradingView remains the default; the new top chart can be manually compared without changing production behavior. |
 

@@ -2,6 +2,8 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::DailyCandle;
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MarketChartInterval {
@@ -19,6 +21,19 @@ pub struct MarketChartCandle {
     pub volume: i64,
 }
 
+impl From<&DailyCandle> for MarketChartCandle {
+    fn from(candle: &DailyCandle) -> Self {
+        Self {
+            date: candle.market_date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MarketChartPoint {
     pub date: NaiveDate,
@@ -29,6 +44,20 @@ pub struct MarketChartPoint {
 pub struct MarketChartSeries {
     pub period: usize,
     pub points: Vec<MarketChartPoint>,
+}
+
+#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MarketChartSnapshot {
+    pub symbol: String,
+    pub exchange: String,
+    pub interval: MarketChartInterval,
+    pub candles: Vec<MarketChartCandle>,
+    pub moving_averages: Vec<MarketChartSeries>,
+    pub volume_average: MarketChartSeries,
+    pub earliest_date: Option<NaiveDate>,
+    pub latest_date: Option<NaiveDate>,
+    pub has_more: bool,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq)]
@@ -58,7 +87,7 @@ pub fn close_sma(
     })
 }
 
-#[allow(dead_code, reason = "used by the chart snapshot service in task 1.5")]
+#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
 pub fn close_ema(
     candles: &[MarketChartCandle],
     period: usize,
@@ -103,7 +132,7 @@ pub fn close_ema(
     Ok(MarketChartSeries { period, points })
 }
 
-#[allow(dead_code, reason = "used by the chart snapshot service in task 1.5")]
+#[allow(dead_code, reason = "used by the chart snapshot API in task 1.6")]
 pub fn volume_sma(
     candles: &[MarketChartCandle],
     period: usize,
@@ -234,10 +263,10 @@ mod tests {
 
     #[test]
     fn calculates_daily_volume_average() {
-        let series = volume_sma(&candles(200), 20).unwrap();
+        let series = volume_sma(&candles(200), 50).unwrap();
 
-        assert_eq!(series.points.len(), 181);
-        assert_eq!(series.points.last().unwrap().value, 190.5);
+        assert_eq!(series.points.len(), 151);
+        assert_eq!(series.points.last().unwrap().value, 175.5);
     }
 
     #[test]
@@ -262,11 +291,11 @@ mod tests {
     fn calculates_weekly_volume_average_and_handles_insufficient_history() {
         let candles = candles(50);
 
-        let volume = volume_sma(&candles, 5).unwrap();
-        assert_eq!(volume.points.len(), 46);
-        assert_eq!(volume.points.last().unwrap().value, 48.0);
+        let volume = volume_sma(&candles, 10).unwrap();
+        assert_eq!(volume.points.len(), 41);
+        assert_eq!(volume.points.last().unwrap().value, 45.5);
         assert!(close_ema(&candles[..9], 10).unwrap().points.is_empty());
-        assert!(volume_sma(&candles[..4], 5).unwrap().points.is_empty());
+        assert!(volume_sma(&candles[..9], 10).unwrap().points.is_empty());
     }
 
     #[test]
