@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::DailyCandle;
+use super::chart_relative_strength::RelativeStrengthCalculation;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -53,10 +54,18 @@ pub struct MarketChartSnapshot {
     pub candles: Vec<MarketChartCandle>,
     pub moving_averages: Vec<MarketChartSeries>,
     pub volume_average: MarketChartSeries,
+    pub relative_strength: Option<MarketChartRelativeStrength>,
     pub earliest_date: Option<NaiveDate>,
     pub latest_date: Option<NaiveDate>,
     pub has_more_before: bool,
     pub has_more_after: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MarketChartRelativeStrength {
+    pub comparison_symbol: String,
+    pub line: RelativeStrengthCalculation,
+    pub trend: RelativeStrengthCalculation,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq)]

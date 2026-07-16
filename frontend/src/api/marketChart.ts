@@ -21,6 +21,23 @@ export interface MarketChartSeries {
   points: MarketChartPoint[];
 }
 
+export interface MarketChartRelativeStrengthPoint extends MarketChartPoint {
+  ticker_return_percent: number | null;
+  comparison_return_percent: number | null;
+  relative_return_percent: number | null;
+}
+
+export interface MarketChartRelativeStrengthCalculation {
+  moving_average_period: number;
+  points: MarketChartRelativeStrengthPoint[];
+}
+
+export interface MarketChartRelativeStrength {
+  comparison_symbol: string;
+  line: MarketChartRelativeStrengthCalculation;
+  trend: MarketChartRelativeStrengthCalculation;
+}
+
 export interface MarketChartData {
   symbol: string;
   interval: MarketChartInterval;
@@ -31,22 +48,29 @@ export interface MarketChartData {
 
 export interface MarketChartSnapshot extends MarketChartData {
   volume_average: MarketChartSeries;
+  relative_strength: MarketChartRelativeStrength | null;
   earliest_date: string | null;
   latest_date: string | null;
   has_more_before: boolean;
   has_more_after: boolean;
 }
 
+interface MarketChartRequestOptions {
+  includeRelativeStrength?: boolean;
+  signal?: AbortSignal;
+}
+
 export async function fetchMarketChartSnapshot(
   symbol: string,
   interval: MarketChartInterval,
-  signal?: AbortSignal,
+  options: MarketChartRequestOptions = {},
 ): Promise<MarketChartSnapshot> {
   const requestedSymbol = marketDataSymbol(symbol);
   const query = new URLSearchParams({ interval });
+  if (options.includeRelativeStrength) query.set("include_relative_strength", "true");
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}?${query}`,
-    { signal, cache: "no-store" },
+    { signal: options.signal, cache: "no-store" },
   );
   if (!response.ok) {
     const reason = await response.text();
@@ -60,13 +84,14 @@ export async function fetchMarketChartHistorySnapshot(
   interval: MarketChartInterval,
   start: string,
   end: string,
-  signal?: AbortSignal,
+  options: MarketChartRequestOptions = {},
 ): Promise<MarketChartSnapshot> {
   const requestedSymbol = marketDataSymbol(symbol);
   const query = new URLSearchParams({ interval, start, end });
+  if (options.includeRelativeStrength) query.set("include_relative_strength", "true");
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/history?${query}`,
-    { signal, cache: "no-store" },
+    { signal: options.signal, cache: "no-store" },
   );
   if (!response.ok) {
     const reason = await response.text();

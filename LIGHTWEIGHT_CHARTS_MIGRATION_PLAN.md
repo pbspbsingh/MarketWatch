@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 4.1 implemented and reviewed; awaiting commit approval. RS Line and RS Trend calculations now support bounded historical output while preserving the latest-12-month RS Line normalization anchor.
+Current checkpoint: task 4.2 implemented and reviewed; awaiting commit approval. Top-chart snapshot and history requests now include both configured-benchmark RS series; bottom-chart requests remain RS-free.
 
 ## Objective
 
@@ -309,9 +309,10 @@ Progress:
 - [x] 3.5 — TickerLens controls, benchmark switching, and external links preserved.
 - [x] 3.6 — Independent chart loading, retry, inline errors, and source-specific toasts.
 - [x] 4.1 — Range-aware RS Line and RS Trend calculations with fixed recent normalization.
+- [x] 4.2 — Opt-in top-chart snapshots with configured-benchmark RS Line and RS Trend.
 - [x] 5.1 — Non-persisting Yahoo historical-range fetch.
 - [x] 5.2 — Date-keyed persisted/ephemeral merge with canonical precedence.
-- [ ] 5.3 — Expanded candles and SMA/EMA/volume recomputation complete; RS range recomputation remains pending phase 4.
+- [x] 5.3 — Expanded candles and all backend series, including RS, are recomputed over merged history.
 - [x] 5.4 — Bounded provider-neutral history contract and availability flags.
 - [x] 5.5 — Bounded 50% backward range expansion.
 - [x] 5.6 — User-scroll-only TickerLens history trigger.

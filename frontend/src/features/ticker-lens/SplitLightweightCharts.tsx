@@ -133,6 +133,7 @@ export default function SplitLightweightCharts({
               interval={interval === "D" ? "daily" : "weekly"}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
+              includeRelativeStrength
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
             />

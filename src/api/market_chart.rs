@@ -14,6 +14,8 @@ use tracing::error;
 #[derive(Deserialize)]
 struct SnapshotQuery {
     interval: MarketChartInterval,
+    #[serde(default)]
+    include_relative_strength: bool,
 }
 
 #[derive(Deserialize)]
@@ -21,6 +23,8 @@ struct HistoryQuery {
     interval: MarketChartInterval,
     start: chrono::NaiveDate,
     end: chrono::NaiveDate,
+    #[serde(default)]
+    include_relative_strength: bool,
 }
 
 pub fn router() -> Router<AppState> {
@@ -38,7 +42,7 @@ async fn snapshot(
         normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     state
         .market_chart
-        .snapshot(&symbol, query.interval)
+        .snapshot(&symbol, query.interval, query.include_relative_strength)
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -53,7 +57,13 @@ async fn history_snapshot(
         normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     state
         .market_chart
-        .history_snapshot(&symbol, query.interval, query.start, query.end)
+        .history_snapshot(
+            &symbol,
+            query.interval,
+            query.start,
+            query.end,
+            query.include_relative_strength,
+        )
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -67,9 +77,9 @@ fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
             StatusCode::NOT_FOUND
         }
         MarketChartError::Data(YahooServiceError::Provider(_)) => StatusCode::BAD_GATEWAY,
-        MarketChartError::Data(_) | MarketChartError::Calculation(_) => {
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
+        MarketChartError::Data(_)
+        | MarketChartError::Calculation(_)
+        | MarketChartError::RelativeStrength(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     error!(symbol, %error, "failed to load market chart snapshot");
     (status, error.to_string())

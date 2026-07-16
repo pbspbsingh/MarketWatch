@@ -1,8 +1,13 @@
+use crate::config::MarketConfig;
 use crate::models::DailyCandle;
 use crate::models::chart::{
-    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartSeries,
-    MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma,
+    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
+    MarketChartSeries, MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma,
     validate_market_chart_candle, volume_sma,
+};
+use crate::models::{
+    ChartDateRange, RelativeStrengthCalculationError, calculate_relative_strength_line,
+    calculate_relative_strength_trend,
 };
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use std::collections::BTreeMap;
@@ -17,6 +22,13 @@ const WEEKLY_VOLUME_PERIOD: usize = 10;
 
 pub struct MarketChartService {
     yahoo: Arc<YahooService>,
+    benchmark: String,
+}
+
+struct RelativeStrengthSource {
+    comparison_symbol: String,
+    persisted: Vec<DailyCandle>,
+    ephemeral: Vec<DailyCandle>,
 }
 
 #[derive(Debug, Error)]
@@ -29,21 +41,46 @@ pub enum MarketChartError {
     Data(#[from] YahooServiceError),
     #[error(transparent)]
     Calculation(#[from] ChartCalculationError),
+    #[error(transparent)]
+    RelativeStrength(#[from] RelativeStrengthCalculationError),
 }
 
 impl MarketChartService {
-    pub fn new(yahoo: Arc<YahooService>) -> Self {
-        Self { yahoo }
+    pub fn new(yahoo: Arc<YahooService>, market: &MarketConfig) -> Self {
+        Self {
+            yahoo,
+            benchmark: market.benchmark.clone(),
+        }
     }
 
     pub async fn snapshot(
         &self,
         symbol: &str,
         interval: MarketChartInterval,
+        include_relative_strength: bool,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        build_expanded_snapshot(symbol.to_owned(), interval, candles, Vec::new())
-            .map_err(Into::into)
+        let relative_strength = if include_relative_strength {
+            let comparison = if symbol == self.benchmark {
+                candles.clone()
+            } else {
+                self.yahoo.daily_candles_for_year(&self.benchmark).await?
+            };
+            Some(RelativeStrengthSource {
+                comparison_symbol: self.benchmark.clone(),
+                persisted: comparison,
+                ephemeral: Vec::new(),
+            })
+        } else {
+            None
+        };
+        build_expanded_snapshot(
+            symbol.to_owned(),
+            interval,
+            candles,
+            Vec::new(),
+            relative_strength,
+        )
     }
 
     pub async fn history_snapshot(
@@ -52,6 +89,7 @@ impl MarketChartService {
         interval: MarketChartInterval,
         start: chrono::NaiveDate,
         end: chrono::NaiveDate,
+        include_relative_strength: bool,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
         let persisted = self.yahoo.daily_candles_for_year(symbol).await?;
@@ -60,11 +98,32 @@ impl MarketChartService {
             .historical_daily_candles(symbol, start, end)
             .await?;
         let has_more_before = history.has_more_before;
+        let relative_strength = if include_relative_strength {
+            let (comparison_persisted, comparison_ephemeral) = if symbol == self.benchmark {
+                (persisted.clone(), history.candles.clone())
+            } else {
+                let comparison_persisted =
+                    self.yahoo.daily_candles_for_year(&self.benchmark).await?;
+                let comparison_history = self
+                    .yahoo
+                    .historical_daily_candles(&self.benchmark, start, end)
+                    .await?;
+                (comparison_persisted, comparison_history.candles)
+            };
+            Some(RelativeStrengthSource {
+                comparison_symbol: self.benchmark.clone(),
+                persisted: candles_in_range(comparison_persisted, start, end),
+                ephemeral: comparison_ephemeral,
+            })
+        } else {
+            None
+        };
         let mut snapshot = build_expanded_snapshot(
             symbol.to_owned(),
             interval,
             candles_in_range(persisted, start, end),
             history.candles,
+            relative_strength,
         )?;
         snapshot.has_more_before = has_more_before;
         Ok(snapshot)
@@ -115,9 +174,39 @@ fn build_expanded_snapshot(
     interval: MarketChartInterval,
     persisted: Vec<DailyCandle>,
     ephemeral: Vec<DailyCandle>,
-) -> Result<MarketChartSnapshot, ChartCalculationError> {
+    relative_strength: Option<RelativeStrengthSource>,
+) -> Result<MarketChartSnapshot, MarketChartError> {
     let daily = merge_daily_candles(persisted, ephemeral)?;
-    build_snapshot(symbol, interval, &daily)
+    let relative_strength = if let Some(source) = relative_strength {
+        let comparison = merge_daily_candles(source.persisted, source.ephemeral)?;
+        build_relative_strength(&daily, &comparison, interval, source.comparison_symbol)?
+    } else {
+        None
+    };
+    let mut snapshot = build_snapshot(symbol, interval, &daily)?;
+    snapshot.relative_strength = relative_strength;
+    Ok(snapshot)
+}
+
+fn build_relative_strength(
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: MarketChartInterval,
+    comparison_symbol: String,
+) -> Result<Option<MarketChartRelativeStrength>, RelativeStrengthCalculationError> {
+    let Some((start, end)) = ticker.first().zip(ticker.last()).and_then(|(first, last)| {
+        last.market_date
+            .succ_opt()
+            .map(|end| (first.market_date, end))
+    }) else {
+        return Ok(None);
+    };
+    let range = ChartDateRange { start, end };
+    Ok(Some(MarketChartRelativeStrength {
+        comparison_symbol,
+        line: calculate_relative_strength_line(ticker, comparison, interval, range)?,
+        trend: calculate_relative_strength_trend(ticker, comparison, interval, range)?,
+    }))
 }
 
 fn build_snapshot(
@@ -157,6 +246,7 @@ fn build_snapshot(
         candles,
         moving_averages,
         volume_average,
+        relative_strength: None,
         earliest_date,
         latest_date,
         has_more_before: earliest_date.is_some(),
@@ -182,6 +272,25 @@ mod tests {
                 volume: index as i64 + 1,
             })
             .collect()
+    }
+
+    fn relative_strength_source(candles: Vec<DailyCandle>) -> RelativeStrengthSource {
+        RelativeStrengthSource {
+            comparison_symbol: "SPY".to_owned(),
+            persisted: candles,
+            ephemeral: Vec::new(),
+        }
+    }
+
+    fn comparison_candles(mut candles: Vec<DailyCandle>) -> Vec<DailyCandle> {
+        for (index, candle) in candles.iter_mut().enumerate() {
+            let close = candle.close * (1.0 + index as f64 / 10_000.0);
+            candle.open = close;
+            candle.high = close;
+            candle.low = close;
+            candle.close = close;
+        }
+        candles
     }
 
     #[test]
@@ -297,6 +406,7 @@ mod tests {
             MarketChartInterval::Daily,
             persisted,
             all,
+            None,
         )
         .unwrap();
 
@@ -317,6 +427,7 @@ mod tests {
             MarketChartInterval::Weekly,
             all[30..].to_vec(),
             all[..30].to_vec(),
+            None,
         )
         .unwrap();
 
@@ -325,6 +436,101 @@ mod tests {
         assert_eq!(snapshot.volume_average.points.len(), 41);
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
         assert_eq!(snapshot.latest_date, Some(snapshot.candles[49].date));
+    }
+
+    #[test]
+    fn builds_daily_and_weekly_relative_strength_against_configured_benchmark() {
+        let ticker = candles(400, 1);
+        let comparison = ticker.clone();
+
+        for interval in [MarketChartInterval::Daily, MarketChartInterval::Weekly] {
+            let snapshot = build_expanded_snapshot(
+                "TEST".to_owned(),
+                interval,
+                ticker.clone(),
+                Vec::new(),
+                Some(relative_strength_source(comparison.clone())),
+            )
+            .unwrap();
+            let relative_strength = snapshot.relative_strength.unwrap();
+
+            assert_eq!(relative_strength.comparison_symbol, "SPY");
+            assert!(!relative_strength.line.points.is_empty());
+            assert!(!relative_strength.trend.points.is_empty());
+            assert!(
+                relative_strength.line.points.first().unwrap().date
+                    > snapshot.earliest_date.unwrap()
+            );
+            assert!(
+                relative_strength.trend.points.first().unwrap().date
+                    > snapshot.earliest_date.unwrap()
+            );
+            assert!(relative_strength.line.points.iter().all(|point| {
+                point.date >= snapshot.earliest_date.unwrap()
+                    && point.date <= snapshot.latest_date.unwrap()
+            }));
+            assert!(relative_strength.trend.points.iter().all(|point| {
+                point.date >= snapshot.earliest_date.unwrap()
+                    && point.date <= snapshot.latest_date.unwrap()
+            }));
+        }
+    }
+
+    #[test]
+    fn recomputes_relative_strength_without_changing_recent_points() {
+        let all = candles(900, 1);
+        let comparison = comparison_candles(all.clone());
+        let recent = all[400..].to_vec();
+        let recent_comparison = comparison[400..].to_vec();
+
+        for interval in [MarketChartInterval::Daily, MarketChartInterval::Weekly] {
+            let initial = build_expanded_snapshot(
+                "TEST".to_owned(),
+                interval,
+                recent.clone(),
+                Vec::new(),
+                Some(relative_strength_source(recent_comparison.clone())),
+            )
+            .unwrap()
+            .relative_strength
+            .unwrap();
+            let expanded = build_expanded_snapshot(
+                "TEST".to_owned(),
+                interval,
+                recent.clone(),
+                all.clone(),
+                Some(RelativeStrengthSource {
+                    comparison_symbol: "SPY".to_owned(),
+                    persisted: recent_comparison.clone(),
+                    ephemeral: comparison.clone(),
+                }),
+            )
+            .unwrap()
+            .relative_strength
+            .unwrap();
+
+            assert!(expanded.line.points.len() > initial.line.points.len());
+            assert!(expanded.trend.points.len() > initial.trend.points.len());
+            for initial_point in &initial.line.points {
+                assert_eq!(
+                    Some(initial_point),
+                    expanded
+                        .line
+                        .points
+                        .iter()
+                        .find(|point| point.date == initial_point.date)
+                );
+            }
+            for initial_point in &initial.trend.points {
+                let expanded_point = expanded
+                    .trend
+                    .points
+                    .iter()
+                    .find(|point| point.date == initial_point.date)
+                    .unwrap();
+                assert!((initial_point.value - expanded_point.value).abs() < 1e-12);
+            }
+        }
     }
 
     #[test]
@@ -348,6 +554,7 @@ mod tests {
         assert_eq!(snapshot.moving_averages[4].points.len(), 21);
         assert_eq!(snapshot.volume_average.period, DAILY_VOLUME_PERIOD);
         assert_eq!(snapshot.volume_average.points.len(), 171);
+        assert!(snapshot.relative_strength.is_none());
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
         assert_eq!(snapshot.latest_date, Some(snapshot.candles[219].date));
         assert!(snapshot.has_more_before);

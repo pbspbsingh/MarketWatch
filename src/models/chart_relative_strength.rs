@@ -15,7 +15,7 @@ pub struct ChartDateRange {
     pub end: NaiveDate,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RelativeStrengthCalculation {
     pub moving_average_period: usize,
     pub points: Vec<RelativeStrengthCalculationPoint>,

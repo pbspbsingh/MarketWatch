@@ -12,8 +12,9 @@ mod top_stock_screens;
 mod watchlists;
 
 pub(crate) use chart_relative_strength::{
-    ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationPoint,
-    calculate_relative_strength_line, calculate_relative_strength_trend,
+    ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationError,
+    RelativeStrengthCalculationPoint, calculate_relative_strength_line,
+    calculate_relative_strength_trend,
 };
 pub use daily_notes::DailyNote;
 pub use exchange::Exchange;

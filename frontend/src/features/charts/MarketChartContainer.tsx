@@ -42,6 +42,7 @@ interface MarketChartContainerProps {
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
   historyInteractionTracker?: ChartHistoryInteractionTracker;
+  includeRelativeStrength?: boolean;
 }
 
 const historyLoadThresholdBars = 25;
@@ -55,8 +56,9 @@ export function MarketChartContainer({
   onChartContext,
   onError,
   historyInteractionTracker,
+  includeRelativeStrength = false,
 }: MarketChartContainerProps) {
-  const requestKey = `${symbol}\0${interval}`;
+  const requestKey = `${symbol}\0${interval}\0${includeRelativeStrength ? "rs" : "plain"}`;
   const generationRef = useRef(0);
   const historyControllerRef = useRef<AbortController | null>(null);
   const handledHistoryTriggerRef = useRef(0);
@@ -96,7 +98,10 @@ export function MarketChartContainer({
     setLoadState({ key: requestKey, status: "loading" });
     onErrorRef.current?.(undefined);
 
-    void fetchMarketChartSnapshot(symbol, interval, controller.signal)
+    void fetchMarketChartSnapshot(symbol, interval, {
+      includeRelativeStrength,
+      signal: controller.signal,
+    })
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
         setSnapshot(snapshot);
@@ -121,7 +126,7 @@ export function MarketChartContainer({
       if (generationRef.current === generation) generationRef.current += 1;
       onErrorRef.current?.(undefined);
     };
-  }, [interval, requestKey, retryVersion, symbol]);
+  }, [includeRelativeStrength, interval, requestKey, retryVersion, symbol]);
 
   useEffect(() => {
     if (chartContext === null) return;
@@ -171,7 +176,10 @@ export function MarketChartContainer({
       interval,
       range.start,
       range.end,
-      controller.signal,
+      {
+        includeRelativeStrength,
+        signal: controller.signal,
+      },
     )
       .then((expanded) => {
         if (generationRef.current !== generation) return;
@@ -202,6 +210,7 @@ export function MarketChartContainer({
     };
   }, [
     historyTrigger,
+    includeRelativeStrength,
     interval,
     requestKey,
     snapshot,
