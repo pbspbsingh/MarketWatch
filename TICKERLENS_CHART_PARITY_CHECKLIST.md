@@ -71,13 +71,13 @@ Use this checklist for manual comparison while TradingView and Lightweight Chart
 - [ ] Top and bottom data requests/loading/errors are independent.
 - [ ] Daily shows SMA 10/20/50/100/200 using the approved colors.
 - [ ] Weekly shows EMA 10/20/40 using blue/purple/red.
-- [ ] Volume shows a yellow dotted average: 20 Daily, 5 Weekly.
+- [ ] Volume shows a yellow dotted average: 50 Daily, 10 Weekly.
 - [ ] Do not show a current-price horizontal line.
 - [ ] Do not show a custom top-left symbol/OHLC/return/volume/indicator legend.
 - [ ] Do not show custom crosshair-updated values; keep native axis labels.
 - [ ] Synchronize visible calendar dates in both directions.
 - [ ] Synchronize crosshair dates in both directions.
-- [ ] Persist identical candle width and right offset across ticker changes/reloads, separately for Daily and Weekly.
+- [ ] Persist identical candle width across ticker changes/reloads, separately for Daily and Weekly; do not persist horizontal offset.
 - [ ] Default the top overlay to RS Line versus the configured benchmark.
 - [ ] Toggle between RS Line and RS Trend from the header and persist the choice.
 - [ ] Constrain the RS overlay to the upper 30% of the top candle pane while allowing candle overlap.

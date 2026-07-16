@@ -1,13 +1,13 @@
 use crate::config::MarketConfig;
 use crate::models::chart::{MarketChartCandle, MarketChartInterval, aggregate_market_weeks};
 use crate::models::{
-    DailyCandle, average_daily_range_percent, average_volume, candle_relative_strength_trend_series,
+    ChartDateRange, DailyCandle, RelativeStrengthCalculationPoint, average_daily_range_percent,
+    average_volume, calculate_relative_strength_line, calculate_relative_strength_trend,
 };
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
-use chrono::{Datelike, Months, NaiveDate};
+use chrono::Months;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::warn;
 
@@ -55,7 +55,7 @@ pub struct RelativeStrengthSeries {
     comparison_symbol: String,
     interval: MarketChartInterval,
     moving_average_period: usize,
-    points: Vec<RelativeStrengthPoint>,
+    points: Vec<RelativeStrengthCalculationPoint>,
 }
 
 #[derive(Serialize)]
@@ -63,15 +63,6 @@ pub struct RelativeStrengthChart {
     candles: Vec<MarketChartCandle>,
     series: Vec<RelativeStrengthSeries>,
     trend: Option<RelativeStrengthSeries>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct RelativeStrengthPoint {
-    date: NaiveDate,
-    value: f64,
-    ticker_return_percent: Option<f64>,
-    comparison_return_percent: Option<f64>,
-    relative_return_percent: Option<f64>,
 }
 
 impl ChartService {
@@ -153,6 +144,7 @@ impl ChartService {
         } else {
             self.yahoo.daily_candles_for_year(selected_symbol).await?
         };
+        let displayed_range = latest_year_range(&selected_candles)?;
         let mut series = Vec::with_capacity(symbols.len());
         for symbol in symbols {
             if symbol != comparison_symbol {
@@ -161,13 +153,18 @@ impl ChartService {
                 } else {
                     self.yahoo.daily_candles_for_year(symbol).await?
                 };
-                series.push(calculate_relative_strength(
-                    symbol,
-                    comparison_symbol,
+                let calculation = calculate_relative_strength_line(
                     &candles,
                     &comparison,
                     interval,
-                )?);
+                    displayed_range,
+                )?;
+                series.push(relative_strength_series(
+                    symbol,
+                    comparison_symbol,
+                    interval,
+                    calculation,
+                ));
             }
         }
         let trend = if selected_symbol == &self.benchmark {
@@ -178,13 +175,14 @@ impl ChartService {
             } else {
                 self.yahoo.daily_candles_for_year(&self.benchmark).await?
             };
-            let trend = calculate_relative_strength_trend(
-                selected_symbol,
-                &self.benchmark,
+            let calculation = calculate_relative_strength_trend(
                 &selected_candles,
                 &benchmark,
                 interval,
-            );
+                complete_range(&selected_candles)?,
+            )?;
+            let trend =
+                relative_strength_series(selected_symbol, &self.benchmark, interval, calculation);
             (!trend.points.is_empty()).then_some(trend)
         };
         Ok(RelativeStrengthChart {
@@ -195,113 +193,47 @@ impl ChartService {
     }
 }
 
-fn calculate_relative_strength_trend(
+fn relative_strength_series(
     symbol: &str,
     comparison_symbol: &str,
-    ticker: &[DailyCandle],
-    comparison: &[DailyCandle],
     interval: MarketChartInterval,
+    calculation: crate::models::RelativeStrengthCalculation,
 ) -> RelativeStrengthSeries {
-    let points = candle_relative_strength_trend_series(ticker, comparison)
-        .into_iter()
-        .map(|(date, value)| RelativeStrengthPoint {
-            date,
-            value,
-            ticker_return_percent: None,
-            comparison_return_percent: None,
-            relative_return_percent: None,
-        })
-        .collect::<Vec<_>>();
-    let points = sample_trend_points(points, interval);
     RelativeStrengthSeries {
         symbol: symbol.to_owned(),
         comparison_symbol: comparison_symbol.to_owned(),
         interval,
-        moving_average_period: 5,
-        points,
+        moving_average_period: calculation.moving_average_period,
+        points: calculation.points,
     }
 }
 
-fn sample_trend_points(
-    points: Vec<RelativeStrengthPoint>,
-    interval: MarketChartInterval,
-) -> Vec<RelativeStrengthPoint> {
-    if matches!(interval, MarketChartInterval::Daily) {
-        return points;
-    }
-    points
-        .into_iter()
-        .map(|point| {
-            let week = point.date.iso_week();
-            ((week.year(), week.week()), point)
-        })
-        .collect::<BTreeMap<_, _>>()
-        .into_values()
-        .collect()
-}
-
-fn calculate_relative_strength(
-    symbol: &str,
-    comparison_symbol: &str,
-    ticker: &[DailyCandle],
-    comparison: &[DailyCandle],
-    interval: MarketChartInterval,
-) -> anyhow::Result<RelativeStrengthSeries> {
-    let ticker = closes_by_period(&ticker, interval);
-    let comparison = closes_by_period(&comparison, interval);
-    let latest_common_date = ticker
-        .iter()
-        .filter(|(period, _)| comparison.contains_key(period))
-        .map(|(_, (date, _))| *date)
-        .max()
-        .ok_or_else(|| anyhow::anyhow!("ticker and comparison have no overlapping prices"))?;
-    let start = latest_common_date
+fn latest_year_range(candles: &[DailyCandle]) -> anyhow::Result<ChartDateRange> {
+    let latest_date = candles
+        .last()
+        .map(|candle| candle.market_date)
+        .ok_or_else(|| anyhow::anyhow!("selected ticker has no candle data"))?;
+    let start = latest_date
         .checked_sub_months(Months::new(12))
         .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?;
-    let aligned = ticker
-        .iter()
-        .filter_map(|(period, (date, ticker_close))| {
-            let (_, comparison_close) = comparison.get(period)?;
-            (*date >= start && *ticker_close > 0.0 && *comparison_close > 0.0).then_some((
-                *date,
-                *ticker_close,
-                *comparison_close,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let geometric_mean = (!aligned.is_empty())
-        .then(|| {
-            (aligned
-                .iter()
-                .map(|(_, ticker_close, comparison_close)| (ticker_close / comparison_close).ln())
-                .sum::<f64>()
-                / aligned.len() as f64)
-                .exp()
-        })
-        .filter(|mean| mean.is_finite() && *mean > 0.0)
-        .ok_or_else(|| anyhow::anyhow!("relative-strength range has no valid prices"))?;
-    let normalized = aligned
-        .iter()
-        .map(|(date, ticker_close, comparison_close)| {
-            (
-                *date,
-                ticker_close / comparison_close / geometric_mean * 100.0,
-            )
-        })
-        .collect::<Vec<_>>();
-    let moving_average_period = match interval {
-        MarketChartInterval::Daily => 5,
-        MarketChartInterval::Weekly => 3,
-    };
-    let points = relative_strength_points(&aligned, &normalized, moving_average_period);
-
-    Ok(RelativeStrengthSeries {
-        symbol: symbol.to_owned(),
-        comparison_symbol: comparison_symbol.to_owned(),
-        interval,
-        moving_average_period,
-        points,
+    Ok(ChartDateRange {
+        start,
+        end: latest_date
+            .succ_opt()
+            .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?,
     })
+}
+
+fn complete_range(candles: &[DailyCandle]) -> anyhow::Result<ChartDateRange> {
+    let start = candles
+        .first()
+        .map(|candle| candle.market_date)
+        .ok_or_else(|| anyhow::anyhow!("selected ticker has no candle data"))?;
+    let end = candles
+        .last()
+        .and_then(|candle| candle.market_date.succ_opt())
+        .ok_or_else(|| anyhow::anyhow!("invalid relative-strength date range"))?;
+    Ok(ChartDateRange { start, end })
 }
 
 fn chart_candles(
@@ -324,55 +256,6 @@ fn chart_candles(
         MarketChartInterval::Daily => Ok(candles),
         MarketChartInterval::Weekly => Ok(aggregate_market_weeks(&candles)?),
     }
-}
-
-fn closes_by_period(
-    candles: &[DailyCandle],
-    interval: MarketChartInterval,
-) -> BTreeMap<(i32, u32), (NaiveDate, f64)> {
-    candles
-        .iter()
-        .map(|candle| {
-            let period = match interval {
-                MarketChartInterval::Daily => {
-                    (candle.market_date.year(), candle.market_date.ordinal())
-                }
-                MarketChartInterval::Weekly => {
-                    let week = candle.market_date.iso_week();
-                    (week.year(), week.week())
-                }
-            };
-            (period, (candle.market_date, candle.close))
-        })
-        .collect()
-}
-
-fn relative_strength_points(
-    aligned: &[(NaiveDate, f64, f64)],
-    normalized: &[(NaiveDate, f64)],
-    period: usize,
-) -> Vec<RelativeStrengthPoint> {
-    (period..aligned.len())
-        .map(|index| {
-            let (date, ticker_close, comparison_close) = aligned[index];
-            let (_, previous_ticker_close, previous_comparison_close) = aligned[index - period];
-            let ticker_return = ticker_close / previous_ticker_close - 1.0;
-            let comparison_return = comparison_close / previous_comparison_close - 1.0;
-            RelativeStrengthPoint {
-                date,
-                value: normalized[index + 1 - period..=index]
-                    .iter()
-                    .map(|(_, value)| value)
-                    .sum::<f64>()
-                    / period as f64,
-                ticker_return_percent: Some(ticker_return * 100.0),
-                comparison_return_percent: Some(comparison_return * 100.0),
-                relative_return_percent: Some(
-                    ((1.0 + ticker_return) / (1.0 + comparison_return) - 1.0) * 100.0,
-                ),
-            }
-        })
-        .collect()
 }
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
@@ -401,7 +284,7 @@ fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Days;
+    use chrono::{Days, NaiveDate};
 
     fn candle(day: u32, high: f64, low: f64, close: f64, volume: i64) -> DailyCandle {
         DailyCandle {
@@ -467,27 +350,5 @@ mod tests {
         assert_eq!(weekly[0].low, 98.0);
         assert_eq!(weekly[0].close, 103.0);
         assert_eq!(weekly[0].volume, 300);
-    }
-
-    #[test]
-    fn weekly_trend_uses_the_last_daily_score() {
-        let point = |date: NaiveDate, value| RelativeStrengthPoint {
-            date,
-            value,
-            ticker_return_percent: None,
-            comparison_return_percent: None,
-            relative_return_percent: None,
-        };
-        let points = vec![
-            point(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), 1.0),
-            point(NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(), 2.0),
-            point(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), 3.0),
-        ];
-
-        let weekly = sample_trend_points(points, MarketChartInterval::Weekly);
-
-        assert_eq!(weekly.len(), 2);
-        assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
-        assert_eq!(weekly[0].value, 2.0);
     }
 }

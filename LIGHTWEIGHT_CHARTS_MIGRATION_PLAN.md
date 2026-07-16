@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: phase 3 UI integration reviewed; awaiting manual drag verification and commit approval.
+Current checkpoint: task 4.1 implemented and reviewed; awaiting commit approval. RS Line and RS Trend calculations now support bounded historical output while preserving the latest-12-month RS Line normalization anchor.
 
 ## Objective
 
@@ -19,7 +19,7 @@ The existing TradingView implementation remains available on the feature branch 
 - Top chart displays the selected company ticker.
 - Bottom chart displays the configured benchmark or selected theme ETF.
 - Preserve Daily/Weekly switching, split resizing, symbol switching, theme selection, current styling, loading/error handling, and external TradingView links.
-- Preserve candle width and right offset across ticker changes and application restarts.
+- Preserve candle width across ticker changes and application restarts. Do not persist horizontal position/right offset because symbols have different history lengths.
 - Synchronize time range and crosshair between the top and bottom charts.
 - Daily overlays: SMA 10, 20, 50, 100, and 200.
 - Weekly overlays: EMA 10, 20, and 40.
@@ -152,10 +152,7 @@ Approximately 500 candles support one visible trading year plus the 199 precedin
 
 ## Chart state and synchronization
 
-Persist separate Daily and Weekly viewport state in `localStorage`:
-
-- `barSpacing`: exact candle width in pixels.
-- `rightOffset`/scroll position.
+Persist only Daily and Weekly `barSpacing` (exact candle width in pixels) in `localStorage`. Keep the current visible logical range stable during in-place history updates, but do not persist horizontal position/right offset across symbols or reloads.
 
 Do not key viewport state by ticker; the purpose is to preserve the same visual scale while scanning symbols. Validate and clamp stored values before applying them.
 
@@ -280,7 +277,7 @@ Yahoo subscriptions have a hard cap of 100 symbols.
 
 ## Atomic implementation sequence
 
-Perform tasks strictly in order. Work on only one task at a time. Each code task is one focused commit unless review shows two adjacent tasks are inseparable. Every task must leave the branch buildable; TradingView remains the default until cutover.
+Work on only one task at a time, following this sequence unless an explicit user-approved deferral is recorded in the checkpoint. Each code task is one focused commit unless review shows two adjacent tasks are inseparable. Every task must leave the branch buildable; TradingView remains the default until cutover.
 
 After each task: review the diff, run proportional format/type/build checks, report the result, and wait for explicit user approval before committing. After an approved commit, start the next task without requiring separate confirmation. Do not add automated UI, component, endpoint, or integration tests. Add tests only for pure deterministic calculations such as aggregation, indicators, RS, and candle merging; the user performs visual UI verification.
 
@@ -311,6 +308,15 @@ Progress:
 - [x] 3.4 — Validated Daily/Weekly viewport persistence.
 - [x] 3.5 — TickerLens controls, benchmark switching, and external links preserved.
 - [x] 3.6 — Independent chart loading, retry, inline errors, and source-specific toasts.
+- [x] 4.1 — Range-aware RS Line and RS Trend calculations with fixed recent normalization.
+- [x] 5.1 — Non-persisting Yahoo historical-range fetch.
+- [x] 5.2 — Date-keyed persisted/ephemeral merge with canonical precedence.
+- [ ] 5.3 — Expanded candles and SMA/EMA/volume recomputation complete; RS range recomputation remains pending phase 4.
+- [x] 5.4 — Bounded provider-neutral history contract and availability flags.
+- [x] 5.5 — Bounded 50% backward range expansion.
+- [x] 5.6 — User-scroll-only TickerLens history trigger.
+- [x] 5.7 — Terminal/no-new-candle handling without `setData()`.
+- [x] 5.8 — Date-anchored logical viewport preservation and stale-response rejection.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -353,7 +359,7 @@ Progress:
 | 3.1 | Render independent top and bottom `MarketChartContainer` instances inside the existing split layout. | Ticker and benchmark/theme ETF load independently; split resizing/persistence remains unchanged. |
 | 3.2 | Synchronize visible ranges by calendar date with a reentrancy guard. | Pan/zoom in either chart aligns dates in the other; missing/short history does not create feedback loops. |
 | 3.3 | Synchronize crosshairs by date and target candle price. | Native axis labels align; missing target dates clear the peer crosshair; no custom values are displayed. |
-| 3.4 | Persist validated Daily and Weekly `barSpacing` and right offset. | Candle width survives ticker changes and application reload; D/W states remain independent. |
+| 3.4 | Persist validated Daily and Weekly `barSpacing` only. | Candle width survives ticker changes and application reload; D/W states remain independent; short-history symbols do not inherit incompatible offsets. |
 | 3.5 | Preserve all TickerLens header behavior and external links; strip exchange prefixes in the client API adapter. | Yahoo receives bare symbols; benchmark/theme switching, D/W, details, and external TradingView links match the parity checklist. |
 | 3.6 | Complete independent failure/loading UX and toast handling. | Either chart remains usable when its peer fails; retries and ticker changes clear only relevant errors. |
 
@@ -378,7 +384,7 @@ Progress:
 | 5.5 | Define bounded backward range expansion over the complete snapshot. | Each request expands the date span by 50% without exceeding the API bound. |
 | 5.6 | Trigger TickerLens expansion only from an explicit user pan/scroll near the left edge. | Mount, resize, and right-edge movement never request lazy history; synchronized charts expand independently. |
 | 5.7 | Stop backward loading when the provider reports exhaustion or returns no new candle dates. | Duplicate/stale requests are suppressed and a no-op response never calls `setData()`. |
-| 5.8 | Replace all returned series while preserving visible date range, bar spacing, and right offset. | No viewport jump; stale expanded snapshots cannot cross symbol/interval generations. |
+| 5.8 | Replace all returned series while preserving the date-anchored visible logical range and bar spacing. | No viewport jump or zoom change; stale expanded snapshots cannot cross symbol/interval generations. |
 | 5.9 | Extend the Study service/API with bounded start/end ranges and bidirectional availability for both symbols. | Expansions remain non-persisted, reload both symbols together, and never cross the latest completed session. |
 | 5.10 | Add a Study history controller that requests backward or forward expansion near either visible edge. | Directional requests are deduplicated/abortable and stop independently when the corresponding availability flag is false. |
 | 5.11 | Replace Study chart internals with two shared `MarketChart` instances and shared date synchronization. | Existing selected-date marker, layout toggle, visibility toggle, crosshair sync, and initial viewport remain manually equivalent. |
