@@ -62,6 +62,7 @@ import {
 
 interface MarketChartProps {
   data: MarketChartData;
+  tradingViewSymbol?: string;
   className?: string;
   ariaLabel?: string;
   initialViewport?: ChartViewport;
@@ -83,6 +84,7 @@ function watermarkLines(symbol: string) {
 
 export function MarketChart({
   data,
+  tradingViewSymbol,
   className,
   ariaLabel,
   initialViewport,
@@ -390,6 +392,9 @@ export function MarketChart({
       ref={hostRef}
       className={className}
       ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
+      attributionUrl={tradingViewSymbol === undefined
+        ? undefined
+        : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}
       onChartReady={initializeSeries}
       onChartDestroy={destroyChart}
     />

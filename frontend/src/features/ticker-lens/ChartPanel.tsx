@@ -268,6 +268,8 @@ export function ChartPanel({
               <SplitLightweightCharts
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+                topTradingViewSymbol={summary.tradingview_symbol}
+                bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
                 topPending={activeSummary === undefined && error === undefined}
                 relativeStrengthMode={relativeStrengthMode}

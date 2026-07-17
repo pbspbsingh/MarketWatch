@@ -39,6 +39,8 @@ import {
 interface SplitLightweightChartsProps {
   topSymbol: string;
   bottomSymbol: string;
+  topTradingViewSymbol: string;
+  bottomTradingViewSymbol: string;
   interval: "D" | "W";
   topPending?: boolean;
   relativeStrengthMode: RelativeStrengthMode;
@@ -72,6 +74,8 @@ interface SessionDeltaState {
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
+  topTradingViewSymbol,
+  bottomTradingViewSymbol,
   interval,
   topPending = false,
   relativeStrengthMode,
@@ -278,6 +282,7 @@ export default function SplitLightweightCharts({
           >
             <MarketChartContainer
               symbol={topSymbol}
+              tradingViewSymbol={topTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
@@ -306,6 +311,7 @@ export default function SplitLightweightCharts({
           >
             <MarketChartContainer
               symbol={bottomSymbol}
+              tradingViewSymbol={bottomTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}

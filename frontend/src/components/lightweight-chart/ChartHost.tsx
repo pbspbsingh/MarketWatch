@@ -21,18 +21,28 @@ interface ChartHostProps {
   className?: string;
   ariaLabel?: string;
   options?: DeepPartial<ChartOptions>;
+  attributionUrl?: string;
   onChartReady?: (chart: IChartApi) => void;
   onChartDestroy?: (chart: IChartApi) => void;
 }
 
 export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
-  function ChartHost({ className, ariaLabel, options, onChartReady, onChartDestroy }, ref) {
+  function ChartHost({
+    className,
+    ariaLabel,
+    options,
+    attributionUrl,
+    onChartReady,
+    onChartDestroy,
+  }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
     const onChartReadyRef = useRef(onChartReady);
     const onChartDestroyRef = useRef(onChartDestroy);
+    const attributionUrlRef = useRef(attributionUrl);
     onChartReadyRef.current = onChartReady;
     onChartDestroyRef.current = onChartDestroy;
+    attributionUrlRef.current = attributionUrl;
 
     useImperativeHandle(ref, () => ({
       getChart: () => chartRef.current,
@@ -43,10 +53,16 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       if (container === null) return;
 
       const chart = createChart(container, baseChartOptions);
+      const observer = new MutationObserver(() => {
+        updateAttributionUrl(container, attributionUrlRef.current);
+      });
+      observer.observe(container, { childList: true, subtree: true });
+      updateAttributionUrl(container, attributionUrlRef.current);
       chartRef.current = chart;
       onChartReadyRef.current?.(chart);
 
       return () => {
+        observer.disconnect();
         try {
           onChartDestroyRef.current?.(chart);
         } finally {
@@ -60,6 +76,11 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       if (options !== undefined) chartRef.current?.applyOptions(options);
     }, [options]);
 
+    useEffect(() => {
+      const container = containerRef.current;
+      if (container !== null) updateAttributionUrl(container, attributionUrl);
+    }, [attributionUrl]);
+
     return (
       <div
         ref={containerRef}
@@ -70,3 +91,11 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     );
   },
 );
+
+function updateAttributionUrl(container: HTMLElement, url: string | undefined) {
+  if (url === undefined) return;
+  const logo = container.querySelector<HTMLAnchorElement>("#tv-attr-logo");
+  if (logo === null) return;
+  logo.href = url;
+  logo.rel = "noopener noreferrer";
+}

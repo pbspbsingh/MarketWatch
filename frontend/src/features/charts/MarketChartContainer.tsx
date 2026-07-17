@@ -44,6 +44,7 @@ export type MarketChartLoadStatus = "loading" | "ready" | "error";
 
 interface MarketChartContainerProps {
   symbol: string;
+  tradingViewSymbol?: string;
   interval: MarketChartInterval;
   className?: string;
   initialViewport?: ChartViewport;
@@ -66,6 +67,7 @@ const chartInteractionWindowMs = 1_000;
 
 export function MarketChartContainer({
   symbol,
+  tradingViewSymbol,
   interval,
   className,
   initialViewport,
@@ -318,6 +320,7 @@ export function MarketChartContainer({
         <MarketChart
           key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
+          tradingViewSymbol={tradingViewSymbol}
           initialViewport={initialViewport}
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
