@@ -18,7 +18,7 @@ export const chartColors = {
   volumeAverage: "#f6c309",
 } as const;
 
-const defaultChartBarSpacing = 6;
+export const defaultChartBarSpacing = 6;
 const synchronizedPriceScaleMinimumWidth = 64;
 
 export const dailySmaColors = {

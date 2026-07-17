@@ -21,6 +21,7 @@ import {
   type ChartSyncTarget,
   type ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
+import { defaultChartBarSpacing } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import type { RelativeStrengthMode } from "./types";
 
@@ -104,8 +105,12 @@ export default function SplitLightweightCharts({
   const resetChartView = useCallback(() => {
     setMenuPosition(null);
     const source = topContext ?? bottomContext;
-    source?.chart.timeScale().fitContent();
-  }, [bottomContext, topContext]);
+    if (source === null) return;
+    const viewport = { barSpacing: defaultChartBarSpacing };
+    saveViewport(viewport);
+    source.chart.timeScale().applyOptions(viewport);
+    source.chart.timeScale().scrollToPosition(0, false);
+  }, [bottomContext, saveViewport, topContext]);
 
   useEffect(() => {
     if (topContext === null || bottomContext === null) return;
