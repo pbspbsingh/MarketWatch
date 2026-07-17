@@ -17,7 +17,7 @@ const MAX_ACTIVE_SYMBOLS: usize = 100;
 const UPDATE_BUFFER_SIZE: usize = 256;
 const PRICING_BUFFER_SIZE: usize = 256;
 const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
-const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLiveCandle {
@@ -107,6 +107,7 @@ struct YahooLiveActor {
     cache: HashMap<String, CachedCandle>,
     pre_market_cache: HashMap<String, CachedCandle>,
     post_market_cache: HashMap<String, YahooLivePrice>,
+    latest_frame_at: HashMap<String, DateTime<Utc>>,
     live_enabled: bool,
     lru_clock: u64,
 }
@@ -147,6 +148,7 @@ impl YahooLiveHandle {
                 cache: HashMap::new(),
                 pre_market_cache: HashMap::new(),
                 post_market_cache: HashMap::new(),
+                latest_frame_at: HashMap::new(),
                 live_enabled,
                 lru_clock: 0,
             }
@@ -402,6 +404,7 @@ impl YahooLiveActor {
             self.cache.clear();
             self.pre_market_cache.clear();
             self.post_market_cache.clear();
+            self.latest_frame_at.clear();
             self.idle_subscriptions.clear();
             self.publish_desired();
             return;
@@ -503,20 +506,46 @@ impl YahooLiveActor {
         else {
             return;
         };
-        let session = self.schedule.session(timestamp);
-        let pre_market = update.market_hours == Some(0) && session == MarketSession::PreMarket;
-        if update.market_hours == Some(2) && session == MarketSession::PostMarket {
-            if let Some(price) = update.price.and_then(|price| valid_price(price.into())) {
-                self.publish_post_market(YahooLivePrice {
-                    symbol,
-                    market_date: self.schedule.market_date(timestamp),
-                    price,
-                    updated_at: timestamp,
-                });
+        let Some(session) =
+            valid_frame_session(&self.schedule, update.market_hours, timestamp, Utc::now())
+        else {
+            return;
+        };
+        let pre_market = session == MarketSession::PreMarket;
+        if session == MarketSession::PostMarket {
+            let Some(price) = update.price.and_then(|price| valid_price(price.into())) else {
+                return;
+            };
+            if !accept_frame_timestamp(&mut self.latest_frame_at, &symbol, timestamp) {
+                return;
             }
+            self.publish_post_market(YahooLivePrice {
+                symbol,
+                market_date: self.schedule.market_date(timestamp),
+                price,
+                updated_at: timestamp,
+            });
             return;
         }
-        if !(pre_market || update.market_hours == Some(1) && session == MarketSession::Regular) {
+        if !(pre_market || session == MarketSession::Regular) {
+            return;
+        }
+        let has_candle_data = update
+            .price
+            .is_some_and(|value| valid_price(value.into()).is_some())
+            || update
+                .open_price
+                .is_some_and(|value| valid_price(value.into()).is_some())
+            || update
+                .day_high
+                .is_some_and(|value| valid_price(value.into()).is_some())
+            || update
+                .day_low
+                .is_some_and(|value| valid_price(value.into()).is_some())
+            || update.day_volume.is_some_and(|volume| volume >= 0);
+        if !has_candle_data
+            || !accept_frame_timestamp(&mut self.latest_frame_at, &symbol, timestamp)
+        {
             return;
         }
         let date = self.schedule.market_date(timestamp);
@@ -629,12 +658,47 @@ impl YahooLiveActor {
             .retain(|symbol, _| watched.contains(symbol));
         self.post_market_cache
             .retain(|symbol, _| watched.contains(symbol));
+        self.latest_frame_at
+            .retain(|symbol, _| watched.contains(symbol));
     }
 
     fn next_touch(&mut self) -> u64 {
         self.lru_clock = self.lru_clock.wrapping_add(1);
         self.lru_clock
     }
+}
+
+fn valid_frame_session(
+    schedule: &MarketSchedule,
+    market_hours: Option<i32>,
+    timestamp: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Option<MarketSession> {
+    let frame_session = match market_hours? {
+        0 => MarketSession::PreMarket,
+        1 => MarketSession::Regular,
+        2 => MarketSession::PostMarket,
+        _ => return None,
+    };
+    (schedule.market_date(timestamp) == schedule.market_date(now)
+        && schedule.session(timestamp) == frame_session
+        && schedule.session(now) == frame_session)
+        .then_some(frame_session)
+}
+
+fn accept_frame_timestamp(
+    latest_frame_at: &mut HashMap<String, DateTime<Utc>>,
+    symbol: &str,
+    timestamp: DateTime<Utc>,
+) -> bool {
+    if latest_frame_at
+        .get(symbol)
+        .is_some_and(|latest| timestamp < *latest)
+    {
+        return false;
+    }
+    latest_frame_at.insert(symbol.to_owned(), timestamp);
+    true
 }
 
 impl CachedCandle {
@@ -758,12 +822,76 @@ fn normalize_symbol(symbol: &str) -> Result<String, YahooLiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MarketConfig;
+    use chrono::NaiveTime;
 
     #[test]
     fn normalizes_supported_yahoo_symbols() {
         assert_eq!(normalize_symbol(" brk-b ").unwrap(), "BRK-B");
         assert_eq!(normalize_symbol("^gspc").unwrap(), "^GSPC");
         assert!(normalize_symbol("AAPL,MSFT").is_err());
+    }
+
+    #[test]
+    fn rejects_frames_outside_the_current_market_session() {
+        let schedule = MarketSchedule::new(
+            &MarketConfig {
+                timezone: "America/Los_Angeles".to_owned(),
+                benchmark: "QQQ".to_owned(),
+                market_hours: (
+                    NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
+                    NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
+                ),
+                adr_sessions: 20,
+                average_volume_sessions: 50,
+            },
+            Duration::ZERO,
+        )
+        .unwrap();
+        let timestamp = |value| DateTime::parse_from_rfc3339(value).unwrap().to_utc();
+        let pre_market_now = timestamp("2026-07-16T13:00:00Z");
+
+        assert_eq!(
+            valid_frame_session(&schedule, Some(0), pre_market_now, pre_market_now),
+            Some(MarketSession::PreMarket),
+        );
+        assert_eq!(
+            valid_frame_session(
+                &schedule,
+                Some(1),
+                timestamp("2026-07-15T20:00:00Z"),
+                pre_market_now,
+            ),
+            None,
+        );
+        assert_eq!(
+            valid_frame_session(
+                &schedule,
+                Some(1),
+                timestamp("2026-07-16T20:00:00Z"),
+                timestamp("2026-07-16T22:00:00Z"),
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn rejects_frames_older_than_the_symbol_high_water_mark() {
+        let first = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
+        let mut latest = HashMap::new();
+
+        assert!(accept_frame_timestamp(&mut latest, "AAPL", first));
+        assert!(accept_frame_timestamp(&mut latest, "AAPL", first));
+        assert!(!accept_frame_timestamp(
+            &mut latest,
+            "AAPL",
+            first - chrono::TimeDelta::milliseconds(1),
+        ));
+        assert!(accept_frame_timestamp(
+            &mut latest,
+            "AAPL",
+            first + chrono::TimeDelta::milliseconds(1),
+        ));
     }
 
     #[test]
