@@ -120,6 +120,7 @@ async fn run_connection(
                 synchronize_subscriptions(&mut socket, &mut subscribed, symbols).await?;
                 if subscribed.is_empty() {
                     socket.close(None).await?;
+                    info!("Yahoo live stream closed after final subscription was removed");
                     return Ok(());
                 }
             }
@@ -166,9 +167,15 @@ where
     let added = sorted_symbols(&desired.difference(subscribed).cloned().collect());
     if !removed.is_empty() {
         send_command(socket, None, Some(&removed)).await?;
+        for symbol in &removed {
+            info!(symbol, "unsubscribed from Yahoo live stream");
+        }
     }
     if !added.is_empty() {
         send_command(socket, Some(&added), None).await?;
+        for symbol in &added {
+            info!(symbol, "subscribed to Yahoo live stream");
+        }
     }
     *subscribed = desired;
     Ok(())

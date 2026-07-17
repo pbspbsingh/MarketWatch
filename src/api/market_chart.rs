@@ -23,7 +23,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 use tokio::time::{Duration, Instant, MissedTickBehavior};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const LIVE_CLIENT_SYMBOL_LIMIT: usize = 4;
 const LIVE_EVENT_BUFFER_SIZE: usize = 32;
@@ -283,7 +283,7 @@ async fn handle_live_chart_socket(
                     }
                 }
                 Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
-                    info!("live chart WebSocket closed");
+                    debug!("live chart WebSocket closed");
                     return;
                 }
                 Some(Ok(_)) => {}

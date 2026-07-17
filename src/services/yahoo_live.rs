@@ -384,15 +384,12 @@ impl YahooLiveActor {
     }
 
     fn remove_subscription(&mut self, symbol: &str) {
-        let became_idle = release_subscription(
+        release_subscription(
             &mut self.subscriptions,
             &mut self.idle_subscriptions,
             symbol,
             Instant::now() + IDLE_GRACE_PERIOD,
         );
-        if became_idle && let Some(task) = self.seed_tasks.remove(symbol) {
-            task.abort();
-        }
     }
 
     fn publish_desired(&self) {
@@ -698,6 +695,13 @@ impl YahooLiveActor {
         self.latest_frame_at
             .retain(|symbol, _| watched.contains(symbol));
         self.streams.retain(|symbol, _| watched.contains(symbol));
+        self.seed_tasks.retain(|symbol, task| {
+            let watched = watched.contains(symbol);
+            if !watched {
+                task.abort();
+            }
+            watched
+        });
     }
 
     fn next_touch(&mut self) -> u64 {
@@ -834,17 +838,16 @@ fn release_subscription(
     idle_subscriptions: &mut HashMap<String, Instant>,
     symbol: &str,
     expiry: Instant,
-) -> bool {
+) {
     let Some(count) = subscriptions.get_mut(symbol) else {
-        return false;
+        return;
     };
     if *count > 1 {
         *count -= 1;
-        return false;
+        return;
     }
     subscriptions.remove(symbol);
     idle_subscriptions.insert(symbol.to_owned(), expiry);
-    true
 }
 
 fn normalize_symbol(symbol: &str) -> Result<String, YahooLiveError> {
