@@ -280,11 +280,33 @@ fn decode_uploaded_image(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotes
     match format {
         image::ImageFormat::Jpeg => decode_image(bytes, format, "JPEG", MAX_INPUT_IMAGE_BYTES),
         image::ImageFormat::Png => decode_image(bytes, format, "PNG", MAX_INPUT_IMAGE_BYTES),
-        image::ImageFormat::WebP => decode_image(bytes, format, "WebP", MAX_INPUT_IMAGE_BYTES),
+        image::ImageFormat::WebP => decode_webp(bytes),
         _ => Err(DailyNotesError::Validation(
             "image must be JPEG, PNG, or WebP".to_owned(),
         )),
     }
+}
+
+fn decode_webp(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotesError> {
+    if bytes.is_empty() || bytes.len() > MAX_INPUT_IMAGE_BYTES {
+        return Err(DailyNotesError::Validation(
+            "image must be a non-empty WebP within the size limit".to_owned(),
+        ));
+    }
+    let features = webp::BitstreamFeatures::new(bytes)
+        .ok_or_else(|| DailyNotesError::Validation("image must be valid WebP".to_owned()))?;
+    let decoded_bytes = u64::from(features.width())
+        .checked_mul(u64::from(features.height()))
+        .and_then(|pixels| pixels.checked_mul(if features.has_alpha() { 4 } else { 3 }));
+    if decoded_bytes.is_none_or(|bytes| bytes > MAX_IMAGE_DECODE_BYTES) {
+        return Err(DailyNotesError::Validation(
+            "image must be valid WebP".to_owned(),
+        ));
+    }
+    webp::Decoder::new(bytes)
+        .decode()
+        .map(|image| image.to_image())
+        .ok_or_else(|| DailyNotesError::Validation("image must be valid WebP".to_owned()))
 }
 
 fn decode_png(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotesError> {
@@ -411,6 +433,12 @@ mod tests {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
     }
 
+    fn webp(pixel: [u8; 4]) -> Vec<u8> {
+        webp::Encoder::from_rgba(&pixel, 1, 1)
+            .encode_lossless()
+            .to_vec()
+    }
+
     #[test]
     fn extracts_first_h1_title() {
         assert_eq!(
@@ -528,14 +556,6 @@ mod tests {
     async fn validates_and_isolates_image_updates() {
         use image::ImageEncoder;
 
-        fn webp(pixel: [u8; 4]) -> Vec<u8> {
-            let mut bytes = Vec::new();
-            image::codecs::webp::WebPEncoder::new_lossless(&mut bytes)
-                .write_image(&pixel, 1, 1, image::ExtendedColorType::Rgba8)
-                .unwrap();
-            bytes
-        }
-
         fn png(pixel: [u8; 4]) -> Vec<u8> {
             let mut bytes = Vec::new();
             let pixels = [pixel, pixel].concat();
@@ -561,7 +581,7 @@ mod tests {
             image::ImageFormat::WebP
         );
         assert_eq!(
-            *image::load_from_memory(&stored)
+            *decode_uploaded_image(&stored)
                 .unwrap()
                 .into_rgba8()
                 .get_pixel(0, 0),
@@ -609,7 +629,7 @@ mod tests {
             .await
             .unwrap();
         let stored = service.image(uploaded.id).await.unwrap();
-        let cropped = image::load_from_memory(&stored.bytes).unwrap();
+        let cropped = decode_uploaded_image(&stored.bytes).unwrap();
         assert_eq!((cropped.width(), cropped.height()), (2, 2));
         assert!(matches!(
             service
@@ -629,17 +649,12 @@ mod tests {
 
     #[tokio::test]
     async fn copies_cross_note_images_and_rewrites_markdown() {
-        use image::ImageEncoder;
-
         let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
         let source_date = date("2026-07-02");
         let target_date = date("2026-07-03");
         service.create(source_date).await.unwrap();
         let target = service.create(target_date).await.unwrap();
-        let mut webp = Vec::new();
-        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
-            .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
-            .unwrap();
+        let webp = webp([255, 0, 0, 255]);
         let source = service.upload_image(source_date, &webp).await.unwrap();
         let stored_source = service.image(source.id).await.unwrap().bytes;
 
