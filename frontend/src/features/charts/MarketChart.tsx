@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   CandlestickSeries,
   createTextWatermark,
@@ -30,6 +30,7 @@ import {
 import {
   candleSeriesOptions,
   chartRightOffsetPixels,
+  defaultPriceScaleMargins,
   indicatorSeriesOptions,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
@@ -66,6 +67,7 @@ interface MarketChartProps {
   className?: string;
   ariaLabel?: string;
   initialViewport?: ChartViewport;
+  priceScaleBottomMargin?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   relativeStrengthMode?: RelativeStrengthMode;
@@ -88,6 +90,7 @@ export function MarketChart({
   className,
   ariaLabel,
   initialViewport,
+  priceScaleBottomMargin,
   onChartContext,
   relativeStrength,
   relativeStrengthMode,
@@ -116,6 +119,17 @@ export function MarketChart({
   symbolRef.current = data.symbol;
   initialViewportRef.current = initialViewport;
   onChartContextRef.current = onChartContext;
+  const chartOptions = useMemo(() => priceScaleBottomMargin === undefined
+    ? undefined
+    : {
+      rightPriceScale: {
+        scaleMargins: {
+          top: defaultPriceScaleMargins.top,
+          bottom: priceScaleBottomMargin,
+        },
+      },
+    },
+  [priceScaleBottomMargin]);
 
   const initializeSeries = useCallback((chart: IChartApi) => {
     chartDisposedRef.current = false;
@@ -392,6 +406,7 @@ export function MarketChart({
       ref={hostRef}
       className={className}
       ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
+      options={chartOptions}
       attributionUrl={tradingViewSymbol === undefined
         ? undefined
         : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}

@@ -26,6 +26,7 @@ import {
 import {
   chartRightOffsetPixels,
   defaultChartBarSpacing,
+  overlappingPriceScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import type { RelativeStrengthMode } from "./types";
@@ -296,6 +297,7 @@ export default function SplitLightweightCharts({
               tradingViewSymbol={topTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}
+              priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
               historyInteractionTracker={historyInteractionTrackerRef.current}
               relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthMode={relativeStrengthMode}
@@ -327,6 +329,7 @@ export default function SplitLightweightCharts({
               tradingViewSymbol={bottomTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}
+              priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
               historyInteractionTracker={historyInteractionTrackerRef.current}
               showLoadingOverlay={false}
               refreshCandlesVersion={bottomRefreshVersion}

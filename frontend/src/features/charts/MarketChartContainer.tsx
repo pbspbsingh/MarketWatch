@@ -48,6 +48,7 @@ interface MarketChartContainerProps {
   interval: MarketChartInterval;
   className?: string;
   initialViewport?: ChartViewport;
+  priceScaleBottomMargin?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
   historyInteractionTracker?: ChartHistoryInteractionTracker;
@@ -71,6 +72,7 @@ export function MarketChartContainer({
   interval,
   className,
   initialViewport,
+  priceScaleBottomMargin,
   onChartContext,
   onError,
   historyInteractionTracker,
@@ -322,6 +324,7 @@ export function MarketChartContainer({
           data={snapshot}
           tradingViewSymbol={tradingViewSymbol}
           initialViewport={initialViewport}
+          priceScaleBottomMargin={priceScaleBottomMargin}
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
           relativeStrengthMode={relativeStrengthMode}

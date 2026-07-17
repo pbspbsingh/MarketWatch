@@ -17,6 +17,10 @@ import {
 } from "lightweight-charts";
 import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
+import {
+  overlappingPriceScaleMargins,
+  volumeScaleMargins,
+} from "../../components/lightweight-chart/chartOptions";
 
 const movingAverages = [
   { period: 10, color: "#3179f5" },
@@ -69,7 +73,7 @@ export function StudyCharts({
           vertLines: { color: "#20262e" },
           horzLines: { color: "#20262e" },
         },
-        rightPriceScale: { borderColor: "#343b45", scaleMargins: { top: 0.08, bottom: 0.25 } },
+        rightPriceScale: { borderColor: "#343b45", scaleMargins: overlappingPriceScaleMargins },
         timeScale: { borderColor: "#343b45", timeVisible: false },
       });
       const candles = chart.addSeries(CandlestickSeries, {
@@ -84,7 +88,7 @@ export function StudyCharts({
         priceFormat: { type: "volume" },
         priceScaleId: "",
       });
-      volume.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+      volume.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
       const byDate = new Map(result.series[index].candles.map((candle) => [candle.date, candle]));
       candles.setData(dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
         const candle = byDate.get(date);

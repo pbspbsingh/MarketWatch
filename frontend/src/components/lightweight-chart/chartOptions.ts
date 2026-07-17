@@ -20,6 +20,11 @@ export const chartColors = {
 
 export const defaultChartBarSpacing = 6;
 export const chartRightOffsetPixels = 30;
+export const defaultPriceScaleMargins = { top: 0.08, bottom: 0.25 } as const;
+export const overlappingPriceScaleMargins = {
+  ...defaultPriceScaleMargins,
+  bottom: 0.1,
+} as const;
 const synchronizedPriceScaleMinimumWidth = 64;
 
 export const dailySmaColors = {
@@ -55,7 +60,7 @@ export const baseChartOptions = {
   rightPriceScale: {
     borderColor: chartColors.border,
     minimumWidth: synchronizedPriceScaleMinimumWidth,
-    scaleMargins: { top: 0.08, bottom: 0.25 },
+    scaleMargins: defaultPriceScaleMargins,
   },
   timeScale: {
     barSpacing: defaultChartBarSpacing,
