@@ -450,6 +450,10 @@ impl YahooService {
         }
         unreachable!("Yahoo quote retry loop always returns")
     }
+
+    pub(crate) async fn live_quote(&self, symbol: &str) -> Result<Quote, YahooError> {
+        self.fetch_quote(symbol).await
+    }
 }
 
 fn quote_candle(

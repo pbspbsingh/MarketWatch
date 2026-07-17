@@ -10,6 +10,8 @@ use tokio::sync::Notify;
 #[derive(Clone)]
 pub struct MarketSchedule {
     timezone: Tz,
+    market_open: NaiveTime,
+    market_close: NaiveTime,
     refresh_time: NaiveTime,
     holidays: HashSet<NaiveDate>,
 }
@@ -39,6 +41,8 @@ impl MarketSchedule {
                 .timezone
                 .parse()
                 .context("market.timezone must be a valid IANA timezone")?,
+            market_open: config.market_hours.0,
+            market_close: config.market_hours.1,
             refresh_time: config.market_hours.1 + post_close_delay,
             holidays,
         })
@@ -58,6 +62,14 @@ impl MarketSchedule {
 
     pub fn market_date(&self, timestamp: DateTime<Utc>) -> NaiveDate {
         timestamp.with_timezone(&self.timezone).date_naive()
+    }
+
+    pub fn is_regular_session(&self, timestamp: DateTime<Utc>) -> bool {
+        let market_time = timestamp.with_timezone(&self.timezone);
+        !market_time.is_weekend()
+            && !self.holidays.contains(&market_time.date_naive())
+            && market_time.time() >= self.market_open
+            && market_time.time() <= self.market_close
     }
 
     pub fn previous_trading_day(&self, date: NaiveDate) -> NaiveDate {
@@ -203,6 +215,46 @@ mod tests {
         assert_eq!(
             schedule.trading_day_on_or_after(NaiveDate::from_ymd_opt(2026, 6, 19).unwrap()),
             NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
+        );
+    }
+
+    #[test]
+    fn identifies_only_configured_regular_session_timestamps() {
+        let schedule = MarketSchedule::new(
+            &MarketConfig {
+                timezone: "America/Los_Angeles".to_owned(),
+                benchmark: "QQQ".to_owned(),
+                market_hours: (
+                    NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
+                    NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
+                ),
+                adr_sessions: 20,
+                average_volume_sessions: 50,
+            },
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert!(
+            schedule.is_regular_session(
+                chrono::DateTime::parse_from_rfc3339("2026-07-16T17:00:00Z")
+                    .unwrap()
+                    .to_utc()
+            )
+        );
+        assert!(
+            !schedule.is_regular_session(
+                chrono::DateTime::parse_from_rfc3339("2026-07-16T13:00:00Z")
+                    .unwrap()
+                    .to_utc()
+            )
+        );
+        assert!(
+            !schedule.is_regular_session(
+                chrono::DateTime::parse_from_rfc3339("2026-07-18T17:00:00Z")
+                    .unwrap()
+                    .to_utc()
+            )
         );
     }
 

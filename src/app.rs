@@ -17,6 +17,7 @@ use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
+use crate::services::yahoo_live::YahooLiveHandle;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use axum::Router;
@@ -50,6 +51,8 @@ pub struct AppState {
     pub ticker_collections: Arc<TickerCollectionService>,
     pub top_stocks: Arc<TopStocksService>,
     pub watchlists: Arc<WatchlistService>,
+    #[allow(dead_code)] // Retains the actor until the live chart API consumes it.
+    pub yahoo_live: YahooLiveHandle,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -68,6 +71,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.market,
         nyse_holidays,
     )?);
+    let yahoo_live = YahooLiveHandle::spawn(yahoo.clone(), market_schedule.clone());
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
         finviz.clone(),
@@ -127,6 +131,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         ticker_collections,
         top_stocks,
         watchlists,
+        yahoo_live,
     };
 
     let router = Router::new().nest("/api", api::router());

@@ -14,3 +14,5 @@ pub mod tickers;
 pub mod top_stocks;
 pub mod watchlists;
 pub mod yahoo;
+#[allow(dead_code)] // Removed when the live chart API consumes the actor handle.
+pub mod yahoo_live;
