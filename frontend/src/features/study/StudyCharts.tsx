@@ -18,6 +18,7 @@ import {
 import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 import {
+  chartColors,
   overlappingPriceScaleMargins,
   volumeScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
@@ -65,23 +66,23 @@ export function StudyCharts({
       const chart = createChart(container, {
         autoSize: true,
         layout: {
-          background: { type: ColorType.Solid, color: "#111418" },
-          textColor: "#8f9aa7",
+          background: { type: ColorType.Solid, color: chartColors.background },
+          textColor: chartColors.text,
           attributionLogo: true,
         },
         grid: {
-          vertLines: { color: "#20262e" },
-          horzLines: { color: "#20262e" },
+          vertLines: { color: chartColors.grid },
+          horzLines: { color: chartColors.grid },
         },
-        rightPriceScale: { borderColor: "#343b45", scaleMargins: overlappingPriceScaleMargins },
-        timeScale: { borderColor: "#343b45", timeVisible: false },
+        rightPriceScale: { borderColor: chartColors.border, scaleMargins: overlappingPriceScaleMargins },
+        timeScale: { borderColor: chartColors.border, timeVisible: false },
       });
       const candles = chart.addSeries(CandlestickSeries, {
-        upColor: "#26a69a",
-        downColor: "#ef5350",
+        upColor: chartColors.up,
+        downColor: chartColors.down,
         borderVisible: false,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
+        wickUpColor: chartColors.up,
+        wickDownColor: chartColors.down,
       });
       candleSeries.push(candles);
       const volume = chart.addSeries(HistogramSeries, {

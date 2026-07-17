@@ -9,17 +9,17 @@ import {
 export const chartColors = {
   background: "#111418",
   text: "#8f9aa7",
-  grid: "#3c3c3c",
+  grid: "#292d32",
   border: "#343b45",
-  up: "#26a69a",
-  down: "#ef5350",
+  up: "#0c9981",
+  down: "#f23645",
   upVolume: "#26a69a66",
   downVolume: "#ef535066",
   volumeAverage: "#c2ad4f",
 } as const;
 
 export const defaultChartBarSpacing = 6;
-export const chartRightOffsetPixels = 30;
+export const chartRightOffsetPixels = 36;
 export const defaultPriceScaleMargins = { top: 0.08, bottom: 0.25 } as const;
 export const overlappingPriceScaleMargins = {
   ...defaultPriceScaleMargins,
@@ -65,6 +65,7 @@ export const baseChartOptions = {
   timeScale: {
     barSpacing: defaultChartBarSpacing,
     rightOffsetPixels: chartRightOffsetPixels,
+    shiftVisibleRangeOnNewBar: false,
     borderColor: chartColors.border,
     timeVisible: false,
   },
