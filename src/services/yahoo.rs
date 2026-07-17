@@ -3,7 +3,7 @@ use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::models::{CompanyProfile, DailyCandle};
 use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
-use crate::utils::{KeyedLock, MarketSchedule};
+use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -34,6 +34,19 @@ pub struct HistoricalDailyCandles {
 pub(crate) struct IntradayCandle {
     pub candle: DailyCandle,
     pub updated_at: chrono::DateTime<Utc>,
+}
+
+pub(crate) struct IntradayPrice {
+    pub symbol: String,
+    pub market_date: NaiveDate,
+    pub price: f64,
+    pub updated_at: chrono::DateTime<Utc>,
+}
+
+pub(crate) struct IntradaySessionSeed {
+    pub pre_market: Option<IntradayCandle>,
+    pub regular: Option<IntradayCandle>,
+    pub post_market: Option<IntradayPrice>,
 }
 
 #[derive(Debug, Error)]
@@ -455,6 +468,17 @@ impl YahooService {
         symbol: &str,
         market_date: NaiveDate,
     ) -> Result<Option<IntradayCandle>, YahooServiceError> {
+        Ok(self
+            .intraday_session_seed(symbol, market_date)
+            .await?
+            .regular)
+    }
+
+    pub(crate) async fn intraday_session_seed(
+        &self,
+        symbol: &str,
+        market_date: NaiveDate,
+    ) -> Result<IntradaySessionSeed, YahooServiceError> {
         let start = Utc.from_utc_datetime(
             &market_date
                 .and_hms_opt(0, 0, 0)
@@ -462,14 +486,31 @@ impl YahooService {
         );
         let end = start + TimeDelta::days(2);
         let candles = self.fetch_intraday_chart(symbol, start, end).await?;
-        aggregate_regular_candle(
-            symbol,
+        let mut pre_market = Vec::new();
+        let mut regular = Vec::new();
+        let mut post_market = Vec::new();
+        for candle in candles
+            .into_iter()
+            .filter(|candle| self.market_schedule.market_date(candle.timestamp) == market_date)
+        {
+            match self.market_schedule.session(candle.timestamp) {
+                MarketSession::PreMarket => pre_market.push(candle),
+                MarketSession::Regular => regular.push(candle),
+                MarketSession::PostMarket => post_market.push(candle),
+                MarketSession::Closed => {}
+            }
+        }
+        let post_market = post_market.last().map(|candle| IntradayPrice {
+            symbol: symbol.to_owned(),
             market_date,
-            candles.into_iter().filter(|candle| {
-                self.market_schedule.market_date(candle.timestamp) == market_date
-                    && self.market_schedule.is_regular_session(candle.timestamp)
-            }),
-        )
+            price: candle.close,
+            updated_at: candle.timestamp,
+        });
+        Ok(IntradaySessionSeed {
+            pre_market: aggregate_regular_candle(symbol, market_date, pre_market)?,
+            regular: aggregate_regular_candle(symbol, market_date, regular)?,
+            post_market,
+        })
     }
 }
 

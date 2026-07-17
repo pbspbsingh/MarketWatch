@@ -8,7 +8,7 @@ use crate::services::market_chart::MarketChartError;
 use crate::services::market_chart::MarketChartService;
 use crate::services::tickers::normalize_symbol;
 use crate::services::yahoo::YahooServiceError;
-use crate::services::yahoo_live::{YahooLiveCandle, YahooLiveHandle, YahooLiveSubscription};
+use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -73,6 +73,22 @@ struct LiveChartDelta {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum LiveSessionKind {
+    PreMarket,
+    PostMarket,
+}
+
+#[derive(Serialize)]
+struct LiveSessionDelta {
+    chart_id: String,
+    symbol: String,
+    session: LiveSessionKind,
+    candle: Option<MarketChartCandle>,
+    price: f64,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum LiveChartEvent<'a> {
     Subscribed {
@@ -82,6 +98,10 @@ enum LiveChartEvent<'a> {
     Delta {
         request_id: u64,
         delta: Box<LiveChartDelta>,
+    },
+    Session {
+        request_id: u64,
+        delta: LiveSessionDelta,
     },
     Error {
         request_id: u64,
@@ -112,11 +132,12 @@ async fn handle_live_chart_socket(
     yahoo_live: YahooLiveHandle,
     market_chart: Arc<MarketChartService>,
 ) {
-    let (updates, mut update_receiver) = mpsc::channel::<YahooLiveCandle>(LIVE_EVENT_BUFFER_SIZE);
+    let (updates, mut update_receiver) = mpsc::channel::<YahooLiveUpdate>(LIVE_EVENT_BUFFER_SIZE);
     let mut forwarders = HashMap::<String, LiveForwarder>::new();
     let mut request_id = 0;
     let mut charts = Vec::<LiveChartRequest>::new();
     let mut dirty_symbols = HashSet::<String>::new();
+    let mut session_updates = HashMap::<String, YahooLiveUpdate>::new();
     let mut delta_deadline = None;
     let mut ping = tokio::time::interval(LIVE_HEARTBEAT_INTERVAL);
     ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -129,10 +150,17 @@ async fn handle_live_chart_socket(
         tokio::select! {
             update = update_receiver.recv() => {
                 let Some(update) = update else { return };
-                if !forwarders.contains_key(&update.candle.symbol) {
+                if !forwarders.contains_key(update.symbol()) {
                     continue;
                 }
-                dirty_symbols.insert(update.candle.symbol);
+                match update {
+                    YahooLiveUpdate::Regular(update) => {
+                        dirty_symbols.insert(update.candle.symbol);
+                    }
+                    update => {
+                        session_updates.insert(update.symbol().to_owned(), update);
+                    }
+                }
                 if delta_deadline.is_none() {
                     delta_deadline = Some(Instant::now() + LIVE_DELTA_DEBOUNCE);
                 }
@@ -140,6 +168,7 @@ async fn handle_live_chart_socket(
             _ = wait_for_delta(delta_deadline), if delta_deadline.is_some() => {
                 delta_deadline = None;
                 let changed = std::mem::take(&mut dirty_symbols);
+                let sessions = std::mem::take(&mut session_updates);
                 for chart in charts.iter().filter(|chart| {
                     changed.contains(&chart.symbol)
                         || chart.comparison_symbol.as_ref().is_some_and(|symbol| changed.contains(symbol))
@@ -166,6 +195,19 @@ async fn handle_live_chart_socket(
                             ).await {
                                 return;
                             }
+                        }
+                    }
+                }
+                for update in sessions.into_values() {
+                    for chart in charts.iter().filter(|chart| {
+                        chart.interval == MarketChartInterval::Daily && chart.symbol == update.symbol()
+                    }) {
+                        let delta = session_delta(chart, &update);
+                        if !send_live_event(
+                            &mut socket,
+                            LiveChartEvent::Session { request_id, delta },
+                        ).await {
+                            return;
                         }
                     }
                 }
@@ -210,6 +252,7 @@ async fn handle_live_chart_socket(
                                     request_id = next_request_id;
                                     charts = requested;
                                     dirty_symbols.clear();
+                                    session_updates.clear();
                                     delta_deadline = None;
                                     if !send_live_event(
                                         &mut socket,
@@ -310,7 +353,7 @@ async fn wait_for_delta(deadline: Option<Instant>) {
 
 async fn replace_live_symbols(
     yahoo_live: &YahooLiveHandle,
-    updates: &mpsc::Sender<YahooLiveCandle>,
+    updates: &mpsc::Sender<YahooLiveUpdate>,
     forwarders: &mut HashMap<String, LiveForwarder>,
     symbols: &[String],
 ) -> Result<(), String> {
@@ -337,12 +380,14 @@ async fn replace_live_symbols(
 
 async fn forward_live_candles(
     mut subscription: YahooLiveSubscription,
-    updates: mpsc::Sender<YahooLiveCandle>,
+    updates: mpsc::Sender<YahooLiveUpdate>,
 ) {
-    if let Ok(Some(candle)) = subscription.latest().await
-        && updates.send(candle).await.is_err()
-    {
-        return;
+    if let Ok(latest) = subscription.latest_updates().await {
+        for update in latest {
+            if updates.send(update).await.is_err() {
+                return;
+            }
+        }
     }
     loop {
         match subscription.recv().await {
@@ -352,10 +397,12 @@ async fn forward_live_candles(
                 }
             }
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                if let Ok(Some(candle)) = subscription.latest().await
-                    && updates.send(candle).await.is_err()
-                {
-                    return;
+                if let Ok(latest) = subscription.latest_updates().await {
+                    for update in latest {
+                        if updates.send(update).await.is_err() {
+                            return;
+                        }
+                    }
                 }
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
@@ -414,6 +461,26 @@ fn snapshot_delta(
         volume_average: last_only(snapshot.volume_average),
         relative_strength,
     })
+}
+
+fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSessionDelta {
+    match update {
+        YahooLiveUpdate::PreMarket(update) => LiveSessionDelta {
+            chart_id: chart.chart_id.clone(),
+            symbol: update.candle.symbol.clone(),
+            session: LiveSessionKind::PreMarket,
+            candle: Some(MarketChartCandle::from(&update.candle)),
+            price: update.candle.close,
+        },
+        YahooLiveUpdate::PostMarket(update) => LiveSessionDelta {
+            chart_id: chart.chart_id.clone(),
+            symbol: update.symbol.clone(),
+            session: LiveSessionKind::PostMarket,
+            candle: None,
+            price: update.price,
+        },
+        YahooLiveUpdate::Regular(_) => unreachable!("regular updates use calculated deltas"),
+    }
 }
 
 async fn send_live_event(socket: &mut WebSocket, event: LiveChartEvent<'_>) -> bool {
@@ -510,8 +577,11 @@ fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::DailyCandle;
     use crate::models::chart::MarketChartPoint;
+    use crate::services::yahoo_live::YahooLiveCandle;
     use chrono::NaiveDate;
+    use chrono::Utc;
 
     #[test]
     fn normalizes_and_bounds_live_chart_configuration() {
@@ -595,5 +665,35 @@ mod tests {
         assert_eq!(delta.moving_averages[0].points.len(), 1);
         assert_eq!(delta.moving_averages[0].points[0].date, date(16));
         assert_eq!(delta.volume_average.points.len(), 1);
+    }
+
+    #[test]
+    fn pre_market_session_delta_is_scoped_to_the_chart() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let chart = LiveChartRequest {
+            chart_id: "top".to_owned(),
+            symbol: "AAPL".to_owned(),
+            interval: MarketChartInterval::Daily,
+            comparison_symbol: None,
+        };
+        let update = YahooLiveUpdate::PreMarket(YahooLiveCandle {
+            candle: DailyCandle {
+                symbol: "AAPL".to_owned(),
+                market_date: date,
+                open: 100.0,
+                high: 102.0,
+                low: 99.0,
+                close: 101.0,
+                volume: 1_000,
+            },
+            updated_at: Utc::now(),
+        });
+
+        let delta = session_delta(&chart, &update);
+
+        assert_eq!(delta.chart_id, "top");
+        assert_eq!(delta.symbol, "AAPL");
+        assert_eq!(delta.price, 101.0);
+        assert_eq!(delta.candle.unwrap().date, date);
     }
 }

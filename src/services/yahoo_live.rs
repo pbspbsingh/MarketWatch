@@ -1,7 +1,7 @@
 use crate::models::DailyCandle;
 use crate::providers::{PricingData, spawn_transport};
-use crate::services::yahoo::{IntradayCandle, YahooService};
-use crate::utils::MarketSchedule;
+use crate::services::yahoo::{IntradayCandle, IntradaySessionSeed, YahooService};
+use crate::utils::{MarketSchedule, MarketSession};
 use chrono::{DateTime, TimeZone, Utc};
 use std::collections::HashMap;
 use std::future::pending;
@@ -24,16 +24,40 @@ pub struct YahooLiveCandle {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct YahooLivePrice {
+    pub symbol: String,
+    pub market_date: chrono::NaiveDate,
+    pub price: f64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum YahooLiveUpdate {
+    Regular(YahooLiveCandle),
+    PreMarket(YahooLiveCandle),
+    PostMarket(YahooLivePrice),
+}
+
+impl YahooLiveUpdate {
+    pub fn symbol(&self) -> &str {
+        match self {
+            Self::Regular(update) | Self::PreMarket(update) => &update.candle.symbol,
+            Self::PostMarket(update) => &update.symbol,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct YahooLiveHandle {
     commands: mpsc::UnboundedSender<Command>,
-    updates: broadcast::Sender<YahooLiveCandle>,
+    updates: broadcast::Sender<YahooLiveUpdate>,
 }
 
 pub struct YahooLiveSubscription {
     symbol: String,
     commands: mpsc::UnboundedSender<Command>,
-    updates: broadcast::Receiver<YahooLiveCandle>,
+    updates: broadcast::Receiver<YahooLiveUpdate>,
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -58,9 +82,13 @@ enum Command {
         symbol: String,
         reply: oneshot::Sender<Option<YahooLiveCandle>>,
     },
+    LatestUpdates {
+        symbol: String,
+        reply: oneshot::Sender<Vec<YahooLiveUpdate>>,
+    },
     Seeded {
         symbol: String,
-        result: Result<Option<IntradayCandle>, String>,
+        result: Box<Result<IntradaySessionSeed, String>>,
     },
 }
 
@@ -71,11 +99,13 @@ struct YahooLiveActor {
     command_sender: mpsc::UnboundedSender<Command>,
     pricing: mpsc::Receiver<PricingData>,
     desired: watch::Sender<Vec<String>>,
-    updates: broadcast::Sender<YahooLiveCandle>,
+    updates: broadcast::Sender<YahooLiveUpdate>,
     subscriptions: HashMap<String, usize>,
     idle_subscriptions: HashMap<String, Instant>,
     seed_tasks: HashMap<String, JoinHandle<()>>,
     cache: HashMap<String, CachedCandle>,
+    pre_market_cache: HashMap<String, CachedCandle>,
+    post_market_cache: HashMap<String, YahooLivePrice>,
     lru_clock: u64,
 }
 
@@ -112,6 +142,8 @@ impl YahooLiveHandle {
                 idle_subscriptions: HashMap::new(),
                 seed_tasks: HashMap::new(),
                 cache: HashMap::new(),
+                pre_market_cache: HashMap::new(),
+                post_market_cache: HashMap::new(),
                 lru_clock: 0,
             }
             .run(),
@@ -151,19 +183,19 @@ impl YahooLiveHandle {
 }
 
 impl YahooLiveSubscription {
-    pub async fn recv(&mut self) -> Result<YahooLiveCandle, broadcast::error::RecvError> {
+    pub async fn recv(&mut self) -> Result<YahooLiveUpdate, broadcast::error::RecvError> {
         loop {
             let update = self.updates.recv().await?;
-            if update.candle.symbol == self.symbol {
+            if update.symbol() == self.symbol {
                 return Ok(update);
             }
         }
     }
 
-    pub async fn latest(&self) -> Result<Option<YahooLiveCandle>, YahooLiveError> {
+    pub async fn latest_updates(&self) -> Result<Vec<YahooLiveUpdate>, YahooLiveError> {
         let (reply, result) = oneshot::channel();
         self.commands
-            .send(Command::Latest {
+            .send(Command::LatestUpdates {
                 symbol: self.symbol.clone(),
                 reply,
             })
@@ -215,11 +247,57 @@ impl YahooLiveActor {
                     .and_then(CachedCandle::live_candle);
                 let _ = reply.send(latest);
             }
+            Command::LatestUpdates { symbol, reply } => {
+                let now = Utc::now();
+                let current_date = self.schedule.market_date(now);
+                let session = self.schedule.session(now);
+                let mut updates = Vec::with_capacity(3);
+                if let Some(update) = self
+                    .cache
+                    .get(&symbol)
+                    .filter(|cached| cached.market_date == current_date)
+                    .and_then(CachedCandle::live_candle)
+                {
+                    updates.push(YahooLiveUpdate::Regular(update));
+                }
+                if session == MarketSession::PreMarket
+                    && let Some(update) = self
+                        .pre_market_cache
+                        .get(&symbol)
+                        .filter(|cached| cached.market_date == current_date)
+                        .and_then(CachedCandle::live_candle)
+                {
+                    updates.push(YahooLiveUpdate::PreMarket(update));
+                }
+                if session == MarketSession::PostMarket
+                    && let Some(update) = self
+                        .post_market_cache
+                        .get(&symbol)
+                        .filter(|cached| cached.market_date == current_date)
+                        .cloned()
+                {
+                    updates.push(YahooLiveUpdate::PostMarket(update));
+                }
+                let _ = reply.send(updates);
+            }
             Command::Seeded { symbol, result } => {
                 self.seed_tasks.remove(&symbol);
-                match result {
-                    Ok(Some(candle)) if self.is_watched(&symbol) => {
-                        self.merge_seed(&symbol, candle)
+                match *result {
+                    Ok(seed) if self.is_watched(&symbol) => {
+                        if let Some(candle) = seed.regular {
+                            self.merge_seed(&symbol, candle, false);
+                        }
+                        if let Some(candle) = seed.pre_market {
+                            self.merge_seed(&symbol, candle, true);
+                        }
+                        if let Some(price) = seed.post_market {
+                            self.publish_post_market(YahooLivePrice {
+                                symbol: price.symbol,
+                                market_date: price.market_date,
+                                price: price.price,
+                                updated_at: price.updated_at,
+                            });
+                        }
                     }
                     Ok(_) => {}
                     Err(error) if self.is_watched(&symbol) => {
@@ -237,6 +315,7 @@ impl YahooLiveActor {
             &mut self.idle_subscriptions,
             symbol,
         )?;
+        self.prune_unwatched_caches();
         match retained {
             RetainResult::Existing => return Ok(()),
             RetainResult::Resumed => {
@@ -253,7 +332,7 @@ impl YahooLiveActor {
     }
 
     fn start_seed(&mut self, symbol: &str) {
-        if !should_seed_quote(&self.schedule, Utc::now()) {
+        if self.schedule.session(Utc::now()) == MarketSession::Closed {
             return;
         }
         if let Some(task) = self.seed_tasks.remove(symbol) {
@@ -266,12 +345,12 @@ impl YahooLiveActor {
         let task_symbol = symbol.clone();
         let task = tokio::spawn(async move {
             let result = yahoo
-                .intraday_regular_candle(&task_symbol, market_date)
+                .intraday_session_seed(&task_symbol, market_date)
                 .await
                 .map_err(|error| error.to_string());
             let _ = commands.send(Command::Seeded {
                 symbol: task_symbol,
-                result,
+                result: Box::new(result),
             });
         });
         self.seed_tasks.insert(symbol, task);
@@ -305,6 +384,7 @@ impl YahooLiveActor {
         let original_len = self.idle_subscriptions.len();
         self.idle_subscriptions.retain(|_, expiry| *expiry > now);
         if self.idle_subscriptions.len() != original_len {
+            self.prune_unwatched_caches();
             self.publish_desired();
         }
     }
@@ -320,22 +400,34 @@ impl YahooLiveActor {
             .is_some_and(|cached| cached.market_date == current_date && cached.published.is_some())
     }
 
-    fn merge_seed(&mut self, symbol: &str, seed: IntradayCandle) {
+    fn merge_seed(&mut self, symbol: &str, seed: IntradayCandle, pre_market: bool) {
         let date = seed.candle.market_date;
-        if !self.schedule.is_regular_session(seed.updated_at) {
+        let expected_session = if pre_market {
+            MarketSession::PreMarket
+        } else {
+            MarketSession::Regular
+        };
+        if self.schedule.session(seed.updated_at) != expected_session {
             return;
         }
-        if self
-            .cache
+        let cache = if pre_market {
+            &mut self.pre_market_cache
+        } else {
+            &mut self.cache
+        };
+        if cache
             .get(symbol)
             .is_some_and(|cached| cached.rejects_session(date, seed.updated_at))
         {
             return;
         }
-        self.ensure_cache_slot(symbol);
         let touched = self.next_touch();
-        let entry = self
-            .cache
+        let cache = if pre_market {
+            &mut self.pre_market_cache
+        } else {
+            &mut self.cache
+        };
+        let entry = cache
             .entry(symbol.to_owned())
             .or_insert_with(|| CachedCandle::new(date, seed.updated_at, touched));
         if entry.market_date != date {
@@ -349,7 +441,7 @@ impl YahooLiveActor {
         merge_field(&mut entry.volume, Some(seed.candle.volume), newer);
         entry.updated_at = entry.updated_at.max(seed.updated_at);
         entry.touched = touched;
-        self.publish_if_changed(symbol);
+        self.publish_if_changed(symbol, pre_market);
     }
 
     fn merge_pricing(&mut self, update: PricingData) {
@@ -360,7 +452,7 @@ impl YahooLiveActor {
         else {
             return;
         };
-        if !self.is_watched(&symbol) || update.market_hours != Some(1) {
+        if !self.is_watched(&symbol) {
             return;
         }
         let Some(timestamp) = update
@@ -369,21 +461,41 @@ impl YahooLiveActor {
         else {
             return;
         };
-        let date = self.schedule.market_date(timestamp);
-        if !self.schedule.is_regular_session(timestamp) {
+        let session = self.schedule.session(timestamp);
+        let pre_market = update.market_hours == Some(0) && session == MarketSession::PreMarket;
+        if update.market_hours == Some(2) && session == MarketSession::PostMarket {
+            if let Some(price) = update.price.and_then(|price| valid_price(price.into())) {
+                self.publish_post_market(YahooLivePrice {
+                    symbol,
+                    market_date: self.schedule.market_date(timestamp),
+                    price,
+                    updated_at: timestamp,
+                });
+            }
             return;
         }
-        if self
-            .cache
+        if !(pre_market || update.market_hours == Some(1) && session == MarketSession::Regular) {
+            return;
+        }
+        let date = self.schedule.market_date(timestamp);
+        let cache = if pre_market {
+            &mut self.pre_market_cache
+        } else {
+            &mut self.cache
+        };
+        if cache
             .get(&symbol)
             .is_some_and(|cached| cached.rejects_session(date, timestamp))
         {
             return;
         }
-        self.ensure_cache_slot(&symbol);
         let touched = self.next_touch();
-        let entry = self
-            .cache
+        let cache = if pre_market {
+            &mut self.pre_market_cache
+        } else {
+            &mut self.cache
+        };
+        let entry = cache
             .entry(symbol.clone())
             .or_insert_with(|| CachedCandle::new(date, timestamp, touched));
         if entry.market_date != date {
@@ -419,11 +531,16 @@ impl YahooLiveActor {
         );
         entry.updated_at = entry.updated_at.max(timestamp);
         entry.touched = touched;
-        self.publish_if_changed(&symbol);
+        self.publish_if_changed(&symbol, pre_market);
     }
 
-    fn publish_if_changed(&mut self, symbol: &str) {
-        let Some(entry) = self.cache.get_mut(symbol) else {
+    fn publish_if_changed(&mut self, symbol: &str, pre_market: bool) {
+        let cache = if pre_market {
+            &mut self.pre_market_cache
+        } else {
+            &mut self.cache
+        };
+        let Some(entry) = cache.get_mut(symbol) else {
             return;
         };
         let Some(candle) = entry.complete(symbol) else {
@@ -433,35 +550,49 @@ impl YahooLiveActor {
             return;
         }
         entry.published = Some(candle.clone());
-        let _ = self.updates.send(YahooLiveCandle {
+        if pre_market && self.schedule.session(Utc::now()) != MarketSession::PreMarket {
+            return;
+        }
+        let update = YahooLiveCandle {
             candle,
             updated_at: entry.updated_at,
+        };
+        let _ = self.updates.send(if pre_market {
+            YahooLiveUpdate::PreMarket(update)
+        } else {
+            YahooLiveUpdate::Regular(update)
         });
     }
 
-    fn ensure_cache_slot(&mut self, symbol: &str) {
-        if self.cache.contains_key(symbol) || self.cache.len() < MAX_ACTIVE_SYMBOLS {
+    fn publish_post_market(&mut self, update: YahooLivePrice) {
+        if self.post_market_cache.get(&update.symbol) == Some(&update) {
             return;
         }
-        let evict = self
-            .cache
-            .iter()
-            .filter(|(cached, _)| !self.is_watched(cached))
-            .min_by_key(|(_, candle)| candle.touched)
-            .map(|(cached, _)| cached.clone());
-        if let Some(evict) = evict {
-            self.cache.remove(&evict);
+        self.post_market_cache
+            .insert(update.symbol.clone(), update.clone());
+        if self.schedule.session(Utc::now()) == MarketSession::PostMarket {
+            let _ = self.updates.send(YahooLiveUpdate::PostMarket(update));
         }
+    }
+
+    fn prune_unwatched_caches(&mut self) {
+        let watched = self
+            .subscriptions
+            .keys()
+            .chain(self.idle_subscriptions.keys())
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        self.cache.retain(|symbol, _| watched.contains(symbol));
+        self.pre_market_cache
+            .retain(|symbol, _| watched.contains(symbol));
+        self.post_market_cache
+            .retain(|symbol, _| watched.contains(symbol));
     }
 
     fn next_touch(&mut self) -> u64 {
         self.lru_clock = self.lru_clock.wrapping_add(1);
         self.lru_clock
     }
-}
-
-fn should_seed_quote(schedule: &MarketSchedule, now: DateTime<Utc>) -> bool {
-    schedule.is_regular_session(now)
 }
 
 impl CachedCandle {
@@ -585,50 +716,12 @@ fn normalize_symbol(symbol: &str) -> Result<String, YahooLiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::MarketConfig;
-    use chrono::NaiveTime;
 
     #[test]
     fn normalizes_supported_yahoo_symbols() {
         assert_eq!(normalize_symbol(" brk-b ").unwrap(), "BRK-B");
         assert_eq!(normalize_symbol("^gspc").unwrap(), "^GSPC");
         assert!(normalize_symbol("AAPL,MSFT").is_err());
-    }
-
-    #[test]
-    fn seeds_intraday_candles_only_during_configured_regular_session() {
-        let schedule = MarketSchedule::new(
-            &MarketConfig {
-                timezone: "America/Los_Angeles".to_owned(),
-                benchmark: "QQQ".to_owned(),
-                market_hours: (
-                    NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
-                    NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
-                ),
-                adr_sessions: 20,
-                average_volume_sessions: 50,
-            },
-            Duration::ZERO,
-        )
-        .unwrap();
-        let timestamp = |value| DateTime::parse_from_rfc3339(value).unwrap().to_utc();
-
-        assert!(!should_seed_quote(
-            &schedule,
-            timestamp("2026-07-16T13:00:00Z")
-        ));
-        assert!(should_seed_quote(
-            &schedule,
-            timestamp("2026-07-16T17:00:00Z")
-        ));
-        assert!(!should_seed_quote(
-            &schedule,
-            timestamp("2026-07-16T21:00:01Z")
-        ));
-        assert!(!should_seed_quote(
-            &schedule,
-            timestamp("2026-07-18T17:00:00Z")
-        ));
     }
 
     #[test]

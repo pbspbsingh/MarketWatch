@@ -16,6 +16,14 @@ pub struct MarketSchedule {
     holidays: HashSet<NaiveDate>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarketSession {
+    PreMarket,
+    Regular,
+    PostMarket,
+    Closed,
+}
+
 pub struct KeyedLock {
     held_keys: Mutex<HashSet<String>>,
     released: Notify,
@@ -64,12 +72,17 @@ impl MarketSchedule {
         timestamp.with_timezone(&self.timezone).date_naive()
     }
 
-    pub fn is_regular_session(&self, timestamp: DateTime<Utc>) -> bool {
+    pub fn session(&self, timestamp: DateTime<Utc>) -> MarketSession {
         let market_time = timestamp.with_timezone(&self.timezone);
-        !market_time.is_weekend()
-            && !self.holidays.contains(&market_time.date_naive())
-            && market_time.time() >= self.market_open
-            && market_time.time() <= self.market_close
+        if market_time.is_weekend() || self.holidays.contains(&market_time.date_naive()) {
+            MarketSession::Closed
+        } else if market_time.time() < self.market_open {
+            MarketSession::PreMarket
+        } else if market_time.time() <= self.market_close {
+            MarketSession::Regular
+        } else {
+            MarketSession::PostMarket
+        }
     }
 
     pub fn previous_trading_day(&self, date: NaiveDate) -> NaiveDate {
@@ -219,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn identifies_only_configured_regular_session_timestamps() {
+    fn classifies_configured_market_sessions() {
         let schedule = MarketSchedule::new(
             &MarketConfig {
                 timezone: "America/Los_Angeles".to_owned(),
@@ -235,26 +248,26 @@ mod tests {
         )
         .unwrap();
 
-        assert!(
-            schedule.is_regular_session(
-                chrono::DateTime::parse_from_rfc3339("2026-07-16T17:00:00Z")
-                    .unwrap()
-                    .to_utc()
-            )
+        let timestamp = |value| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .unwrap()
+                .to_utc()
+        };
+        assert_eq!(
+            schedule.session(timestamp("2026-07-16T13:00:00Z")),
+            MarketSession::PreMarket,
         );
-        assert!(
-            !schedule.is_regular_session(
-                chrono::DateTime::parse_from_rfc3339("2026-07-16T13:00:00Z")
-                    .unwrap()
-                    .to_utc()
-            )
+        assert_eq!(
+            schedule.session(timestamp("2026-07-16T17:00:00Z")),
+            MarketSession::Regular,
         );
-        assert!(
-            !schedule.is_regular_session(
-                chrono::DateTime::parse_from_rfc3339("2026-07-18T17:00:00Z")
-                    .unwrap()
-                    .to_utc()
-            )
+        assert_eq!(
+            schedule.session(timestamp("2026-07-16T21:00:01Z")),
+            MarketSession::PostMarket,
+        );
+        assert_eq!(
+            schedule.session(timestamp("2026-07-18T17:00:00Z")),
+            MarketSession::Closed,
         );
     }
 
