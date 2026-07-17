@@ -15,7 +15,7 @@ export const chartColors = {
   down: "#ef5350",
   upVolume: "#26a69a66",
   downVolume: "#ef535066",
-  volumeAverage: "#f6c309",
+  volumeAverage: "#c2ad4f",
 } as const;
 
 export const defaultChartBarSpacing = 6;
@@ -96,7 +96,7 @@ export const indicatorSeriesOptions = {
 export const volumeAverageSeriesOptions = {
   ...indicatorSeriesOptions,
   color: chartColors.volumeAverage,
-  lineStyle: LineStyle.Dotted,
+  lineStyle: LineStyle.LargeDashed,
   priceFormat: { type: "volume" as const },
   priceScaleId: volumePriceScaleId,
 };
