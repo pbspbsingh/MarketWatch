@@ -77,6 +77,7 @@ export const volumeSeriesOptions = {
 };
 
 export const volumeScaleMargins = { top: 0.78, bottom: 0 } as const;
+export const relativeStrengthScaleMargins = { top: 0.02, bottom: 0.68 } as const;
 
 export const indicatorSeriesOptions = {
   lineWidth: 1 as const,
@@ -91,6 +92,14 @@ export const volumeAverageSeriesOptions = {
   lineStyle: LineStyle.Dotted,
   priceFormat: { type: "volume" as const },
   priceScaleId: volumePriceScaleId,
+};
+
+export const relativeStrengthSeriesOptions = {
+  ...indicatorSeriesOptions,
+  color: "#e6c84f",
+  lineWidth: 1 as const,
+  lastValueVisible: true,
+  priceScaleId: "left",
 };
 
 export function volumeColor(open: number, close: number) {

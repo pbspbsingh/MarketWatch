@@ -22,11 +22,13 @@ import {
   type ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
+import type { RelativeStrengthMode } from "./types";
 
 interface SplitLightweightChartsProps {
   topSymbol: string;
   bottomSymbol: string;
   interval: "D" | "W";
+  relativeStrengthMode: RelativeStrengthMode;
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
@@ -38,6 +40,7 @@ export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
   interval,
+  relativeStrengthMode,
   initialSplit,
   onSplitChange,
   onError,
@@ -134,6 +137,7 @@ export default function SplitLightweightCharts({
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
               includeRelativeStrength
+              relativeStrengthMode={relativeStrengthMode}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
             />

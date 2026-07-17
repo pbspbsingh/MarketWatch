@@ -79,7 +79,7 @@ Use this checklist for manual comparison while TradingView and Lightweight Chart
 - [ ] Synchronize crosshair dates in both directions.
 - [ ] Persist identical candle width across ticker changes/reloads, separately for Daily and Weekly; do not persist horizontal offset.
 - [ ] Default the top overlay to RS Line versus the configured benchmark.
-- [ ] Toggle between RS Line and RS Trend from the header and persist the choice.
+- [ ] Toggle between RS Line and RS Trend; clicking the active mode deselects both and persists no overlay.
 - [ ] Constrain the RS overlay to the upper 30% of the top candle pane while allowing candle overlap.
 - [ ] Lazy-load older history only on a user scroll near the left edge, without viewport jumps.
 - [ ] Rapid ticker/interval changes never display stale snapshot, RS, or history results.

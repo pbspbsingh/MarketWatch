@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 4.3 implemented and reviewed; awaiting commit approval. The Lightweight chart header now provides a validated, persisted RS Line/RS Trend mode with RS Line as the default.
+Current checkpoint: tasks 4.4 and 4.5 implemented and reviewed; awaiting commit approval. The selected RS/RST series renders on the top chart's independent left scale within the upper 30% of the candle pane, while mode, symbol, and interval changes reuse the existing chart and series.
 
 ## Objective
 
@@ -24,7 +24,7 @@ The existing TradingView implementation remains available on the feature branch 
 - Daily overlays: SMA 10, 20, 50, 100, and 200.
 - Weekly overlays: EMA 10, 20, and 40.
 - Volume overlay: 50-session average on Daily; 10-session average on Weekly.
-- The top chart can display either RS Line or RS Trend in the upper 30% of the candle pane, selected from the existing header.
+- The top chart can display RS Line or RS Trend in the upper 30% of the candle pane, or hide the overlay by deselecting the active header mode.
 - RS Line is the default; persist the selected RS mode.
 - Do not render a current-price horizontal line.
 - Do not render a top-left symbol/OHLC/return/volume/indicator legend or crosshair-updated values. Keep native crosshair axis labels.
@@ -208,7 +208,7 @@ The frontend replaces data on existing candle/volume/indicator series; it never 
 - Return RS across lazily loaded history as part of each complete backend snapshot.
 - Preserve RS Line's current latest-12-month geometric-mean normalization anchor and apply that fixed anchor to older returned ratios. Expanding history must not rescale or change already visible recent RS values.
 - Render on an independent left scale constrained to the upper 30% of the top candle pane; candles may overlap it.
-- Header toggle: `RS Line | RS Trend`; default to RS Line and persist the preference.
+- Header toggle: `RS | RST`; clicking the active mode deselects both and hides the overlay. Default to RS and persist all three states.
 - Update the RS series without recreating either chart.
 - Keep the existing color semantics. Do not add a custom crosshair tooltip/value legend.
 - The existing standalone RS panel remains unchanged by this migration.
@@ -311,6 +311,8 @@ Progress:
 - [x] 4.1 — Range-aware RS Line and RS Trend calculations with fixed recent normalization.
 - [x] 4.2 — Opt-in top-chart snapshots with configured-benchmark RS Line and RS Trend.
 - [x] 4.3 — Persisted header RS mode toggle with validated RS Line default.
+- [x] 4.4 — Selected RS/RST overlay on an independent upper-30% left scale.
+- [x] 4.5 — RS mode, symbol, and interval updates reuse the existing chart and series.
 - [x] 5.1 — Non-persisting Yahoo historical-range fetch.
 - [x] 5.2 — Date-keyed persisted/ephemeral merge with canonical precedence.
 - [x] 5.3 — Expanded candles and all backend series, including RS, are recomputed over merged history.
@@ -371,7 +373,7 @@ Progress:
 |---|---|---|
 | 4.1 | Make existing RS Line and RS Trend calculations accept the requested historical range while keeping the configured benchmark. | Latest values match existing behavior; older returned dates have RS where warm-up permits. |
 | 4.2 | Extend top-chart snapshots with both configured-benchmark RS series. | Backend fixtures cover Daily, Weekly, warm-up, and range extension; bottom symbol does not affect comparison. |
-| 4.3 | Add the header RS mode toggle, defaulting to RS Line with validated `localStorage` persistence. | Preference survives reload and invalid stored values fall back to RS Line. |
+| 4.3 | Add the two-button, three-state header RS mode toggle, defaulting to RS Line with validated `localStorage` persistence. | RS, RST, and deselected states survive reload; invalid stored values fall back to RS Line. |
 | 4.4 | Add the independent RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; labels do not cover chart content; no custom tooltip is added. |
 | 4.5 | Update RS mode/symbol/interval data without recreating either chart. | Toggle and ticker changes are immediate and free of distracting data-change animation. |
 

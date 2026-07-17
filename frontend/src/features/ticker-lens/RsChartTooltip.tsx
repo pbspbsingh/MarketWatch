@@ -1,9 +1,13 @@
 import type { RelativeStrengthSeries } from "../../api/relativeStrength";
+export {
+  negativeRsColor,
+  neutralRsColor,
+  positiveRsColor,
+  relativeRsColor,
+} from "../charts/relativeStrengthSeries";
+import { relativeRsColor } from "../charts/relativeStrengthSeries";
 
 export const secondaryRsColors = ["#58a6ff", "#9b7ede"] as const;
-export const positiveRsColor = "#2fbf71";
-export const negativeRsColor = "#ef5350";
-export const neutralRsColor = "#e6c84f";
 
 export interface RsTooltipState {
   date: string;
@@ -71,12 +75,6 @@ export function RsChartTooltip({
       })}
     </div>
   );
-}
-
-export function relativeRsColor(relativeReturnPercent: number) {
-  if (relativeReturnPercent > 0.5) return positiveRsColor;
-  if (relativeReturnPercent < -0.5) return negativeRsColor;
-  return neutralRsColor;
 }
 
 export function secondaryRsColor(series: RelativeStrengthSeries[], index: number, primarySymbol: string) {

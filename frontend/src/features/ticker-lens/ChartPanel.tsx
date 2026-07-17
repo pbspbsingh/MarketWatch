@@ -312,6 +312,7 @@ export function ChartPanel({
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
+                relativeStrengthMode={relativeStrengthMode}
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
                 onError={handleChartError}

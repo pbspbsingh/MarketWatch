@@ -4,6 +4,7 @@ import {
   createTextWatermark,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -11,7 +12,11 @@ import {
   type ITextWatermarkPluginApi,
   type Time,
 } from "lightweight-charts";
-import type { MarketChartCandle, MarketChartData } from "../../api/marketChart";
+import type {
+  MarketChartCandle,
+  MarketChartData,
+  MarketChartRelativeStrength,
+} from "../../api/marketChart";
 import {
   ChartHost,
   type ChartHostHandle,
@@ -19,6 +24,8 @@ import {
 import {
   candleSeriesOptions,
   indicatorSeriesOptions,
+  relativeStrengthScaleMargins,
+  relativeStrengthSeriesOptions,
   volumeAverageSeriesOptions,
   volumeScaleMargins,
   volumeSeriesOptions,
@@ -38,6 +45,10 @@ import {
   movingAverageSeriesCount,
   movingAverageSpecs,
 } from "./chartSeries";
+import {
+  relativeStrengthLineData,
+  type RelativeStrengthMode,
+} from "./relativeStrengthSeries";
 
 interface MarketChartProps {
   data: MarketChartData;
@@ -45,6 +56,8 @@ interface MarketChartProps {
   ariaLabel?: string;
   initialViewport?: ChartViewport;
   onChartContext?: (context: ChartSyncTarget | null) => void;
+  relativeStrength?: MarketChartRelativeStrength | null;
+  relativeStrengthMode?: RelativeStrengthMode;
 }
 
 function watermarkLines(symbol: string) {
@@ -62,12 +75,15 @@ export function MarketChart({
   ariaLabel,
   initialViewport,
   onChartContext,
+  relativeStrength,
+  relativeStrengthMode,
 }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
   const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
@@ -103,6 +119,14 @@ export function MarketChart({
       { length: movingAverageSeriesCount },
       () => chart.addSeries(LineSeries, indicatorSeriesOptions),
     );
+    const relativeStrengthSeries = chart.addSeries(
+      LineSeries,
+      relativeStrengthSeriesOptions,
+    );
+    relativeStrengthSeries.priceScale().applyOptions({
+      scaleMargins: relativeStrengthScaleMargins,
+    });
+    relativeStrengthSeriesRef.current = relativeStrengthSeries;
     watermarkRef.current = createTextWatermark(chart.panes()[0], {
       horzAlign: "center",
       vertAlign: "center",
@@ -121,6 +145,7 @@ export function MarketChart({
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
     watermarkRef.current = null;
+    relativeStrengthSeriesRef.current = null;
     chartDisposedRef.current = true;
     if (contextReportedRef.current) onChartContextRef.current?.(null);
     contextReportedRef.current = false;
@@ -184,6 +209,22 @@ export function MarketChart({
       line.setData(lineData(byPeriod.get(spec.period)));
     });
   }, [data.interval, data.moving_averages]);
+
+  useEffect(() => {
+    const chart = hostRef.current?.getChart();
+    const series = relativeStrengthSeriesRef.current;
+    if (chart === null || chart === undefined || series === null) return;
+    const points = relativeStrengthLineData(relativeStrength, relativeStrengthMode);
+    const trend = relativeStrengthMode === "trend";
+    chart.applyOptions({ leftPriceScale: { visible: points.length > 0 } });
+    series.applyOptions({
+      lineStyle: trend ? LineStyle.LargeDashed : LineStyle.Solid,
+      priceFormat: trend
+        ? { type: "custom", formatter: (value: number) => `${value.toFixed(1)}%` }
+        : { type: "price", precision: 2, minMove: 0.01 },
+    });
+    series.setData(points);
+  }, [relativeStrength, relativeStrengthMode]);
 
   useEffect(() => {
     if (data.candles.length === 0) return;

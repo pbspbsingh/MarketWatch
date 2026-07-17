@@ -195,9 +195,9 @@ export function ChartHeader({
             value={relativeStrengthMode}
             aria-label="Relative strength overlay"
             onChange={(_, value: RelativeStrengthMode | null) => {
-              if (value === null) return;
-              localStorage.setItem(chartRelativeStrengthModeKey, value);
-              setRelativeStrengthMode(value);
+              const mode = value ?? "none";
+              localStorage.setItem(chartRelativeStrengthModeKey, mode);
+              setRelativeStrengthMode(mode);
             }}
           >
             <ToggleButton value="line">RS</ToggleButton>
