@@ -64,7 +64,6 @@ export default function SplitLightweightCharts({
   };
   viewportsRef.current = viewports;
   const initialViewport = viewports[interval];
-  const reserveRelativeStrengthScale = relativeStrengthMode !== "none";
   const saveViewport = useCallback(
     (viewport: ChartViewport) => {
       viewports[interval] = viewport;
@@ -142,9 +141,8 @@ export default function SplitLightweightCharts({
               interval={interval === "D" ? "daily" : "weekly"}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
-              includeRelativeStrength
+              relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthMode={relativeStrengthMode}
-              reserveRelativeStrengthScale={reserveRelativeStrengthScale}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
             />
@@ -161,7 +159,6 @@ export default function SplitLightweightCharts({
               interval={interval === "D" ? "daily" : "weekly"}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
-              reserveRelativeStrengthScale={reserveRelativeStrengthScale}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
             />

@@ -55,7 +55,7 @@ export interface MarketChartSnapshot extends MarketChartData {
 }
 
 interface MarketChartRequestOptions {
-  includeRelativeStrength?: boolean;
+  comparisonSymbol?: string;
   signal?: AbortSignal;
 }
 
@@ -65,8 +65,11 @@ export async function fetchMarketChartSnapshot(
   options: MarketChartRequestOptions = {},
 ): Promise<MarketChartSnapshot> {
   const requestedSymbol = marketDataSymbol(symbol);
+  const comparisonSymbol = options.comparisonSymbol === undefined
+    ? undefined
+    : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval });
-  if (options.includeRelativeStrength) query.set("include_relative_strength", "true");
+  if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}?${query}`,
     { signal: options.signal, cache: "no-store" },
@@ -75,7 +78,7 @@ export async function fetchMarketChartSnapshot(
     const reason = await response.text();
     throw new Error(reason || `Failed to load market chart: HTTP ${response.status}`);
   }
-  return readMarketChartSnapshot(response, requestedSymbol, interval);
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
 }
 
 export async function fetchMarketChartHistorySnapshot(
@@ -86,8 +89,11 @@ export async function fetchMarketChartHistorySnapshot(
   options: MarketChartRequestOptions = {},
 ): Promise<MarketChartSnapshot> {
   const requestedSymbol = marketDataSymbol(symbol);
+  const comparisonSymbol = options.comparisonSymbol === undefined
+    ? undefined
+    : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval, start, end });
-  if (options.includeRelativeStrength) query.set("include_relative_strength", "true");
+  if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/history?${query}`,
     { signal: options.signal, cache: "no-store" },
@@ -96,16 +102,22 @@ export async function fetchMarketChartHistorySnapshot(
     const reason = await response.text();
     throw new Error(reason || `Failed to load market chart history: HTTP ${response.status}`);
   }
-  return readMarketChartSnapshot(response, requestedSymbol, interval);
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
 }
 
 async function readMarketChartSnapshot(
   response: Response,
   requestedSymbol: string,
   interval: MarketChartInterval,
+  comparisonSymbol?: string,
 ): Promise<MarketChartSnapshot> {
   const snapshot = await response.json() as MarketChartSnapshot;
-  if (snapshot.symbol !== requestedSymbol || snapshot.interval !== interval) {
+  const returnedComparison = snapshot.relative_strength?.comparison_symbol;
+  if (
+    snapshot.symbol !== requestedSymbol
+    || snapshot.interval !== interval
+    || returnedComparison !== comparisonSymbol
+  ) {
     throw new Error("Market chart response did not match its request");
   }
   return snapshot;

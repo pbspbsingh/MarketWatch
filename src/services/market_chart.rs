@@ -1,4 +1,3 @@
-use crate::config::MarketConfig;
 use crate::models::DailyCandle;
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
@@ -22,7 +21,6 @@ const WEEKLY_VOLUME_PERIOD: usize = 10;
 
 pub struct MarketChartService {
     yahoo: Arc<YahooService>,
-    benchmark: String,
 }
 
 struct RelativeStrengthSource {
@@ -46,28 +44,25 @@ pub enum MarketChartError {
 }
 
 impl MarketChartService {
-    pub fn new(yahoo: Arc<YahooService>, market: &MarketConfig) -> Self {
-        Self {
-            yahoo,
-            benchmark: market.benchmark.clone(),
-        }
+    pub fn new(yahoo: Arc<YahooService>) -> Self {
+        Self { yahoo }
     }
 
     pub async fn snapshot(
         &self,
         symbol: &str,
         interval: MarketChartInterval,
-        include_relative_strength: bool,
+        comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        let relative_strength = if include_relative_strength {
-            let comparison = if symbol == self.benchmark {
+        let relative_strength = if let Some(comparison_symbol) = comparison_symbol {
+            let comparison = if symbol == comparison_symbol {
                 candles.clone()
             } else {
-                self.yahoo.daily_candles_for_year(&self.benchmark).await?
+                self.yahoo.daily_candles_for_year(comparison_symbol).await?
             };
             Some(RelativeStrengthSource {
-                comparison_symbol: self.benchmark.clone(),
+                comparison_symbol: comparison_symbol.to_owned(),
                 persisted: comparison,
                 ephemeral: Vec::new(),
             })
@@ -89,7 +84,7 @@ impl MarketChartService {
         interval: MarketChartInterval,
         start: chrono::NaiveDate,
         end: chrono::NaiveDate,
-        include_relative_strength: bool,
+        comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
         self.yahoo.daily_candles_for_year(symbol).await?;
@@ -98,19 +93,19 @@ impl MarketChartService {
             .historical_daily_candles(symbol, start, end)
             .await?;
         let has_more_before = history.has_more_before;
-        let relative_strength = if include_relative_strength {
-            let comparison = if symbol == self.benchmark {
+        let relative_strength = if let Some(comparison_symbol) = comparison_symbol {
+            let comparison = if symbol == comparison_symbol {
                 history.candles.clone()
             } else {
-                self.yahoo.daily_candles_for_year(&self.benchmark).await?;
+                self.yahoo.daily_candles_for_year(comparison_symbol).await?;
                 let comparison_history = self
                     .yahoo
-                    .historical_daily_candles(&self.benchmark, start, end)
+                    .historical_daily_candles(comparison_symbol, start, end)
                     .await?;
                 comparison_history.candles
             };
             Some(RelativeStrengthSource {
-                comparison_symbol: self.benchmark.clone(),
+                comparison_symbol: comparison_symbol.to_owned(),
                 persisted: comparison,
                 ephemeral: Vec::new(),
             })
@@ -418,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_daily_and_weekly_relative_strength_against_configured_benchmark() {
+    fn builds_daily_and_weekly_relative_strength_against_requested_comparison() {
         let ticker = candles(400, 1);
         let comparison = ticker.clone();
 

@@ -86,7 +86,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     ));
-    let market_chart = Arc::new(MarketChartService::new(yahoo.clone(), &config.market));
+    let market_chart = Arc::new(MarketChartService::new(yahoo.clone()));
     let themes = Arc::new(ThemeService::new(store.clone(), ai, ticker_catalog.clone()));
     let theme_analysis = Arc::new(ThemeAnalysisService::new(
         store.clone(),

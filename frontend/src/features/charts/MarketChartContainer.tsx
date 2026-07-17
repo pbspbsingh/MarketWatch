@@ -43,9 +43,8 @@ interface MarketChartContainerProps {
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
   historyInteractionTracker?: ChartHistoryInteractionTracker;
-  includeRelativeStrength?: boolean;
+  relativeStrengthComparisonSymbol?: string;
   relativeStrengthMode?: RelativeStrengthMode;
-  reserveRelativeStrengthScale?: boolean;
 }
 
 const historyLoadThresholdBars = 25;
@@ -59,12 +58,14 @@ export function MarketChartContainer({
   onChartContext,
   onError,
   historyInteractionTracker,
-  includeRelativeStrength = false,
+  relativeStrengthComparisonSymbol,
   relativeStrengthMode,
-  reserveRelativeStrengthScale = false,
 }: MarketChartContainerProps) {
-  const requestKey = `${symbol}\0${interval}\0${includeRelativeStrength ? "rs" : "plain"}`;
+  const datasetKey = `${symbol}\0${interval}`;
+  const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
   const generationRef = useRef(0);
+  const snapshotRef = useRef<MarketChartSnapshot | undefined>(undefined);
+  const snapshotDatasetKeyRef = useRef<string | undefined>(undefined);
   const historyControllerRef = useRef<AbortController | null>(null);
   const handledHistoryTriggerRef = useRef(0);
   const handledInteractionSequenceRef = useRef(0);
@@ -80,6 +81,7 @@ export function MarketChartContainer({
   const [retryVersion, setRetryVersion] = useState(0);
   const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
   const [historyTrigger, setHistoryTrigger] = useState(0);
+  snapshotRef.current = snapshot;
   onErrorRef.current = onError;
   onChartContextRef.current = onChartContext;
 
@@ -100,17 +102,40 @@ export function MarketChartContainer({
   useEffect(() => {
     const generation = ++generationRef.current;
     const controller = new AbortController();
-    setLoadState({ key: requestKey, status: "loading" });
+    const currentSnapshot = snapshotRef.current;
+    const comparisonOnly = currentSnapshot !== undefined
+      && snapshotDatasetKeyRef.current === datasetKey;
+    if (comparisonOnly) {
+      setLoadState({
+        key: datasetKey,
+        status: "ready",
+        snapshot: currentSnapshot,
+      });
+      setSnapshot((current) => current === undefined
+        ? current
+        : { ...current, relative_strength: null });
+    } else {
+      setLoadState({ key: datasetKey, status: "loading" });
+    }
     onErrorRef.current?.(undefined);
 
     void fetchMarketChartSnapshot(symbol, interval, {
-      includeRelativeStrength,
+      comparisonSymbol: relativeStrengthComparisonSymbol,
       signal: controller.signal,
     })
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
-        setSnapshot(snapshot);
-        setLoadState({ key: requestKey, status: "ready", snapshot });
+        if (comparisonOnly) {
+          setSnapshot((current) => (
+            current === undefined || snapshotDatasetKeyRef.current !== datasetKey
+              ? current
+              : { ...current, relative_strength: snapshot.relative_strength }
+          ));
+        } else {
+          snapshotDatasetKeyRef.current = datasetKey;
+          setSnapshot(snapshot);
+          setLoadState({ key: datasetKey, status: "ready", snapshot });
+        }
       })
       .catch((error: unknown) => {
         if (
@@ -118,11 +143,13 @@ export function MarketChartContainer({
           || (error instanceof Error && error.name === "AbortError")
         ) return;
         const message = error instanceof Error ? error.message : "Failed to load market chart";
-        setLoadState({
-          key: requestKey,
-          status: "error",
-          message,
-        });
+        if (!comparisonOnly) {
+          setLoadState({
+            key: datasetKey,
+            status: "error",
+            message,
+          });
+        }
         onErrorRef.current?.(message);
       });
 
@@ -131,7 +158,7 @@ export function MarketChartContainer({
       if (generationRef.current === generation) generationRef.current += 1;
       onErrorRef.current?.(undefined);
     };
-  }, [includeRelativeStrength, interval, requestKey, retryVersion, symbol]);
+  }, [datasetKey, interval, relativeStrengthComparisonSymbol, requestKey, retryVersion, symbol]);
 
   useEffect(() => {
     if (chartContext === null) return;
@@ -155,7 +182,7 @@ export function MarketChartContainer({
     };
   }, [chartContext, interactionTracker]);
 
-  const state = loadState?.key === requestKey ? loadState : undefined;
+  const state = loadState?.key === datasetKey ? loadState : undefined;
   useEffect(() => {
     if (handledHistoryTriggerRef.current === historyTrigger) return;
     handledHistoryTriggerRef.current = historyTrigger;
@@ -182,7 +209,7 @@ export function MarketChartContainer({
       range.start,
       range.end,
       {
-        includeRelativeStrength,
+        comparisonSymbol: relativeStrengthComparisonSymbol,
         signal: controller.signal,
       },
     )
@@ -215,8 +242,8 @@ export function MarketChartContainer({
     };
   }, [
     historyTrigger,
-    includeRelativeStrength,
     interval,
+    relativeStrengthComparisonSymbol,
     requestKey,
     snapshot,
     state?.status,
@@ -237,7 +264,6 @@ export function MarketChartContainer({
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
           relativeStrengthMode={relativeStrengthMode}
-          reserveRelativeStrengthScale={reserveRelativeStrengthScale}
         />
       )}
       {state?.status !== "ready" && (

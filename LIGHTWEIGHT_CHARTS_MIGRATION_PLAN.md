@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: task 5.9 implemented and reviewed; awaiting commit approval. Lazy TickerLens history is database-backed with a five-trading-session Yahoo overlap, initial reads remain bounded, and older candles are no longer age-purged.
+Current checkpoint: task 4.6 implemented and reviewed; awaiting visual approval and commit. RS Line and RS Trend use the active bottom-chart symbol; comparison-only changes update only the top RS series while preserving its candles, indicators, viewport, and ready state.
 
 ## Objective
 
@@ -91,7 +91,7 @@ Build TickerLens on this foundation. The existing Study and standalone RS charts
 
 ### Initial chart snapshot
 
-Add a chart-snapshot endpoint requested independently by each `MarketChartContainer`. It returns interval-specific candles and every fully calculated chart series for one symbol. The top-chart request also asks for both RS modes against the configured market benchmark.
+Add a chart-snapshot endpoint requested independently by each `MarketChartContainer`. It returns interval-specific candles and every fully calculated chart series for one symbol. The top-chart request also asks for both RS modes against the active bottom-chart symbol.
 
 Each response includes:
 
@@ -109,7 +109,7 @@ Each response includes:
 Add a separate endpoint with a provider-neutral contract. It returns a complete recalculated chart snapshot for the requested expanded range, not only raw candles, because changing the range can change indicator values.
 
 - `symbol`
-- interval and configured benchmark when RS is requested
+- interval and active bottom-chart comparison symbol when RS is requested
 - requested start/end boundaries or candle targets
 - ordered candles and all recalculated indicator/RS series
 - `has_more_before`
@@ -215,10 +215,10 @@ The frontend replaces data on existing candle/volume/indicator series; it never 
 ## RS overlay
 
 - Reuse the existing backend RS Line and RS Trend formulas; do not create parallel formulas in the frontend.
-- Compare the top ticker against the configured market benchmark, regardless of the symbol displayed in the bottom chart.
+- Compare the top ticker against the active bottom-chart symbol.
 - Return RS across lazily loaded history as part of each complete backend snapshot.
 - Preserve RS Line's current latest-12-month geometric-mean normalization anchor and apply that fixed anchor to older returned ratios. Expanding history must not rescale or change already visible recent RS values.
-- Render on an independent left scale constrained to the upper 30% of the top candle pane; candles may overlap it.
+- Render on an independent hidden left scale constrained to the upper 30% of the top candle pane; candles may overlap it and no left-axis pane is reserved.
 - Header toggle: `RS | RST`; clicking the active mode deselects both and hides the overlay. Default to RS and persist all three states.
 - Update the RS series without recreating either chart.
 - Keep the existing color semantics. Do not add a custom crosshair tooltip/value legend.
@@ -320,10 +320,11 @@ Progress:
 - [x] 3.5 — TickerLens controls, benchmark switching, and external links preserved.
 - [x] 3.6 — Independent chart loading, retry, inline errors, and source-specific toasts.
 - [x] 4.1 — Range-aware RS Line and RS Trend calculations with fixed recent normalization.
-- [x] 4.2 — Opt-in top-chart snapshots with configured-benchmark RS Line and RS Trend.
+- [x] 4.2 — Opt-in top-chart snapshots with requested-comparison RS Line and RS Trend.
 - [x] 4.3 — Persisted header RS mode toggle with validated RS Line default.
 - [x] 4.4 — Selected RS/RST overlay on an independent upper-30% left scale.
 - [x] 4.5 — RS mode, symbol, and interval updates reuse the existing chart and series.
+- [x] 4.6 — RS comparison follows the active bottom-chart symbol.
 - [x] 5.1 — Initial non-persisting Yahoo historical-range fetch (superseded by 5.9).
 - [x] 5.2 — Date-keyed persisted/ephemeral merge with canonical precedence.
 - [x] 5.3 — Expanded candles and all backend series, including RS, are recomputed over merged history.
@@ -383,11 +384,12 @@ Progress:
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 4.1 | Make existing RS Line and RS Trend calculations accept the requested historical range while keeping the configured benchmark. | Latest values match existing behavior; older returned dates have RS where warm-up permits. |
-| 4.2 | Extend top-chart snapshots with both configured-benchmark RS series. | Backend fixtures cover Daily, Weekly, warm-up, and range extension; bottom symbol does not affect comparison. |
+| 4.1 | Make existing RS Line and RS Trend calculations accept the requested historical range and comparison symbol. | Latest values match existing behavior; older returned dates have RS where warm-up permits. |
+| 4.2 | Extend top-chart snapshots with both requested-comparison RS series. | Backend fixtures cover Daily, Weekly, warm-up, and range extension; the response identifies its comparison symbol. |
 | 4.3 | Add the two-button, three-state header RS mode toggle, defaulting to RS Line with validated `localStorage` persistence. | RS, RST, and deselected states survive reload; invalid stored values fall back to RS Line. |
-| 4.4 | Add the independent RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; labels do not cover chart content; no custom tooltip is added. |
+| 4.4 | Add the independent hidden RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; no left-axis pane or custom tooltip is added. |
 | 4.5 | Update RS mode/symbol/interval data without recreating either chart. | Toggle and ticker changes are immediate and free of distracting data-change animation. |
+| 4.6 | Use the active bottom-chart symbol as the top RS/RST comparison. | Market/theme switching recomputes both RS modes against the displayed bottom symbol and updates only the RS series without recreating either chart. |
 
 ### 5 — Lazy historical ranges
 
@@ -463,7 +465,7 @@ Manual checks:
 - Synchronize charts by date.
 - Use independent chart containers and robust abort/generation validation.
 - Keep TickerLens lazy-loading policy outside `MarketChart`.
-- RS always compares the top ticker with the configured market benchmark.
+- RS always compares the top ticker with the active bottom-chart symbol.
 - Backend computes every financial series, including lazily expanded history.
 - Default to RS Line and persist the toggle.
 - Omit custom chart legends/value tooltips and the current-price horizontal line.

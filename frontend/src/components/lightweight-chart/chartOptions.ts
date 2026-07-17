@@ -50,7 +50,6 @@ export const baseChartOptions = {
   leftPriceScale: {
     visible: false,
     borderColor: chartColors.border,
-    minimumWidth: synchronizedPriceScaleMinimumWidth,
   },
   rightPriceScale: {
     borderColor: chartColors.border,

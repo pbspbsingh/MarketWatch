@@ -14,8 +14,7 @@ use tracing::error;
 #[derive(Deserialize)]
 struct SnapshotQuery {
     interval: MarketChartInterval,
-    #[serde(default)]
-    include_relative_strength: bool,
+    comparison_symbol: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -23,8 +22,7 @@ struct HistoryQuery {
     interval: MarketChartInterval,
     start: chrono::NaiveDate,
     end: chrono::NaiveDate,
-    #[serde(default)]
-    include_relative_strength: bool,
+    comparison_symbol: Option<String>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -40,9 +38,10 @@ async fn snapshot(
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
     let symbol =
         normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
     state
         .market_chart
-        .snapshot(&symbol, query.interval, query.include_relative_strength)
+        .snapshot(&symbol, query.interval, comparison_symbol.as_deref())
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -55,6 +54,7 @@ async fn history_snapshot(
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
     let symbol =
         normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
     state
         .market_chart
         .history_snapshot(
@@ -62,11 +62,21 @@ async fn history_snapshot(
             query.interval,
             query.start,
             query.end,
-            query.include_relative_strength,
+            comparison_symbol.as_deref(),
         )
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
+}
+
+fn normalize_optional_symbol(
+    symbol: Option<String>,
+) -> Result<Option<String>, (StatusCode, String)> {
+    symbol
+        .map(|symbol| {
+            normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))
+        })
+        .transpose()
 }
 
 fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
