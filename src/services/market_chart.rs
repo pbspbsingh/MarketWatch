@@ -9,6 +9,7 @@ use crate::models::{
     calculate_relative_strength_trend,
 };
 use crate::services::yahoo::{YahooService, YahooServiceError};
+use crate::services::yahoo_live::YahooLiveHandle;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -21,6 +22,7 @@ const WEEKLY_VOLUME_PERIOD: usize = 10;
 
 pub struct MarketChartService {
     yahoo: Arc<YahooService>,
+    yahoo_live: YahooLiveHandle,
 }
 
 struct RelativeStrengthSource {
@@ -44,8 +46,8 @@ pub enum MarketChartError {
 }
 
 impl MarketChartService {
-    pub fn new(yahoo: Arc<YahooService>) -> Self {
-        Self { yahoo }
+    pub fn new(yahoo: Arc<YahooService>, yahoo_live: YahooLiveHandle) -> Self {
+        Self { yahoo, yahoo_live }
     }
 
     pub async fn snapshot(
@@ -54,7 +56,10 @@ impl MarketChartService {
         interval: MarketChartInterval,
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
-        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
+        let candles = merge_live_candles(
+            self.yahoo.daily_candles_for_year(symbol).await?,
+            self.live_candles(symbol).await,
+        )?;
         let relative_strength = self
             .relative_strength_source(symbol, &candles, comparison_symbol)
             .await?;
@@ -73,7 +78,10 @@ impl MarketChartService {
         interval: MarketChartInterval,
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
-        let candles = self.yahoo.refresh_daily_candles_for_year(symbol).await?;
+        let candles = merge_live_candles(
+            self.yahoo.refresh_daily_candles_for_year(symbol).await?,
+            self.live_candles(symbol).await,
+        )?;
         let relative_strength = self
             .relative_strength_source(symbol, &candles, comparison_symbol)
             .await?;
@@ -91,20 +99,33 @@ impl MarketChartService {
         symbol: &str,
         candles: &[DailyCandle],
         comparison_symbol: Option<&str>,
-    ) -> Result<Option<RelativeStrengthSource>, YahooServiceError> {
+    ) -> Result<Option<RelativeStrengthSource>, MarketChartError> {
         let Some(comparison_symbol) = comparison_symbol else {
             return Ok(None);
         };
         let comparison = if symbol == comparison_symbol {
             candles.to_vec()
         } else {
-            self.yahoo.daily_candles_for_year(comparison_symbol).await?
+            merge_live_candles(
+                self.yahoo.daily_candles_for_year(comparison_symbol).await?,
+                self.live_candles(comparison_symbol).await,
+            )?
         };
         Ok(Some(RelativeStrengthSource {
             comparison_symbol: comparison_symbol.to_owned(),
             persisted: comparison,
             ephemeral: Vec::new(),
         }))
+    }
+
+    async fn live_candles(&self, symbol: &str) -> Vec<DailyCandle> {
+        self.yahoo_live
+            .latest(symbol)
+            .await
+            .ok()
+            .flatten()
+            .map(|update| vec![update.candle])
+            .unwrap_or_default()
     }
 
     pub async fn history_snapshot(
@@ -181,6 +202,14 @@ fn merge_daily_candles(
             Ok(candle)
         })
         .collect()
+}
+
+fn merge_live_candles(
+    persisted: Vec<DailyCandle>,
+    live: Vec<DailyCandle>,
+) -> Result<Vec<DailyCandle>, ChartCalculationError> {
+    // The live candle is newer than a same-date persisted intraday candle.
+    merge_daily_candles(live, persisted)
 }
 
 fn build_expanded_snapshot(
@@ -395,6 +424,16 @@ mod tests {
         ephemeral[0].close = 0.0;
 
         assert_eq!(merge_daily_candles(persisted, ephemeral).unwrap(), expected);
+    }
+
+    #[test]
+    fn live_candle_wins_same_date_overlap() {
+        let persisted = candles(1, 1);
+        let mut live = persisted.clone();
+        live[0].close = 42.0;
+        live[0].high = 42.0;
+
+        assert_eq!(merge_live_candles(persisted, live.clone()).unwrap(), live);
     }
 
     #[test]

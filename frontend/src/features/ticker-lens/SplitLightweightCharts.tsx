@@ -26,6 +26,11 @@ import {
 import { defaultChartBarSpacing } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import type { RelativeStrengthMode } from "./types";
+import { marketDataSymbol } from "../../api/marketChart";
+import {
+  MarketChartLiveClient,
+  type MarketChartLiveDelta,
+} from "../../api/marketChartLive";
 
 interface SplitLightweightChartsProps {
   topSymbol: string;
@@ -50,6 +55,11 @@ interface ChartMenuState {
   source: "top" | "bottom";
 }
 
+interface LiveDeltaState {
+  key: string;
+  delta: MarketChartLiveDelta;
+}
+
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -68,9 +78,14 @@ export default function SplitLightweightCharts({
   const [topRefreshVersion, setTopRefreshVersion] = useState(0);
   const [bottomRefreshVersion, setBottomRefreshVersion] = useState(0);
   const [topReloadVersion, setTopReloadVersion] = useState(0);
+  const [topLive, setTopLive] = useState<LiveDeltaState>();
+  const [bottomLive, setBottomLive] = useState<LiveDeltaState>();
   const topRefreshPendingVersionRef = useRef<number | null>(null);
   const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
+  const liveClientRef = useRef<MarketChartLiveClient | null>(null);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
     occurredAt: 0,
@@ -86,6 +101,8 @@ export default function SplitLightweightCharts({
   viewportsRef.current = viewports;
   const initialViewport = viewports[interval];
   const chartInterval = interval === "D" ? "daily" : "weekly";
+  const liveTopKey = `${marketDataSymbol(topSymbol)}\0${chartInterval}\0${marketDataSymbol(bottomSymbol)}`;
+  const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain`;
   const topDatasetKey = `${topSymbol}\0${chartInterval}`;
   const bottomDatasetKey = `${bottomSymbol}\0${chartInterval}`;
   const topLoading = topLoadState?.key !== topDatasetKey
@@ -99,6 +116,35 @@ export default function SplitLightweightCharts({
     },
     [interval, viewports],
   );
+
+  useEffect(() => {
+    const client = new MarketChartLiveClient({
+      onDelta: (delta) => {
+        const comparison = delta.relative_strength?.comparison_symbol ?? "plain";
+        const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}`, delta };
+        if (delta.chart_id === "top") setTopLive(state);
+        else if (delta.chart_id === "bottom") setBottomLive(state);
+      },
+      onError: (message) => onErrorRef.current("top", message),
+    });
+    liveClientRef.current = client;
+    return () => {
+      liveClientRef.current = null;
+      client.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    liveClientRef.current?.setCharts([
+      {
+        chart_id: "top",
+        symbol: topSymbol,
+        interval: chartInterval,
+        comparison_symbol: bottomSymbol,
+      },
+      { chart_id: "bottom", symbol: bottomSymbol, interval: chartInterval },
+    ]);
+  }, [bottomSymbol, chartInterval, topSymbol]);
 
   useEffect(() => {
     if (topContext === null) return;
@@ -222,6 +268,7 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setTopLoadState({ key: topDatasetKey, status })}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
+              liveDelta={topLive?.key === liveTopKey ? topLive.delta : undefined}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>
@@ -243,6 +290,7 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setBottomLoadState({ key: bottomDatasetKey, status })}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
+              liveDelta={bottomLive?.key === liveBottomKey ? bottomLive.delta : undefined}
             />
             {bottomLoading && <ChartLoadingOverlay />}
           </div>

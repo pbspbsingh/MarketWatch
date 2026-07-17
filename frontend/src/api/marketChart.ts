@@ -145,7 +145,7 @@ async function readMarketChartSnapshot(
   return snapshot;
 }
 
-function marketDataSymbol(symbol: string): string {
+export function marketDataSymbol(symbol: string): string {
   const trimmed = symbol.trim().toUpperCase();
   const separator = trimmed.lastIndexOf(":");
   return separator < 0 ? trimmed : trimmed.slice(separator + 1);

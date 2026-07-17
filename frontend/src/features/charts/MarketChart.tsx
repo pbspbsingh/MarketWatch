@@ -16,7 +16,9 @@ import type {
   MarketChartCandle,
   MarketChartData,
   MarketChartRelativeStrength,
+  MarketChartInterval,
 } from "../../api/marketChart";
+import type { MarketChartLiveDelta } from "../../api/marketChartLive";
 import {
   ChartHost,
   type ChartHostHandle,
@@ -31,7 +33,10 @@ import {
   volumeSeriesOptions,
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
-import { marketDateToChartTime } from "../../components/lightweight-chart/chartTime";
+import {
+  chartTimeToMarketDate,
+  marketDateToChartTime,
+} from "../../components/lightweight-chart/chartTime";
 import type {
   ChartSyncTarget,
   ChartViewport,
@@ -58,6 +63,7 @@ interface MarketChartProps {
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   relativeStrengthMode?: RelativeStrengthMode;
+  liveDelta?: MarketChartLiveDelta;
 }
 
 function watermarkLines(symbol: string) {
@@ -77,6 +83,7 @@ export function MarketChart({
   onChartContext,
   relativeStrength,
   relativeStrengthMode,
+  liveDelta,
 }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -227,6 +234,57 @@ export function MarketChart({
   }, [relativeStrength, relativeStrengthMode]);
 
   useEffect(() => {
+    if (
+      liveDelta === undefined
+      || liveDelta.symbol !== data.symbol
+      || liveDelta.interval !== data.interval
+    ) return;
+
+    const candle = liveDelta.candle;
+    candlesByDateRef.current.set(candle.date, candle);
+    updateCandlestickSeries(candleSeriesRef.current, {
+      time: marketDateToChartTime(candle.date),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    }, data.interval);
+    updateHistogramSeries(volumeSeriesRef.current, {
+      time: marketDateToChartTime(candle.date),
+      value: candle.volume,
+      color: volumeColor(candle.open, candle.close),
+    }, data.interval);
+
+    const movingAverages = new Map(
+      liveDelta.moving_averages.map((series) => [series.period, series]),
+    );
+    movingAverageSpecs(data.interval).forEach((spec, index) => {
+      const point = movingAverages.get(spec.period)?.points[0];
+      if (point !== undefined) {
+        updateLineSeries(movingAverageSeriesRef.current[index] ?? null, {
+          time: marketDateToChartTime(point.date),
+          value: point.value,
+        }, data.interval);
+      }
+    });
+    const volumeAverage = liveDelta.volume_average.points[0];
+    if (volumeAverage !== undefined) {
+      updateLineSeries(volumeAverageSeriesRef.current, {
+        time: marketDateToChartTime(volumeAverage.date),
+        value: volumeAverage.value,
+      }, data.interval);
+    }
+
+    const relativePoint = relativeStrengthLineData(
+      liveDelta.relative_strength,
+      relativeStrengthMode,
+    )[0];
+    if (relativePoint !== undefined) {
+      updateLineSeries(relativeStrengthSeriesRef.current, relativePoint, data.interval);
+    }
+  }, [data.candles, data.interval, data.symbol, liveDelta, relativeStrengthMode]);
+
+  useEffect(() => {
     if (data.candles.length === 0) return;
     const datasetKey = `${data.symbol}\0${data.interval}`;
     if (datasetKeyRef.current === datasetKey) return;
@@ -260,4 +318,53 @@ export function MarketChart({
       onChartDestroy={destroyChart}
     />
   );
+}
+
+function shouldReplaceCurrentWeek(
+  series: ISeriesApi<"Candlestick"> | ISeriesApi<"Histogram"> | ISeriesApi<"Line">,
+  time: Time,
+  interval: MarketChartInterval,
+): boolean {
+  if (interval !== "weekly") return false;
+  const previous = series.data().at(-1)?.time;
+  if (previous === undefined) return false;
+  const previousDate = chartTimeToMarketDate(previous);
+  const nextDate = chartTimeToMarketDate(time);
+  return previousDate !== nextDate && marketWeek(previousDate) === marketWeek(nextDate);
+}
+
+function marketWeek(date: string): string {
+  const monday = new Date(`${date}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  return monday.toISOString().slice(0, 10);
+}
+
+function updateCandlestickSeries(
+  series: ISeriesApi<"Candlestick"> | null,
+  point: CandlestickData<Time>,
+  interval: MarketChartInterval,
+) {
+  if (series === null) return;
+  if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
+  series.update(point);
+}
+
+function updateHistogramSeries(
+  series: ISeriesApi<"Histogram"> | null,
+  point: HistogramData<Time>,
+  interval: MarketChartInterval,
+) {
+  if (series === null) return;
+  if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
+  series.update(point);
+}
+
+function updateLineSeries(
+  series: ISeriesApi<"Line"> | null,
+  point: { time: Time; value: number; color?: string },
+  interval: MarketChartInterval,
+) {
+  if (series === null) return;
+  if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
+  series.update(point);
 }

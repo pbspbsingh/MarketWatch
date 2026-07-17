@@ -139,6 +139,15 @@ impl YahooLiveHandle {
             updates,
         })
     }
+
+    pub async fn latest(&self, symbol: &str) -> Result<Option<YahooLiveCandle>, YahooLiveError> {
+        let symbol = normalize_symbol(symbol)?;
+        let (reply, result) = oneshot::channel();
+        self.commands
+            .send(Command::Latest { symbol, reply })
+            .map_err(|_| YahooLiveError::Unavailable)?;
+        result.await.map_err(|_| YahooLiveError::Unavailable)
+    }
 }
 
 impl YahooLiveSubscription {
