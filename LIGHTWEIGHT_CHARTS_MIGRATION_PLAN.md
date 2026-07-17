@@ -199,7 +199,7 @@ Colors and styles:
 - Daily SMA 10/20/50/100/200: `#3179f5`, `#f6c309`, `#fb9800`, `#fb6500`, `#f60c0c`.
 - Weekly EMA 10/20/40: existing app blue, purple, and red.
 - Volume-average line: yellow and dotted.
-- Candle, volume, grid, scale, and line-width defaults follow the existing Studies chart and the supplied screenshot.
+- Candle, volume, grid, scale, and line-width defaults follow the approved reference styling.
 
 ### Candle merge and indicator updates
 
@@ -294,7 +294,7 @@ After each task: review the diff, run proportional format/type/build checks, rep
 
 Progress:
 
-- [x] 0.1 — Branch, plan, and reference screenshot.
+- [x] 0.1 — Branch, plan, and captured reference styling.
 - [x] 0.2 — Current TickerLens parity checklist.
 - [x] 0.3 — Isolated Yahoo quote probe.
 - [x] 0.4 — Isolated Yahoo WebSocket probe.
@@ -338,7 +338,7 @@ Progress:
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 0.1 | Create `feature/lightweight-ticker-lens-charts`; add this plan and the reference screenshot. | Branch starts from current `main`; planning artifacts are committed; worktree is clean. |
+| 0.1 | Create `feature/lightweight-ticker-lens-charts`; add this plan and capture the reference styling. | Branch starts from current `main`; planning artifacts are committed; worktree is clean. |
 | 0.2 | Record a short parity checklist for current TickerLens: symbols, D/W, theme ETF, split, loading/error, keyboard/panel interactions, and external links. | Checklist is reviewable without changing runtime behavior. |
 | 0.3 | Build an isolated Yahoo quote probe outside production modules. | Verified response fields, authentication/crumb requirements, rate-limit behavior, and sample fixtures are documented. |
 | 0.4 | Build an isolated Yahoo WebSocket probe outside production modules. | Connection URL, encoding, subscribe/unsubscribe messages, heartbeat, timestamps, volume semantics, reconnect behavior, and the unverified 100-symbol app cap are documented from observed traffic. |
@@ -360,7 +360,7 @@ Progress:
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 2.1 | Add shared chart options and time/date helpers using Studies styling and the reference screenshot. | No feature behavior changes; shared constants cover candles, volume, grid, scales, and indicator colors. |
+| 2.1 | Add shared chart options and time/date helpers using the approved styling baseline. | No feature behavior changes; shared constants cover candles, volume, grid, scales, and indicator colors. |
 | 2.2 | Add `ChartHost` for create/remove, autosize, attribution, and stable API access. | Mount/unmount and resize do not leak chart instances or observers. |
 | 2.3 | Add `MarketChart` candle and volume rendering from an already-computed snapshot. | Candles and lower volume overlay render without custom legend/value tooltip or current-price line. |
 | 2.4 | Add backend-series adapters and render Daily SMA/Weekly EMA lines. | Correct series/colors appear; updating data does not recreate the chart. |

@@ -45,6 +45,7 @@ interface MarketChartContainerProps {
   historyInteractionTracker?: ChartHistoryInteractionTracker;
   includeRelativeStrength?: boolean;
   relativeStrengthMode?: RelativeStrengthMode;
+  reserveRelativeStrengthScale?: boolean;
 }
 
 const historyLoadThresholdBars = 25;
@@ -60,6 +61,7 @@ export function MarketChartContainer({
   historyInteractionTracker,
   includeRelativeStrength = false,
   relativeStrengthMode,
+  reserveRelativeStrengthScale = false,
 }: MarketChartContainerProps) {
   const requestKey = `${symbol}\0${interval}\0${includeRelativeStrength ? "rs" : "plain"}`;
   const generationRef = useRef(0);
@@ -235,6 +237,7 @@ export function MarketChartContainer({
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
           relativeStrengthMode={relativeStrengthMode}
+          reserveRelativeStrengthScale={reserveRelativeStrengthScale}
         />
       )}
       {state?.status !== "ready" && (

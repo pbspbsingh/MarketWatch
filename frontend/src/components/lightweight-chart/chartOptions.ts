@@ -9,7 +9,7 @@ import {
 export const chartColors = {
   background: "#111418",
   text: "#8f9aa7",
-  grid: "#20262e",
+  grid: "#3c3c3c",
   border: "#343b45",
   up: "#26a69a",
   down: "#ef5350",
@@ -19,6 +19,7 @@ export const chartColors = {
 } as const;
 
 const defaultChartBarSpacing = 6;
+const synchronizedPriceScaleMinimumWidth = 64;
 
 export const dailySmaColors = {
   10: "#3179f5",
@@ -46,9 +47,14 @@ export const baseChartOptions = {
     horzLines: { color: chartColors.grid },
   },
   crosshair: { mode: CrosshairMode.Normal },
-  leftPriceScale: { visible: false, borderColor: chartColors.border },
+  leftPriceScale: {
+    visible: false,
+    borderColor: chartColors.border,
+    minimumWidth: synchronizedPriceScaleMinimumWidth,
+  },
   rightPriceScale: {
     borderColor: chartColors.border,
+    minimumWidth: synchronizedPriceScaleMinimumWidth,
     scaleMargins: { top: 0.08, bottom: 0.25 },
   },
   timeScale: {

@@ -58,6 +58,7 @@ interface MarketChartProps {
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   relativeStrengthMode?: RelativeStrengthMode;
+  reserveRelativeStrengthScale?: boolean;
 }
 
 function watermarkLines(symbol: string) {
@@ -77,6 +78,7 @@ export function MarketChart({
   onChartContext,
   relativeStrength,
   relativeStrengthMode,
+  reserveRelativeStrengthScale = false,
 }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -216,7 +218,9 @@ export function MarketChart({
     if (chart === null || chart === undefined || series === null) return;
     const points = relativeStrengthLineData(relativeStrength, relativeStrengthMode);
     const trend = relativeStrengthMode === "trend";
-    chart.applyOptions({ leftPriceScale: { visible: points.length > 0 } });
+    chart.applyOptions({
+      leftPriceScale: { visible: points.length > 0 || reserveRelativeStrengthScale },
+    });
     series.applyOptions({
       lineStyle: trend ? LineStyle.LargeDashed : LineStyle.Solid,
       priceFormat: trend
@@ -224,7 +228,7 @@ export function MarketChart({
         : { type: "price", precision: 2, minMove: 0.01 },
     });
     series.setData(points);
-  }, [relativeStrength, relativeStrengthMode]);
+  }, [relativeStrength, relativeStrengthMode, reserveRelativeStrengthScale]);
 
   useEffect(() => {
     if (data.candles.length === 0) return;
