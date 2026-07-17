@@ -14,9 +14,10 @@ import type { ChartSummary } from "../../api/chart";
 import {
   chartEngineKey,
   chartIntervalKey,
+  chartRelativeStrengthModeKey,
   chartThemeEtfKey,
 } from "./constants";
-import type { ChartEngine } from "./types";
+import type { ChartEngine, RelativeStrengthMode } from "./types";
 import {
   formatVolume,
   industryMarketWatchUrl,
@@ -41,6 +42,8 @@ interface ChartHeaderProps {
   contextLabel?: string;
   chartEngine?: ChartEngine;
   setChartEngine?: (engine: ChartEngine) => void;
+  relativeStrengthMode?: RelativeStrengthMode;
+  setRelativeStrengthMode?: (mode: RelativeStrengthMode) => void;
 }
 
 export function ChartHeader({
@@ -58,6 +61,8 @@ export function ChartHeader({
   contextLabel,
   chartEngine,
   setChartEngine,
+  relativeStrengthMode,
+  setRelativeStrengthMode,
 }: ChartHeaderProps) {
   return (
     <header className="panel-header chart-header">
@@ -179,6 +184,25 @@ export function ChartHeader({
             )}
             <ChartIndicators summary={summary} />
           </>
+        )}
+        {summary !== undefined
+          && chartEngine === "lightweight"
+          && relativeStrengthMode !== undefined
+          && setRelativeStrengthMode !== undefined && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={relativeStrengthMode}
+            aria-label="Relative strength overlay"
+            onChange={(_, value: RelativeStrengthMode | null) => {
+              if (value === null) return;
+              localStorage.setItem(chartRelativeStrengthModeKey, value);
+              setRelativeStrengthMode(value);
+            }}
+          >
+            <ToggleButton value="line">RS</ToggleButton>
+            <ToggleButton value="trend">RST</ToggleButton>
+          </ToggleButtonGroup>
         )}
         <ToggleButtonGroup
           exclusive

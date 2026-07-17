@@ -20,15 +20,27 @@ import {
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
-import { chartEngineKey, chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
+import {
+  chartEngineKey,
+  chartIntervalKey,
+  chartRelativeStrengthModeKey,
+  chartSplitKey,
+  chartThemeEtfKey,
+} from "./constants";
 import { ChartHeader } from "./ChartHeader";
-import type { ChartEngine, GroupMode, SelectedTickerContext } from "./types";
+import type {
+  ChartEngine,
+  GroupMode,
+  RelativeStrengthMode,
+  SelectedTickerContext,
+} from "./types";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
   isArrowKeyControl,
   readChartEngine,
   readChartInterval,
+  readRelativeStrengthMode,
   readChartSplit,
   readEnabled,
   themeGroupsMarketWatchUrl,
@@ -77,6 +89,9 @@ export function ChartPanel({
   const [rsHeight, setRsHeight] = useState(48);
   const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
     readChartEngine(chartEngineKey),
+  );
+  const [relativeStrengthMode, setRelativeStrengthMode] = useState<RelativeStrengthMode>(() =>
+    readRelativeStrengthMode(chartRelativeStrengthModeKey),
   );
   const chartPanelRef = useRef<HTMLElement>(null);
   const [summaryVersion, setSummaryVersion] = useState(0);
@@ -260,6 +275,8 @@ export function ChartPanel({
         setDetailsOpen={setDetailsOpen}
         chartEngine={chartEngine}
         setChartEngine={setChartEngine}
+        relativeStrengthMode={relativeStrengthMode}
+        setRelativeStrengthMode={setRelativeStrengthMode}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel

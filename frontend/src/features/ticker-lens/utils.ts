@@ -279,6 +279,10 @@ export function readChartInterval(storageKey: string): "D" | "W" {
   return localStorage.getItem(storageKey) === "W" ? "W" : "D";
 }
 
+export function readRelativeStrengthMode(storageKey: string): "line" | "trend" {
+  return localStorage.getItem(storageKey) === "trend" ? "trend" : "line";
+}
+
 export function readEnabled(storageKey: string) {
   return localStorage.getItem(storageKey) === "1";
 }
