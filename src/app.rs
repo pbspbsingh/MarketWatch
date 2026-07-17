@@ -51,7 +51,6 @@ pub struct AppState {
     pub ticker_collections: Arc<TickerCollectionService>,
     pub top_stocks: Arc<TopStocksService>,
     pub watchlists: Arc<WatchlistService>,
-    #[allow(dead_code)] // Retains the actor until the live chart API consumes it.
     pub yahoo_live: YahooLiveHandle,
 }
 
