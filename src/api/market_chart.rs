@@ -384,30 +384,14 @@ async fn forward_live_candles(
     mut subscription: YahooLiveSubscription,
     updates: mpsc::Sender<YahooLiveUpdate>,
 ) {
-    if let Ok(latest) = subscription.latest_updates().await {
-        for update in latest {
-            if updates.send(update).await.is_err() {
-                return;
-            }
+    for update in subscription.latest_updates() {
+        if updates.send(update).await.is_err() {
+            return;
         }
     }
-    loop {
-        match subscription.recv().await {
-            Ok(candle) => {
-                if updates.send(candle).await.is_err() {
-                    return;
-                }
-            }
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                if let Ok(latest) = subscription.latest_updates().await {
-                    for update in latest {
-                        if updates.send(update).await.is_err() {
-                            return;
-                        }
-                    }
-                }
-            }
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+    while let Ok(update) = subscription.recv().await {
+        if updates.send(update).await.is_err() {
+            return;
         }
     }
 }

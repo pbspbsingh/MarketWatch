@@ -3,18 +3,17 @@ use crate::providers::{PricingData, spawn_transport};
 use crate::services::yahoo::{IntradayCandle, IntradaySessionSeed, YahooService};
 use crate::utils::{MarketSchedule, MarketSession};
 use chrono::{DateTime, TimeZone, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior, sleep_until};
 use tracing::warn;
 
 const MAX_ACTIVE_SYMBOLS: usize = 100;
-const UPDATE_BUFFER_SIZE: usize = 256;
 const PRICING_BUFFER_SIZE: usize = 256;
 const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
 const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
@@ -49,16 +48,29 @@ impl YahooLiveUpdate {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct YahooLiveState {
+    regular: Option<YahooLiveCandle>,
+    session: Option<YahooLiveSessionUpdate>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum YahooLiveSessionUpdate {
+    PreMarket(YahooLiveCandle),
+    PostMarket(YahooLivePrice),
+}
+
 #[derive(Clone)]
 pub struct YahooLiveHandle {
     commands: mpsc::UnboundedSender<Command>,
-    updates: broadcast::Sender<YahooLiveUpdate>,
 }
 
 pub struct YahooLiveSubscription {
     symbol: String,
     commands: mpsc::UnboundedSender<Command>,
-    updates: broadcast::Receiver<YahooLiveUpdate>,
+    updates: watch::Receiver<YahooLiveState>,
+    delivered: YahooLiveState,
+    pending: VecDeque<YahooLiveUpdate>,
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -74,7 +86,7 @@ pub enum YahooLiveError {
 enum Command {
     Subscribe {
         symbol: String,
-        reply: oneshot::Sender<Result<(), YahooLiveError>>,
+        reply: oneshot::Sender<Result<watch::Receiver<YahooLiveState>, YahooLiveError>>,
     },
     Unsubscribe {
         symbol: String,
@@ -82,10 +94,6 @@ enum Command {
     Latest {
         symbol: String,
         reply: oneshot::Sender<Option<YahooLiveCandle>>,
-    },
-    LatestUpdates {
-        symbol: String,
-        reply: oneshot::Sender<Vec<YahooLiveUpdate>>,
     },
     Seeded {
         symbol: String,
@@ -100,7 +108,7 @@ struct YahooLiveActor {
     command_sender: mpsc::UnboundedSender<Command>,
     pricing: mpsc::Receiver<PricingData>,
     desired: watch::Sender<Vec<String>>,
-    updates: broadcast::Sender<YahooLiveUpdate>,
+    streams: HashMap<String, watch::Sender<YahooLiveState>>,
     subscriptions: HashMap<String, usize>,
     idle_subscriptions: HashMap<String, Instant>,
     seed_tasks: HashMap<String, JoinHandle<()>>,
@@ -130,7 +138,6 @@ impl YahooLiveHandle {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (pricing_sender, pricing) = mpsc::channel(PRICING_BUFFER_SIZE);
         let (desired, desired_receiver) = watch::channel(Vec::new());
-        let (updates, _) = broadcast::channel(UPDATE_BUFFER_SIZE);
         let live_enabled = schedule.session(Utc::now()) != MarketSession::Closed;
         spawn_transport(desired_receiver, pricing_sender);
         tokio::spawn(
@@ -141,7 +148,7 @@ impl YahooLiveHandle {
                 command_sender: command_sender.clone(),
                 pricing,
                 desired,
-                updates: updates.clone(),
+                streams: HashMap::new(),
                 subscriptions: HashMap::new(),
                 idle_subscriptions: HashMap::new(),
                 seed_tasks: HashMap::new(),
@@ -156,13 +163,11 @@ impl YahooLiveHandle {
         );
         Self {
             commands: command_sender,
-            updates,
         }
     }
 
     pub async fn subscribe(&self, symbol: &str) -> Result<YahooLiveSubscription, YahooLiveError> {
         let symbol = normalize_symbol(symbol)?;
-        let updates = self.updates.subscribe();
         let (reply, result) = oneshot::channel();
         self.commands
             .send(Command::Subscribe {
@@ -170,11 +175,13 @@ impl YahooLiveHandle {
                 reply,
             })
             .map_err(|_| YahooLiveError::Unavailable)?;
-        result.await.map_err(|_| YahooLiveError::Unavailable)??;
+        let updates = result.await.map_err(|_| YahooLiveError::Unavailable)??;
         Ok(YahooLiveSubscription {
             symbol,
             commands: self.commands.clone(),
             updates,
+            delivered: YahooLiveState::default(),
+            pending: VecDeque::new(),
         })
     }
 
@@ -189,24 +196,60 @@ impl YahooLiveHandle {
 }
 
 impl YahooLiveSubscription {
-    pub async fn recv(&mut self) -> Result<YahooLiveUpdate, broadcast::error::RecvError> {
+    pub async fn recv(&mut self) -> Result<YahooLiveUpdate, watch::error::RecvError> {
         loop {
-            let update = self.updates.recv().await?;
-            if update.symbol() == self.symbol {
+            self.queue_current_state();
+            if let Some(update) = self.pop_pending() {
                 return Ok(update);
+            }
+            self.updates.changed().await?;
+        }
+    }
+
+    pub fn latest_updates(&mut self) -> Vec<YahooLiveUpdate> {
+        self.queue_current_state();
+        let mut updates = Vec::with_capacity(self.pending.len());
+        while let Some(update) = self.pop_pending() {
+            updates.push(update);
+        }
+        updates
+    }
+
+    fn queue_current_state(&mut self) {
+        let current = self.updates.borrow_and_update().clone();
+        self.pending.clear();
+        if current.regular != self.delivered.regular
+            && let Some(update) = current.regular.clone()
+        {
+            self.pending.push_back(YahooLiveUpdate::Regular(update));
+        } else if current.regular.is_none() {
+            self.delivered.regular = None;
+        }
+        if current.session != self.delivered.session {
+            match current.session.clone() {
+                Some(YahooLiveSessionUpdate::PreMarket(update)) => {
+                    self.pending.push_back(YahooLiveUpdate::PreMarket(update));
+                }
+                Some(YahooLiveSessionUpdate::PostMarket(update)) => {
+                    self.pending.push_back(YahooLiveUpdate::PostMarket(update));
+                }
+                None => self.delivered.session = None,
             }
         }
     }
 
-    pub async fn latest_updates(&self) -> Result<Vec<YahooLiveUpdate>, YahooLiveError> {
-        let (reply, result) = oneshot::channel();
-        self.commands
-            .send(Command::LatestUpdates {
-                symbol: self.symbol.clone(),
-                reply,
-            })
-            .map_err(|_| YahooLiveError::Unavailable)?;
-        result.await.map_err(|_| YahooLiveError::Unavailable)
+    fn pop_pending(&mut self) -> Option<YahooLiveUpdate> {
+        let update = self.pending.pop_front()?;
+        match &update {
+            YahooLiveUpdate::Regular(update) => self.delivered.regular = Some(update.clone()),
+            YahooLiveUpdate::PreMarket(update) => {
+                self.delivered.session = Some(YahooLiveSessionUpdate::PreMarket(update.clone()));
+            }
+            YahooLiveUpdate::PostMarket(update) => {
+                self.delivered.session = Some(YahooLiveSessionUpdate::PostMarket(update.clone()));
+            }
+        }
+        Some(update)
     }
 }
 
@@ -256,39 +299,6 @@ impl YahooLiveActor {
                     .and_then(CachedCandle::live_candle);
                 let _ = reply.send(latest);
             }
-            Command::LatestUpdates { symbol, reply } => {
-                let now = Utc::now();
-                let current_date = self.schedule.market_date(now);
-                let session = self.schedule.session(now);
-                let mut updates = Vec::with_capacity(3);
-                if let Some(update) = self
-                    .cache
-                    .get(&symbol)
-                    .filter(|cached| cached.market_date == current_date)
-                    .and_then(CachedCandle::live_candle)
-                {
-                    updates.push(YahooLiveUpdate::Regular(update));
-                }
-                if session == MarketSession::PreMarket
-                    && let Some(update) = self
-                        .pre_market_cache
-                        .get(&symbol)
-                        .filter(|cached| cached.market_date == current_date)
-                        .and_then(CachedCandle::live_candle)
-                {
-                    updates.push(YahooLiveUpdate::PreMarket(update));
-                }
-                if session == MarketSession::PostMarket
-                    && let Some(update) = self
-                        .post_market_cache
-                        .get(&symbol)
-                        .filter(|cached| cached.market_date == current_date)
-                        .cloned()
-                {
-                    updates.push(YahooLiveUpdate::PostMarket(update));
-                }
-                let _ = reply.send(updates);
-            }
             Command::Seeded { symbol, result } => {
                 self.seed_tasks.remove(&symbol);
                 match *result {
@@ -318,26 +328,34 @@ impl YahooLiveActor {
         }
     }
 
-    fn add_subscription(&mut self, symbol: &str) -> Result<(), YahooLiveError> {
+    fn add_subscription(
+        &mut self,
+        symbol: &str,
+    ) -> Result<watch::Receiver<YahooLiveState>, YahooLiveError> {
         let retained = retain_subscription(
             &mut self.subscriptions,
             &mut self.idle_subscriptions,
             symbol,
         )?;
         self.prune_unwatched_caches();
+        let updates = self
+            .streams
+            .entry(symbol.to_owned())
+            .or_insert_with(|| watch::channel(YahooLiveState::default()).0)
+            .subscribe();
         match retained {
-            RetainResult::Existing => return Ok(()),
+            RetainResult::Existing => return Ok(updates),
             RetainResult::Resumed => {
                 if !self.has_current_candle(symbol) {
                     self.start_seed(symbol);
                 }
-                return Ok(());
+                return Ok(updates);
             }
             RetainResult::Added => {}
         }
         self.publish_desired();
         self.start_seed(symbol);
-        Ok(())
+        Ok(updates)
     }
 
     fn start_seed(&mut self, symbol: &str) {
@@ -406,6 +424,10 @@ impl YahooLiveActor {
             self.post_market_cache.clear();
             self.latest_frame_at.clear();
             self.idle_subscriptions.clear();
+            for stream in self.streams.values() {
+                stream.send_replace(YahooLiveState::default());
+            }
+            self.prune_unwatched_caches();
             self.publish_desired();
             return;
         }
@@ -628,11 +650,22 @@ impl YahooLiveActor {
             candle,
             updated_at: entry.updated_at,
         };
-        let _ = self.updates.send(if pre_market {
-            YahooLiveUpdate::PreMarket(update)
+        let Some(stream) = self.streams.get(symbol) else {
+            return;
+        };
+        if pre_market {
+            stream.send_modify(|state| {
+                state.session = Some(YahooLiveSessionUpdate::PreMarket(update.clone()));
+            });
         } else {
-            YahooLiveUpdate::Regular(update)
-        });
+            let regular_session = self.schedule.session(Utc::now()) == MarketSession::Regular;
+            stream.send_modify(|state| {
+                state.regular = Some(update.clone());
+                if regular_session {
+                    state.session = None;
+                }
+            });
+        }
     }
 
     fn publish_post_market(&mut self, update: YahooLivePrice) {
@@ -641,8 +674,12 @@ impl YahooLiveActor {
         }
         self.post_market_cache
             .insert(update.symbol.clone(), update.clone());
-        if self.schedule.session(Utc::now()) == MarketSession::PostMarket {
-            let _ = self.updates.send(YahooLiveUpdate::PostMarket(update));
+        if self.schedule.session(Utc::now()) == MarketSession::PostMarket
+            && let Some(stream) = self.streams.get(&update.symbol)
+        {
+            stream.send_modify(|state| {
+                state.session = Some(YahooLiveSessionUpdate::PostMarket(update.clone()));
+            });
         }
     }
 
@@ -660,6 +697,7 @@ impl YahooLiveActor {
             .retain(|symbol, _| watched.contains(symbol));
         self.latest_frame_at
             .retain(|symbol, _| watched.contains(symbol));
+        self.streams.retain(|symbol, _| watched.contains(symbol));
     }
 
     fn next_touch(&mut self) -> u64 {
@@ -891,6 +929,64 @@ mod tests {
             &mut latest,
             "AAPL",
             first + chrono::TimeDelta::milliseconds(1),
+        ));
+    }
+
+    #[tokio::test]
+    async fn subscription_coalesces_frames_without_losing_session_state() {
+        let (commands, _) = mpsc::unbounded_channel();
+        let (updates, receiver) = watch::channel(YahooLiveState::default());
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let first_time = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
+        let latest_time = first_time + chrono::TimeDelta::seconds(1);
+        let candle = |close, updated_at| YahooLiveCandle {
+            candle: DailyCandle {
+                symbol: "AAPL".to_owned(),
+                market_date: date,
+                open: 100.0,
+                high: 102.0,
+                low: 99.0,
+                close,
+                volume: 10_000,
+            },
+            updated_at,
+        };
+        let mut subscription = YahooLiveSubscription {
+            symbol: "AAPL".to_owned(),
+            commands,
+            updates: receiver,
+            delivered: YahooLiveState::default(),
+            pending: VecDeque::new(),
+        };
+
+        updates.send_modify(|state| state.regular = Some(candle(101.0, first_time)));
+        updates.send_modify(|state| {
+            state.regular = Some(candle(101.5, latest_time));
+            state.session = Some(YahooLiveSessionUpdate::PostMarket(YahooLivePrice {
+                symbol: "AAPL".to_owned(),
+                market_date: date,
+                price: 101.75,
+                updated_at: latest_time,
+            }));
+        });
+
+        let regular = subscription.recv().await.unwrap();
+        updates.send_modify(|state| {
+            state.session = Some(YahooLiveSessionUpdate::PostMarket(YahooLivePrice {
+                symbol: "AAPL".to_owned(),
+                market_date: date,
+                price: 102.0,
+                updated_at: latest_time + chrono::TimeDelta::seconds(1),
+            }));
+        });
+        let post_market = subscription.recv().await.unwrap();
+        assert!(matches!(
+            regular,
+            YahooLiveUpdate::Regular(update) if update.candle.close == 101.5
+        ));
+        assert!(matches!(
+            post_market,
+            YahooLiveUpdate::PostMarket(update) if update.price == 102.0
         ));
     }
 
