@@ -21,6 +21,7 @@ export interface ChartSyncTarget {
 export function synchronizeCharts(
   first: ChartSyncTarget,
   second: ChartSyncTarget,
+  canSyncRange: (source: ChartSyncTarget) => boolean = () => true,
 ): () => void {
   let synchronizingRange = false;
   const syncRange = (
@@ -32,6 +33,7 @@ export function synchronizeCharts(
       || range === null
       || source.isDisposed()
       || target.isDisposed()
+      || !canSyncRange(source)
     ) return;
     const translated = translateLogicalRange(source, target, range);
     if (translated === null) return;

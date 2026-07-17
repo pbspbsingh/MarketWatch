@@ -98,6 +98,7 @@ export default function SplitLightweightCharts({
   const topRefreshPendingVersionRef = useRef<number | null>(null);
   const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
+  const viewportOwnerRef = useRef<"top" | "bottom">("top");
   const liveClientRef = useRef<MarketChartLiveClient | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -181,8 +182,16 @@ export default function SplitLightweightCharts({
   }, [saveViewport, topContext]);
 
   useEffect(() => {
+    viewportOwnerRef.current = "top";
+  }, [bottomDatasetKey]);
+
+  useEffect(() => {
     if (topContext === null || bottomContext === null) return;
-    return synchronizeCharts(topContext, bottomContext);
+    return synchronizeCharts(
+      topContext,
+      bottomContext,
+      (source) => source === (viewportOwnerRef.current === "top" ? topContext : bottomContext),
+    );
   }, [bottomContext, topContext]);
 
   const setCrosshairOwner = useCallback(
@@ -277,6 +286,8 @@ export default function SplitLightweightCharts({
         first={(
           <div
             onPointerEnter={() => setCrosshairOwner("top")}
+            onPointerDownCapture={() => { viewportOwnerRef.current = "top"; }}
+            onWheelCapture={() => { viewportOwnerRef.current = "top"; }}
             onContextMenu={(event) => openContextMenu("top", event)}
             style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
@@ -306,6 +317,8 @@ export default function SplitLightweightCharts({
         second={(
           <div
             onPointerEnter={() => setCrosshairOwner("bottom")}
+            onPointerDownCapture={() => { viewportOwnerRef.current = "bottom"; }}
+            onWheelCapture={() => { viewportOwnerRef.current = "bottom"; }}
             onContextMenu={(event) => openContextMenu("bottom", event)}
             style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
