@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tickers (\n                symbol, name, exchange, description, profile_fetched_at\n             )\n             VALUES (?, ?, ?, ?, ?)\n             ON CONFLICT (symbol) DO UPDATE SET\n                name = excluded.name,\n                exchange = excluded.exchange,\n                description = excluded.description,\n                profile_fetched_at = excluded.profile_fetched_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "95a911420512b5f3fb31827eb11b26eb56b6406f5b8b1aaf5326832e7bc86a71"
+}

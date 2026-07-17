@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM industry_classifications",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "1a854542b39d8bab94bbebf4a0134134bb65446e005f484098826606f78b3c2b"
+}

@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT note_date AS \"note_date: NaiveDate\", title, markdown\n               FROM daily_notes\n               WHERE note_date LIKE ? ESCAPE '\\'\n                  OR rowid IN (\n                      SELECT rowid FROM daily_notes_fts WHERE daily_notes_fts MATCH ?\n                  )\n               ORDER BY note_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "note_date: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "daily_notes",
+            "name": "note_date"
+          }
+        }
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "daily_notes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "markdown",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "daily_notes",
+            "name": "markdown"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0cdcb7c2719de4573a11053f301003371c25359fb7c9140f42b9543db3071d6a"
+}

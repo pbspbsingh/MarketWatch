@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE theme_ai_jobs\n               SET status = 'failed', error = 'Server restarted before job completed', updated_at = ?\n               WHERE status IN ('pending', 'running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "6702d51d016e7cbf3c810cee9bdbc645865f2c7f01da493e7c867ee017766039"
+}

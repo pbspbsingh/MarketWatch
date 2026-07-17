@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT themes.name\n               FROM theme_stocks\n               JOIN themes ON themes.id = theme_stocks.theme_id\n               WHERE theme_stocks.symbol = ?\n               ORDER BY themes.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d082912d84936d1fcc60578292036c9402c150f110f06c77c81e1cdf9a44b8e1"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol FROM tickers\n             UNION\n             SELECT symbol FROM industry_membership_tickers\n             UNION\n             SELECT symbol FROM theme_stocks\n             ORDER BY symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "118cf0562260863ba25f493a80bdd14e9d59048f5c47f02ca4909a8c7e510089"
+}

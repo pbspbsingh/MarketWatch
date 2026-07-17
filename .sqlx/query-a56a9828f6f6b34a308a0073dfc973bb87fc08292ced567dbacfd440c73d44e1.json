@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM tickers WHERE symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "a56a9828f6f6b34a308a0073dfc973bb87fc08292ced567dbacfd440c73d44e1"
+}

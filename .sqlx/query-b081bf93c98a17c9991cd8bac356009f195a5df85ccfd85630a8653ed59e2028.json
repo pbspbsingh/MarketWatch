@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_snapshot_rows (\n                    snapshot_id, industry_key, industry_name, performance_day, performance_week,\n                    performance_month, performance_quarter, performance_half_year,\n                    performance_year, performance_year_to_date\n                )\n                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "b081bf93c98a17c9991cd8bac356009f195a5df85ccfd85630a8653ed59e2028"
+}

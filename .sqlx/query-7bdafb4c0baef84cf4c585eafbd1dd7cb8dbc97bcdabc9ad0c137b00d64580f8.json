@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT fetched_at AS \"fetched_at: NaiveDateTime\"\n             FROM industry_classifications\n             ORDER BY fetched_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "fetched_at: NaiveDateTime",
+        "ordinal": 0,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7bdafb4c0baef84cf4c585eafbd1dd7cb8dbc97bcdabc9ad0c137b00d64580f8"
+}

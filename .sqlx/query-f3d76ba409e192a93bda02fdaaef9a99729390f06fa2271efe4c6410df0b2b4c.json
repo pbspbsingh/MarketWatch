@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_classifications (\n                    industry_key, industry_name, sector_key, sector_name, fetched_at\n                 ) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "f3d76ba409e192a93bda02fdaaef9a99729390f06fa2271efe4c6410df0b2b4c"
+}

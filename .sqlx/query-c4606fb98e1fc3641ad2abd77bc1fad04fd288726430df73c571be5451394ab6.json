@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol, name, exchange, description,\n                    profile_fetched_at AS \"profile_fetched_at!: NaiveDateTime\"\n             FROM tickers\n             WHERE symbol = ? AND profile_fetched_at IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "exchange",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "exchange"
+          }
+        }
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "profile_fetched_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "tickers",
+            "name": "profile_fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c4606fb98e1fc3641ad2abd77bc1fad04fd288726430df73c571be5451394ab6"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM industry_membership_tickers WHERE symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2098490a792be41d630f5fbe470891842c34455408746a26a4a74c5871f7de82"
+}

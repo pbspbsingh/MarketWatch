@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT payload AS \"payload!: String\",\n                      fetched_at AS \"fetched_at!: NaiveDateTime\"\n               FROM fundamentals\n               WHERE symbol = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "payload!: String",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "fundamentals",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "name": "fetched_at!: NaiveDateTime",
+        "ordinal": 1,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "fundamentals",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "09864538ebed94c8f6ff4c25c3a311514b77b5e1b17c501f93b58a9cb02c8730"
+}

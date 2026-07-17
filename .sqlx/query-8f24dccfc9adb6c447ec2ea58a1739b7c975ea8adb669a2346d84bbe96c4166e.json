@@ -1,0 +1,64 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT watchlists.id, watchlists.name, watchlists.icon_key,\n                   watchlists.kind = 'favourites' AS is_default,\n                   COUNT(watchlist_tickers.symbol) AS ticker_count\n            FROM watchlists\n            LEFT JOIN watchlist_tickers ON watchlist_tickers.watchlist_id = watchlists.id\n            GROUP BY watchlists.id\n            ORDER BY is_default DESC, watchlists.name COLLATE NOCASE, watchlists.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "watchlists",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watchlists",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "icon_key",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watchlists",
+            "name": "icon_key"
+          }
+        }
+      },
+      {
+        "name": "is_default",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "ticker_count",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8f24dccfc9adb6c447ec2ea58a1739b7c975ea8adb669a2346d84bbe96c4166e"
+}

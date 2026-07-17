@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol FROM watchlist_tickers WHERE watchlist_id = ? ORDER BY symbol COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watchlist_tickers",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bf76ad0541f800332a202695a37251b4867573fc22065f8dbd5dda4b2bb88a52"
+}

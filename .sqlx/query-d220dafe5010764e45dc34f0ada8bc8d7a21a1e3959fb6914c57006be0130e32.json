@@ -1,0 +1,69 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT themes.id, themes.name, themes.etf_symbol, themes.description,\n                      COUNT(theme_stocks.symbol) AS \"stock_count!: i64\"\n               FROM themes\n               LEFT JOIN theme_stocks ON theme_stocks.theme_id = themes.id\n               GROUP BY themes.id\n               ORDER BY themes.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "etf_symbol",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "etf_symbol"
+          }
+        }
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "stock_count!: i64",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "d220dafe5010764e45dc34f0ada8bc8d7a21a1e3959fb6914c57006be0130e32"
+}

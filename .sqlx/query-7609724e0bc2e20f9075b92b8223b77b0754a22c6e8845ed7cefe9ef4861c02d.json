@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO theme_ai_jobs (\n                       status, symbols, model, prompt, retry_of_job_id, created_at, updated_at\n                   ) VALUES ('pending', ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "7609724e0bc2e20f9075b92b8223b77b0754a22c6e8845ed7cefe9ef4861c02d"
+}

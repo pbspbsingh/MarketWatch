@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol, market_date AS \"market_date: NaiveDate\", open, high, low,\n                    close, volume\n             FROM daily_candles\n             WHERE symbol = ? AND market_date >= ? AND market_date < ?\n             ORDER BY market_date",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "market_date: NaiveDate",
+        "ordinal": 1,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "market_date"
+          }
+        }
+      },
+      {
+        "name": "open",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "open"
+          }
+        }
+      },
+      {
+        "name": "high",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "high"
+          }
+        }
+      },
+      {
+        "name": "low",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "low"
+          }
+        }
+      },
+      {
+        "name": "close",
+        "ordinal": 5,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "close"
+          }
+        }
+      },
+      {
+        "name": "volume",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "volume"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "98875c1ac1ff6213dd49aeea79ccd729f79710203270574afa2fd9e7adab659f"
+}

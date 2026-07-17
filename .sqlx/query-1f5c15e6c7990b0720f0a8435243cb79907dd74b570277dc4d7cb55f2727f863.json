@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_membership_tickers (industry_key, symbol)\n                 VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "1f5c15e6c7990b0720f0a8435243cb79907dd74b570277dc4d7cb55f2727f863"
+}

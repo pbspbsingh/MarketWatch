@@ -1,0 +1,45 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT note_date AS \"note_date: NaiveDate\", title, '' AS markdown\n                   FROM daily_notes\n                   ORDER BY note_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "note_date: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "daily_notes",
+            "name": "note_date"
+          }
+        }
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "daily_notes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "markdown",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "80edd4a107c61ded75bd2d0dc0a9baed69aed1a87c1dd48046b6082b609347b1"
+}

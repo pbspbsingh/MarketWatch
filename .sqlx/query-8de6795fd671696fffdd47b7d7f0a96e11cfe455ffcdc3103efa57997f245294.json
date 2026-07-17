@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT note_date AS \"note_date: NaiveDate\", width, height,\n                          image_blob AS \"image_blob!: Vec<u8>\"\n                   FROM daily_note_images\n                   WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "note_date: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "daily_note_images",
+            "name": "note_date"
+          }
+        }
+      },
+      {
+        "name": "width",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "daily_note_images",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "name": "height",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "daily_note_images",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "name": "image_blob!: Vec<u8>",
+        "ordinal": 3,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "daily_note_images",
+            "name": "image_blob"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8de6795fd671696fffdd47b7d7f0a96e11cfe455ffcdc3103efa57997f245294"
+}

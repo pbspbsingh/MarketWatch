@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM daily_note_images\n               WHERE detached_at IS NOT NULL\n                 AND detached_at <= datetime('now', '-1 hour')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "e65b034f51d96f2ba32263cea9a44c25f9ab802f072b20bfeedb37e004b22ee9"
+}

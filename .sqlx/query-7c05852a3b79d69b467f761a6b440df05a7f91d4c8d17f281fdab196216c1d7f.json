@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_ai_processed_symbols WHERE symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7c05852a3b79d69b467f761a6b440df05a7f91d4c8d17f281fdab196216c1d7f"
+}

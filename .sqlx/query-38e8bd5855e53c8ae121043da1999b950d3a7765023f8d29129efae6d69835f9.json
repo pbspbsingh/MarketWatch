@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_membership_tickers (industry_key, symbol)\n             VALUES (?, ?)\n             ON CONFLICT (industry_key, symbol) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "38e8bd5855e53c8ae121043da1999b950d3a7765023f8d29129efae6d69835f9"
+}

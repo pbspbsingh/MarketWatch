@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT market_date AS \"market_date: NaiveDate\"\n             FROM industry_snapshots\n             ORDER BY market_date DESC\n             LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "market_date: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshots",
+            "name": "market_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d6d689277d516275d662c638b5bd24fac2e132e5b77cdebd32b3e6574b2ea777"
+}

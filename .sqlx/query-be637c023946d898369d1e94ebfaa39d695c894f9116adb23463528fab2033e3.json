@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO theme_ai_processed_symbols (symbol, job_id, outcome, processed_at)\n                   VALUES (?, ?, ?, ?)\n                   ON CONFLICT(symbol) DO UPDATE SET\n                       job_id = excluded.job_id,\n                       outcome = excluded.outcome,\n                       processed_at = excluded.processed_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "be637c023946d898369d1e94ebfaa39d695c894f9116adb23463528fab2033e3"
+}

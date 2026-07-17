@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT industry_key AS key, industry_name AS name, performance_day, performance_week,\n                    performance_month, performance_quarter, performance_half_year,\n                    performance_year, performance_year_to_date\n             FROM industry_snapshot_rows\n             WHERE snapshot_id = ?\n             ORDER BY industry_name",
+  "describe": {
+    "columns": [
+      {
+        "name": "key",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "industry_key"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "industry_name"
+          }
+        }
+      },
+      {
+        "name": "performance_day",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_day"
+          }
+        }
+      },
+      {
+        "name": "performance_week",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_week"
+          }
+        }
+      },
+      {
+        "name": "performance_month",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_month"
+          }
+        }
+      },
+      {
+        "name": "performance_quarter",
+        "ordinal": 5,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_quarter"
+          }
+        }
+      },
+      {
+        "name": "performance_half_year",
+        "ordinal": 6,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_half_year"
+          }
+        }
+      },
+      {
+        "name": "performance_year",
+        "ordinal": 7,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_year"
+          }
+        }
+      },
+      {
+        "name": "performance_year_to_date",
+        "ordinal": 8,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "industry_snapshot_rows",
+            "name": "performance_year_to_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cb5f776fb1b53b86b0ba17367326c51861c7f35c313c95c55a32156d628c4740"
+}

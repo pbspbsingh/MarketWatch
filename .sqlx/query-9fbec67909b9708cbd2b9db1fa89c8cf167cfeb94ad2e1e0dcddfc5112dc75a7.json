@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT themes.name, themes.etf_symbol\n               FROM theme_stocks\n               JOIN themes ON themes.id = theme_stocks.theme_id\n               WHERE theme_stocks.symbol = ?\n               ORDER BY themes.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "etf_symbol",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "etf_symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9fbec67909b9708cbd2b9db1fa89c8cf167cfeb94ad2e1e0dcddfc5112dc75a7"
+}

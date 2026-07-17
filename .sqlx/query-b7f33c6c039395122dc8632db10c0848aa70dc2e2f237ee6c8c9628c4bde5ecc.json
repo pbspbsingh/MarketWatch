@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT MAX(market_date) AS \"market_date: NaiveDate\"\n             FROM daily_candles\n             WHERE symbol = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "market_date: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b7f33c6c039395122dc8632db10c0848aa70dc2e2f237ee6c8c9628c4bde5ecc"
+}

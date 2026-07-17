@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_ai_jobs WHERE id = ? AND status NOT IN ('pending', 'running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "edc299a0de412e4aec3076fc8b5de1ebb4f7c88bbb6ca8866a33ca3bd768a2c8"
+}

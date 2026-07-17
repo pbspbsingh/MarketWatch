@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE daily_note_images\n                       SET detached_at = NULL\n                       WHERE id = ? AND note_date = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "58df2b52fd0806e21377c8a851714cf875116b82100f572135f9d26e931467cb"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT OR IGNORE INTO watchlist_tickers (watchlist_id, symbol, added_at)\n            SELECT id, ?, CURRENT_TIMESTAMP FROM watchlists WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6d88582c891da7cbf353dbe7d8b6d80a29ca43a1e335ce00f4ee60b4260b1fb3"
+}

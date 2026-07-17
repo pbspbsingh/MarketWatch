@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO themes (name, etf_symbol, description) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "226c238f02cec72a464ff0644a461f9936c94bbb46d740b8ff82b1437adeb18b"
+}

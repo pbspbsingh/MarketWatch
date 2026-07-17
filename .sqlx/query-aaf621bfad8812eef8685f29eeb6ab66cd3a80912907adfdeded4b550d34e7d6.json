@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE daily_notes\n               SET title = ?,\n                   markdown = ?,\n                   revision = revision + 1,\n                   updated_at = CURRENT_TIMESTAMP\n               WHERE note_date = ? AND revision = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "aaf621bfad8812eef8685f29eeb6ab66cd3a80912907adfdeded4b550d34e7d6"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE watchlists SET name = ?, icon_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND kind = 'custom'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1a7fa7d1bef7b9ff50bfd00bb3c85c2d491d441946aa88ba3fa7a0f2e7d8af96"
+}

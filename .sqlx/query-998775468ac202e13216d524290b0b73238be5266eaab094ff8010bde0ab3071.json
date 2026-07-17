@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO fundamentals (symbol, payload, fetched_at)\n               VALUES (?, ?, ?)\n               ON CONFLICT (symbol) DO UPDATE SET\n                   payload = excluded.payload,\n                   fetched_at = excluded.fetched_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "998775468ac202e13216d524290b0b73238be5266eaab094ff8010bde0ab3071"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE daily_note_images\n               SET image_blob = ?, width = ?, height = ?, updated_at = CURRENT_TIMESTAMP\n               WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "dbb153d59d2e8740fa487e035da80f8bc9dfd764caeb5d0e08d54e2f12794a3d"
+}

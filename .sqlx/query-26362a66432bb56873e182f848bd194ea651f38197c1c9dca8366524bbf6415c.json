@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO daily_note_images\n                   (note_date, width, height, image_blob, detached_at)\n               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "26362a66432bb56873e182f848bd194ea651f38197c1c9dca8366524bbf6415c"
+}

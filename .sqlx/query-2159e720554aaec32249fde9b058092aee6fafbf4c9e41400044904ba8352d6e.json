@@ -1,0 +1,158 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, status, symbols AS \"symbols: String\", model,\n                      prompt, response, suggestions AS \"suggestions: String\",\n                      validation_errors AS \"validation_errors: String\", error, retry_of_job_id,\n                      created_at AS \"created_at: NaiveDateTime\",\n                      updated_at AS \"updated_at: NaiveDateTime\"\n               FROM theme_ai_jobs\n               WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "symbols: String",
+        "ordinal": 2,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "symbols"
+          }
+        }
+      },
+      {
+        "name": "model",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "name": "prompt",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "prompt"
+          }
+        }
+      },
+      {
+        "name": "response",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "response"
+          }
+        }
+      },
+      {
+        "name": "suggestions: String",
+        "ordinal": 6,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "suggestions"
+          }
+        }
+      },
+      {
+        "name": "validation_errors: String",
+        "ordinal": 7,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "validation_errors"
+          }
+        }
+      },
+      {
+        "name": "error",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "name": "retry_of_job_id",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "retry_of_job_id"
+          }
+        }
+      },
+      {
+        "name": "created_at: NaiveDateTime",
+        "ordinal": 10,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "name": "updated_at: NaiveDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_jobs",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2159e720554aaec32249fde9b058092aee6fafbf4c9e41400044904ba8352d6e"
+}

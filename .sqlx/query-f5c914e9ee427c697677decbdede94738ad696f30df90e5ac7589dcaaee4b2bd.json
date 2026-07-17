@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM daily_notes WHERE note_date = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "f5c914e9ee427c697677decbdede94738ad696f30df90e5ac7589dcaaee4b2bd"
+}

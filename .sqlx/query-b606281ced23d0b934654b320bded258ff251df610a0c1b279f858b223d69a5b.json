@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE theme_ai_jobs\n               SET status = ?, response = ?, suggestions = ?, validation_errors = ?,\n                   error = NULL, updated_at = ?\n               WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "b606281ced23d0b934654b320bded258ff251df610a0c1b279f858b223d69a5b"
+}

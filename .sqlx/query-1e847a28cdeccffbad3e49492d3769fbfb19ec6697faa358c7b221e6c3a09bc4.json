@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO nyse_holidays (market_date, fetched_at) VALUES (?, ?) ON CONFLICT (market_date) DO UPDATE SET fetched_at = excluded.fetched_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "1e847a28cdeccffbad3e49492d3769fbfb19ec6697faa358c7b221e6c3a09bc4"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_memberships (industry_key, fetched_at)\n             VALUES (?, ?)\n             ON CONFLICT (industry_key) DO UPDATE SET fetched_at = excluded.fetched_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "944063362fa89414c63cfaa4f1fbc34d81c462550b5397146686ddca3611e306"
+}

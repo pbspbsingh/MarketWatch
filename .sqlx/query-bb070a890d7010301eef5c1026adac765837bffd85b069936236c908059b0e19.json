@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT fetched_at AS \"fetched_at: NaiveDateTime\"\n               FROM industry_memberships\n               WHERE industry_key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "fetched_at: NaiveDateTime",
+        "ordinal": 0,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "industry_memberships",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bb070a890d7010301eef5c1026adac765837bffd85b069936236c908059b0e19"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO daily_notes (note_date, title) VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "725ba9db63768048a6ffd75779233d7ea12fa7cb332fce9264e8b6868ad2112e"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM watchlist_tickers WHERE watchlist_id = ? AND symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0064576caa1eb236461188507672489ac01ba2eebb7eeed7efacdf58d07ac0ba"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE themes SET name = ?, etf_symbol = ?, description = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "1e14761c5bcaf431e71377e1c8ac9a61a1108fa0ea4fa719f5bb78d9a1db10f8"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE top_stock_screens\n               SET name = ?, url = ?, max_stock_count = ?, updated_at = CURRENT_TIMESTAMP\n               WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "3f8d9cb29493d8ea8c093a69b85ca3373f4422316097ae890c5470e5e9a8cff4"
+}

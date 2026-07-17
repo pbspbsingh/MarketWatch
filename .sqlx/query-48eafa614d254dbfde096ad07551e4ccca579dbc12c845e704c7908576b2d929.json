@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO daily_candles (\n                    symbol, market_date, open, high, low, close, volume\n                 ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "48eafa614d254dbfde096ad07551e4ccca579dbc12c845e704c7908576b2d929"
+}

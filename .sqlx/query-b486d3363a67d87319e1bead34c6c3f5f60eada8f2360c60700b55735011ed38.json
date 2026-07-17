@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO top_stock_screens (name, url, max_stock_count)\n               VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b486d3363a67d87319e1bead34c6c3f5f60eada8f2360c60700b55735011ed38"
+}

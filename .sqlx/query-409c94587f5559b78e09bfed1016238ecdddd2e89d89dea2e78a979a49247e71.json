@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO daily_candles (\n                    symbol, market_date, open, high, low, close, volume\n                 )\n                 VALUES (?, ?, ?, ?, ?, ?, ?)\n                 ON CONFLICT (symbol, market_date) DO UPDATE SET\n                    open = excluded.open,\n                    high = excluded.high,\n                    low = excluded.low,\n                    close = excluded.close,\n                    volume = excluded.volume",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "409c94587f5559b78e09bfed1016238ecdddd2e89d89dea2e78a979a49247e71"
+}

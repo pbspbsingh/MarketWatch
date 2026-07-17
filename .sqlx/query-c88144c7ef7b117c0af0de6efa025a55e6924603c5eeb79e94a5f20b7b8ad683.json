@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM watchlists WHERE id = ? AND kind = 'custom'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c88144c7ef7b117c0af0de6efa025a55e6924603c5eeb79e94a5f20b7b8ad683"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_snapshots (market_date, fetched_at)\n             VALUES (?, ?)\n             ON CONFLICT (market_date) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e812ee2a0d314a97df2a947841a8d0ec74264f2e5e8acaa62cbde9ec9e875591"
+}
