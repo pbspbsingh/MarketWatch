@@ -35,6 +35,8 @@ export interface ChartHistoryInteractionTracker {
   occurredAt: number;
 }
 
+export type MarketChartLoadStatus = "loading" | "ready" | "error";
+
 interface MarketChartContainerProps {
   symbol: string;
   interval: MarketChartInterval;
@@ -45,6 +47,8 @@ interface MarketChartContainerProps {
   historyInteractionTracker?: ChartHistoryInteractionTracker;
   relativeStrengthComparisonSymbol?: string;
   relativeStrengthMode?: RelativeStrengthMode;
+  showLoadingOverlay?: boolean;
+  onLoadStatusChange?: (status: MarketChartLoadStatus) => void;
 }
 
 const historyLoadThresholdBars = 25;
@@ -60,6 +64,8 @@ export function MarketChartContainer({
   historyInteractionTracker,
   relativeStrengthComparisonSymbol,
   relativeStrengthMode,
+  showLoadingOverlay = true,
+  onLoadStatusChange,
 }: MarketChartContainerProps) {
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
@@ -76,6 +82,7 @@ export function MarketChartContainer({
   const interactionTracker = historyInteractionTracker ?? localInteractionTrackerRef.current;
   const onErrorRef = useRef(onError);
   const onChartContextRef = useRef(onChartContext);
+  const onLoadStatusChangeRef = useRef(onLoadStatusChange);
   const [loadState, setLoadState] = useState<LoadState>();
   const [snapshot, setSnapshot] = useState<MarketChartSnapshot>();
   const [retryVersion, setRetryVersion] = useState(0);
@@ -84,6 +91,7 @@ export function MarketChartContainer({
   snapshotRef.current = snapshot;
   onErrorRef.current = onError;
   onChartContextRef.current = onChartContext;
+  onLoadStatusChangeRef.current = onLoadStatusChange;
 
   const handleChartContext = useCallback((context: ChartSyncTarget | null) => {
     setChartContext(context);
@@ -106,6 +114,7 @@ export function MarketChartContainer({
     const comparisonOnly = currentSnapshot !== undefined
       && snapshotDatasetKeyRef.current === datasetKey;
     if (comparisonOnly) {
+      onLoadStatusChangeRef.current?.("ready");
       setLoadState({
         key: datasetKey,
         status: "ready",
@@ -115,6 +124,7 @@ export function MarketChartContainer({
         ? current
         : { ...current, relative_strength: null });
     } else {
+      onLoadStatusChangeRef.current?.("loading");
       setLoadState({ key: datasetKey, status: "loading" });
     }
     onErrorRef.current?.(undefined);
@@ -135,6 +145,7 @@ export function MarketChartContainer({
           snapshotDatasetKeyRef.current = datasetKey;
           setSnapshot(snapshot);
           setLoadState({ key: datasetKey, status: "ready", snapshot });
+          onLoadStatusChangeRef.current?.("ready");
         }
       })
       .catch((error: unknown) => {
@@ -149,6 +160,7 @@ export function MarketChartContainer({
             status: "error",
             message,
           });
+          onLoadStatusChangeRef.current?.("error");
         }
         onErrorRef.current?.(message);
       });
@@ -259,6 +271,7 @@ export function MarketChartContainer({
     >
       {snapshot !== undefined && (
         <MarketChart
+          key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
           initialViewport={initialViewport}
           onChartContext={handleChartContext}
@@ -266,23 +279,19 @@ export function MarketChartContainer({
           relativeStrengthMode={relativeStrengthMode}
         />
       )}
-      {state?.status !== "ready" && (
+      {state?.status === "error" ? (
         <div className="panel-status market-chart-overlay">
-          {state?.status === "error" ? (
-            <>
           <Typography color="error">{state.message}</Typography>
           <Button size="small" variant="outlined" onClick={() => setRetryVersion((value) => value + 1)}>
             Retry
           </Button>
-            </>
-          ) : (
-            <>
-              <CircularProgress size="1rem" />
-              <Typography color="text.secondary">Loading chart</Typography>
-            </>
-          )}
         </div>
-      )}
+      ) : showLoadingOverlay && state?.status !== "ready" ? (
+        <div className="panel-status market-chart-overlay">
+          <CircularProgress size="1rem" />
+          <Typography color="text.secondary">Loading chart</Typography>
+        </div>
+      ) : null}
     </div>
   );
 }

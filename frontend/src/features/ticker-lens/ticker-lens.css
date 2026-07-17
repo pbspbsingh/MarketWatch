@@ -37,13 +37,6 @@
   flex: 1;
 }
 
-.ticker-lens-chart-loading-overlay {
-  position: absolute;
-  z-index: 5;
-  inset: 0;
-  background: #111418;
-}
-
 .ticker-lens-filter-toggle {
   position: absolute !important;
   z-index: 5;

@@ -5,9 +5,11 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { CircularProgress, Typography } from "@mui/material";
 import {
   MarketChartContainer,
   type ChartHistoryInteractionTracker,
+  type MarketChartLoadStatus,
 } from "../charts/MarketChartContainer";
 import { SplitPane } from "../../components/SplitPane";
 import {
@@ -29,6 +31,7 @@ interface SplitLightweightChartsProps {
   topSymbol: string;
   bottomSymbol: string;
   interval: "D" | "W";
+  topPending?: boolean;
   relativeStrengthMode: RelativeStrengthMode;
   initialSplit: number;
   onSplitChange: (split: number) => void;
@@ -37,10 +40,16 @@ interface SplitLightweightChartsProps {
 
 const viewportPersistenceDebounceMs = 200;
 
+interface DatasetLoadState {
+  key: string;
+  status: MarketChartLoadStatus;
+}
+
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
   interval,
+  topPending = false,
   relativeStrengthMode,
   initialSplit,
   onSplitChange,
@@ -49,6 +58,8 @@ export default function SplitLightweightCharts({
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [menuPosition, setMenuPosition] = useState<ChartMenuPosition | null>(null);
+  const [topLoadState, setTopLoadState] = useState<DatasetLoadState>();
+  const [bottomLoadState, setBottomLoadState] = useState<DatasetLoadState>();
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
   const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
@@ -64,6 +75,13 @@ export default function SplitLightweightCharts({
   };
   viewportsRef.current = viewports;
   const initialViewport = viewports[interval];
+  const chartInterval = interval === "D" ? "daily" : "weekly";
+  const topDatasetKey = `${topSymbol}\0${chartInterval}`;
+  const bottomDatasetKey = `${bottomSymbol}\0${chartInterval}`;
+  const topLoading = topLoadState?.key !== topDatasetKey
+    || topLoadState.status === "loading";
+  const bottomLoading = bottomLoadState?.key !== bottomDatasetKey
+    || bottomLoadState.status === "loading";
   const saveViewport = useCallback(
     (viewport: ChartViewport) => {
       viewports[interval] = viewport;
@@ -126,7 +144,9 @@ export default function SplitLightweightCharts({
   }, [bottomContext, topContext]);
 
   return (
-    <>
+    <div
+      style={{ position: "relative", display: "flex", minWidth: 0, minHeight: 0, flex: 1 }}
+    >
       <SplitPane
         initialSplit={initialSplit}
         onSplitChange={onSplitChange}
@@ -134,34 +154,40 @@ export default function SplitLightweightCharts({
           <div
             onPointerEnter={() => setCrosshairOwner("top")}
             onContextMenu={openContextMenu}
-            style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
+            style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
             <MarketChartContainer
               symbol={topSymbol}
-              interval={interval === "D" ? "daily" : "weekly"}
+              interval={chartInterval}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
               relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthMode={relativeStrengthMode}
+              showLoadingOverlay={false}
+              onLoadStatusChange={(status) => setTopLoadState({ key: topDatasetKey, status })}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
             />
+            {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>
         )}
         second={(
           <div
             onPointerEnter={() => setCrosshairOwner("bottom")}
             onContextMenu={openContextMenu}
-            style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
+            style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
             <MarketChartContainer
               symbol={bottomSymbol}
-              interval={interval === "D" ? "daily" : "weekly"}
+              interval={chartInterval}
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
+              showLoadingOverlay={false}
+              onLoadStatusChange={(status) => setBottomLoadState({ key: bottomDatasetKey, status })}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
             />
+            {bottomLoading && <ChartLoadingOverlay />}
           </div>
         )}
       />
@@ -170,6 +196,15 @@ export default function SplitLightweightCharts({
         onClose={() => setMenuPosition(null)}
         onResetView={resetChartView}
       />
-    </>
+    </div>
+  );
+}
+
+function ChartLoadingOverlay() {
+  return (
+    <div className="panel-status market-chart-overlay">
+      <CircularProgress size="1rem" />
+      <Typography color="text.secondary">Loading chart</Typography>
+    </div>
   );
 }

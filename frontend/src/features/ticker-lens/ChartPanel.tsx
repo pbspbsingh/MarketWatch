@@ -94,9 +94,12 @@ export function ChartPanel({
     (theme) => theme.etf_symbol === selectedThemeEtf,
   ) ?? activeSummary?.theme_benchmarks[0];
   const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
-  const bottomChartSymbol = themeEtfChartEnabled
-    ? selectedThemeBenchmark?.tradingview_symbol ?? activeSummary?.benchmark_symbol
-    : activeSummary?.benchmark_symbol;
+  const chartThemeBenchmark = summary?.theme_benchmarks.find(
+    (theme) => theme.etf_symbol === selectedThemeEtf,
+  ) ?? summary?.theme_benchmarks[0];
+  const bottomChartSymbol = showThemeEtfChart && chartThemeBenchmark !== undefined
+    ? chartThemeBenchmark.tradingview_symbol
+    : summary?.benchmark_symbol;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
@@ -116,7 +119,6 @@ export function ChartPanel({
   }, []);
 
   useEffect(() => {
-    setSelectedThemeEtf(undefined);
     if (selectedTicker === undefined) {
       setDetailsOpen(false);
       onSelectedTickerContext(undefined);
@@ -165,10 +167,12 @@ export function ChartPanel({
     }
 
     const controller = new AbortController();
+    const tickerChanged = summary?.symbol !== selectedTicker;
     setSummaryLoading(true);
     onSelectedTickerContext(undefined);
     fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
       .then((chartSummary) => {
+        if (tickerChanged) setSelectedThemeEtf(undefined);
         setSummary(chartSummary);
         setSummaryLoading(false);
         onSelectedTickerContext({
@@ -265,18 +269,13 @@ export function ChartPanel({
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
+                topPending={activeSummary === undefined && error === undefined}
                 relativeStrengthMode={relativeStrengthMode}
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
                 onError={handleChartError}
               />
             </Suspense>
-          )}
-          {activeSummary === undefined && error === undefined && (
-            <div className="panel-status ticker-lens-chart-loading-overlay">
-              <CircularProgress size="1rem" />
-              <Typography color="text.secondary">Loading chart</Typography>
-            </div>
           )}
         </div>
       )}
