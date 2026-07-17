@@ -6,7 +6,7 @@ Implementation branch: `feature/lightweight-ticker-lens-charts`
 
 Merge target: `main` only after manual parity approval
 
-Current checkpoint: tasks 4.4 and 4.5 committed in `cae96ca`. Study migration is explicitly out of scope; its current implementation remains unchanged. Next is phase 6 cutover preparation.
+Current checkpoint: task 5.9 implemented and reviewed; awaiting commit approval. Lazy TickerLens history is database-backed with a five-trading-session Yahoo overlap, initial reads remain bounded, and older candles are no longer age-purged.
 
 ## Objective
 
@@ -28,8 +28,8 @@ The existing TradingView implementation remains available on the feature branch 
 - RS Line is the default; persist the selected RS mode.
 - Do not render a current-price horizontal line.
 - Do not render a top-left symbol/OHLC/return/volume/indicator legend or crosshair-updated values. Keep native crosshair axis labels.
-- Persist approximately 500 completed daily candles per symbol after a one-time candle-table purge.
-- Fetch additional TickerLens history lazily from Yahoo without saving it to the database.
+- Initially load approximately 500 completed daily candles per symbol and retain older history fetched lazily by TickerLens.
+- Persist every completed Yahoo candle returned by a lazy-history request; do not purge older candles during maintenance.
 - Compute candles, Daily/Weekly aggregation, all moving averages, volume averages, RS Line, and RS Trend on the backend. The frontend renders returned series and performs no financial calculations.
 - Live quote/WebSocket data is chart presentation data only. It must not affect persistence, RS/AS, sorting, summaries, notes, or any other analytical flow.
 
@@ -42,9 +42,9 @@ The TradingView widget toolbar and drawing tools are explicitly not required and
 ## Architecture
 
 ```text
-Yahoo chart API ──> persisted completed candles ──> chart snapshot API ──> MarketChart
-       │
-       └──────────> ephemeral candle ranges ─────> history API ────────> merge
+Yahoo chart API ──> validated completed candles ──> daily_candles
+                                                    │
+                                                    └─> snapshot/history API ──> MarketChart
 
 Yahoo quote API ──> current-session snapshot ─┐
 Yahoo WebSocket ──> live ticks ───────────────┼─> LiveChartManager ─> app WebSocket ─> series.update()
@@ -54,7 +54,7 @@ Yahoo WebSocket ──> live ticks ───────────────
 ### Ownership boundaries
 
 - `YahooClient`: Yahoo protocol, decoding, throttling, and provider errors.
-- Historical candle service: persisted recent range plus explicitly non-persisting supplemental range fetches.
+- Historical candle service: database-first bounded range reads, five-session boundary overlap, and atomic Yahoo upserts.
 - Backend chart calculation module: Daily/Weekly aggregation, SMA/EMA, volume averages, RS Line, and RS Trend.
 - `LiveChartManager` (deferred): Yahoo WebSocket lifecycle, quote reconciliation, subscriptions, and provisional candles.
 - Chart API: provider-independent snapshot, history, and live message contracts.
@@ -114,9 +114,24 @@ Add a separate endpoint with a provider-neutral contract. It returns a complete 
 - ordered candles and all recalculated indicator/RS series
 - `has_more_before`
 
-TickerLens combines persisted recent candles with Yahoo-fetched older candles without saving the older range. Its range always ends at the latest completed session.
+TickerLens reads the requested range from `daily_candles`. If the requested start precedes the earliest stored candle, the shared bounded candle loader fetches only the missing older portion plus five overlapping trading sessions, upserts the response, then reads the complete requested range back from the database. The range always ends at the latest completed session.
 
-This path must retain the existing provider concurrency limit, retry policy, and error mapping. Concurrent duplicate requests for the same symbol/range should be coalesced only while in flight; no historical cache is required. Re-requesting data is acceptable.
+This path must retain the existing provider concurrency limit, retry policy, per-symbol lock, and error mapping. `daily_candles` is the historical cache; no second cache or coverage-metadata table is added.
+
+#### Lazy-history query algorithm
+
+All ranges are half-open: `[start, end)`.
+
+1. Let the expanded UI request be `[requested_start, requested_end)`, normalize `requested_start` to the first market session on or after it, and let `stored_start` be the symbol's earliest date in `daily_candles`.
+2. If no candle is stored, query Yahoo for `[requested_start, requested_end)`.
+3. If `stored_start` is later than that first requested session, set `overlap_end` to the end-exclusive boundary after five trading sessions beginning at `stored_start`, capped at `requested_end`. Query Yahoo for `[requested_start, overlap_end)`.
+4. If `stored_start` is on or before the first requested session, do not query Yahoo; serve the range from the database.
+5. Validate and atomically upsert Yahoo's ordered response by `(symbol, market_date)`, allowing Yahoo to correct candles inside the overlap.
+6. Read `[requested_start, requested_end)` from `daily_candles` and recompute the complete Daily/Weekly indicator and RS snapshot.
+
+Yahoo omissions remain omissions; the application does not fabricate candles. `has_more_before` from a provider-backed request stops the mounted UI at a terminal boundary. That terminal state is intentionally not persisted, so a later mount may probe an IPO boundary again.
+
+Older retained rows do not leak into consumers: the shared loader returns only its explicit bounded range. Any yearly consumer may trigger a one-time backfill when that bounded range is missing, then reuse the database. Calculations that compare symbols align by market date and tolerate different candle counts; single-symbol indicators operate on that symbol's returned range only.
 
 ### Deferred live chart stream
 
@@ -137,15 +152,13 @@ The first message after subscribing or reconnecting must be a complete candle sn
 
 ## Candle history policy
 
-The working target is approximately 500 trading candles. Implement this using an approximately 760-calendar-day retained/requested range; exact session counts vary by holidays and listings.
+The initial-response target is approximately 500 trading candles. Implement this using an approximately 760-calendar-day requested range; exact session counts vary by holidays and listings.
 
 - Change the recent-candle horizon only when the new chart endpoint is ready.
-- Do not purge during ordinary startup or schema migration.
-- At cutover, run one explicit, user-approved purge of `daily_candles` so the existing fetch flow repopulates the expanded range cleanly.
-- Keep the purge out of application code and out of automatic migrations.
-- Do not persist lazy history.
-- After the purge, preserve the current on-demand population behavior; do not add a bulk preload job.
-- The expanded global range is acceptable for existing analytical flows.
+- Keep initial snapshot reads bounded to this range even when older candles are stored.
+- Persist lazy history on demand; do not add a bulk preload job.
+- Remove age-based `daily_candles` cleanup so previously fetched history remains reusable.
+- No one-time candle purge is required.
 
 Approximately 500 candles support one visible trading year plus the 199 preceding sessions required to produce a valid SMA 200 at the left edge.
 
@@ -165,7 +178,7 @@ Crosshair synchronization maps the date to the target chart’s candle and uses 
 
 Price axes remain independently auto-scaled. Absolute vertical ranges must not be copied between differently priced symbols.
 
-Use the retained approximately two-year snapshot for initial rendering. Do not fetch lazy history on mount or container resize. Request older history only after an explicit user pan/scroll reaches the left edge; synchronized chart instances expand independently from the same interaction.
+Use the approximately two-year snapshot for initial rendering. Do not fetch lazy history on mount or container resize. Request older history only after an explicit user pan/scroll reaches the left edge; synchronized chart instances expand independently from the same interaction. Previously persisted older history is still returned only through this lazy path.
 
 Each chart owns an `AbortController` and monotonic dataset generation. Symbol/interval changes abort obsolete requests; every snapshot, history response, RS result, and future live message is validated against the active symbol and generation before application. History cursors belong to one generation and cannot leak across ticker changes.
 
@@ -193,10 +206,9 @@ Colors and styles:
 The backend maintains one ordered collection for each request, keyed by market date. Data precedence is:
 
 1. Provisional live candle for the current session.
-2. Persisted finalized snapshot candle.
-3. Ephemeral lazy-range candle.
+2. Persisted finalized candle, including Yahoo corrections upserted through the overlap.
 
-Lazy ranges must merge by date, deduplicate, validate OHLCV, sort ascending, aggregate the requested interval, and recompute all returned series on the backend. Before requesting an expanded snapshot, the frontend captures the visible date range and viewport settings. After replacing series data, it restores the same viewport so candles do not jump.
+Lazy Yahoo responses must deduplicate by date, validate OHLCV, sort ascending, and upsert atomically before the backend reads the requested range. The backend then aggregates the requested interval and recomputes every returned series. Before requesting an expanded snapshot, the frontend captures the visible date range and viewport settings. After replacing series data, it restores the same viewport so candles do not jump.
 
 The frontend replaces data on existing candle/volume/indicator series; it never recreates the chart. Full backend recomputation is intentional: the dataset is small, and prepending history can change the EMA seed and therefore every later Weekly EMA value.
 
@@ -312,7 +324,7 @@ Progress:
 - [x] 4.3 — Persisted header RS mode toggle with validated RS Line default.
 - [x] 4.4 — Selected RS/RST overlay on an independent upper-30% left scale.
 - [x] 4.5 — RS mode, symbol, and interval updates reuse the existing chart and series.
-- [x] 5.1 — Non-persisting Yahoo historical-range fetch.
+- [x] 5.1 — Initial non-persisting Yahoo historical-range fetch (superseded by 5.9).
 - [x] 5.2 — Date-keyed persisted/ephemeral merge with canonical precedence.
 - [x] 5.3 — Expanded candles and all backend series, including RS, are recomputed over merged history.
 - [x] 5.4 — Bounded provider-neutral history contract and availability flags.
@@ -320,6 +332,7 @@ Progress:
 - [x] 5.6 — User-scroll-only TickerLens history trigger.
 - [x] 5.7 — Terminal/no-new-candle handling without `setData()`.
 - [x] 5.8 — Date-anchored logical viewport preservation and stale-response rejection.
+- [x] 5.9 — Database-backed lazy history with five-session overlap and permanent retention.
 
 ### 0 — Establish the branch and de-risk Yahoo live access
 
@@ -341,7 +354,7 @@ Progress:
 | 1.4 | Implement Weekly EMA and volume-average calculations. | EMA 10/20/40 uses the documented SMA seed; volume 10 and insufficient-history fixtures pass. |
 | 1.5 | Build a chart calculation service that reads existing persisted candles and returns one complete interval snapshot. | Daily and Weekly snapshots contain candles plus all requested MA/EMA/volume series in ascending date order. |
 | 1.6 | Add a one-symbol chart snapshot API endpoint. | Top and bottom can call it independently; one request failure cannot affect the other; format/build checks pass. |
-| 1.7 | Change retained/requested history from 380 to approximately 760 calendar days. | Existing analytical flows still pass; maintenance uses the same new horizon; no purge runs automatically. |
+| 1.7 | Change initial requested history from 380 to approximately 760 calendar days. | Existing analytical flows still pass; initial chart reads use the new horizon. |
 
 ### 2 — Shared Lightweight Charts foundation and one chart
 
@@ -376,11 +389,11 @@ Progress:
 | 4.4 | Add the independent RS scale and render the selected series in the upper 30% of the top candle pane. | Candles may overlap; labels do not cover chart content; no custom tooltip is added. |
 | 4.5 | Update RS mode/symbol/interval data without recreating either chart. | Toggle and ticker changes are immediate and free of distracting data-change animation. |
 
-### 5 — Non-persisted lazy ranges
+### 5 — Lazy historical ranges
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 5.1 | Add a Yahoo historical-range fetch method that bypasses candle persistence while reusing throttling/retry/error behavior. | Code review confirms the method has no store dependency/write path; format/build checks pass. |
+| 5.1 | Add an initial non-persisting Yahoo historical-range fetch method. Superseded by 5.9. | Historical implementation checkpoint only. |
 | 5.2 | Add backend merge/deduplication of ephemeral candle ranges with canonical candles. | Date precedence, ascending order, OHLCV validation, overlap, and empty-page fixtures pass. |
 | 5.3 | Build expanded-snapshot calculation over the merged backend dataset. | Weekly aggregation, SMA/EMA, volume average, RS Line, and RS Trend are fully recalculated for the requested range. |
 | 5.4 | Expose a bounded provider-neutral range contract with `has_more_before`. | Invalid bounds/limits are rejected. |
@@ -388,16 +401,16 @@ Progress:
 | 5.6 | Trigger TickerLens expansion only from an explicit user pan/scroll near the left edge. | Mount, resize, and right-edge movement never request lazy history; synchronized charts expand independently. |
 | 5.7 | Stop backward loading when the provider reports exhaustion or returns no new candle dates. | Duplicate/stale requests are suppressed and a no-op response never calls `setData()`. |
 | 5.8 | Replace all returned series while preserving the date-anchored visible logical range and bar spacing. | No viewport jump or zoom change; stale expanded snapshots cannot cross symbol/interval generations. |
+| 5.9 | Make bounded and lazy history database-backed with a five-trading-session boundary overlap and remove age-based candle cleanup. | A first bounded request fetches and atomically upserts only the missing older range plus overlap; repeating it reads `daily_candles` without Yahoo; all responses remain explicitly bounded. |
 
-### 6 — Data reset, parity approval, and cutover
+### 6 — Parity approval and cutover
 
 | ID | Atomic task | Completion check |
 |---|---|---|
-| 6.1 | Request explicit approval, then purge `daily_candles` once and allow current on-demand population to rebuild it. | No automatic purge code exists; accessed symbols populate the approximately 760-day range. |
-| 6.2 | Run backend/frontend automated checks and the full manual parity checklist on narrow/wide screens and both intervals. | All gates pass or deviations are explicitly approved. |
-| 6.3 | Make Lightweight Charts the TickerLens default and remove the temporary switch after approval. | TickerLens no longer instantiates TradingView widgets; RRG and other TradingView consumers remain intact. |
-| 6.4 | Remove only TickerLens-dead code/CSS/fields and update documentation. | No shared TradingView component used elsewhere is removed; worktree/build/tests are clean. |
-| 6.5 | Review the complete branch and merge it to `main`. | User approves final diff and manual UI behavior before merge. |
+| 6.1 | Run backend/frontend automated checks and the full manual parity checklist on narrow/wide screens and both intervals. | All gates pass or deviations are explicitly approved. |
+| 6.2 | Make Lightweight Charts the TickerLens default and remove the temporary switch after approval. | TickerLens no longer instantiates TradingView widgets; RRG and other TradingView consumers remain intact. |
+| 6.3 | Remove only TickerLens-dead code/CSS/fields and update documentation. | No shared TradingView component used elsewhere is removed; worktree/build/tests are clean. |
+| 6.4 | Review the complete branch and merge it to `main`. | User approves final diff and manual UI behavior before merge. |
 
 ### Future delivery — Production live charts
 
@@ -438,16 +451,15 @@ Manual checks:
 
 ## Rollback strategy
 
-- Do not delete TradingView support until task 6.3 approval.
+- Do not delete TradingView support until task 6.2 approval.
 - Keep each atomic code task as a focused commit so it can be reverted independently.
 - Snapshot/history API additions are additive until cutover.
-- The one-time candle purge contains no irreplaceable data; Yahoo repopulates completed candles. Still require explicit confirmation immediately before executing it.
 - Live data is explicitly deferred and cannot block the historical Lightweight Charts migration.
 
 ## Resolved decisions
 
-- Use an approximately 760-calendar-day global persisted horizon and accept the additional local analytical load.
-- Preserve existing on-demand population after the explicit purge; no bulk preload.
+- Use an approximately 760-calendar-day initial snapshot horizon while retaining older lazily fetched candles.
+- Persist lazy Yahoo history with five trading sessions of boundary overlap; no bulk preload or age-based candle cleanup.
 - Synchronize charts by date.
 - Use independent chart containers and robust abort/generation validation.
 - Keep TickerLens lazy-loading policy outside `MarketChart`.

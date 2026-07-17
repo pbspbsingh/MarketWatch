@@ -70,6 +70,14 @@ impl MarketSchedule {
         }
     }
 
+    pub fn trading_day_on_or_after(&self, date: NaiveDate) -> NaiveDate {
+        if !date.is_weekend() && !self.holidays.contains(&date) {
+            date
+        } else {
+            self.next_trading_day(date)
+        }
+    }
+
     pub fn next_trading_day_from_now(&self, now: DateTime<Utc>) -> NaiveDate {
         self.next_trading_day(now.with_timezone(&self.timezone).date_naive())
     }
@@ -87,6 +95,13 @@ impl MarketSchedule {
     pub fn previous_trading_days(&self, mut date: NaiveDate, count: usize) -> NaiveDate {
         for _ in 0..count {
             date = self.previous_trading_day(date);
+        }
+        date
+    }
+
+    pub fn next_trading_days(&self, mut date: NaiveDate, count: usize) -> NaiveDate {
+        for _ in 0..count {
+            date = self.next_trading_day(date);
         }
         date
     }
@@ -179,6 +194,14 @@ mod tests {
         );
         assert_eq!(
             schedule.next_trading_day(NaiveDate::from_ymd_opt(2026, 6, 18).unwrap()),
+            NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
+        );
+        assert_eq!(
+            schedule.next_trading_days(NaiveDate::from_ymd_opt(2026, 6, 18).unwrap(), 2),
+            NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(),
+        );
+        assert_eq!(
+            schedule.trading_day_on_or_after(NaiveDate::from_ymd_opt(2026, 6, 19).unwrap()),
             NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
         );
     }

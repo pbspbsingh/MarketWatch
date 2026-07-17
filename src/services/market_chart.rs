@@ -92,28 +92,27 @@ impl MarketChartService {
         include_relative_strength: bool,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
-        let persisted = self.yahoo.daily_candles_for_year(symbol).await?;
+        self.yahoo.daily_candles_for_year(symbol).await?;
         let history = self
             .yahoo
             .historical_daily_candles(symbol, start, end)
             .await?;
         let has_more_before = history.has_more_before;
         let relative_strength = if include_relative_strength {
-            let (comparison_persisted, comparison_ephemeral) = if symbol == self.benchmark {
-                (persisted.clone(), history.candles.clone())
+            let comparison = if symbol == self.benchmark {
+                history.candles.clone()
             } else {
-                let comparison_persisted =
-                    self.yahoo.daily_candles_for_year(&self.benchmark).await?;
+                self.yahoo.daily_candles_for_year(&self.benchmark).await?;
                 let comparison_history = self
                     .yahoo
                     .historical_daily_candles(&self.benchmark, start, end)
                     .await?;
-                (comparison_persisted, comparison_history.candles)
+                comparison_history.candles
             };
             Some(RelativeStrengthSource {
                 comparison_symbol: self.benchmark.clone(),
-                persisted: candles_in_range(comparison_persisted, start, end),
-                ephemeral: comparison_ephemeral,
+                persisted: comparison,
+                ephemeral: Vec::new(),
             })
         } else {
             None
@@ -121,8 +120,8 @@ impl MarketChartService {
         let mut snapshot = build_expanded_snapshot(
             symbol.to_owned(),
             interval,
-            candles_in_range(persisted, start, end),
             history.candles,
+            Vec::new(),
             relative_strength,
         )?;
         snapshot.has_more_before = has_more_before;
@@ -139,15 +138,6 @@ fn validate_history_range(
         return Err(MarketChartError::InvalidRange);
     }
     Ok(())
-}
-
-fn candles_in_range(
-    mut candles: Vec<DailyCandle>,
-    start: chrono::NaiveDate,
-    end: chrono::NaiveDate,
-) -> Vec<DailyCandle> {
-    candles.retain(|candle| candle.market_date >= start && candle.market_date < end);
-    candles
 }
 
 fn merge_daily_candles(
@@ -312,16 +302,6 @@ mod tests {
             validate_history_range(start, start + Days::new(MAX_HISTORY_RANGE_DAYS as u64 + 1)),
             Err(MarketChartError::InvalidRange)
         ));
-    }
-
-    #[test]
-    fn filters_candles_with_half_open_date_bounds() {
-        let all = candles(3, 1);
-        let start = all[1].market_date;
-        let end = all[2].market_date;
-        let expected = all[1].clone();
-
-        assert_eq!(candles_in_range(all, start, end), vec![expected]);
     }
 
     #[test]

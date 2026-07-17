@@ -13,6 +13,7 @@ use tokio::time::sleep;
 use tracing::warn;
 
 const REFRESH_OVERLAP_SESSIONS: usize = 7;
+const HISTORY_OVERLAP_SESSIONS: usize = 5;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -97,7 +98,7 @@ impl YahooService {
         .await
     }
 
-    /// Fetches completed daily candles directly from Yahoo without reading or writing storage.
+    /// Loads completed history from storage, persisting only a missing older range plus overlap.
     pub async fn historical_daily_candles(
         &self,
         symbol: &str,
@@ -116,26 +117,18 @@ impl YahooService {
         if start >= end {
             return Err(YahooServiceError::InvalidRange);
         }
-        let start_time = Utc.from_utc_datetime(
-            &start
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is a valid time"),
-        );
-        let end_time =
-            Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
+        let _guard = self.daily_candle_locks.lock(symbol).await;
+        self.profile(symbol).await?;
+        let provider_has_more_before = self
+            .backfill_daily_candles_locked(symbol, start, end)
+            .await?;
 
-        let range = self.fetch_chart(symbol, start_time, end_time).await?;
-        let first_trade_date = range
-            .first_trade_at
-            .map(|timestamp| self.market_schedule.market_date(timestamp));
-        let candles = range
-            .candles
-            .into_iter()
-            .map(|candle| self.provider_daily_candle(symbol, candle))
-            .collect::<Result<Vec<_>, _>>()?;
-        let has_more_before = first_trade_date
-            .map(|first_trade_date| first_trade_date < start)
-            .unwrap_or(!candles.is_empty());
+        let candles = self
+            .store
+            .daily_candles(symbol, start, end)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        let has_more_before = provider_has_more_before.unwrap_or(!candles.is_empty());
         Ok(HistoricalDailyCandles {
             candles,
             has_more_before,
@@ -246,10 +239,67 @@ impl YahooService {
                 .map_err(YahooServiceError::Persistence)?;
         }
 
+        self.backfill_daily_candles_locked(symbol, start, fetch_end_date)
+            .await?;
+
         self.store
             .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)
+    }
+
+    async fn backfill_daily_candles_locked(
+        &self,
+        symbol: &str,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<Option<bool>, YahooServiceError> {
+        let stored_start = self
+            .store
+            .earliest_daily_candle_date(symbol)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        let first_requested_session = self.market_schedule.trading_day_on_or_after(start);
+        if stored_start.is_some_and(|stored_start| stored_start <= first_requested_session) {
+            return Ok(None);
+        }
+
+        let fetch_end = stored_start
+            .map(|stored_start| {
+                self.market_schedule
+                    .next_trading_days(stored_start, HISTORY_OVERLAP_SESSIONS)
+            })
+            .unwrap_or(end)
+            .min(end);
+        let fetch_start_time = Utc.from_utc_datetime(
+            &start
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is a valid time"),
+        );
+        let fetch_end_time = Utc.from_utc_datetime(
+            &fetch_end
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is a valid time"),
+        );
+        let ChartRange {
+            candles,
+            first_trade_at,
+        } = self
+            .fetch_chart(symbol, fetch_start_time, fetch_end_time)
+            .await?;
+        let mut fetched = candles
+            .into_iter()
+            .map(|candle| self.provider_daily_candle(symbol, candle))
+            .collect::<Result<Vec<_>, _>>()?;
+        fetched.sort_unstable_by_key(|candle| candle.market_date);
+        let has_more_before = first_trade_at
+            .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
+            .unwrap_or(!fetched.is_empty());
+        self.store
+            .upsert_daily_candles(&fetched)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        Ok(Some(has_more_before))
     }
 
     fn provider_daily_candle(
