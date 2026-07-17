@@ -9,7 +9,7 @@ use crate::constants::BROWSER_USER_AGENT;
 use crate::models::{CompanyProfile, Exchange};
 use chrono::Timelike;
 use chrono::{DateTime, Utc};
-use de::{ChartResponse, QuoteResponse, QuoteSummaryResponse};
+use de::{ChartResponse, QuoteSummaryResponse};
 use reqwest::{Client, StatusCode, Url, header};
 use serde::de::DeserializeOwned;
 use std::fmt;
@@ -20,7 +20,6 @@ use tracing::{debug, info};
 
 const CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const PROFILE_URL: &str = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/";
-const QUOTE_URL: &str = "https://query1.finance.yahoo.com/v7/finance/quote";
 const COOKIE_URL: &str = "https://fc.yahoo.com/";
 const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const COOKIE_FALLBACK_URL: &str = "https://finance.yahoo.com/";
@@ -60,17 +59,6 @@ pub struct Candle {
 pub struct ChartRange {
     pub candles: Vec<Candle>,
     pub first_trade_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Quote {
-    pub market_state: Option<String>,
-    pub timestamp: DateTime<Utc>,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: u64,
 }
 
 impl YahooClient {
@@ -116,6 +104,18 @@ impl YahooClient {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<ChartRange, YahooError> {
+        self.chart_range_with_pre_post(symbol, interval, start, end, false)
+            .await
+    }
+
+    pub async fn chart_range_with_pre_post(
+        &self,
+        symbol: &str,
+        interval: ChartInterval,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        include_pre_post: bool,
+    ) -> Result<ChartRange, YahooError> {
         if symbol.trim().is_empty() || start >= end {
             return Err(YahooError::InvalidResponse {
                 message: "chart requires a symbol and an increasing time range".to_owned(),
@@ -127,7 +127,10 @@ impl YahooClient {
             .append_pair("interval", interval.as_str())
             .append_pair("period1", &start.timestamp().to_string())
             .append_pair("period2", &end.timestamp().to_string())
-            .append_pair("includePrePost", "false")
+            .append_pair(
+                "includePrePost",
+                if include_pre_post { "true" } else { "false" },
+            )
             .append_pair("includeAdjustedClose", "false");
         let response: ChartResponse = self.get_json(url, symbol).await?;
         let range = parse_chart_range(response, symbol, start, end)?;
@@ -160,27 +163,6 @@ impl YahooClient {
         let profile = parse_profile(response?, symbol)?;
         info!(symbol, "fetched Yahoo company profile");
         Ok(profile)
-    }
-
-    pub async fn quote(&self, symbol: &str) -> Result<Quote, YahooError> {
-        if symbol.trim().is_empty() {
-            return Err(YahooError::InvalidResponse {
-                message: "quote requires a symbol".to_owned(),
-            });
-        }
-
-        let crumb = self.crumb().await?;
-        let mut url = Url::parse(QUOTE_URL).expect("Yahoo quote URL is valid");
-        url.query_pairs_mut()
-            .append_pair("symbols", symbol)
-            .append_pair("crumb", &crumb);
-        let response = self.get_json(url, symbol).await;
-        if matches!(response, Err(YahooError::Unauthorized)) {
-            *self.crumb.lock().await = None;
-        }
-        let quote = parse_quote(response?, symbol)?;
-        info!(symbol, "fetched Yahoo quote");
-        Ok(quote)
     }
 
     async fn crumb(&self) -> Result<String, YahooError> {
@@ -417,53 +399,6 @@ fn parse_profile(
     })
 }
 
-fn parse_quote(response: QuoteResponse, symbol: &str) -> Result<Quote, YahooError> {
-    if let Some(error) = response.quote_response.error {
-        return Err(api_error(error.code, error.description, symbol));
-    }
-    let quote = response
-        .quote_response
-        .result
-        .into_iter()
-        .find(|quote| quote.symbol.eq_ignore_ascii_case(symbol))
-        .ok_or_else(|| invalid(format!("empty quote result for {symbol}")))?;
-    let timestamp = quote
-        .regular_market_time
-        .and_then(|timestamp| DateTime::from_timestamp(timestamp, 0))
-        .ok_or_else(|| {
-            invalid(format!(
-                "quote has no valid regular-market time for {symbol}"
-            ))
-        })?;
-    let open = valid_price(quote.regular_market_open, "open", symbol)?;
-    let high = valid_price(quote.regular_market_day_high, "high", symbol)?;
-    let low = valid_price(quote.regular_market_day_low, "low", symbol)?;
-    let close = valid_price(quote.regular_market_price, "price", symbol)?;
-    let volume = quote
-        .regular_market_volume
-        .ok_or_else(|| invalid(format!("quote has no regular-market volume for {symbol}")))?;
-
-    Ok(Quote {
-        market_state: quote.market_state,
-        timestamp,
-        open,
-        high,
-        low,
-        close,
-        volume,
-    })
-}
-
-fn valid_price(value: Option<f64>, field: &str, symbol: &str) -> Result<f64, YahooError> {
-    value
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .ok_or_else(|| {
-            invalid(format!(
-                "quote has no valid regular-market {field} for {symbol}"
-            ))
-        })
-}
-
 fn normalize_exchange(code: Option<&str>, name: Option<&str>) -> Option<Exchange> {
     match code {
         Some("NMS" | "NGM" | "NCM") => Some(Exchange::Nasdaq),
@@ -584,64 +519,6 @@ mod tests {
         assert_eq!(range.first_trade_at.unwrap().timestamp(), 728_317_800);
     }
 
-    #[test]
-    fn parses_complete_regular_market_quote() {
-        let response = serde_json::from_str::<QuoteResponse>(
-            r#"{
-                "quoteResponse": {
-                    "result": [{
-                        "symbol": "SPY",
-                        "marketState": "POST",
-                        "regularMarketTime": 1782864000,
-                        "regularMarketPrice": 617.85,
-                        "regularMarketOpen": 615.20,
-                        "regularMarketDayHigh": 619.10,
-                        "regularMarketDayLow": 614.75,
-                        "regularMarketVolume": 70432100
-                    }],
-                    "error": null
-                }
-            }"#,
-        )
-        .unwrap();
-
-        let quote = parse_quote(response, "SPY").unwrap();
-
-        assert_eq!(quote.close, 617.85);
-        assert_eq!(quote.market_state.as_deref(), Some("POST"));
-        assert_eq!(quote.volume, 70_432_100);
-        assert_eq!(quote.timestamp.timestamp(), 1_782_864_000);
-    }
-
-    #[test]
-    fn accepts_reported_quote_fields_without_cross_field_validation() {
-        let response = serde_json::from_str::<QuoteResponse>(
-            r#"{
-                "quoteResponse": {
-                    "result": [{
-                        "symbol": "PBJ",
-                        "marketState": "POST",
-                        "regularMarketTime": 1784073600,
-                        "regularMarketPrice": 48.1333,
-                        "regularMarketOpen": 48.73,
-                        "regularMarketDayHigh": 48.48,
-                        "regularMarketDayLow": 48.04,
-                        "regularMarketVolume": 12345
-                    }],
-                    "error": null
-                }
-            }"#,
-        )
-        .unwrap();
-
-        let quote = parse_quote(response, "PBJ").unwrap();
-
-        assert_eq!(quote.open, 48.73);
-        assert_eq!(quote.high, 48.48);
-        assert_eq!(quote.low, 48.04);
-        assert_eq!(quote.close, 48.1333);
-    }
-
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_chart_and_profile() -> Result<(), YahooError> {
@@ -659,27 +536,6 @@ mod tests {
         let profile = client.profile("AAPL").await?;
         println!("Fetched AAPL profile: {profile:?}");
         assert!(profile.description.is_some());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "calls live Yahoo Finance endpoints"]
-    async fn live_fetches_regular_market_quote() -> Result<(), YahooError> {
-        let config = Config::load("config.toml").expect("default config is valid");
-        let client = YahooClient::new(&config.providers);
-
-        let mut failures = Vec::new();
-        for symbol in ["SPY", "REMX", "PBJ", "FXG"] {
-            match client.quote(symbol).await {
-                Ok(quote) => println!("Fetched {symbol} regular-market quote: {quote:?}"),
-                Err(error) => {
-                    println!("Failed {symbol} regular-market quote: {error}");
-                    failures.push((symbol, error));
-                }
-            }
-        }
-        assert!(failures.is_empty(), "quote failures: {failures:?}");
 
         Ok(())
     }

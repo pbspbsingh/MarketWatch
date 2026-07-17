@@ -1,6 +1,6 @@
 use crate::models::DailyCandle;
-use crate::providers::{PricingData, Quote, spawn_transport};
-use crate::services::yahoo::YahooService;
+use crate::providers::{PricingData, spawn_transport};
+use crate::services::yahoo::{IntradayCandle, YahooService};
 use crate::utils::MarketSchedule;
 use chrono::{DateTime, TimeZone, Utc};
 use std::collections::HashMap;
@@ -60,7 +60,7 @@ enum Command {
     },
     Seeded {
         symbol: String,
-        result: Result<Quote, String>,
+        result: Result<Option<IntradayCandle>, String>,
     },
 }
 
@@ -218,7 +218,9 @@ impl YahooLiveActor {
             Command::Seeded { symbol, result } => {
                 self.seed_tasks.remove(&symbol);
                 match result {
-                    Ok(quote) if self.is_watched(&symbol) => self.merge_quote(&symbol, quote),
+                    Ok(Some(candle)) if self.is_watched(&symbol) => {
+                        self.merge_seed(&symbol, candle)
+                    }
                     Ok(_) => {}
                     Err(error) if self.is_watched(&symbol) => {
                         warn!(symbol, %error, "failed to seed Yahoo live candle")
@@ -251,16 +253,20 @@ impl YahooLiveActor {
     }
 
     fn start_seed(&mut self, symbol: &str) {
+        if !should_seed_quote(&self.schedule, Utc::now()) {
+            return;
+        }
         if let Some(task) = self.seed_tasks.remove(symbol) {
             task.abort();
         }
         let yahoo = self.yahoo.clone();
         let commands = self.command_sender.clone();
+        let market_date = self.schedule.market_date(Utc::now());
         let symbol = symbol.to_owned();
         let task_symbol = symbol.clone();
         let task = tokio::spawn(async move {
             let result = yahoo
-                .live_quote(&task_symbol)
+                .intraday_regular_candle(&task_symbol, market_date)
                 .await
                 .map_err(|error| error.to_string());
             let _ = commands.send(Command::Seeded {
@@ -314,25 +320,15 @@ impl YahooLiveActor {
             .is_some_and(|cached| cached.market_date == current_date && cached.published.is_some())
     }
 
-    fn merge_quote(&mut self, symbol: &str, quote: Quote) {
-        if !quote
-            .market_state
-            .as_deref()
-            .is_some_and(|state| state.eq_ignore_ascii_case("REGULAR"))
-        {
+    fn merge_seed(&mut self, symbol: &str, seed: IntradayCandle) {
+        let date = seed.candle.market_date;
+        if !self.schedule.is_regular_session(seed.updated_at) {
             return;
         }
-        let date = self.schedule.market_date(quote.timestamp);
-        if !self.schedule.is_regular_session(quote.timestamp) {
-            return;
-        }
-        let Ok(volume) = i64::try_from(quote.volume) else {
-            return;
-        };
         if self
             .cache
             .get(symbol)
-            .is_some_and(|cached| cached.rejects_session(date, quote.timestamp))
+            .is_some_and(|cached| cached.rejects_session(date, seed.updated_at))
         {
             return;
         }
@@ -341,17 +337,17 @@ impl YahooLiveActor {
         let entry = self
             .cache
             .entry(symbol.to_owned())
-            .or_insert_with(|| CachedCandle::new(date, quote.timestamp, touched));
+            .or_insert_with(|| CachedCandle::new(date, seed.updated_at, touched));
         if entry.market_date != date {
-            *entry = CachedCandle::new(date, quote.timestamp, touched);
+            *entry = CachedCandle::new(date, seed.updated_at, touched);
         }
-        let newer = quote.timestamp >= entry.updated_at;
-        merge_field(&mut entry.open, valid_price(quote.open), newer);
-        merge_field(&mut entry.high, valid_price(quote.high), newer);
-        merge_field(&mut entry.low, valid_price(quote.low), newer);
-        merge_field(&mut entry.close, valid_price(quote.close), newer);
-        merge_field(&mut entry.volume, Some(volume), newer);
-        entry.updated_at = entry.updated_at.max(quote.timestamp);
+        let newer = seed.updated_at >= entry.updated_at;
+        merge_field(&mut entry.open, valid_price(seed.candle.open), newer);
+        merge_field(&mut entry.high, valid_price(seed.candle.high), newer);
+        merge_field(&mut entry.low, valid_price(seed.candle.low), newer);
+        merge_field(&mut entry.close, valid_price(seed.candle.close), newer);
+        merge_field(&mut entry.volume, Some(seed.candle.volume), newer);
+        entry.updated_at = entry.updated_at.max(seed.updated_at);
         entry.touched = touched;
         self.publish_if_changed(symbol);
     }
@@ -462,6 +458,10 @@ impl YahooLiveActor {
         self.lru_clock = self.lru_clock.wrapping_add(1);
         self.lru_clock
     }
+}
+
+fn should_seed_quote(schedule: &MarketSchedule, now: DateTime<Utc>) -> bool {
+    schedule.is_regular_session(now)
 }
 
 impl CachedCandle {
@@ -585,12 +585,50 @@ fn normalize_symbol(symbol: &str) -> Result<String, YahooLiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MarketConfig;
+    use chrono::NaiveTime;
 
     #[test]
     fn normalizes_supported_yahoo_symbols() {
         assert_eq!(normalize_symbol(" brk-b ").unwrap(), "BRK-B");
         assert_eq!(normalize_symbol("^gspc").unwrap(), "^GSPC");
         assert!(normalize_symbol("AAPL,MSFT").is_err());
+    }
+
+    #[test]
+    fn seeds_intraday_candles_only_during_configured_regular_session() {
+        let schedule = MarketSchedule::new(
+            &MarketConfig {
+                timezone: "America/Los_Angeles".to_owned(),
+                benchmark: "QQQ".to_owned(),
+                market_hours: (
+                    NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
+                    NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
+                ),
+                adr_sessions: 20,
+                average_volume_sessions: 50,
+            },
+            Duration::ZERO,
+        )
+        .unwrap();
+        let timestamp = |value| DateTime::parse_from_rfc3339(value).unwrap().to_utc();
+
+        assert!(!should_seed_quote(
+            &schedule,
+            timestamp("2026-07-16T13:00:00Z")
+        ));
+        assert!(should_seed_quote(
+            &schedule,
+            timestamp("2026-07-16T17:00:00Z")
+        ));
+        assert!(!should_seed_quote(
+            &schedule,
+            timestamp("2026-07-16T21:00:01Z")
+        ));
+        assert!(!should_seed_quote(
+            &schedule,
+            timestamp("2026-07-18T17:00:00Z")
+        ));
     }
 
     #[test]

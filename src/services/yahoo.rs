@@ -1,7 +1,7 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::models::{CompanyProfile, DailyCandle};
-use crate::providers::{Candle, ChartInterval, ChartRange, Quote, YahooClient, YahooError};
+use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
@@ -29,6 +29,11 @@ pub struct YahooService {
 pub struct HistoricalDailyCandles {
     pub candles: Vec<DailyCandle>,
     pub has_more_before: bool,
+}
+
+pub(crate) struct IntradayCandle {
+    pub candle: DailyCandle,
+    pub updated_at: chrono::DateTime<Utc>,
 }
 
 #[derive(Debug, Error)]
@@ -315,36 +320,21 @@ impl YahooService {
         warn!(
             symbol,
             %expected_date,
-            "Yahoo chart omitted completed candle; attempting quote repair"
+            "Yahoo chart omitted completed candle; attempting intraday repair"
         );
-        match self.fetch_quote(symbol).await {
-            Ok(quote) => {
-                let quote_date = self.market_schedule.market_date(quote.timestamp);
-                let active_session = quote
-                    .market_state
-                    .as_deref()
-                    .is_some_and(|state| state.eq_ignore_ascii_case("REGULAR"));
-                if active_session {
-                    warn!(symbol, "refusing active-session Yahoo quote candle repair");
-                } else if quote_date == expected_date {
-                    match quote_candle(symbol, quote_date, quote) {
-                        Ok(candle) => candles.push(candle),
-                        Err(error) => {
-                            warn!(symbol, %error, "failed to repair missing Yahoo chart candle from quote")
-                        }
-                    }
-                } else {
-                    warn!(
-                        symbol,
-                        %quote_date,
-                        %expected_date,
-                        "Yahoo quote does not match missing completed session"
-                    );
-                }
-            }
-            Err(error) => {
-                warn!(symbol, %error, "failed to fetch Yahoo quote for missing chart candle");
-            }
+        match self.intraday_regular_candle(symbol, expected_date).await {
+            Ok(Some(candle)) => candles.push(candle.candle),
+            Ok(None) => warn!(
+                symbol,
+                %expected_date,
+                "Yahoo intraday chart has no completed regular-session candle"
+            ),
+            Err(error) => warn!(
+                symbol,
+                %expected_date,
+                %error,
+                "failed to repair missing Yahoo chart candle from intraday data"
+            ),
         }
     }
 
@@ -434,46 +424,98 @@ impl YahooService {
         unreachable!("Yahoo chart retry loop always returns")
     }
 
-    async fn fetch_quote(&self, symbol: &str) -> Result<Quote, YahooError> {
+    async fn fetch_intraday_chart(
+        &self,
+        symbol: &str,
+        start: chrono::DateTime<Utc>,
+        end: chrono::DateTime<Utc>,
+    ) -> Result<Vec<Candle>, YahooError> {
         let mut delay = INITIAL_RETRY_DELAY;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
-            match self.yahoo.quote(symbol).await {
-                Ok(quote) => return Ok(quote),
+            match self
+                .yahoo
+                .chart_range_with_pre_post(symbol, ChartInterval::FiveMinutes, start, end, true)
+                .await
+            {
+                Ok(range) => return Ok(range.candles),
                 Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
                     let delay = jitter(delay);
-                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo quote request");
+                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo intraday chart request");
                     sleep(delay).await;
                 }
                 Err(error) => return Err(error),
             }
             delay *= 2;
         }
-        unreachable!("Yahoo quote retry loop always returns")
+        unreachable!("Yahoo intraday chart retry loop always returns")
     }
 
-    pub(crate) async fn live_quote(&self, symbol: &str) -> Result<Quote, YahooError> {
-        self.fetch_quote(symbol).await
+    pub(crate) async fn intraday_regular_candle(
+        &self,
+        symbol: &str,
+        market_date: NaiveDate,
+    ) -> Result<Option<IntradayCandle>, YahooServiceError> {
+        let start = Utc.from_utc_datetime(
+            &market_date
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is a valid time"),
+        );
+        let end = start + TimeDelta::days(2);
+        let candles = self.fetch_intraday_chart(symbol, start, end).await?;
+        aggregate_regular_candle(
+            symbol,
+            market_date,
+            candles.into_iter().filter(|candle| {
+                self.market_schedule.market_date(candle.timestamp) == market_date
+                    && self.market_schedule.is_regular_session(candle.timestamp)
+            }),
+        )
     }
 }
 
-fn quote_candle(
+fn aggregate_regular_candle(
     symbol: &str,
     market_date: NaiveDate,
-    quote: Quote,
-) -> Result<DailyCandle, YahooServiceError> {
-    let volume = i64::try_from(quote.volume).map_err(|_| YahooServiceError::InvalidVolume {
+    candles: impl IntoIterator<Item = Candle>,
+) -> Result<Option<IntradayCandle>, YahooServiceError> {
+    let mut candles = candles.into_iter();
+    let Some(first) = candles.next() else {
+        return Ok(None);
+    };
+    let mut high = first.high;
+    let mut low = first.low;
+    let mut close = first.close;
+    let mut volume = first.volume;
+    let mut updated_at = first.timestamp;
+    for candle in candles {
+        high = high.max(candle.high);
+        low = low.min(candle.low);
+        close = candle.close;
+        updated_at = candle.timestamp;
+        volume =
+            volume
+                .checked_add(candle.volume)
+                .ok_or_else(|| YahooServiceError::InvalidVolume {
+                    symbol: symbol.to_owned(),
+                    market_date,
+                })?;
+    }
+    let volume = i64::try_from(volume).map_err(|_| YahooServiceError::InvalidVolume {
         symbol: symbol.to_owned(),
         market_date,
     })?;
-    Ok(DailyCandle {
-        symbol: symbol.to_owned(),
-        market_date,
-        open: quote.open,
-        high: quote.high,
-        low: quote.low,
-        close: quote.close,
-        volume,
-    })
+    Ok(Some(IntradayCandle {
+        candle: DailyCandle {
+            symbol: symbol.to_owned(),
+            market_date,
+            open: first.open,
+            high,
+            low,
+            close,
+            volume,
+        },
+        updated_at,
+    }))
 }
 
 fn jitter(delay: Duration) -> Duration {
@@ -493,6 +535,41 @@ fn cached_history_start_reached(
 #[cfg(test)]
 mod history_cache_tests {
     use super::*;
+
+    #[test]
+    fn aggregates_intraday_bars_into_one_regular_candle() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let timestamp = |hour, minute| Utc.with_ymd_and_hms(2026, 7, 16, hour, minute, 0).unwrap();
+        let bars = vec![
+            Candle {
+                timestamp: timestamp(13, 30),
+                open: 100.0,
+                high: 102.0,
+                low: 99.0,
+                close: 101.0,
+                volume: 1_000,
+            },
+            Candle {
+                timestamp: timestamp(13, 35),
+                open: 101.0,
+                high: 104.0,
+                low: 100.0,
+                close: 103.0,
+                volume: 2_000,
+            },
+        ];
+
+        let aggregated = aggregate_regular_candle("TEST", date, bars)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(aggregated.candle.open, 100.0);
+        assert_eq!(aggregated.candle.high, 104.0);
+        assert_eq!(aggregated.candle.low, 99.0);
+        assert_eq!(aggregated.candle.close, 103.0);
+        assert_eq!(aggregated.candle.volume, 3_000);
+        assert_eq!(aggregated.updated_at, timestamp(13, 35));
+    }
 
     #[test]
     fn skips_only_when_database_reaches_cached_first_trade_date() {
