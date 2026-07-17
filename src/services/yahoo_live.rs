@@ -10,13 +10,14 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, MissedTickBehavior, sleep_until};
 use tracing::warn;
 
 const MAX_ACTIVE_SYMBOLS: usize = 100;
 const UPDATE_BUFFER_SIZE: usize = 256;
 const PRICING_BUFFER_SIZE: usize = 256;
 const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
+const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLiveCandle {
@@ -106,6 +107,7 @@ struct YahooLiveActor {
     cache: HashMap<String, CachedCandle>,
     pre_market_cache: HashMap<String, CachedCandle>,
     post_market_cache: HashMap<String, YahooLivePrice>,
+    live_enabled: bool,
     lru_clock: u64,
 }
 
@@ -128,6 +130,7 @@ impl YahooLiveHandle {
         let (pricing_sender, pricing) = mpsc::channel(PRICING_BUFFER_SIZE);
         let (desired, desired_receiver) = watch::channel(Vec::new());
         let (updates, _) = broadcast::channel(UPDATE_BUFFER_SIZE);
+        let live_enabled = schedule.session(Utc::now()) != MarketSession::Closed;
         spawn_transport(desired_receiver, pricing_sender);
         tokio::spawn(
             YahooLiveActor {
@@ -144,6 +147,7 @@ impl YahooLiveHandle {
                 cache: HashMap::new(),
                 pre_market_cache: HashMap::new(),
                 post_market_cache: HashMap::new(),
+                live_enabled,
                 lru_clock: 0,
             }
             .run(),
@@ -214,10 +218,13 @@ impl Drop for YahooLiveSubscription {
 
 impl YahooLiveActor {
     async fn run(mut self) {
+        let mut market_session_check = tokio::time::interval(MARKET_SESSION_CHECK_INTERVAL);
+        market_session_check.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             let idle_expiry = self.idle_subscriptions.values().min().copied();
             tokio::select! {
                 biased;
+                _ = market_session_check.tick() => self.refresh_live_state(),
                 command = self.commands.recv() => {
                     let Some(command) = command else { return };
                     self.handle_command(command);
@@ -283,7 +290,7 @@ impl YahooLiveActor {
             Command::Seeded { symbol, result } => {
                 self.seed_tasks.remove(&symbol);
                 match *result {
-                    Ok(seed) if self.is_watched(&symbol) => {
+                    Ok(seed) if self.live_enabled && self.is_watched(&symbol) => {
                         if let Some(candle) = seed.regular {
                             self.merge_seed(&symbol, candle, false);
                         }
@@ -332,7 +339,7 @@ impl YahooLiveActor {
     }
 
     fn start_seed(&mut self, symbol: &str) {
-        if self.schedule.session(Utc::now()) == MarketSession::Closed {
+        if !self.live_enabled || self.schedule.session(Utc::now()) == MarketSession::Closed {
             return;
         }
         if let Some(task) = self.seed_tasks.remove(symbol) {
@@ -369,14 +376,46 @@ impl YahooLiveActor {
     }
 
     fn publish_desired(&self) {
-        let mut symbols = self
+        let mut symbols = if self.live_enabled {
+            self.subscriptions
+                .keys()
+                .chain(self.idle_subscriptions.keys())
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        symbols.sort_unstable();
+        self.desired.send_replace(symbols);
+    }
+
+    fn refresh_live_state(&mut self) {
+        let live_enabled = self.schedule.session(Utc::now()) != MarketSession::Closed;
+        if live_enabled == self.live_enabled {
+            return;
+        }
+        self.live_enabled = live_enabled;
+        if !live_enabled {
+            for (_, task) in self.seed_tasks.drain() {
+                task.abort();
+            }
+            self.cache.clear();
+            self.pre_market_cache.clear();
+            self.post_market_cache.clear();
+            self.idle_subscriptions.clear();
+            self.publish_desired();
+            return;
+        }
+        self.publish_desired();
+        let symbols = self
             .subscriptions
             .keys()
             .chain(self.idle_subscriptions.keys())
             .cloned()
             .collect::<Vec<_>>();
-        symbols.sort_unstable();
-        self.desired.send_replace(symbols);
+        for symbol in symbols {
+            self.start_seed(&symbol);
+        }
     }
 
     fn expire_idle_subscriptions(&mut self) {
@@ -445,6 +484,9 @@ impl YahooLiveActor {
     }
 
     fn merge_pricing(&mut self, update: PricingData) {
+        if !self.live_enabled {
+            return;
+        }
         let Some(symbol) = update
             .id
             .as_deref()

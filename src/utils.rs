@@ -12,6 +12,7 @@ pub struct MarketSchedule {
     timezone: Tz,
     market_open: NaiveTime,
     market_close: NaiveTime,
+    post_market_duration: TimeDelta,
     refresh_time: NaiveTime,
     holidays: HashSet<NaiveDate>,
 }
@@ -51,6 +52,7 @@ impl MarketSchedule {
                 .context("market.timezone must be a valid IANA timezone")?,
             market_open: config.market_hours.0,
             market_close: config.market_hours.1,
+            post_market_duration: TimeDelta::hours(4),
             refresh_time: config.market_hours.1 + post_close_delay,
             holidays,
         })
@@ -80,8 +82,10 @@ impl MarketSchedule {
             MarketSession::PreMarket
         } else if market_time.time() <= self.market_close {
             MarketSession::Regular
-        } else {
+        } else if market_time.time() - self.market_close <= self.post_market_duration {
             MarketSession::PostMarket
+        } else {
+            MarketSession::Closed
         }
     }
 
@@ -264,6 +268,14 @@ mod tests {
         assert_eq!(
             schedule.session(timestamp("2026-07-16T21:00:01Z")),
             MarketSession::PostMarket,
+        );
+        assert_eq!(
+            schedule.session(timestamp("2026-07-17T00:00:00Z")),
+            MarketSession::PostMarket,
+        );
+        assert_eq!(
+            schedule.session(timestamp("2026-07-17T00:00:01Z")),
+            MarketSession::Closed,
         );
         assert_eq!(
             schedule.session(timestamp("2026-07-18T17:00:00Z")),
