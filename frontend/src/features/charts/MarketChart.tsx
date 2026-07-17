@@ -9,6 +9,7 @@ import {
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type ITextWatermarkPluginApi,
   type Time,
 } from "lightweight-charts";
@@ -18,7 +19,10 @@ import type {
   MarketChartRelativeStrength,
   MarketChartInterval,
 } from "../../api/marketChart";
-import type { MarketChartLiveDelta } from "../../api/marketChartLive";
+import type {
+  MarketChartLiveDelta,
+  MarketChartSessionDelta,
+} from "../../api/marketChartLive";
 import {
   ChartHost,
   type ChartHostHandle,
@@ -64,6 +68,7 @@ interface MarketChartProps {
   relativeStrength?: MarketChartRelativeStrength | null;
   relativeStrengthMode?: RelativeStrengthMode;
   liveDelta?: MarketChartLiveDelta;
+  sessionDelta?: MarketChartSessionDelta;
 }
 
 function watermarkLines(symbol: string) {
@@ -84,6 +89,7 @@ export function MarketChart({
   relativeStrength,
   relativeStrengthMode,
   liveDelta,
+  sessionDelta,
 }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -91,6 +97,7 @@ export function MarketChart({
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">>(null);
+  const postMarketLineRef = useRef<IPriceLine>(null);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
   const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
@@ -153,6 +160,7 @@ export function MarketChart({
     watermarkRef.current?.detach();
     watermarkRef.current = null;
     relativeStrengthSeriesRef.current = null;
+    postMarketLineRef.current = null;
     chartDisposedRef.current = true;
     if (contextReportedRef.current) onChartContextRef.current?.(null);
     contextReportedRef.current = false;
@@ -285,6 +293,68 @@ export function MarketChart({
   }, [data.candles, data.interval, data.symbol, liveDelta, relativeStrengthMode]);
 
   useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (
+      candleSeries === null
+      || data.interval !== "daily"
+      || sessionDelta === undefined
+      || sessionDelta.symbol !== data.symbol
+    ) {
+      if (candleSeries !== null && postMarketLineRef.current !== null) {
+        candleSeries.removePriceLine(postMarketLineRef.current);
+        postMarketLineRef.current = null;
+      }
+      return;
+    }
+
+    if (sessionDelta.session === "pre_market" && sessionDelta.candle !== null) {
+      if (postMarketLineRef.current !== null) {
+        candleSeries.removePriceLine(postMarketLineRef.current);
+        postMarketLineRef.current = null;
+      }
+      const candle = sessionDelta.candle;
+      const color = candle.close >= candle.open ? preMarketUpColor : preMarketDownColor;
+      candlesByDateRef.current.set(candle.date, candle);
+      candleSeries.update({
+        time: marketDateToChartTime(candle.date),
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        color,
+        borderColor: color,
+        wickColor: color,
+      });
+      volumeSeriesRef.current?.update({
+        time: marketDateToChartTime(candle.date),
+        value: candle.volume,
+        color,
+      });
+      return;
+    }
+
+    const regularClose = liveDelta?.candle.close ?? data.candles.at(-1)?.close;
+    const color = regularClose === undefined || sessionDelta.price >= regularClose
+      ? preMarketUpColor
+      : preMarketDownColor;
+    const options = {
+      price: sessionDelta.price,
+      color,
+      lineWidth: 1 as const,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: "POST",
+      axisLabelColor: color,
+      axisLabelTextColor: "#ffffff",
+    };
+    if (postMarketLineRef.current === null) {
+      postMarketLineRef.current = candleSeries.createPriceLine(options);
+    } else {
+      postMarketLineRef.current.applyOptions(options);
+    }
+  }, [data.candles, data.interval, data.symbol, liveDelta, sessionDelta]);
+
+  useEffect(() => {
     if (data.candles.length === 0) return;
     const datasetKey = `${data.symbol}\0${data.interval}`;
     if (datasetKeyRef.current === datasetKey) return;
@@ -319,6 +389,9 @@ export function MarketChart({
     />
   );
 }
+
+const preMarketUpColor = "#2962ff";
+const preMarketDownColor = "#9c27b0";
 
 function shouldReplaceCurrentWeek(
   series: ISeriesApi<"Candlestick"> | ISeriesApi<"Histogram"> | ISeriesApi<"Line">,

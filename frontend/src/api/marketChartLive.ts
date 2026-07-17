@@ -23,14 +23,24 @@ export interface MarketChartLiveDelta {
   relative_strength: MarketChartRelativeStrength | null;
 }
 
+export interface MarketChartSessionDelta {
+  chart_id: string;
+  symbol: string;
+  session: "pre_market" | "post_market";
+  candle: MarketChartCandle | null;
+  price: number;
+}
+
 interface LiveChartClientOptions {
   onDelta: (delta: MarketChartLiveDelta) => void;
+  onSession: (delta: MarketChartSessionDelta) => void;
   onError: (message: string) => void;
 }
 
 type LiveChartEvent =
   | { type: "subscribed"; request_id: number; symbols: string[] }
   | { type: "delta"; request_id: number; delta: MarketChartLiveDelta }
+  | { type: "session"; request_id: number; delta: MarketChartSessionDelta }
   | { type: "error"; request_id: number; message: string };
 
 const initialReconnectDelayMs = 1_000;
@@ -122,6 +132,8 @@ export class MarketChartLiveClient {
       this.options.onError(event.message);
     } else if (event.type === "delta" && isLiveDelta(event.delta)) {
       this.options.onDelta(event.delta);
+    } else if (event.type === "session" && isSessionDelta(event.delta)) {
+      this.options.onSession(event.delta);
     }
   }
 
@@ -132,18 +144,26 @@ export class MarketChartLiveClient {
   }
 }
 
+function isSessionDelta(delta: MarketChartSessionDelta): boolean {
+  return typeof delta?.chart_id === "string"
+    && typeof delta.symbol === "string"
+    && (delta.session === "pre_market" || delta.session === "post_market")
+    && Number.isFinite(delta.price)
+    && (delta.session === "pre_market" ? isCandle(delta.candle) : delta.candle === null);
+}
+
 function isLiveDelta(delta: MarketChartLiveDelta): boolean {
   return typeof delta?.chart_id === "string"
     && typeof delta.symbol === "string"
     && (delta.interval === "daily" || delta.interval === "weekly")
-    && /^\d{4}-\d{2}-\d{2}$/.test(delta.candle?.date)
-    && [
-      delta.candle?.open,
-      delta.candle?.high,
-      delta.candle?.low,
-      delta.candle?.close,
-      delta.candle?.volume,
-    ].every(Number.isFinite)
+    && isCandle(delta.candle)
     && Array.isArray(delta.moving_averages)
     && Array.isArray(delta.volume_average?.points);
+}
+
+function isCandle(candle: MarketChartCandle | null | undefined): candle is MarketChartCandle {
+  return candle !== null
+    && candle !== undefined
+    && /^\d{4}-\d{2}-\d{2}$/.test(candle.date)
+    && [candle.open, candle.high, candle.low, candle.close, candle.volume].every(Number.isFinite);
 }

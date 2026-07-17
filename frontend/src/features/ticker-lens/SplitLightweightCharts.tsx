@@ -30,6 +30,7 @@ import { marketDataSymbol } from "../../api/marketChart";
 import {
   MarketChartLiveClient,
   type MarketChartLiveDelta,
+  type MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 
 interface SplitLightweightChartsProps {
@@ -60,6 +61,11 @@ interface LiveDeltaState {
   delta: MarketChartLiveDelta;
 }
 
+interface SessionDeltaState {
+  key: string;
+  delta: MarketChartSessionDelta;
+}
+
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -80,6 +86,8 @@ export default function SplitLightweightCharts({
   const [topReloadVersion, setTopReloadVersion] = useState(0);
   const [topLive, setTopLive] = useState<LiveDeltaState>();
   const [bottomLive, setBottomLive] = useState<LiveDeltaState>();
+  const [topSession, setTopSession] = useState<SessionDeltaState>();
+  const [bottomSession, setBottomSession] = useState<SessionDeltaState>();
   const topRefreshPendingVersionRef = useRef<number | null>(null);
   const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
@@ -122,8 +130,18 @@ export default function SplitLightweightCharts({
       onDelta: (delta) => {
         const comparison = delta.relative_strength?.comparison_symbol ?? "plain";
         const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}`, delta };
-        if (delta.chart_id === "top") setTopLive(state);
-        else if (delta.chart_id === "bottom") setBottomLive(state);
+        if (delta.chart_id === "top") {
+          setTopLive(state);
+          setTopSession(undefined);
+        } else if (delta.chart_id === "bottom") {
+          setBottomLive(state);
+          setBottomSession(undefined);
+        }
+      },
+      onSession: (delta) => {
+        const state = { key: `${delta.symbol}\0daily`, delta };
+        if (delta.chart_id === "top") setTopSession(state);
+        else if (delta.chart_id === "bottom") setBottomSession(state);
       },
       onError: (message) => onErrorRef.current("top", message),
     });
@@ -269,6 +287,9 @@ export default function SplitLightweightCharts({
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
               liveDelta={topLive?.key === liveTopKey ? topLive.delta : undefined}
+              sessionDelta={topSession?.key === `${marketDataSymbol(topSymbol)}\0daily`
+                ? topSession.delta
+                : undefined}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>
@@ -291,6 +312,9 @@ export default function SplitLightweightCharts({
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
               liveDelta={bottomLive?.key === liveBottomKey ? bottomLive.delta : undefined}
+              sessionDelta={bottomSession?.key === `${marketDataSymbol(bottomSymbol)}\0daily`
+                ? bottomSession.delta
+                : undefined}
             />
             {bottomLoading && <ChartLoadingOverlay />}
           </div>

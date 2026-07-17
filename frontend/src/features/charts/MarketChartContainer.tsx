@@ -14,7 +14,10 @@ import {
   type MarketChartInterval,
   type MarketChartSnapshot,
 } from "../../api/marketChart";
-import type { MarketChartLiveDelta } from "../../api/marketChartLive";
+import type {
+  MarketChartLiveDelta,
+  MarketChartSessionDelta,
+} from "../../api/marketChartLive";
 import { MarketChart } from "./MarketChart";
 import type {
   ChartSyncTarget,
@@ -55,6 +58,7 @@ interface MarketChartContainerProps {
   reloadVersion?: number;
   onRefreshSettled?: (version: number, succeeded: boolean) => void;
   liveDelta?: MarketChartLiveDelta;
+  sessionDelta?: MarketChartSessionDelta;
 }
 
 const historyLoadThresholdBars = 25;
@@ -76,6 +80,7 @@ export function MarketChartContainer({
   reloadVersion = 0,
   onRefreshSettled,
   liveDelta,
+  sessionDelta,
 }: MarketChartContainerProps) {
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
@@ -318,6 +323,7 @@ export function MarketChartContainer({
           relativeStrength={snapshot.relative_strength}
           relativeStrengthMode={relativeStrengthMode}
           liveDelta={liveDelta}
+          sessionDelta={sessionDelta}
         />
       )}
       {state?.status === "error" ? (
