@@ -45,6 +45,11 @@ interface DatasetLoadState {
   status: MarketChartLoadStatus;
 }
 
+interface ChartMenuState {
+  position: ChartMenuPosition;
+  source: "top" | "bottom";
+}
+
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -57,9 +62,14 @@ export default function SplitLightweightCharts({
 }: SplitLightweightChartsProps) {
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
-  const [menuPosition, setMenuPosition] = useState<ChartMenuPosition | null>(null);
+  const [chartMenu, setChartMenu] = useState<ChartMenuState | null>(null);
   const [topLoadState, setTopLoadState] = useState<DatasetLoadState>();
   const [bottomLoadState, setBottomLoadState] = useState<DatasetLoadState>();
+  const [topRefreshVersion, setTopRefreshVersion] = useState(0);
+  const [bottomRefreshVersion, setBottomRefreshVersion] = useState(0);
+  const [topReloadVersion, setTopReloadVersion] = useState(0);
+  const topRefreshPendingVersionRef = useRef<number | null>(null);
+  const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
   const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
@@ -114,13 +124,19 @@ export default function SplitLightweightCharts({
     [bottomContext, topContext],
   );
 
-  const openContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+  const openContextMenu = useCallback((
+    source: "top" | "bottom",
+    event: MouseEvent<HTMLDivElement>,
+  ) => {
     event.preventDefault();
-    setMenuPosition({ left: event.clientX, top: event.clientY });
+    setChartMenu({
+      position: { left: event.clientX, top: event.clientY },
+      source,
+    });
   }, []);
 
   const resetChartView = useCallback(() => {
-    setMenuPosition(null);
+    setChartMenu(null);
     const source = topContext ?? bottomContext;
     if (source === null) return;
     const viewport = { barSpacing: defaultChartBarSpacing };
@@ -128,6 +144,42 @@ export default function SplitLightweightCharts({
     source.chart.timeScale().applyOptions(viewport);
     source.chart.timeScale().scrollToPosition(0, false);
   }, [bottomContext, saveViewport, topContext]);
+
+  const refreshCandles = useCallback(() => {
+    if (chartMenu?.source === "top") {
+      setTopRefreshVersion((version) => {
+        const nextVersion = version + 1;
+        topRefreshPendingVersionRef.current = nextVersion;
+        return nextVersion;
+      });
+    } else if (chartMenu?.source === "bottom") {
+      setBottomRefreshVersion((version) => version + 1);
+    }
+    setChartMenu(null);
+  }, [chartMenu?.source]);
+
+  const reloadTopRelativeStrength = useCallback(() => {
+    if (topRefreshPendingVersionRef.current !== null) {
+      topReloadPendingRef.current = true;
+      return;
+    }
+    setTopReloadVersion((version) => version + 1);
+  }, []);
+
+  const handleTopRefreshSettled = useCallback((version: number) => {
+    if (topRefreshPendingVersionRef.current !== version) return;
+    topRefreshPendingVersionRef.current = null;
+    if (!topReloadPendingRef.current) return;
+    topReloadPendingRef.current = false;
+    setTopReloadVersion((current) => current + 1);
+  }, []);
+
+  const handleBottomRefreshSettled = useCallback((
+    _version: number,
+    succeeded: boolean,
+  ) => {
+    if (succeeded) reloadTopRelativeStrength();
+  }, [reloadTopRelativeStrength]);
 
   useEffect(() => {
     if (topContext === null || bottomContext === null) return;
@@ -153,7 +205,7 @@ export default function SplitLightweightCharts({
         first={(
           <div
             onPointerEnter={() => setCrosshairOwner("top")}
-            onContextMenu={openContextMenu}
+            onContextMenu={(event) => openContextMenu("top", event)}
             style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
             <MarketChartContainer
@@ -164,6 +216,9 @@ export default function SplitLightweightCharts({
               relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthMode={relativeStrengthMode}
               showLoadingOverlay={false}
+              refreshCandlesVersion={topRefreshVersion}
+              reloadVersion={topReloadVersion}
+              onRefreshSettled={handleTopRefreshSettled}
               onLoadStatusChange={(status) => setTopLoadState({ key: topDatasetKey, status })}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
@@ -174,7 +229,7 @@ export default function SplitLightweightCharts({
         second={(
           <div
             onPointerEnter={() => setCrosshairOwner("bottom")}
-            onContextMenu={openContextMenu}
+            onContextMenu={(event) => openContextMenu("bottom", event)}
             style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}
           >
             <MarketChartContainer
@@ -183,6 +238,8 @@ export default function SplitLightweightCharts({
               initialViewport={initialViewport}
               historyInteractionTracker={historyInteractionTrackerRef.current}
               showLoadingOverlay={false}
+              refreshCandlesVersion={bottomRefreshVersion}
+              onRefreshSettled={handleBottomRefreshSettled}
               onLoadStatusChange={(status) => setBottomLoadState({ key: bottomDatasetKey, status })}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
@@ -192,9 +249,10 @@ export default function SplitLightweightCharts({
         )}
       />
       <ChartContextMenu
-        position={menuPosition}
-        onClose={() => setMenuPosition(null)}
+        position={chartMenu?.position ?? null}
+        onClose={() => setChartMenu(null)}
         onResetView={resetChartView}
+        onRefreshCandles={refreshCandles}
       />
     </div>
   );

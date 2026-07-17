@@ -10,6 +10,7 @@ import type { LogicalRange } from "lightweight-charts";
 import {
   fetchMarketChartHistorySnapshot,
   fetchMarketChartSnapshot,
+  refreshMarketChartSnapshot,
   type MarketChartInterval,
   type MarketChartSnapshot,
 } from "../../api/marketChart";
@@ -49,6 +50,9 @@ interface MarketChartContainerProps {
   relativeStrengthMode?: RelativeStrengthMode;
   showLoadingOverlay?: boolean;
   onLoadStatusChange?: (status: MarketChartLoadStatus) => void;
+  refreshCandlesVersion?: number;
+  reloadVersion?: number;
+  onRefreshSettled?: (version: number, succeeded: boolean) => void;
 }
 
 const historyLoadThresholdBars = 25;
@@ -66,6 +70,9 @@ export function MarketChartContainer({
   relativeStrengthMode,
   showLoadingOverlay = true,
   onLoadStatusChange,
+  refreshCandlesVersion = 0,
+  reloadVersion = 0,
+  onRefreshSettled,
 }: MarketChartContainerProps) {
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
@@ -83,6 +90,8 @@ export function MarketChartContainer({
   const onErrorRef = useRef(onError);
   const onChartContextRef = useRef(onChartContext);
   const onLoadStatusChangeRef = useRef(onLoadStatusChange);
+  const onRefreshSettledRef = useRef(onRefreshSettled);
+  const handledRefreshVersionRef = useRef(refreshCandlesVersion);
   const [loadState, setLoadState] = useState<LoadState>();
   const [snapshot, setSnapshot] = useState<MarketChartSnapshot>();
   const [retryVersion, setRetryVersion] = useState(0);
@@ -92,6 +101,7 @@ export function MarketChartContainer({
   onErrorRef.current = onError;
   onChartContextRef.current = onChartContext;
   onLoadStatusChangeRef.current = onLoadStatusChange;
+  onRefreshSettledRef.current = onRefreshSettled;
 
   const handleChartContext = useCallback((context: ChartSyncTarget | null) => {
     setChartContext(context);
@@ -111,9 +121,18 @@ export function MarketChartContainer({
     const generation = ++generationRef.current;
     const controller = new AbortController();
     const currentSnapshot = snapshotRef.current;
-    const comparisonOnly = currentSnapshot !== undefined
+    const refreshCandles = handledRefreshVersionRef.current !== refreshCandlesVersion;
+    handledRefreshVersionRef.current = refreshCandlesVersion;
+    let refreshSettled = false;
+    const settleRefresh = (succeeded: boolean) => {
+      if (!refreshCandles || refreshSettled) return;
+      refreshSettled = true;
+      onRefreshSettledRef.current?.(refreshCandlesVersion, succeeded);
+    };
+    const sameDataset = currentSnapshot !== undefined
       && snapshotDatasetKeyRef.current === datasetKey;
-    if (comparisonOnly) {
+    const backgroundReload = sameDataset && !refreshCandles;
+    if (backgroundReload) {
       onLoadStatusChangeRef.current?.("ready");
       setLoadState({
         key: datasetKey,
@@ -129,13 +148,16 @@ export function MarketChartContainer({
     }
     onErrorRef.current?.(undefined);
 
-    void fetchMarketChartSnapshot(symbol, interval, {
+    const request = refreshCandles
+      ? refreshMarketChartSnapshot
+      : fetchMarketChartSnapshot;
+    void request(symbol, interval, {
       comparisonSymbol: relativeStrengthComparisonSymbol,
       signal: controller.signal,
     })
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
-        if (comparisonOnly) {
+        if (backgroundReload) {
           setSnapshot((current) => (
             current === undefined || snapshotDatasetKeyRef.current !== datasetKey
               ? current
@@ -146,6 +168,7 @@ export function MarketChartContainer({
           setSnapshot(snapshot);
           setLoadState({ key: datasetKey, status: "ready", snapshot });
           onLoadStatusChangeRef.current?.("ready");
+          settleRefresh(true);
         }
       })
       .catch((error: unknown) => {
@@ -154,7 +177,10 @@ export function MarketChartContainer({
           || (error instanceof Error && error.name === "AbortError")
         ) return;
         const message = error instanceof Error ? error.message : "Failed to load market chart";
-        if (!comparisonOnly) {
+        if (refreshCandles && sameDataset) {
+          setLoadState({ key: datasetKey, status: "ready", snapshot: currentSnapshot });
+          onLoadStatusChangeRef.current?.("ready");
+        } else if (!backgroundReload) {
           setLoadState({
             key: datasetKey,
             status: "error",
@@ -163,14 +189,25 @@ export function MarketChartContainer({
           onLoadStatusChangeRef.current?.("error");
         }
         onErrorRef.current?.(message);
+        settleRefresh(false);
       });
 
     return () => {
       controller.abort();
       if (generationRef.current === generation) generationRef.current += 1;
       onErrorRef.current?.(undefined);
+      settleRefresh(false);
     };
-  }, [datasetKey, interval, relativeStrengthComparisonSymbol, requestKey, retryVersion, symbol]);
+  }, [
+    datasetKey,
+    interval,
+    refreshCandlesVersion,
+    relativeStrengthComparisonSymbol,
+    reloadVersion,
+    requestKey,
+    retryVersion,
+    symbol,
+  ]);
 
   useEffect(() => {
     if (chartContext === null) return;

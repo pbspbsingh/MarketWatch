@@ -87,17 +87,27 @@ impl YahooService {
         &self,
         symbol: &str,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
-        let end = self
-            .market_schedule
-            .recent_trading_day(Utc::now())
-            .succ_opt()
-            .ok_or(YahooServiceError::InvalidRange)?;
-        self.daily_candles(
-            symbol,
-            end - TimeDelta::days(DAILY_CANDLE_HISTORY_CALENDAR_DAYS),
-            end,
-        )
-        .await
+        let (start, end) = self.completed_year_range()?;
+        self.daily_candles(symbol, start, end).await
+    }
+
+    pub async fn refresh_daily_candles_for_year(
+        &self,
+        symbol: &str,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        let (start, end) = self.completed_year_range()?;
+        let _guard = self.daily_candle_locks.lock(symbol).await;
+        self.profile(symbol).await?;
+        let latest_session = self.market_schedule.previous_trading_day(end);
+        let (candles, first_trade_at) = self
+            .fetch_daily_candles_from_provider(symbol, start, end, Some(latest_session))
+            .await?;
+        self.store
+            .replace_daily_candles(symbol, &candles)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        self.cache_first_trade_date(symbol, first_trade_at);
+        Ok(candles)
     }
 
     /// Loads completed history from storage, persisting only a missing older range plus overlap.
@@ -177,65 +187,16 @@ impl YahooService {
                         .previous_trading_days(latest, REFRESH_OVERLAP_SESSIONS)
                 })
                 .map_or(start, |overlap_start| overlap_start.max(start));
-            let fetch_start = Utc.from_utc_datetime(
-                &fetch_start
-                    .and_hms_opt(0, 0, 0)
-                    .expect("midnight is a valid time"),
-            );
-            let fetch_end = Utc.from_utc_datetime(
-                &fetch_end_date
-                    .and_hms_opt(0, 0, 0)
-                    .expect("midnight is a valid time"),
-            );
-            let ChartRange {
-                candles,
-                first_trade_at,
-            } = self.fetch_chart(symbol, fetch_start, fetch_end).await?;
-            let mut candles = candles
-                .into_iter()
-                .map(|candle| self.provider_daily_candle(symbol, candle))
-                .collect::<Result<Vec<_>, YahooServiceError>>()?;
-            if requested_last_date == recent_trading_day
-                && candles
-                    .last()
-                    .is_none_or(|candle| candle.market_date < requested_last_date)
-            {
-                warn!(
+            let repair_latest =
+                (requested_last_date == recent_trading_day).then_some(requested_last_date);
+            let (candles, first_trade_at) = self
+                .fetch_daily_candles_from_provider(
                     symbol,
-                    %requested_last_date,
-                    "Yahoo chart omitted completed candle; attempting quote repair"
-                );
-                match self.fetch_quote(symbol).await {
-                    Ok(quote) => {
-                        let quote_date = self.market_schedule.market_date(quote.timestamp);
-                        let active_session = quote
-                            .market_state
-                            .as_deref()
-                            .is_some_and(|state| state.eq_ignore_ascii_case("REGULAR"));
-                        if active_session {
-                            warn!(symbol, "refusing active-session Yahoo quote candle repair");
-                        } else if quote_date == requested_last_date {
-                            match quote_candle(symbol, quote_date, quote) {
-                                Ok(candle) => candles.push(candle),
-                                Err(error) => {
-                                    warn!(symbol, %error, "failed to repair missing Yahoo chart candle from quote")
-                                }
-                            }
-                        } else {
-                            warn!(
-                                symbol,
-                                %quote_date,
-                                %requested_last_date,
-                                "Yahoo quote does not match missing completed session"
-                            );
-                        }
-                    }
-                    Err(error) => {
-                        warn!(symbol, %error, "failed to fetch Yahoo quote for missing chart candle");
-                    }
-                }
-            }
-            candles.sort_unstable_by_key(|candle| candle.market_date);
+                    fetch_start,
+                    fetch_end_date,
+                    repair_latest,
+                )
+                .await?;
             self.store
                 .upsert_daily_candles(&candles)
                 .await
@@ -285,27 +246,9 @@ impl YahooService {
             })
             .unwrap_or(end)
             .min(end);
-        let fetch_start_time = Utc.from_utc_datetime(
-            &start
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is a valid time"),
-        );
-        let fetch_end_time = Utc.from_utc_datetime(
-            &fetch_end
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is a valid time"),
-        );
-        let ChartRange {
-            candles,
-            first_trade_at,
-        } = self
-            .fetch_chart(symbol, fetch_start_time, fetch_end_time)
+        let (fetched, first_trade_at) = self
+            .fetch_daily_candles_from_provider(symbol, start, fetch_end, None)
             .await?;
-        let mut fetched = candles
-            .into_iter()
-            .map(|candle| self.provider_daily_candle(symbol, candle))
-            .collect::<Result<Vec<_>, _>>()?;
-        fetched.sort_unstable_by_key(|candle| candle.market_date);
         let has_more_before = first_trade_at
             .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
             .unwrap_or(!fetched.is_empty());
@@ -315,6 +258,94 @@ impl YahooService {
             .map_err(YahooServiceError::Persistence)?;
         self.cache_first_trade_date(symbol, first_trade_at);
         Ok(Some(has_more_before))
+    }
+
+    fn completed_year_range(&self) -> Result<(NaiveDate, NaiveDate), YahooServiceError> {
+        let end = self
+            .market_schedule
+            .recent_trading_day(Utc::now())
+            .succ_opt()
+            .ok_or(YahooServiceError::InvalidRange)?;
+        Ok((
+            end - TimeDelta::days(DAILY_CANDLE_HISTORY_CALENDAR_DAYS),
+            end,
+        ))
+    }
+
+    async fn fetch_daily_candles_from_provider(
+        &self,
+        symbol: &str,
+        start: NaiveDate,
+        end: NaiveDate,
+        repair_latest: Option<NaiveDate>,
+    ) -> Result<(Vec<DailyCandle>, Option<chrono::DateTime<Utc>>), YahooServiceError> {
+        let start_time = Utc.from_utc_datetime(
+            &start
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is a valid time"),
+        );
+        let end_time =
+            Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
+        let ChartRange {
+            candles,
+            first_trade_at,
+        } = self.fetch_chart(symbol, start_time, end_time).await?;
+        let mut candles = candles
+            .into_iter()
+            .map(|candle| self.provider_daily_candle(symbol, candle))
+            .collect::<Result<Vec<_>, YahooServiceError>>()?;
+        if let Some(expected_date) = repair_latest
+            && candles
+                .last()
+                .is_none_or(|candle| candle.market_date < expected_date)
+        {
+            self.repair_missing_latest_candle(symbol, expected_date, &mut candles)
+                .await;
+        }
+        candles.sort_unstable_by_key(|candle| candle.market_date);
+        Ok((candles, first_trade_at))
+    }
+
+    async fn repair_missing_latest_candle(
+        &self,
+        symbol: &str,
+        expected_date: NaiveDate,
+        candles: &mut Vec<DailyCandle>,
+    ) {
+        warn!(
+            symbol,
+            %expected_date,
+            "Yahoo chart omitted completed candle; attempting quote repair"
+        );
+        match self.fetch_quote(symbol).await {
+            Ok(quote) => {
+                let quote_date = self.market_schedule.market_date(quote.timestamp);
+                let active_session = quote
+                    .market_state
+                    .as_deref()
+                    .is_some_and(|state| state.eq_ignore_ascii_case("REGULAR"));
+                if active_session {
+                    warn!(symbol, "refusing active-session Yahoo quote candle repair");
+                } else if quote_date == expected_date {
+                    match quote_candle(symbol, quote_date, quote) {
+                        Ok(candle) => candles.push(candle),
+                        Err(error) => {
+                            warn!(symbol, %error, "failed to repair missing Yahoo chart candle from quote")
+                        }
+                    }
+                } else {
+                    warn!(
+                        symbol,
+                        %quote_date,
+                        %expected_date,
+                        "Yahoo quote does not match missing completed session"
+                    );
+                }
+            }
+            Err(error) => {
+                warn!(symbol, %error, "failed to fetch Yahoo quote for missing chart candle");
+            }
+        }
     }
 
     fn cached_first_trade_date(&self, symbol: &str) -> Option<NaiveDate> {

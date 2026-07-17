@@ -81,6 +81,28 @@ export async function fetchMarketChartSnapshot(
   return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
 }
 
+export async function refreshMarketChartSnapshot(
+  symbol: string,
+  interval: MarketChartInterval,
+  options: MarketChartRequestOptions = {},
+): Promise<MarketChartSnapshot> {
+  const requestedSymbol = marketDataSymbol(symbol);
+  const comparisonSymbol = options.comparisonSymbol === undefined
+    ? undefined
+    : marketDataSymbol(options.comparisonSymbol);
+  const query = new URLSearchParams({ interval });
+  if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
+  const response = await fetch(
+    `/api/market-chart/${encodeURIComponent(requestedSymbol)}/refresh?${query}`,
+    { method: "POST", signal: options.signal, cache: "no-store" },
+  );
+  if (!response.ok) {
+    const reason = await response.text();
+    throw new Error(reason || `Failed to refresh Yahoo candles: HTTP ${response.status}`);
+  }
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
+}
+
 export async function fetchMarketChartHistorySnapshot(
   symbol: string,
   interval: MarketChartInterval,

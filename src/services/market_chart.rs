@@ -55,20 +55,9 @@ impl MarketChartService {
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        let relative_strength = if let Some(comparison_symbol) = comparison_symbol {
-            let comparison = if symbol == comparison_symbol {
-                candles.clone()
-            } else {
-                self.yahoo.daily_candles_for_year(comparison_symbol).await?
-            };
-            Some(RelativeStrengthSource {
-                comparison_symbol: comparison_symbol.to_owned(),
-                persisted: comparison,
-                ephemeral: Vec::new(),
-            })
-        } else {
-            None
-        };
+        let relative_strength = self
+            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .await?;
         build_expanded_snapshot(
             symbol.to_owned(),
             interval,
@@ -76,6 +65,46 @@ impl MarketChartService {
             Vec::new(),
             relative_strength,
         )
+    }
+
+    pub async fn refresh_snapshot(
+        &self,
+        symbol: &str,
+        interval: MarketChartInterval,
+        comparison_symbol: Option<&str>,
+    ) -> Result<MarketChartSnapshot, MarketChartError> {
+        let candles = self.yahoo.refresh_daily_candles_for_year(symbol).await?;
+        let relative_strength = self
+            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .await?;
+        build_expanded_snapshot(
+            symbol.to_owned(),
+            interval,
+            candles,
+            Vec::new(),
+            relative_strength,
+        )
+    }
+
+    async fn relative_strength_source(
+        &self,
+        symbol: &str,
+        candles: &[DailyCandle],
+        comparison_symbol: Option<&str>,
+    ) -> Result<Option<RelativeStrengthSource>, YahooServiceError> {
+        let Some(comparison_symbol) = comparison_symbol else {
+            return Ok(None);
+        };
+        let comparison = if symbol == comparison_symbol {
+            candles.to_vec()
+        } else {
+            self.yahoo.daily_candles_for_year(comparison_symbol).await?
+        };
+        Ok(Some(RelativeStrengthSource {
+            comparison_symbol: comparison_symbol.to_owned(),
+            persisted: comparison,
+            ephemeral: Vec::new(),
+        }))
     }
 
     pub async fn history_snapshot(

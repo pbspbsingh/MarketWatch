@@ -6,7 +6,7 @@ use crate::services::tickers::normalize_symbol;
 use crate::services::yahoo::YahooServiceError;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use tracing::error;
@@ -28,6 +28,7 @@ struct HistoryQuery {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/market-chart/{symbol}", get(snapshot))
+        .route("/market-chart/{symbol}/refresh", post(refresh_snapshot))
         .route("/market-chart/{symbol}/history", get(history_snapshot))
 }
 
@@ -42,6 +43,22 @@ async fn snapshot(
     state
         .market_chart
         .snapshot(&symbol, query.interval, comparison_symbol.as_deref())
+        .await
+        .map(Json)
+        .map_err(|error| map_error(&symbol, error))
+}
+
+async fn refresh_snapshot(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(query): Query<SnapshotQuery>,
+) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
+    let symbol =
+        normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
+    state
+        .market_chart
+        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_deref())
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
