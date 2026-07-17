@@ -125,6 +125,21 @@ impl Store {
         .context("failed to load latest daily candle date")
     }
 
+    pub async fn earliest_daily_candle_date(
+        &self,
+        symbol: &str,
+    ) -> anyhow::Result<Option<NaiveDate>> {
+        sqlx::query_scalar!(
+            r#"SELECT MIN(market_date) AS "market_date: NaiveDate"
+             FROM daily_candles
+             WHERE symbol = ?"#,
+            symbol,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("failed to load earliest daily candle date")
+    }
+
     pub async fn daily_candles(
         &self,
         symbol: &str,
@@ -196,12 +211,50 @@ impl Store {
         Ok(())
     }
 
-    pub async fn cleanup_daily_candles(&self, cutoff: NaiveDate) -> anyhow::Result<u64> {
-        sqlx::query!("DELETE FROM daily_candles WHERE market_date < ?", cutoff)
-            .execute(&self.pool)
+    pub async fn replace_daily_candles(
+        &self,
+        symbol: &str,
+        candles: &[DailyCandle],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !candles.is_empty(),
+            "refusing to replace candles with an empty batch"
+        );
+        anyhow::ensure!(
+            candles.iter().all(|candle| candle.symbol == symbol),
+            "replacement candle batch must match its symbol"
+        );
+
+        let mut transaction = self
+            .pool
+            .begin()
             .await
-            .context("failed to delete expired daily candles")
-            .map(|result| result.rows_affected())
+            .context("failed to begin daily candle replacement transaction")?;
+        sqlx::query!("DELETE FROM daily_candles WHERE symbol = ?", symbol)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to delete replaced daily candles")?;
+        for candle in candles {
+            sqlx::query!(
+                "INSERT INTO daily_candles (
+                    symbol, market_date, open, high, low, close, volume
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                candle.symbol,
+                candle.market_date,
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to insert replacement daily candle")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit daily candle replacement")
     }
 }
 
@@ -209,15 +262,15 @@ impl Store {
 mod tests {
     use super::*;
 
-    fn candle(symbol: &str, market_date: NaiveDate) -> DailyCandle {
+    fn candle(symbol: &str, day: u32, close: f64) -> DailyCandle {
         DailyCandle {
             symbol: symbol.to_owned(),
-            market_date,
-            open: 1.0,
-            high: 1.0,
-            low: 1.0,
-            close: 1.0,
-            volume: 1,
+            market_date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 1_000,
         }
     }
 
@@ -237,31 +290,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cleans_up_only_daily_candles_before_cutoff() {
+    async fn atomically_replaces_one_symbols_daily_candles() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        sqlx::query("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
+        sqlx::query!("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
             .execute(&store.pool)
             .await
             .unwrap();
-        let cutoff = NaiveDate::from_ymd_opt(2025, 6, 20).unwrap();
-        let candles = [
-            candle("TEST", cutoff.pred_opt().unwrap()),
-            candle("TEST", cutoff),
-            candle("TEST", cutoff.succ_opt().unwrap()),
-        ];
-        store.upsert_daily_candles(&candles).await.unwrap();
+        store
+            .upsert_daily_candles(&[candle("TEST", 1, 10.0), candle("TEST", 2, 11.0)])
+            .await
+            .unwrap();
 
-        assert_eq!(store.cleanup_daily_candles(cutoff).await.unwrap(), 1);
+        store
+            .replace_daily_candles("TEST", &[candle("TEST", 3, 12.0)])
+            .await
+            .unwrap();
+
         assert_eq!(
             store
                 .daily_candles(
                     "TEST",
-                    cutoff.pred_opt().unwrap(),
-                    cutoff.succ_opt().unwrap().succ_opt().unwrap(),
+                    NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                    NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
                 )
                 .await
                 .unwrap(),
-            candles[1..],
+            vec![candle("TEST", 3, 12.0)],
+        );
+        assert!(store.replace_daily_candles("TEST", &[]).await.is_err());
+        assert_eq!(
+            store
+                .daily_candles(
+                    "TEST",
+                    NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                    NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+                )
+                .await
+                .unwrap()
+                .len(),
+            1,
         );
     }
 }

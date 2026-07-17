@@ -12,9 +12,12 @@ import {
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
 import {
+  chartEngineKey,
   chartIntervalKey,
+  chartRelativeStrengthModeKey,
   chartThemeEtfKey,
 } from "./constants";
+import type { ChartEngine, RelativeStrengthMode } from "./types";
 import {
   formatVolume,
   industryMarketWatchUrl,
@@ -37,6 +40,10 @@ interface ChartHeaderProps {
   setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
   contextLabel?: string;
+  chartEngine?: ChartEngine;
+  setChartEngine?: (engine: ChartEngine) => void;
+  relativeStrengthMode?: RelativeStrengthMode;
+  setRelativeStrengthMode?: (mode: RelativeStrengthMode) => void;
 }
 
 export function ChartHeader({
@@ -52,6 +59,10 @@ export function ChartHeader({
   setSelectedThemeEtf,
   setDetailsOpen,
   contextLabel,
+  chartEngine,
+  setChartEngine,
+  relativeStrengthMode,
+  setRelativeStrengthMode,
 }: ChartHeaderProps) {
   return (
     <header className="panel-header chart-header">
@@ -115,6 +126,23 @@ export function ChartHeader({
             <AssessmentOutlinedIcon fontSize="small" />
           </IconButton>
         )}
+        {chartEngine !== undefined && setChartEngine !== undefined && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={chartEngine}
+            aria-label="Chart implementation"
+            onChange={(_, value: ChartEngine | null) => {
+              if (value !== null) {
+                localStorage.setItem(chartEngineKey, value);
+                setChartEngine(value);
+              }
+            }}
+          >
+            <ToggleButton value="tradingview" title="TradingView">TV</ToggleButton>
+            <ToggleButton value="lightweight" title="Lightweight Charts">LW</ToggleButton>
+          </ToggleButtonGroup>
+        )}
       </div>
       <div className="chart-header-controls">
         {summaryLoading && (
@@ -156,6 +184,25 @@ export function ChartHeader({
             )}
             <ChartIndicators summary={summary} />
           </>
+        )}
+        {summary !== undefined
+          && chartEngine === "lightweight"
+          && relativeStrengthMode !== undefined
+          && setRelativeStrengthMode !== undefined && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={relativeStrengthMode}
+            aria-label="Relative strength overlay"
+            onChange={(_, value: RelativeStrengthMode | null) => {
+              const mode = value ?? "none";
+              localStorage.setItem(chartRelativeStrengthModeKey, mode);
+              setRelativeStrengthMode(mode);
+            }}
+          >
+            <ToggleButton value="line">RS</ToggleButton>
+            <ToggleButton value="trend">RST</ToggleButton>
+          </ToggleButtonGroup>
         )}
         <ToggleButtonGroup
           exclusive

@@ -1,15 +1,12 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
-import { Button, Checkbox, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
+import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import {
   fetchTickerGroupSummary,
@@ -19,21 +16,34 @@ import {
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
-import { chartIntervalKey, chartSplitKey, chartThemeEtfKey } from "./constants";
+import {
+  chartEngineKey,
+  chartIntervalKey,
+  chartRelativeStrengthModeKey,
+  chartSplitKey,
+  chartThemeEtfKey,
+} from "./constants";
 import { ChartHeader } from "./ChartHeader";
-import type { GroupMode, SelectedTickerContext } from "./types";
+import type {
+  ChartEngine,
+  GroupMode,
+  RelativeStrengthMode,
+  SelectedTickerContext,
+} from "./types";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
   isArrowKeyControl,
+  readChartEngine,
   readChartInterval,
+  readRelativeStrengthMode,
   readChartSplit,
   readEnabled,
   themeGroupsMarketWatchUrl,
   themeMarketWatchUrl,
 } from "./utils";
 
-const RsChartPanel = lazy(() => import("./RsChartPanel"));
+const SplitLightweightCharts = lazy(() => import("./SplitLightweightCharts"));
 
 interface ChartPanelProps {
   mode: GroupMode;
@@ -67,49 +77,53 @@ export function ChartPanel({
   const [selectedThemeEtf, setSelectedThemeEtf] = useState<string>();
   const [error, setError] = useState<string>();
   const [warning, setWarning] = useState<string>();
+  const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [rsOpen, setRsOpen] = useState(false);
-  const [rsClosing, setRsClosing] = useState(false);
-  const [rsHeight, setRsHeight] = useState(48);
-  const chartPanelRef = useRef<HTMLElement>(null);
+  const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
+    readChartEngine(chartEngineKey),
+  );
+  const [relativeStrengthMode, setRelativeStrengthMode] = useState<RelativeStrengthMode>(() =>
+    readRelativeStrengthMode(chartRelativeStrengthModeKey),
+  );
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join(",");
   const symbolsKey = symbols?.join("\0") ?? "";
-  const selectedIndustry = summary?.industry?.name ?? "All industries";
-  const selectedThemeBenchmark = summary?.theme_benchmarks.find(
+  const activeSummary = summary?.symbol === selectedTicker ? summary : undefined;
+  const selectedIndustry = activeSummary?.industry?.name ?? "All industries";
+  const selectedThemeBenchmark = activeSummary?.theme_benchmarks.find(
+    (theme) => theme.etf_symbol === selectedThemeEtf,
+  ) ?? activeSummary?.theme_benchmarks[0];
+  const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
+  const chartThemeBenchmark = summary?.theme_benchmarks.find(
     (theme) => theme.etf_symbol === selectedThemeEtf,
   ) ?? summary?.theme_benchmarks[0];
-  const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
-  const bottomChartSymbol = themeEtfChartEnabled
-    ? selectedThemeBenchmark?.tradingview_symbol ?? summary?.benchmark_symbol
+  const bottomChartSymbol = showThemeEtfChart && chartThemeBenchmark !== undefined
+    ? chartThemeBenchmark.tradingview_symbol
     : summary?.benchmark_symbol;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
+  const chartError = chartErrors.top ?? chartErrors.bottom;
 
-  const resizeRsPanel = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const bounds = chartPanelRef.current?.getBoundingClientRect();
-    if (bounds === undefined || bounds.height === 0) return;
-    const minimum = Math.min(90, (192 / bounds.height) * 100);
-    setRsHeight(Math.max(minimum, Math.min(90, ((bounds.bottom - event.clientY) / bounds.height) * 100)));
-  };
+  const handleChartError = useCallback((
+    source: "top" | "bottom",
+    message: string | undefined,
+  ) => {
+    setChartErrors((current) => {
+      if (current[source] === message) return current;
+      const next = { ...current };
+      if (message === undefined) delete next[source];
+      else next[source] = message;
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
-    setSelectedThemeEtf(undefined);
     if (selectedTicker === undefined) {
       setDetailsOpen(false);
       onSelectedTickerContext(undefined);
     }
   }, [onSelectedTickerContext, selectedTicker]);
-
-  useEffect(() => {
-    if (!rsClosing) return;
-    const timeout = window.setTimeout(() => {
-      setRsOpen(false);
-      setRsClosing(false);
-    }, 140);
-    return () => window.clearTimeout(timeout);
-  }, [rsClosing]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -144,28 +158,6 @@ export function ChartPanel({
   }, [detailsOpen, horizontalDetailsNavigation, selectedTicker]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== "r" ||
-        event.repeat ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        selectedTicker === undefined ||
-        isArrowKeyControl(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      if (rsOpen) setRsClosing(true);
-      else setRsOpen(true);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [rsOpen, selectedTicker]);
-
-  useEffect(() => {
     setError(undefined);
     if (selectedTicker === undefined) {
       setSummary(undefined);
@@ -175,10 +167,12 @@ export function ChartPanel({
     }
 
     const controller = new AbortController();
+    const tickerChanged = summary?.symbol !== selectedTicker;
     setSummaryLoading(true);
     onSelectedTickerContext(undefined);
     fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
       .then((chartSummary) => {
+        if (tickerChanged) setSelectedThemeEtf(undefined);
         setSummary(chartSummary);
         setSummaryLoading(false);
         onSelectedTickerContext({
@@ -223,9 +217,9 @@ export function ChartPanel({
   }, [groupKeysKey, mode, selectedTicker, symbolsKey]);
 
   return (
-    <section ref={chartPanelRef} className="workspace-panel ticker-lens-chart-panel">
+    <section className="workspace-panel ticker-lens-chart-panel">
       <ChartHeader
-        summary={summary}
+        summary={activeSummary}
         summaryLoading={summaryLoading}
         selectedTicker={selectedTicker}
         selectedIndustry={selectedIndustry}
@@ -236,6 +230,10 @@ export function ChartPanel({
         setShowThemeEtfChart={setShowThemeEtfChart}
         setSelectedThemeEtf={setSelectedThemeEtf}
         setDetailsOpen={setDetailsOpen}
+        chartEngine={chartEngine}
+        setChartEngine={setChartEngine}
+        relativeStrengthMode={relativeStrengthMode}
+        setRelativeStrengthMode={setRelativeStrengthMode}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
@@ -246,93 +244,49 @@ export function ChartPanel({
           relatedGroupMode={relatedGroupMode}
         />
       )}
-      {selectedTicker !== undefined && summary === undefined && error === undefined && (
-        <div className="panel-status">
-          <CircularProgress size="1rem" />
-          <Typography color="text.secondary">Loading chart</Typography>
-        </div>
-      )}
-      {summary !== undefined && (
-        <SplitTradingViewCharts
-          topSymbol={summary.tradingview_symbol}
-          bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
-          interval={interval}
-          initialSplit={readChartSplit(chartSplitKey)}
-          onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-          onError={setError}
-        />
-      )}
-      <Tooltip title="RS Chart (R)">
-        <span className="ticker-lens-rs-toggle-wrap">
-          <IconButton
-            className="ticker-lens-rs-toggle"
-            size="small"
-            aria-label={rsOpen ? "Close RS Chart" : "Open RS Chart"}
-            disabled={selectedTicker === undefined}
-            onClick={() => {
-              if (rsOpen) setRsClosing(true);
-              else setRsOpen(true);
-            }}
-          >
-            {rsOpen ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowUpIcon fontSize="small" />}
-          </IconButton>
-        </span>
-      </Tooltip>
-      {rsOpen && selectedTicker !== undefined && (
-        <section
-          className={`ticker-lens-rs-panel${rsClosing ? " ticker-lens-rs-panel-closing" : ""}`}
-          aria-label="RS Chart"
-          style={{ height: `${rsHeight}%` }}
-        >
-          <div
-            className="ticker-lens-rs-resize-handle"
-            role="separator"
-            aria-label="Resize RS Chart"
-            aria-orientation="horizontal"
-            aria-valuenow={Math.round(rsHeight)}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.currentTarget.setPointerCapture(event.pointerId);
-              resizeRsPanel(event);
-            }}
-            onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) resizeRsPanel(event);
-            }}
-            onPointerUp={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-            }}
-            onPointerCancel={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-            }}
-          />
-          {summary?.symbol === selectedTicker ? (
+      {selectedTicker !== undefined && (
+        <div className="ticker-lens-chart-stage">
+          {summary !== undefined && chartEngine === "tradingview" && (
+            <SplitTradingViewCharts
+              topSymbol={summary.tradingview_symbol}
+              bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+              interval={interval}
+              initialSplit={readChartSplit(chartSplitKey)}
+              onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+              onError={setError}
+            />
+          )}
+          {summary !== undefined && chartEngine === "lightweight" && (
             <Suspense
-              fallback={
-                <div className="ticker-lens-rs-content">
+              fallback={(
+                <div className="panel-status">
                   <CircularProgress size="1rem" />
+                  <Typography color="text.secondary">Loading chart module</Typography>
                 </div>
-              }
+              )}
             >
-              <RsChartPanel
-                selectedTicker={selectedTicker}
-                summary={summary}
+              <SplitLightweightCharts
+                topSymbol={summary.symbol}
+                bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
-                onClose={() => setRsClosing(true)}
+                topPending={activeSummary === undefined && error === undefined}
+                relativeStrengthMode={relativeStrengthMode}
+                initialSplit={readChartSplit(chartSplitKey)}
+                onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
+                onError={handleChartError}
               />
             </Suspense>
-          ) : (
-            <div className="ticker-lens-rs-content">
-              <CircularProgress size="1rem" />
-              <Typography color="text.secondary">Loading RS chart</Typography>
-            </div>
           )}
-        </section>
+        </div>
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={error ?? chartError}
+        onClose={() => {
+          if (error !== undefined) setError(undefined);
+          else if (chartErrors.top !== undefined) handleChartError("top", undefined);
+          else handleChartError("bottom", undefined);
+        }}
+      />
       <Toast
         message={warning}
         severity="warning"

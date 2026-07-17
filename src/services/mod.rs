@@ -4,7 +4,7 @@ pub mod details;
 pub mod industries;
 pub mod industry_analysis;
 pub mod maintenance;
-pub mod market_data;
+pub mod market_chart;
 pub mod nyse_calendar;
 pub mod study;
 pub mod theme_analysis;

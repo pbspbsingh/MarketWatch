@@ -1,3 +1,5 @@
+pub mod chart;
+mod chart_relative_strength;
 mod daily_notes;
 mod exchange;
 mod fundamentals;
@@ -9,6 +11,10 @@ mod ticker_collection;
 mod top_stock_screens;
 mod watchlists;
 
+pub(crate) use chart_relative_strength::{
+    ChartDateRange, RelativeStrengthCalculationError, calculate_relative_strength_line,
+    calculate_relative_strength_trend,
+};
 pub use daily_notes::DailyNote;
 pub use exchange::Exchange;
 pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};

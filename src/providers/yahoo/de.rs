@@ -13,8 +13,15 @@ pub(super) struct ChartResult {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ChartData {
+    pub(super) meta: Option<ChartMeta>,
     pub(super) timestamp: Option<Vec<i64>>,
     pub(super) indicators: Indicators,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ChartMeta {
+    #[serde(rename = "firstTradeDate")]
+    pub(super) first_trade_date: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,4 +79,35 @@ pub(super) struct Price {
 pub(super) struct ApiError {
     pub(super) code: String,
     pub(super) description: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct QuoteResponse {
+    #[serde(rename = "quoteResponse")]
+    pub(super) quote_response: QuoteResult,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct QuoteResult {
+    pub(super) result: Vec<QuoteData>,
+    pub(super) error: Option<ApiError>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct QuoteData {
+    pub(super) symbol: String,
+    #[serde(rename = "marketState")]
+    pub(super) market_state: Option<String>,
+    #[serde(rename = "regularMarketTime")]
+    pub(super) regular_market_time: Option<i64>,
+    #[serde(rename = "regularMarketPrice")]
+    pub(super) regular_market_price: Option<f64>,
+    #[serde(rename = "regularMarketOpen")]
+    pub(super) regular_market_open: Option<f64>,
+    #[serde(rename = "regularMarketDayHigh")]
+    pub(super) regular_market_day_high: Option<f64>,
+    #[serde(rename = "regularMarketDayLow")]
+    pub(super) regular_market_day_low: Option<f64>,
+    #[serde(rename = "regularMarketVolume")]
+    pub(super) regular_market_volume: Option<u64>,
 }
