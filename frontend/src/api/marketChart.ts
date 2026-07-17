@@ -52,7 +52,6 @@ export interface MarketChartSnapshot extends MarketChartData {
   earliest_date: string | null;
   latest_date: string | null;
   has_more_before: boolean;
-  has_more_after: boolean;
 }
 
 interface MarketChartRequestOptions {

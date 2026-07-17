@@ -58,7 +58,6 @@ pub struct MarketChartSnapshot {
     pub earliest_date: Option<NaiveDate>,
     pub latest_date: Option<NaiveDate>,
     pub has_more_before: bool,
-    pub has_more_after: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

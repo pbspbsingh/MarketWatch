@@ -250,7 +250,6 @@ fn build_snapshot(
         earliest_date,
         latest_date,
         has_more_before: earliest_date.is_some(),
-        has_more_after: false,
     })
 }
 
@@ -558,7 +557,6 @@ mod tests {
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
         assert_eq!(snapshot.latest_date, Some(snapshot.candles[219].date));
         assert!(snapshot.has_more_before);
-        assert!(!snapshot.has_more_after);
     }
 
     #[test]
