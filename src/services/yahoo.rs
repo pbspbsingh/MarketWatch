@@ -5,12 +5,12 @@ use crate::providers::{Candle, ChartInterval, ChartRange, Quote, YahooClient, Ya
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{debug, warn};
 
 const REFRESH_OVERLAP_SESSIONS: usize = 7;
 const HISTORY_OVERLAP_SESSIONS: usize = 5;
@@ -23,6 +23,7 @@ pub struct YahooService {
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock,
+    first_trade_dates: Mutex<HashMap<String, NaiveDate>>,
 }
 
 pub struct HistoricalDailyCandles {
@@ -60,6 +61,7 @@ impl YahooService {
             yahoo,
             market_schedule: MarketSchedule::with_holidays(market, POST_CLOSE_DELAY, holidays)?,
             daily_candle_locks: KeyedLock::new(),
+            first_trade_dates: Mutex::new(HashMap::new()),
         })
     }
 
@@ -185,10 +187,11 @@ impl YahooService {
                     .and_hms_opt(0, 0, 0)
                     .expect("midnight is a valid time"),
             );
-            let mut candles = self
-                .fetch_chart(symbol, fetch_start, fetch_end)
-                .await?
-                .candles
+            let ChartRange {
+                candles,
+                first_trade_at,
+            } = self.fetch_chart(symbol, fetch_start, fetch_end).await?;
+            let mut candles = candles
                 .into_iter()
                 .map(|candle| self.provider_daily_candle(symbol, candle))
                 .collect::<Result<Vec<_>, YahooServiceError>>()?;
@@ -237,6 +240,7 @@ impl YahooService {
                 .upsert_daily_candles(&candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
+            self.cache_first_trade_date(symbol, first_trade_at);
         }
 
         self.backfill_daily_candles_locked(symbol, start, fetch_end_date)
@@ -262,6 +266,16 @@ impl YahooService {
         let first_requested_session = self.market_schedule.trading_day_on_or_after(start);
         if stored_start.is_some_and(|stored_start| stored_start <= first_requested_session) {
             return Ok(None);
+        }
+        if let Some(first_trade_date) =
+            cached_history_start_reached(stored_start, self.cached_first_trade_date(symbol))
+        {
+            debug!(
+                symbol,
+                %first_trade_date,
+                "skipping Yahoo backfill before cached first trade date"
+            );
+            return Ok(Some(false));
         }
 
         let fetch_end = stored_start
@@ -299,7 +313,29 @@ impl YahooService {
             .upsert_daily_candles(&fetched)
             .await
             .map_err(YahooServiceError::Persistence)?;
+        self.cache_first_trade_date(symbol, first_trade_at);
         Ok(Some(has_more_before))
+    }
+
+    fn cached_first_trade_date(&self, symbol: &str) -> Option<NaiveDate> {
+        self.first_trade_dates
+            .lock()
+            .expect("Yahoo first-trade cache mutex is not poisoned")
+            .get(symbol)
+            .copied()
+    }
+
+    fn cache_first_trade_date(&self, symbol: &str, first_trade_at: Option<chrono::DateTime<Utc>>) {
+        let Some(first_trade_at) = first_trade_at else {
+            return;
+        };
+        self.first_trade_dates
+            .lock()
+            .expect("Yahoo first-trade cache mutex is not poisoned")
+            .insert(
+                symbol.to_owned(),
+                self.market_schedule.market_date(first_trade_at),
+            );
     }
 
     fn provider_daily_candle(
@@ -408,4 +444,43 @@ fn quote_candle(
 fn jitter(delay: Duration) -> Duration {
     let maximum = delay.as_millis() as u64;
     Duration::from_millis(fastrand::u64(maximum / 2..=maximum))
+}
+
+fn cached_history_start_reached(
+    stored_start: Option<NaiveDate>,
+    cached_first_trade_date: Option<NaiveDate>,
+) -> Option<NaiveDate> {
+    cached_first_trade_date.filter(|first_trade_date| {
+        stored_start.is_some_and(|stored_start| stored_start <= *first_trade_date)
+    })
+}
+
+#[cfg(test)]
+mod history_cache_tests {
+    use super::*;
+
+    #[test]
+    fn skips_only_when_database_reaches_cached_first_trade_date() {
+        let first_trade_date = NaiveDate::from_ymd_opt(2025, 5, 22).unwrap();
+
+        assert_eq!(
+            cached_history_start_reached(Some(first_trade_date), Some(first_trade_date)),
+            Some(first_trade_date),
+        );
+        assert_eq!(
+            cached_history_start_reached(
+                Some(NaiveDate::from_ymd_opt(2025, 5, 23).unwrap()),
+                Some(first_trade_date),
+            ),
+            None,
+        );
+        assert_eq!(
+            cached_history_start_reached(None, Some(first_trade_date)),
+            None
+        );
+        assert_eq!(
+            cached_history_start_reached(Some(first_trade_date), None),
+            None
+        );
+    }
 }
