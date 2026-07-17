@@ -15,6 +15,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::future::pending;
@@ -83,6 +84,7 @@ enum LiveSessionKind {
 struct LiveSessionDelta {
     chart_id: String,
     symbol: String,
+    date: NaiveDate,
     session: LiveSessionKind,
     candle: Option<MarketChartCandle>,
     price: f64,
@@ -468,6 +470,7 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
         YahooLiveUpdate::PreMarket(update) => LiveSessionDelta {
             chart_id: chart.chart_id.clone(),
             symbol: update.candle.symbol.clone(),
+            date: update.candle.market_date,
             session: LiveSessionKind::PreMarket,
             candle: Some(MarketChartCandle::from(&update.candle)),
             price: update.candle.close,
@@ -475,6 +478,7 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
         YahooLiveUpdate::PostMarket(update) => LiveSessionDelta {
             chart_id: chart.chart_id.clone(),
             symbol: update.symbol.clone(),
+            date: update.market_date,
             session: LiveSessionKind::PostMarket,
             candle: None,
             price: update.price,
@@ -693,6 +697,7 @@ mod tests {
 
         assert_eq!(delta.chart_id, "top");
         assert_eq!(delta.symbol, "AAPL");
+        assert_eq!(delta.date, date);
         assert_eq!(delta.price, 101.0);
         assert_eq!(delta.candle.unwrap().date, date);
     }

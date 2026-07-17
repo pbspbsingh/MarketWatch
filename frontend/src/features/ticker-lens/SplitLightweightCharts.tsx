@@ -23,7 +23,10 @@ import {
   type ChartSyncTarget,
   type ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
-import { defaultChartBarSpacing } from "../../components/lightweight-chart/chartOptions";
+import {
+  chartRightOffsetPixels,
+  defaultChartBarSpacing,
+} from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import type { RelativeStrengthMode } from "./types";
 import { marketDataSymbol } from "../../api/marketChart";
@@ -132,10 +135,10 @@ export default function SplitLightweightCharts({
         const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}`, delta };
         if (delta.chart_id === "top") {
           setTopLive(state);
-          setTopSession(undefined);
+          setTopSession((current) => sessionAfterRegularUpdate(current, delta));
         } else if (delta.chart_id === "bottom") {
           setBottomLive(state);
-          setBottomSession(undefined);
+          setBottomSession((current) => sessionAfterRegularUpdate(current, delta));
         }
       },
       onSession: (delta) => {
@@ -205,8 +208,9 @@ export default function SplitLightweightCharts({
     if (source === null) return;
     const viewport = { barSpacing: defaultChartBarSpacing };
     saveViewport(viewport);
-    source.chart.timeScale().applyOptions(viewport);
-    source.chart.timeScale().scrollToPosition(0, false);
+    const timeScale = source.chart.timeScale();
+    timeScale.applyOptions(viewport);
+    timeScale.scrollToPosition(chartRightOffsetPixels / defaultChartBarSpacing, false);
   }, [bottomContext, saveViewport, topContext]);
 
   const refreshCandles = useCallback(() => {
@@ -328,6 +332,17 @@ export default function SplitLightweightCharts({
       />
     </div>
   );
+}
+
+function sessionAfterRegularUpdate(
+  current: SessionDeltaState | undefined,
+  regular: MarketChartLiveDelta,
+): SessionDeltaState | undefined {
+  if (regular.interval !== "daily") return current;
+  const matchesPostMarketSession = current?.delta.session === "post_market"
+    && current.delta.symbol === regular.symbol
+    && current.delta.date === regular.candle.date;
+  return matchesPostMarketSession ? current : undefined;
 }
 
 function ChartLoadingOverlay() {

@@ -26,6 +26,7 @@ export interface MarketChartLiveDelta {
 export interface MarketChartSessionDelta {
   chart_id: string;
   symbol: string;
+  date: string;
   session: "pre_market" | "post_market";
   candle: MarketChartCandle | null;
   price: number;
@@ -147,6 +148,7 @@ export class MarketChartLiveClient {
 function isSessionDelta(delta: MarketChartSessionDelta): boolean {
   return typeof delta?.chart_id === "string"
     && typeof delta.symbol === "string"
+    && /^\d{4}-\d{2}-\d{2}$/.test(delta.date)
     && (delta.session === "pre_market" || delta.session === "post_market")
     && Number.isFinite(delta.price)
     && (delta.session === "pre_market" ? isCandle(delta.candle) : delta.candle === null);

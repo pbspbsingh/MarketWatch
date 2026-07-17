@@ -29,6 +29,7 @@ import {
 } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
+  chartRightOffsetPixels,
   indicatorSeriesOptions,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
@@ -343,7 +344,7 @@ export function MarketChart({
       lineWidth: 1 as const,
       lineStyle: LineStyle.Dotted,
       axisLabelVisible: true,
-      title: "POST",
+      title: "P",
       axisLabelColor: color,
       axisLabelTextColor: "#ffffff",
     };
@@ -368,7 +369,12 @@ export function MarketChart({
       if (viewport !== undefined) {
         timeScale?.applyOptions({ barSpacing: viewport.barSpacing });
       }
-      timeScale?.scrollToPosition(0, false);
+    }
+    if (timeScale !== null && timeScale !== undefined) {
+      timeScale.scrollToPosition(
+        chartRightOffsetPixels / timeScale.options().barSpacing,
+        false,
+      );
     }
     datasetKeyRef.current = datasetKey;
     datasetIntervalRef.current = data.interval;

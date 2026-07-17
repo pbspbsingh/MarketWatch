@@ -19,6 +19,7 @@ export const chartColors = {
 } as const;
 
 export const defaultChartBarSpacing = 6;
+export const chartRightOffsetPixels = 30;
 const synchronizedPriceScaleMinimumWidth = 64;
 
 export const dailySmaColors = {
@@ -58,6 +59,7 @@ export const baseChartOptions = {
   },
   timeScale: {
     barSpacing: defaultChartBarSpacing,
+    rightOffsetPixels: chartRightOffsetPixels,
     borderColor: chartColors.border,
     timeVisible: false,
   },
