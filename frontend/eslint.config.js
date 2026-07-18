@@ -10,15 +10,10 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    ...reactHooks.configs.flat["recommended-latest"],
     files: ["src/**/*.{ts,tsx}"],
-    plugins: {
-      "react-hooks": reactHooks,
-    },
     languageOptions: {
       globals: globals.browser,
-    },
-    rules: {
-      "react-hooks/rules-of-hooks": "error",
     },
   },
 );
