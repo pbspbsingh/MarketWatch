@@ -113,7 +113,8 @@ export function TickerDetailsDialog({
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
-    refresh ? setRefreshing(true) : setLoading(true);
+    if (refresh) setRefreshing(true);
+    else setLoading(true);
     fetchTickerDetails(symbol, refresh, controller.signal)
       .then(setDetails)
       .catch((requestError: unknown) => {

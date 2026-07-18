@@ -177,7 +177,8 @@ export function AutomaticTab({
             if (!selectedSymbols.has(symbol)) enrichTickers([symbol], onError);
             setSelectedSymbols((current) => {
               const next = new Set(current);
-              next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+              if (next.has(symbol)) next.delete(symbol);
+              else next.add(symbol);
               return next;
             });
           }}

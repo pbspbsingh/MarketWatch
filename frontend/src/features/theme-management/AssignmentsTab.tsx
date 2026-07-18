@@ -210,7 +210,8 @@ export function AssignmentsTab({
             if (!batchSymbols.has(symbol)) enrichTickers([symbol], onError);
             setBatchSymbols((current) => {
               const next = new Set(current);
-              next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+              if (next.has(symbol)) next.delete(symbol);
+              else next.add(symbol);
               return next;
             });
           }}

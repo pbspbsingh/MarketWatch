@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/gzip-dist.mjs",
-    "check": "tsc -b",
+    "check": "npm run typecheck && npm run lint",
+    "typecheck": "tsc -b",
+    "lint": "eslint src --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -29,10 +31,15 @@
     "react-window": "^2.2.7"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "typescript": "6.0.3",
+    "typescript-eslint": "^8.64.0",
     "vite": "8.1.0"
   }
 }
