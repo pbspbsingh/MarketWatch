@@ -28,6 +28,7 @@
   letter-spacing: 0.04em;
 }
 .theme-tracker-header > .MuiToggleButtonGroup-root:not(.theme-tracker-mode) .MuiToggleButton-root { flex: 1; padding: 0.2rem; font-size: 0.65rem; }
+.theme-tracker-updated { padding: 0.15rem 0.55rem; color: #8f9baa; font-size: 0.62rem; line-height: 1; text-align: right; }
 .theme-tracker-list { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .theme-tracker-row {
   display: grid;

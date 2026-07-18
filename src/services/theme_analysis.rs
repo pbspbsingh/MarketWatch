@@ -49,12 +49,18 @@ impl ThemeAnalysisService {
             match self.yahoo.daily_candles_for_year(&theme.etf_symbol).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
+                    let previous_close = candles
+                        .iter()
+                        .rev()
+                        .find(|candle| candle.market_date <= as_of)
+                        .map(|candle| candle.close);
                     rankings.push(ThemeRanking {
                         id: theme.id,
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
                         absolute_strength: Some(performance.absolute_strength()),
                         performance: Some(performance),
+                        previous_close,
                     });
                 }
                 Err(error) => {
@@ -70,6 +76,7 @@ impl ThemeAnalysisService {
                         etf_symbol: theme.etf_symbol,
                         performance: None,
                         absolute_strength: None,
+                        previous_close: None,
                     });
                 }
             }

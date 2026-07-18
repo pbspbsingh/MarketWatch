@@ -22,6 +22,7 @@ export interface ThemeRanking {
   etf_symbol: string;
   performance: PerformancePeriods | null;
   absolute_strength: number | null;
+  previous_close: number | null;
 }
 
 export async function fetchIndustries(signal?: AbortSignal): Promise<IndustryRanking[]> {

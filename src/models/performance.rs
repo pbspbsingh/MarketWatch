@@ -36,6 +36,7 @@ pub struct ThemeRanking {
     pub etf_symbol: String,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
+    pub previous_close: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

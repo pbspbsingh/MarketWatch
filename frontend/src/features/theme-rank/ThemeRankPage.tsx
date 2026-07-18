@@ -43,6 +43,7 @@ export function ThemeRankPage() {
           etf_symbol: theme.etf_symbol,
           performance: null,
           absolute_strength: null,
+          previous_close: null,
         }));
       })
       .catch((requestError: unknown) => {

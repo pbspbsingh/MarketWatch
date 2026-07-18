@@ -12,6 +12,7 @@ import { fetchThemes } from "../../api/themes";
 import { addTickerToWatchlist, clearTickerWatchlists, fetchTickerWatchlists, fetchWatchlists, removeTickerFromWatchlist, type Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
+import { useLivePrices } from "../../shared/useLivePrices";
 import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { ChartPanel } from "../ticker-lens/ChartPanel";
 import { isArrowKeyControl } from "../ticker-lens/utils";
@@ -19,9 +20,17 @@ import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import "./theme-tracker.css";
 
-type Range = "day" | "week" | "month" | "quarter" | "half_year" | "year";
+type HistoricalRange = "day" | "week" | "month" | "quarter" | "half_year" | "year";
+type Range = HistoricalRange | "trading_day";
 type TrackerMode = "theme" | "industry";
-type RankedItem = { key: string; label: string; symbol?: string; performance: PerformancePeriods | null; watchlistIds?: number[] };
+type RankedItem = {
+  key: string;
+  label: string;
+  symbol?: string;
+  performance: PerformancePeriods | null;
+  tradingDayPerformance?: number;
+  watchlistIds?: number[];
+};
 type StockRowProps = {
   items: RankedItem[];
   range: Range;
@@ -33,7 +42,7 @@ type StockRowProps = {
   onContextMenu: (event: React.MouseEvent, symbol: string) => void;
 };
 
-const ranges: { key: Range; label: string }[] = [
+const ranges: { key: HistoricalRange; label: string }[] = [
   { key: "day", label: "1D" },
   { key: "week", label: "1W" },
   { key: "month", label: "1M" },
@@ -44,9 +53,9 @@ const ranges: { key: Range; label: string }[] = [
 const topRangeStorageKey = "market-watch.theme-tracker-range";
 const drillDownRangeStorageKey = "market-watch.theme-tracker-stock-range";
 
-function initialRange(storageKey: string, fallback: Range): Range {
+function initialRange(storageKey: string, fallback: HistoricalRange): HistoricalRange {
   const stored = localStorage.getItem(storageKey);
-  return ranges.some(({ key }) => key === stored) ? stored as Range : fallback;
+  return ranges.some(({ key }) => key === stored) ? stored as HistoricalRange : fallback;
 }
 
 export function ThemeTrackerPage() {
@@ -54,7 +63,7 @@ export function ThemeTrackerPage() {
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const stockListRef = useListRef(null);
   const [topRange, setTopRange] = useState<Range>(() => initialRange(topRangeStorageKey, "week"));
-  const [drillDownRange, setDrillDownRange] = useState<Range>(() => initialRange(drillDownRangeStorageKey, "month"));
+  const [drillDownRange, setDrillDownRange] = useState<HistoricalRange>(() => initialRange(drillDownRangeStorageKey, "month"));
   const [mode, setMode] = useState<TrackerMode>("theme");
   const [themes, setThemes] = useState<ThemeRanking[]>([]);
   const [industries, setIndustries] = useState<IndustryRanking[]>([]);
@@ -69,6 +78,9 @@ export function ThemeTrackerPage() {
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const [error, setError] = useState<string>();
   const topRangeRef = useRef(topRange);
+  const historicalTopRangeRef = useRef<HistoricalRange>(
+    topRange === "trading_day" ? "week" : topRange,
+  );
   const userSelected = useRef(false);
   const refreshedMembershipRevision = useRef(0);
   const ignoreTickerContext = useCallback(() => {}, []);
@@ -128,7 +140,7 @@ export function ThemeTrackerPage() {
         const rankingsById = new Map(rankings?.map((theme) => [theme.id, theme]));
         const allThemes = metadata.map((theme) => rankingsById.get(theme.id) ?? {
           id: theme.id, name: theme.name, etf_symbol: theme.etf_symbol,
-          performance: null, absolute_strength: null,
+          performance: null, absolute_strength: null, previous_close: null,
         });
         setThemes(allThemes);
         const first = rankings === undefined
@@ -163,6 +175,27 @@ export function ThemeTrackerPage() {
       })
     return () => controller.abort();
   }, []);
+
+  const themeEtfSymbols = useMemo(
+    () => themes.map((theme) => theme.etf_symbol).filter((symbol) => symbol !== ""),
+    [themes],
+  );
+  const restoreHistoricalTopRange = useCallback(() => {
+    if (topRangeRef.current !== "trading_day") return;
+    topRangeRef.current = historicalTopRangeRef.current;
+    setTopRange(historicalTopRangeRef.current);
+  }, []);
+  const handleTradingDayAvailability = useCallback((available: boolean) => {
+    if (!available) restoreHistoricalTopRange();
+  }, [restoreHistoricalTopRange]);
+  const livePriceStream = useLivePrices({
+    enabled: mode === "theme" && !stockMode && topRange === "trading_day",
+    symbols: themeEtfSymbols,
+    onAvailability: handleTradingDayAvailability,
+    onError: restoreHistoricalTopRange,
+  });
+  const tradingDayAvailable = livePriceStream.available;
+  const livePrices = livePriceStream.prices;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -207,24 +240,38 @@ export function ThemeTrackerPage() {
     const items: RankedItem[] = stockMode
       ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance, watchlistIds: stock.watchlist_ids }))
       : mode === "theme"
-        ? themes.map((theme) => ({ key: String(theme.id), label: `${theme.name} (${theme.etf_symbol})`, symbol: theme.etf_symbol, performance: theme.performance }))
+        ? themes.map((theme) => ({
+            key: String(theme.id),
+            label: `${theme.name} (${theme.etf_symbol})`,
+            symbol: theme.etf_symbol,
+            performance: theme.performance,
+            tradingDayPerformance: tradingDayReturn(livePrices.get(theme.etf_symbol.toUpperCase())?.price, theme.previous_close),
+          }))
         : industries.map((industry) => ({ key: industry.key, label: industry.name, performance: industry.performance }));
     return items.sort((a, b) => metric(b, range) - metric(a, range));
-  }, [industries, mode, range, stockMode, stockStream.tickers, themes]);
+  }, [industries, livePrices, mode, range, stockMode, stockStream.tickers, themes]);
   const scale = useMemo(() => Math.max(0.01, ...sortedItems.flatMap((item) => {
-    const value = item.performance?.[range];
+    const value = itemMetric(item, range);
     return value == null ? [] : [Math.abs(value)];
   })), [range, sortedItems]);
+  const latestLiveUpdate = useMemo(() => [...livePrices.values()].reduce<string | undefined>(
+    (latest, update) => latest === undefined || update.updatedAt > latest ? update.updatedAt : latest,
+    undefined,
+  ), [livePrices]);
   const activeGroupName = mode === "theme" ? activeTheme?.name : activeIndustry?.name;
   const activeGroupSymbol = mode === "theme" ? activeTheme?.etf_symbol : undefined;
 
   const selectRange = (_: React.MouseEvent<HTMLElement>, value: Range | null) => {
     if (value === null) return;
     if (stockMode) {
+      if (value === "trading_day") return;
       localStorage.setItem(drillDownRangeStorageKey, value);
       setDrillDownRange(value);
     } else {
-      localStorage.setItem(topRangeStorageKey, value);
+      if (value !== "trading_day") {
+        localStorage.setItem(topRangeStorageKey, value);
+        historicalTopRangeRef.current = value;
+      }
       topRangeRef.current = value;
       setTopRange(value);
     }
@@ -243,6 +290,7 @@ export function ThemeTrackerPage() {
   }, [industries, mode, stockMode, themes]);
   const enterStockMode = (item: RankedItem) => {
     selectItem(item);
+    restoreHistoricalTopRange();
     setStockMode(true);
   };
   const handleFavouriteClick = (item: RankedItem) => {
@@ -302,12 +350,14 @@ export function ThemeTrackerPage() {
     setMode(value);
     setStockMode(false);
     setSelectedStock(undefined);
+    if (value === "industry") restoreHistoricalTopRange();
+    const selectionRange = range === "trading_day" ? historicalTopRangeRef.current : range;
     if (value === "theme") {
-      const next = activeTheme ?? [...themes].sort((a, b) => metric(b, range) - metric(a, range))[0];
+      const next = activeTheme ?? [...themes].sort((a, b) => metric(b, selectionRange) - metric(a, selectionRange))[0];
       setActiveTheme(next);
       setSelectedTicker(next?.etf_symbol);
     } else {
-      const next = activeIndustry ?? [...industries].sort((a, b) => metric(b, range) - metric(a, range))[0];
+      const next = activeIndustry ?? [...industries].sort((a, b) => metric(b, selectionRange) - metric(a, selectionRange))[0];
       setActiveIndustry(next);
       setSelectedTicker(undefined);
     }
@@ -331,6 +381,7 @@ export function ThemeTrackerPage() {
         if (activeGroupKey === undefined) return;
         event.preventDefault();
         userSelected.current = true;
+        restoreHistoricalTopRange();
         setSelectedStock(undefined);
         setStockMode(true);
         return;
@@ -355,7 +406,7 @@ export function ThemeTrackerPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activeGroupKey, leaveStockMode, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
+  }, [activeGroupKey, leaveStockMode, restoreHistoricalTopRange, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
 
   return (
     <section className="theme-tracker">
@@ -375,8 +426,14 @@ export function ThemeTrackerPage() {
           )}
           <ToggleButtonGroup exclusive size="small" value={range} onChange={selectRange} aria-label="Performance range">
             {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
+            {!stockMode && mode === "theme" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
           </ToggleButtonGroup>
         </header>
+        {range === "trading_day" && latestLiveUpdate !== undefined && (
+          <div className="theme-tracker-updated" title={new Date(latestLiveUpdate).toLocaleString()}>
+            Updated {new Date(latestLiveUpdate).toLocaleTimeString()}
+          </div>
+        )}
         {(stockMode ? stockStream.loading : mode === "theme" ? loading : industriesLoading) && sortedItems.length === 0 ? <div className="panel-status"><CircularProgress size="1rem" /></div> : stockMode ? (
           <List
             tagName="ol"
@@ -450,12 +507,22 @@ export function ThemeTrackerPage() {
       />
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast message={stockStream.error} onClose={stockStream.clearError} />
+      <Toast message={livePriceStream.error} onClose={livePriceStream.clearError} />
     </section>
   );
 }
 
 function metric(item: { performance: PerformancePeriods | null }, range: Range) {
-  return item.performance?.[range] ?? Number.NEGATIVE_INFINITY;
+  return itemMetric(item, range) ?? Number.NEGATIVE_INFINITY;
+}
+
+function itemMetric(item: Pick<RankedItem, "performance" | "tradingDayPerformance">, range: Range) {
+  return range === "trading_day" ? item.tradingDayPerformance : item.performance?.[range];
+}
+
+function tradingDayReturn(price: number | undefined, previousClose: number | null | undefined) {
+  if (price === undefined || previousClose == null || previousClose <= 0) return undefined;
+  return price / previousClose - 1;
 }
 
 function PerformanceBar({ value, scale }: { value: number | null | undefined; scale: number }) {
@@ -490,7 +557,7 @@ function StockRow({ index, style, ariaAttributes, items, range, scale, selectedT
 }
 
 function PerformanceCells({ item, range, scale }: { item: RankedItem; range: Range; scale: number }) {
-  const value = item.performance?.[range];
+  const value = itemMetric(item, range);
   return <>
     <span className="theme-tracker-name">{item.label}</span>
     <PerformanceBar value={value} scale={scale} />
