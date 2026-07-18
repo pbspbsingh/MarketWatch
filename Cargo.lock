@@ -184,6 +184,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "borsh"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a88b7ea17d208c4193f2c1e6de3c35fe71f98c96982d5ced308bdcc749ff6e1f"
+dependencies = [
+ "bytes",
+ "cfg_aliases",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1419,6 +1429,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "smol_str",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2390,6 +2401,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "smol_str"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523"
+dependencies = [
+ "borsh",
+ "serde_core",
 ]
 
 [[package]]

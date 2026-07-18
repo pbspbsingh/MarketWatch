@@ -1,4 +1,6 @@
+use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize};
+use smol_str::SmolStr;
 use std::borrow::Borrow;
 use std::fmt;
 use std::str::FromStr;
@@ -6,7 +8,7 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct TickerSymbol(String);
+pub struct TickerSymbol(SmolStr);
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 #[error("invalid ticker symbol")]
@@ -14,20 +16,28 @@ pub struct InvalidTickerSymbol;
 
 impl TickerSymbol {
     pub fn parse(value: impl AsRef<str>) -> Result<Self, InvalidTickerSymbol> {
-        Self::normalize(value.as_ref().trim().to_owned())
+        Self::normalize(value.as_ref().trim())
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    fn normalize(mut value: String) -> Result<Self, InvalidTickerSymbol> {
-        value.make_ascii_uppercase();
+    fn normalize(value: &str) -> Result<Self, InvalidTickerSymbol> {
         let valid = !value.is_empty()
             && value
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'));
-        valid.then_some(Self(value)).ok_or(InvalidTickerSymbol)
+        if !valid {
+            return Err(InvalidTickerSymbol);
+        }
+        if value.bytes().any(|byte| byte.is_ascii_lowercase()) {
+            let mut normalized = value.to_owned();
+            normalized.make_ascii_uppercase();
+            Ok(Self(SmolStr::from(normalized)))
+        } else {
+            Ok(Self(SmolStr::new(value)))
+        }
     }
 }
 
@@ -63,9 +73,11 @@ impl TryFrom<String> for TickerSymbol {
     fn try_from(mut value: String) -> Result<Self, Self::Error> {
         let trimmed = value.trim();
         if trimmed.len() != value.len() {
-            value = trimmed.to_owned();
+            return Self::normalize(trimmed);
         }
-        Self::normalize(value)
+        value.make_ascii_uppercase();
+        let symbol = Self::normalize(&value)?;
+        Ok(symbol)
     }
 }
 
@@ -86,8 +98,31 @@ impl<'de> Deserialize<'de> for TickerSymbol {
     where
         D: Deserializer<'de>,
     {
-        let value = String::deserialize(deserializer)?;
-        Self::try_from(value).map_err(serde::de::Error::custom)
+        deserializer.deserialize_str(TickerSymbolVisitor)
+    }
+}
+
+struct TickerSymbolVisitor;
+
+impl Visitor<'_> for TickerSymbolVisitor {
+    type Value = TickerSymbol;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a valid ticker symbol")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        TickerSymbol::parse(value).map_err(E::custom)
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        TickerSymbol::try_from(value).map_err(E::custom)
     }
 }
 
@@ -116,5 +151,17 @@ mod tests {
             serde_json::from_str::<TickerSymbol>(r#""aapl""#).unwrap(),
             symbol
         );
+    }
+
+    #[test]
+    fn stores_typical_tickers_inline() {
+        let symbol = TickerSymbol::parse("BRK-B").unwrap();
+        assert!(!symbol.0.is_heap_allocated());
+    }
+
+    #[test]
+    fn borrowed_string_lookup_matches_symbol_hashing() {
+        let symbols = std::collections::HashSet::from([TickerSymbol::parse("AAPL").unwrap()]);
+        assert!(symbols.contains("AAPL"));
     }
 }
