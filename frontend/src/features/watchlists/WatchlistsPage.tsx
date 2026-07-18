@@ -47,7 +47,6 @@ export function WatchlistsPage() {
   const [symbols, setSymbols] = useState<string[]>([]);
   const [symbolsWatchlistId, setSymbolsWatchlistId] = useState<number>();
   const [loading, setLoading] = useState(true);
-  const [symbolsLoading, setSymbolsLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [addingTicker, setAddingTicker] = useState(false);
   const [tickerInput, setTickerInput] = useState("");
@@ -56,8 +55,14 @@ export function WatchlistsPage() {
   const [error, setError] = useState<string>();
   const selectedId = Number(id);
   const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
   const selected = watchlists.find((watchlist) => watchlist.id === selectedId);
+  const selectedWatchlistId = selected?.id;
+  const symbolsLoading = selectedWatchlistId !== undefined
+    && symbolsWatchlistId !== selectedWatchlistId;
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,30 +87,26 @@ export function WatchlistsPage() {
   }, [focusRevision, id, navigate, selectedId]);
 
   useEffect(() => {
-    if (selected !== undefined) {
-      localStorage.setItem(selectedWatchlistStorageKey, String(selected.id));
+    if (selectedWatchlistId !== undefined) {
+      localStorage.setItem(selectedWatchlistStorageKey, String(selectedWatchlistId));
     }
-  }, [selected?.id]);
+  }, [selectedWatchlistId]);
 
   useEffect(() => {
-    if (selected === undefined) return;
+    if (selectedWatchlistId === undefined) return;
     const controller = new AbortController();
-    setSymbolsLoading(true);
-    fetchWatchlistSymbols(selected.id, controller.signal)
+    fetchWatchlistSymbols(selectedWatchlistId, controller.signal)
       .then((items) => {
         if (!controller.signal.aborted) {
           setSymbols(items);
-          setSymbolsWatchlistId(selected.id);
+          setSymbolsWatchlistId(selectedWatchlistId);
         }
       })
       .catch((requestError: unknown) => {
         if (!controller.signal.aborted) setError(message(requestError));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setSymbolsLoading(false);
       });
     return () => controller.abort();
-  }, [focusRevision, selected?.id]);
+  }, [focusRevision, selectedWatchlistId]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {

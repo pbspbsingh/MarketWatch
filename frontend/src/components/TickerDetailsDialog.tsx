@@ -46,6 +46,22 @@ export function TickerDetailsDialog({
   onClose,
   onThemeChanged,
 }: TickerDetailsDialogProps) {
+  if (!open || symbol === undefined) return null;
+  return (
+    <OpenTickerDetailsDialog
+      key={symbol}
+      symbol={symbol}
+      onClose={onClose}
+      onThemeChanged={onThemeChanged}
+    />
+  );
+}
+
+function OpenTickerDetailsDialog({
+  symbol,
+  onClose,
+  onThemeChanged,
+}: Omit<TickerDetailsDialogProps, "open" | "symbol"> & { symbol: string }) {
   const [details, setDetails] = useState<TickerDetails>();
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeTicker, setThemeTicker] = useState<ThemeTicker>();
@@ -57,8 +73,7 @@ export function TickerDetailsDialog({
     batch_size: null,
   });
   const [tab, setTab] = useState<DetailsTab>("fundamentals");
-  const [loading, setLoading] = useState(false);
-  const [themesLoading, setThemesLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingThemes, setSavingThemes] = useState(false);
   const [suggestingThemes, setSuggestingThemes] = useState(false);
@@ -69,20 +84,9 @@ export function TickerDetailsDialog({
   );
   const [suggestions, setSuggestions] = useState<ThemeSuggestion[]>([]);
   const requestRef = useRef<AbortController | undefined>(undefined);
-  const symbolRef = useRef(symbol);
+  const themesLoading = tab === "profile-themes" && themeTicker === undefined;
 
   useEffect(() => {
-    symbolRef.current = symbol;
-  }, [symbol]);
-
-  useEffect(() => {
-    if (open) {
-      setTab("fundamentals");
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.altKey ||
@@ -106,16 +110,14 @@ export function TickerDetailsDialog({
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [open]);
+  }, []);
 
-  const load = (refresh: boolean) => {
-    if (symbol === undefined) return undefined;
+  const refreshDetails = () => {
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
-    fetchTickerDetails(symbol, refresh, controller.signal)
+    setRefreshing(true);
+    fetchTickerDetails(symbol, true, controller.signal)
       .then(setDetails)
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
@@ -128,51 +130,58 @@ export function TickerDetailsDialog({
           setRefreshing(false);
         }
       });
-    return controller;
   };
 
-  const loadThemes = async (targetSymbol: string) => {
-    setThemesLoading(true);
+  const loadThemes = async () => {
     try {
       const [nextThemes, nextTicker] = await Promise.all([
         fetchThemes(),
-        fetchThemeTicker(targetSymbol),
+        fetchThemeTicker(symbol),
       ]);
-      if (symbolRef.current !== targetSymbol) return;
       setThemes(nextThemes);
       setThemeTicker(nextTicker);
       setDraftThemeIds(nextTicker.assignments.map((assignment) => assignment.theme_id));
       setSuggestedThemeIds([]);
     } catch (loadError) {
-      if (symbolRef.current === targetSymbol) {
-        setError(errorMessage(loadError));
-      }
-    } finally {
-      if (symbolRef.current === targetSymbol) {
-        setThemesLoading(false);
-      }
+      setError(errorMessage(loadError));
     }
   };
 
   useEffect(() => {
-    if (!open || symbol === undefined) return;
-    setDetails(undefined);
-    setThemeTicker(undefined);
-    setDraftThemeIds([]);
-    setSuggestedThemeIds([]);
-    setSuggestions([]);
-    setError(undefined);
-    const controller = load(false);
-    return () => controller?.abort();
-  }, [open, symbol]);
+    const controller = new AbortController();
+    requestRef.current = controller;
+    fetchTickerDetails(symbol, false, controller.signal)
+      .then(setDetails)
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setError(requestError.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [symbol]);
 
   useEffect(() => {
-    if (!open || symbol === undefined || tab !== "profile-themes") return;
-    void loadThemes(symbol);
-    fetchAiCapability()
-      .then(setAiCapability)
-      .catch((capabilityError: unknown) => setError(errorMessage(capabilityError)));
-  }, [open, symbol, tab]);
+    if (tab !== "profile-themes") return;
+    let active = true;
+    Promise.all([fetchThemes(), fetchThemeTicker(symbol), fetchAiCapability()])
+      .then(([nextThemes, nextTicker, nextCapability]) => {
+        if (!active) return;
+        setThemes(nextThemes);
+        setThemeTicker(nextTicker);
+        setDraftThemeIds(nextTicker.assignments.map((assignment) => assignment.theme_id));
+        setSuggestedThemeIds([]);
+        setAiCapability(nextCapability);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(errorMessage(loadError));
+      });
+    return () => {
+      active = false;
+    };
+  }, [symbol, tab]);
 
   const close = () => {
     requestRef.current?.abort();
@@ -192,11 +201,10 @@ export function TickerDetailsDialog({
   };
 
   const saveManualThemes = async () => {
-    if (symbol === undefined) return;
     setSavingThemes(true);
     try {
       await replaceTickerThemes(symbol, draftThemeIds);
-      await loadThemes(symbol);
+      await loadThemes();
       onThemeChanged?.();
       setMessageSeverity("success");
       setMessage("Ticker themes updated");
@@ -208,7 +216,6 @@ export function TickerDetailsDialog({
   };
 
   const suggestThemes = async () => {
-    if (symbol === undefined) return;
     setSuggestingThemes(true);
     try {
       const selectedSymbol = symbol.toUpperCase();
@@ -244,7 +251,7 @@ export function TickerDetailsDialog({
   return (
     <>
       <Dialog
-        open={open}
+        open
         onClose={close}
         maxWidth={false}
         slotProps={{ paper: { className: "ticker-details-dialog" } }}
@@ -282,7 +289,7 @@ export function TickerDetailsDialog({
             <IconButton
               aria-label="Refresh fundamentals"
               disabled={details === undefined || refreshing}
-              onClick={() => load(true)}
+              onClick={refreshDetails}
             >
               {refreshing ? <CircularProgress size="1rem" /> : <RefreshIcon />}
             </IconButton>
