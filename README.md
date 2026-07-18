@@ -39,6 +39,31 @@ cd ..
 cargo run --release
 ```
 
-The release binary embeds and serves `frontend/dist`.
+The frontend build creates `frontend/dist` and its precompressed copy in
+`frontend/dist_gzipped`. The release binary embeds and serves
+`frontend/dist_gzipped`.
+
+## Verification
+
+Run the backend checks:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+```
+
+Run the frontend checks:
+
+```bash
+npm --prefix frontend run check
+npm --prefix frontend run build
+```
+
+Check patches for whitespace errors:
+
+```bash
+git diff --check
+```
 
 Application settings live in `config.toml`.
