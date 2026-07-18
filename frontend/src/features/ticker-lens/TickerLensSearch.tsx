@@ -24,7 +24,7 @@ export function TickerLensSearch({
   onSelectTicker,
 }: TickerLensSearchProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState({ mode, query: "" });
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -40,6 +40,7 @@ export function TickerLensSearch({
       : groups,
     [groups, mode],
   );
+  const query = search.mode === mode ? search.query : "";
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matchingGroups = useMemo(
     () => normalizedQuery === "" ? [] : searchableGroups
@@ -66,9 +67,10 @@ export function TickerLensSearch({
     [matchingGroups, matchingTickers],
   );
 
-  useEffect(() => {
+  const updateQuery = useCallback((nextQuery: string) => {
+    setSearch({ mode, query: nextQuery });
     setActiveIndex(0);
-  }, [normalizedQuery]);
+  }, [mode]);
 
   const selectResult = (index: number) => {
     const result = results[index];
@@ -90,17 +92,13 @@ export function TickerLensSearch({
         focusAndSelectQuery();
       } else if (event.key === "Escape" && open) {
         event.preventDefault();
-        if (query !== "") setQuery("");
+        if (query !== "") updateQuery("");
         else setOpen(false);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [focusAndSelectQuery, open, query]);
-
-  useEffect(() => {
-    setQuery("");
-  }, [mode]);
+  }, [focusAndSelectQuery, open, query, updateQuery]);
 
   if (!open) {
     return (
@@ -175,7 +173,7 @@ export function TickerLensSearch({
           value={query}
           size="small"
           placeholder={`Search ${mode === "industry" ? "industries" : "themes"} and resolved tickers`}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => updateQuery(event.target.value)}
           onKeyDown={(event) => {
             if (results.length === 0) return;
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
