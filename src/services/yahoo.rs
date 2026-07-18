@@ -1,7 +1,7 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
 use crate::models::ticker_symbol::InvalidTickerSymbol;
-use crate::models::{CompanyProfile, DailyCandle, TickerSymbol};
+use crate::models::{CompanyProfile, DailyCandle, TickerSymbol, YahooSymbol};
 use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
@@ -23,8 +23,8 @@ pub struct YahooService {
     store: Store,
     yahoo: Arc<YahooClient>,
     market_schedule: MarketSchedule,
-    daily_candle_locks: KeyedLock,
-    first_trade_dates: Mutex<HashMap<String, NaiveDate>>,
+    daily_candle_locks: KeyedLock<TickerSymbol>,
+    first_trade_dates: Mutex<HashMap<TickerSymbol, NaiveDate>>,
 }
 
 pub struct HistoricalDailyCandles {
@@ -38,7 +38,6 @@ pub(crate) struct IntradayCandle {
 }
 
 pub(crate) struct IntradayPrice {
-    pub symbol: String,
     pub market_date: NaiveDate,
     pub price: f64,
     pub updated_at: chrono::DateTime<Utc>,
@@ -66,7 +65,7 @@ pub enum YahooServiceError {
 
     #[error("Yahoo returned an invalid volume for {symbol} on {market_date}")]
     InvalidVolume {
-        symbol: String,
+        symbol: YahooSymbol,
         market_date: NaiveDate,
     },
 }
@@ -93,14 +92,14 @@ impl YahooService {
     ) -> Result<CompanyProfile, YahooServiceError> {
         if let Some(profile) = self
             .store
-            .company_profile(symbol.as_str())
+            .company_profile(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?
         {
             return Ok(profile);
         }
 
-        let profile = self.fetch_profile(symbol.as_str()).await?;
+        let profile = self.fetch_profile(symbol).await?;
         self.store
             .upsert_company_profile(&profile)
             .await
@@ -121,17 +120,17 @@ impl YahooService {
         symbol: &TickerSymbol,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         let (start, end) = self.completed_year_range()?;
-        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
+        let _guard = self.daily_candle_locks.lock(symbol).await;
         self.profile(symbol).await?;
         let latest_session = self.market_schedule.previous_trading_day(end);
         let (candles, first_trade_at) = self
-            .fetch_daily_candles_from_provider(symbol.as_str(), start, end, Some(latest_session))
+            .fetch_daily_candles_from_provider(symbol, start, end, Some(latest_session))
             .await?;
         self.store
             .replace_daily_candles(symbol, &candles)
             .await
             .map_err(YahooServiceError::Persistence)?;
-        self.cache_first_trade_date(symbol.as_str(), first_trade_at);
+        self.cache_first_trade_date(symbol, first_trade_at);
         Ok(candles)
     }
 
@@ -154,15 +153,15 @@ impl YahooService {
         if start >= end {
             return Err(YahooServiceError::InvalidRange);
         }
-        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
+        let _guard = self.daily_candle_locks.lock(symbol).await;
         self.profile(symbol).await?;
         let provider_has_more_before = self
-            .backfill_daily_candles_locked(symbol.as_str(), start, end)
+            .backfill_daily_candles_locked(symbol, start, end)
             .await?;
 
         let candles = self
             .store
-            .daily_candles(symbol.as_str(), start, end)
+            .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)?;
         let has_more_before = provider_has_more_before.unwrap_or(!candles.is_empty());
@@ -182,7 +181,7 @@ impl YahooService {
             return Err(YahooServiceError::InvalidRange);
         }
 
-        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
+        let _guard = self.daily_candle_locks.lock(symbol).await;
         self.daily_candles_locked(symbol, start, end).await
     }
 
@@ -195,7 +194,7 @@ impl YahooService {
         self.profile(symbol).await?;
         let latest = self
             .store
-            .latest_daily_candle_date(symbol.as_str())
+            .latest_daily_candle_date(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?;
         let recent_trading_day = self.market_schedule.recent_trading_day(Utc::now());
@@ -216,31 +215,31 @@ impl YahooService {
                 (requested_last_date == recent_trading_day).then_some(requested_last_date);
             let (candles, first_trade_at) = self
                 .fetch_daily_candles_from_provider(
-                    symbol.as_str(),
+                    symbol,
                     fetch_start,
                     fetch_end_date,
                     repair_latest,
                 )
                 .await?;
             self.store
-                .upsert_daily_candles(&TickerSymbol::parse(symbol)?, &candles)
+                .upsert_daily_candles(symbol, &candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
-            self.cache_first_trade_date(symbol.as_str(), first_trade_at);
+            self.cache_first_trade_date(symbol, first_trade_at);
         }
 
-        self.backfill_daily_candles_locked(symbol.as_str(), start, fetch_end_date)
+        self.backfill_daily_candles_locked(symbol, start, fetch_end_date)
             .await?;
 
         self.store
-            .daily_candles(symbol.as_str(), start, end)
+            .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)
     }
 
     async fn backfill_daily_candles_locked(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
     ) -> Result<Option<bool>, YahooServiceError> {
@@ -257,7 +256,7 @@ impl YahooService {
             cached_history_start_reached(stored_start, self.cached_first_trade_date(symbol))
         {
             debug!(
-                symbol,
+                %symbol,
                 %first_trade_date,
                 "skipping Yahoo backfill before cached first trade date"
             );
@@ -278,7 +277,7 @@ impl YahooService {
             .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
             .unwrap_or(!fetched.is_empty());
         self.store
-            .upsert_daily_candles(&TickerSymbol::parse(symbol)?, &fetched)
+            .upsert_daily_candles(symbol, &fetched)
             .await
             .map_err(YahooServiceError::Persistence)?;
         self.cache_first_trade_date(symbol, first_trade_at);
@@ -299,7 +298,7 @@ impl YahooService {
 
     async fn fetch_daily_candles_from_provider(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
         repair_latest: Option<NaiveDate>,
@@ -311,13 +310,16 @@ impl YahooService {
         );
         let end_time =
             Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
+        let yahoo_symbol = YahooSymbol::from(symbol);
         let ChartRange {
             candles,
             first_trade_at,
-        } = self.fetch_chart(symbol, start_time, end_time).await?;
+        } = self
+            .fetch_chart(&yahoo_symbol, start_time, end_time)
+            .await?;
         let mut candles = candles
             .into_iter()
-            .map(|candle| self.provider_daily_candle(symbol, candle))
+            .map(|candle| self.provider_daily_candle(&yahoo_symbol, candle))
             .collect::<Result<Vec<_>, YahooServiceError>>()?;
         if let Some(expected_date) = repair_latest
             && candles
@@ -333,24 +335,27 @@ impl YahooService {
 
     async fn repair_missing_latest_candle(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         expected_date: NaiveDate,
         candles: &mut Vec<DailyCandle>,
     ) {
         warn!(
-            symbol,
+            %symbol,
             %expected_date,
             "Yahoo chart omitted completed candle; attempting intraday repair"
         );
-        match self.intraday_regular_candle(symbol, expected_date).await {
+        match self
+            .intraday_regular_candle(&YahooSymbol::from(symbol), expected_date)
+            .await
+        {
             Ok(Some(candle)) => candles.push(candle.candle),
             Ok(None) => warn!(
-                symbol,
+                %symbol,
                 %expected_date,
                 "Yahoo intraday chart has no completed regular-session candle"
             ),
             Err(error) => warn!(
-                symbol,
+                %symbol,
                 %expected_date,
                 %error,
                 "failed to repair missing Yahoo chart candle from intraday data"
@@ -358,7 +363,7 @@ impl YahooService {
         }
     }
 
-    fn cached_first_trade_date(&self, symbol: &str) -> Option<NaiveDate> {
+    fn cached_first_trade_date(&self, symbol: &TickerSymbol) -> Option<NaiveDate> {
         self.first_trade_dates
             .lock()
             .expect("Yahoo first-trade cache mutex is not poisoned")
@@ -366,7 +371,11 @@ impl YahooService {
             .copied()
     }
 
-    fn cache_first_trade_date(&self, symbol: &str, first_trade_at: Option<chrono::DateTime<Utc>>) {
+    fn cache_first_trade_date(
+        &self,
+        symbol: &TickerSymbol,
+        first_trade_at: Option<chrono::DateTime<Utc>>,
+    ) {
         let Some(first_trade_at) = first_trade_at else {
             return;
         };
@@ -374,20 +383,20 @@ impl YahooService {
             .lock()
             .expect("Yahoo first-trade cache mutex is not poisoned")
             .insert(
-                symbol.to_owned(),
+                symbol.clone(),
                 self.market_schedule.market_date(first_trade_at),
             );
     }
 
     fn provider_daily_candle(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         candle: Candle,
     ) -> Result<DailyCandle, YahooServiceError> {
         let market_date = self.market_schedule.market_date(candle.timestamp);
         let volume =
             i64::try_from(candle.volume).map_err(|_| YahooServiceError::InvalidVolume {
-                symbol: symbol.to_owned(),
+                symbol: symbol.clone(),
                 market_date,
             })?;
         Ok(DailyCandle {
@@ -400,14 +409,14 @@ impl YahooService {
         })
     }
 
-    async fn fetch_profile(&self, symbol: &str) -> Result<CompanyProfile, YahooError> {
+    async fn fetch_profile(&self, symbol: &TickerSymbol) -> Result<CompanyProfile, YahooError> {
         let mut delay = INITIAL_RETRY_DELAY;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
             match self.yahoo.profile(symbol).await {
                 Ok(profile) => return Ok(profile),
                 Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
                     let delay = jitter(delay);
-                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo profile request");
+                    warn!(%symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo profile request");
                     sleep(delay).await;
                 }
                 Err(error) => return Err(error),
@@ -419,7 +428,7 @@ impl YahooService {
 
     async fn fetch_chart(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         start: chrono::DateTime<Utc>,
         end: chrono::DateTime<Utc>,
     ) -> Result<ChartRange, YahooError> {
@@ -433,7 +442,7 @@ impl YahooService {
                 Ok(candles) => return Ok(candles),
                 Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
                     let delay = jitter(delay);
-                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo chart request");
+                    warn!(%symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo chart request");
                     sleep(delay).await;
                 }
                 Err(error) => return Err(error),
@@ -445,7 +454,7 @@ impl YahooService {
 
     async fn fetch_intraday_chart(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         start: chrono::DateTime<Utc>,
         end: chrono::DateTime<Utc>,
     ) -> Result<Vec<Candle>, YahooError> {
@@ -459,7 +468,7 @@ impl YahooService {
                 Ok(range) => return Ok(range.candles),
                 Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
                     let delay = jitter(delay);
-                    warn!(symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo intraday chart request");
+                    warn!(%symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo intraday chart request");
                     sleep(delay).await;
                 }
                 Err(error) => return Err(error),
@@ -471,7 +480,7 @@ impl YahooService {
 
     pub(crate) async fn intraday_regular_candle(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         market_date: NaiveDate,
     ) -> Result<Option<IntradayCandle>, YahooServiceError> {
         Ok(self
@@ -482,7 +491,7 @@ impl YahooService {
 
     pub(crate) async fn intraday_session_seed(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         market_date: NaiveDate,
     ) -> Result<IntradaySessionSeed, YahooServiceError> {
         let start = Utc.from_utc_datetime(
@@ -507,7 +516,6 @@ impl YahooService {
             }
         }
         let post_market = post_market.last().map(|candle| IntradayPrice {
-            symbol: symbol.to_owned(),
             market_date,
             price: candle.close,
             updated_at: candle.timestamp,
@@ -521,7 +529,7 @@ impl YahooService {
 }
 
 fn aggregate_regular_candle(
-    symbol: &str,
+    symbol: &YahooSymbol,
     market_date: NaiveDate,
     candles: impl IntoIterator<Item = Candle>,
 ) -> Result<Option<IntradayCandle>, YahooServiceError> {
@@ -543,12 +551,12 @@ fn aggregate_regular_candle(
             volume
                 .checked_add(candle.volume)
                 .ok_or_else(|| YahooServiceError::InvalidVolume {
-                    symbol: symbol.to_owned(),
+                    symbol: symbol.clone(),
                     market_date,
                 })?;
     }
     let volume = i64::try_from(volume).map_err(|_| YahooServiceError::InvalidVolume {
-        symbol: symbol.to_owned(),
+        symbol: symbol.clone(),
         market_date,
     })?;
     Ok(Some(IntradayCandle {
@@ -605,7 +613,7 @@ mod history_cache_tests {
             },
         ];
 
-        let aggregated = aggregate_regular_candle("TEST", date, bars)
+        let aggregated = aggregate_regular_candle(&YahooSymbol::parse("TEST").unwrap(), date, bars)
             .unwrap()
             .unwrap();
 

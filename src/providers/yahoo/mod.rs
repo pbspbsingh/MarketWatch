@@ -6,7 +6,7 @@ pub use error::YahooError;
 
 use crate::config::ProviderConfig;
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::{CompanyProfile, Exchange, TickerSymbol};
+use crate::models::{CompanyProfile, Exchange, TickerSymbol, YahooSymbol};
 use chrono::Timelike;
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
@@ -87,7 +87,7 @@ impl YahooClient {
 
     pub async fn chart(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         interval: ChartInterval,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -99,7 +99,7 @@ impl YahooClient {
 
     pub async fn chart_range(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         interval: ChartInterval,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -110,13 +110,13 @@ impl YahooClient {
 
     pub async fn chart_range_with_pre_post(
         &self,
-        symbol: &str,
+        symbol: &YahooSymbol,
         interval: ChartInterval,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         include_pre_post: bool,
     ) -> Result<ChartRange, YahooError> {
-        if symbol.trim().is_empty() || start >= end {
+        if start >= end {
             return Err(YahooError::InvalidResponse {
                 message: "chart requires a symbol and an increasing time range".to_owned(),
             });
@@ -144,24 +144,19 @@ impl YahooClient {
         Ok(range)
     }
 
-    pub async fn profile(&self, symbol: &str) -> Result<CompanyProfile, YahooError> {
-        if symbol.trim().is_empty() {
-            return Err(YahooError::InvalidResponse {
-                message: "profile requires a symbol".to_owned(),
-            });
-        }
-
+    pub async fn profile(&self, symbol: &TickerSymbol) -> Result<CompanyProfile, YahooError> {
+        let yahoo_symbol = YahooSymbol::from(symbol);
         let crumb = self.crumb().await?;
-        let mut url = endpoint(PROFILE_URL, symbol);
+        let mut url = endpoint(PROFILE_URL, &yahoo_symbol);
         url.query_pairs_mut()
             .append_pair("modules", "assetProfile,price")
             .append_pair("crumb", &crumb);
-        let response = self.get_json(url, symbol).await;
+        let response = self.get_json(url, &yahoo_symbol).await;
         if matches!(response, Err(YahooError::Unauthorized)) {
             *self.crumb.lock().await = None;
         }
         let profile = parse_profile(response?, symbol)?;
-        info!(symbol, "fetched Yahoo company profile");
+        info!(%symbol, "fetched Yahoo company profile");
         Ok(profile)
     }
 
@@ -208,7 +203,7 @@ impl YahooClient {
         let _ = self
             .get_text(
                 cookie_url,
-                "",
+                None,
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             )
             .await?;
@@ -217,7 +212,7 @@ impl YahooClient {
 
     async fn fetch_crumb(&self, crumb_url: &str) -> Result<String, YahooError> {
         let url = Url::parse(crumb_url).expect("Yahoo crumb URL is valid");
-        let value = self.get_text(url, "", "text/plain").await?;
+        let value = self.get_text(url, None, "text/plain").await?;
         if value.is_empty() || value.contains("Unauthorized") || value.contains("Too Many") {
             Err(YahooError::Unauthorized)
         } else {
@@ -225,14 +220,23 @@ impl YahooClient {
         }
     }
 
-    async fn get_json<T: DeserializeOwned>(&self, url: Url, symbol: &str) -> Result<T, YahooError> {
-        let text = self.get_text(url, symbol, "application/json").await?;
+    async fn get_json<T: DeserializeOwned>(
+        &self,
+        url: Url,
+        symbol: &YahooSymbol,
+    ) -> Result<T, YahooError> {
+        let text = self.get_text(url, Some(symbol), "application/json").await?;
         serde_json::from_str(&text).map_err(|error| YahooError::InvalidResponse {
             message: error.to_string(),
         })
     }
 
-    async fn get_text(&self, url: Url, symbol: &str, accept: &str) -> Result<String, YahooError> {
+    async fn get_text(
+        &self,
+        url: Url,
+        symbol: Option<&YahooSymbol>,
+        accept: &str,
+    ) -> Result<String, YahooError> {
         debug!(%url, "waiting for Yahoo request permit");
         let _permit = self
             .request_permits
@@ -243,7 +247,7 @@ impl YahooClient {
         debug!(%url, delay_ms = delay.as_millis(), "delaying Yahoo request");
         sleep(delay).await;
 
-        info!(symbol, endpoint = %url.path(), "requesting Yahoo API");
+        info!(symbol = symbol.map(YahooSymbol::as_str), endpoint = %url.path(), "requesting Yahoo API");
         let response = self
             .http
             .get(url.clone())
@@ -255,9 +259,11 @@ impl YahooClient {
         debug!(%url, %status, "received Yahoo response");
         match status {
             StatusCode::NOT_FOUND => {
-                return Err(YahooError::NotFound {
-                    symbol: symbol.to_owned(),
-                });
+                return Err(symbol
+                    .cloned()
+                    .map_or(YahooError::Http { status }, |symbol| YahooError::NotFound {
+                        symbol,
+                    }));
             }
             StatusCode::TOO_MANY_REQUESTS => return Err(YahooError::RateLimited),
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
@@ -298,16 +304,16 @@ impl fmt::Display for ChartInterval {
     }
 }
 
-fn endpoint(base: &str, symbol: &str) -> Url {
+fn endpoint(base: &str, symbol: &YahooSymbol) -> Url {
     Url::parse(base)
         .expect("Yahoo base URL is valid")
-        .join(symbol)
+        .join(symbol.as_str())
         .expect("Yahoo symbol URL is valid")
 }
 
 fn parse_chart_range(
     response: ChartResponse,
-    symbol: &str,
+    symbol: &YahooSymbol,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<ChartRange, YahooError> {
@@ -364,10 +370,14 @@ fn parse_chart_range(
 
 fn parse_profile(
     response: QuoteSummaryResponse,
-    symbol: &str,
+    symbol: &TickerSymbol,
 ) -> Result<CompanyProfile, YahooError> {
     if let Some(error) = response.quote_summary.error {
-        return Err(api_error(error.code, error.description, symbol));
+        return Err(api_error(
+            error.code,
+            error.description,
+            &YahooSymbol::from(symbol),
+        ));
     }
     let result = response
         .quote_summary
@@ -383,14 +393,13 @@ fn parse_profile(
         yahoo_exchange_name.as_deref(),
     )
     .ok_or_else(|| YahooError::UnsupportedExchange {
-        symbol: symbol.to_owned(),
+        symbol: symbol.clone(),
         code: yahoo_exchange_code,
         name: yahoo_exchange_name,
     })?;
 
     Ok(CompanyProfile {
-        symbol: TickerSymbol::parse(symbol)
-            .map_err(|error| invalid(format!("{error}: {symbol}")))?,
+        symbol: symbol.clone(),
         name: price
             .as_ref()
             .and_then(|price| price.long_name.clone().or_else(|| price.short_name.clone())),
@@ -417,10 +426,10 @@ fn normalize_exchange(code: Option<&str>, name: Option<&str>) -> Option<Exchange
     }
 }
 
-fn api_error(code: String, description: String, symbol: &str) -> YahooError {
+fn api_error(code: String, description: String, symbol: &YahooSymbol) -> YahooError {
     if code.eq_ignore_ascii_case("not found") {
         YahooError::NotFound {
-            symbol: symbol.to_owned(),
+            symbol: symbol.clone(),
         }
     } else {
         YahooError::Api {
@@ -483,7 +492,7 @@ mod tests {
         assert!(YahooError::Unauthorized.is_retryable());
         assert!(
             !YahooError::NotFound {
-                symbol: "MISSING".to_owned()
+                symbol: YahooSymbol::parse("MISSING").unwrap()
             }
             .is_retryable()
         );
@@ -513,7 +522,8 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 6, 26, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2026, 6, 27, 0, 0, 0).unwrap();
 
-        let range = parse_chart_range(response, "SPY", start, end).unwrap();
+        let range =
+            parse_chart_range(response, &YahooSymbol::parse("SPY").unwrap(), start, end).unwrap();
 
         assert_eq!(range.candles.len(), 1);
         assert_eq!(range.candles[0].timestamp.date_naive(), start.date_naive());
@@ -529,12 +539,19 @@ mod tests {
         let start = end - chrono::Duration::days(10);
 
         let candles = client
-            .chart("QQQ", ChartInterval::OneDay, start, end)
+            .chart(
+                &YahooSymbol::parse("QQQ").unwrap(),
+                ChartInterval::OneDay,
+                start,
+                end,
+            )
             .await?;
         println!("Fetched {} QQQ daily candles", candles.len());
         assert!(!candles.is_empty());
 
-        let profile = client.profile("AAPL").await?;
+        let profile = client
+            .profile(&TickerSymbol::parse("AAPL").unwrap())
+            .await?;
         println!("Fetched AAPL profile: {profile:?}");
         assert!(profile.description.is_some());
 
@@ -552,7 +569,12 @@ mod tests {
 
         for symbol in ["SPY", "ITA"] {
             let candles = client
-                .chart(symbol, ChartInterval::OneDay, start, end)
+                .chart(
+                    &YahooSymbol::parse(symbol).unwrap(),
+                    ChartInterval::OneDay,
+                    start,
+                    end,
+                )
                 .await?;
             let dates = candles
                 .iter()

@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::Watchlist;
+use crate::models::{TickerSymbol, Watchlist};
 use crate::services::watchlists::WatchlistServiceError;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -19,7 +19,7 @@ struct WatchlistInput {
 
 #[derive(Deserialize)]
 struct SymbolsInput {
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -81,7 +81,10 @@ async fn remove(
         .map_err(api_error)
 }
 
-async fn symbols(State(state): State<AppState>, Path(id): Path<i64>) -> ApiResult<Vec<String>> {
+async fn symbols(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Vec<TickerSymbol>> {
     state
         .watchlists
         .symbols(id)
@@ -92,7 +95,7 @@ async fn symbols(State(state): State<AppState>, Path(id): Path<i64>) -> ApiResul
 
 async fn add_symbol(
     State(state): State<AppState>,
-    Path((id, symbol)): Path<(i64, String)>,
+    Path((id, symbol)): Path<(i64, TickerSymbol)>,
 ) -> ApiResult<serde_json::Value> {
     state
         .watchlists
@@ -104,7 +107,7 @@ async fn add_symbol(
 
 async fn remove_symbol(
     State(state): State<AppState>,
-    Path((id, symbol)): Path<(i64, String)>,
+    Path((id, symbol)): Path<(i64, TickerSymbol)>,
 ) -> ApiResult<serde_json::Value> {
     state
         .watchlists
@@ -116,7 +119,7 @@ async fn remove_symbol(
 
 async fn clear_symbol(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
 ) -> ApiResult<serde_json::Value> {
     state
         .watchlists

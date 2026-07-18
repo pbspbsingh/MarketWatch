@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::{TickerCollection, TickerCollectionGroups};
+use crate::models::{TickerCollection, TickerCollectionGroups, TickerSymbol};
 use crate::services::ticker_collections::{
     TickerCollectionError, TickerCollectionGroupMode, UploadedTickerFile,
 };
@@ -13,7 +13,7 @@ use tracing::{error, info};
 #[derive(Deserialize)]
 struct BoundedGroupsRequest {
     mode: BoundedGroupMode,
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
 }
 
 #[derive(Deserialize)]

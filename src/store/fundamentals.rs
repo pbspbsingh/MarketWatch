@@ -1,5 +1,5 @@
 use super::Store;
-use crate::models::Fundamentals;
+use crate::models::{Fundamentals, TickerSymbol};
 use anyhow::Context;
 use chrono::NaiveDateTime;
 
@@ -9,7 +9,11 @@ struct StoredFundamentals {
 }
 
 impl Store {
-    pub async fn fundamentals(&self, symbol: &str) -> anyhow::Result<Option<Fundamentals>> {
+    pub async fn fundamentals(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> anyhow::Result<Option<Fundamentals>> {
+        let symbol = symbol.as_str();
         let stored = sqlx::query_as!(
             StoredFundamentals,
             r#"SELECT payload AS "payload!: String",
@@ -42,7 +46,7 @@ impl Store {
                ON CONFLICT (symbol) DO UPDATE SET
                    payload = excluded.payload,
                    fetched_at = excluded.fetched_at"#,
-            fundamentals.symbol,
+            fundamentals.symbol.as_str(),
             payload,
             fetched_at,
         )

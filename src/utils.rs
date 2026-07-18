@@ -25,14 +25,14 @@ pub enum MarketSession {
     Closed,
 }
 
-pub struct KeyedLock {
-    held_keys: Mutex<HashSet<String>>,
+pub struct KeyedLock<K> {
+    held_keys: Mutex<HashSet<K>>,
     released: Notify,
 }
 
-pub struct KeyedLockGuard<'a> {
-    lock: &'a KeyedLock,
-    key: String,
+pub struct KeyedLockGuard<'a, K: Eq + std::hash::Hash> {
+    lock: &'a KeyedLock<K>,
+    key: K,
 }
 
 impl MarketSchedule {
@@ -136,7 +136,10 @@ impl MarketSchedule {
     }
 }
 
-impl KeyedLock {
+impl<K> KeyedLock<K>
+where
+    K: Clone + Eq + std::hash::Hash,
+{
     pub fn new() -> Self {
         Self {
             held_keys: Mutex::new(HashSet::new()),
@@ -144,7 +147,7 @@ impl KeyedLock {
         }
     }
 
-    pub async fn lock(&self, key: &str) -> KeyedLockGuard<'_> {
+    pub async fn lock(&self, key: &K) -> KeyedLockGuard<'_, K> {
         loop {
             let notified = self.released.notified();
             tokio::pin!(notified);
@@ -154,11 +157,11 @@ impl KeyedLock {
                 .held_keys
                 .lock()
                 .expect("keyed lock mutex is not poisoned")
-                .insert(key.to_owned())
+                .insert(key.clone())
             {
                 return KeyedLockGuard {
                     lock: self,
-                    key: key.to_owned(),
+                    key: key.clone(),
                 };
             }
 
@@ -167,7 +170,10 @@ impl KeyedLock {
     }
 }
 
-impl Drop for KeyedLockGuard<'_> {
+impl<K> Drop for KeyedLockGuard<'_, K>
+where
+    K: Eq + std::hash::Hash,
+{
     fn drop(&mut self) {
         self.lock
             .held_keys
@@ -286,22 +292,24 @@ mod tests {
     #[tokio::test]
     async fn keyed_lock_serializes_same_key_only() {
         let lock = KeyedLock::new();
-        let guard = lock.lock("AAPL").await;
+        let aapl = "AAPL".to_owned();
+        let msft = "MSFT".to_owned();
+        let guard = lock.lock(&aapl).await;
 
         assert!(
-            timeout(Duration::from_millis(10), lock.lock("AAPL"))
+            timeout(Duration::from_millis(10), lock.lock(&aapl))
                 .await
                 .is_err()
         );
         assert!(
-            timeout(Duration::from_millis(10), lock.lock("MSFT"))
+            timeout(Duration::from_millis(10), lock.lock(&msft))
                 .await
                 .is_ok()
         );
 
         drop(guard);
         assert!(
-            timeout(Duration::from_millis(10), lock.lock("AAPL"))
+            timeout(Duration::from_millis(10), lock.lock(&aapl))
                 .await
                 .is_ok()
         );

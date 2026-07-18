@@ -30,7 +30,7 @@ pub struct TickerCatalogService {
     membership_fresh_days: i64,
     adr_sessions: usize,
     average_volume_sessions: usize,
-    membership_locks: KeyedLock,
+    membership_locks: KeyedLock<String>,
 }
 
 impl TickerCatalogService {
@@ -59,7 +59,7 @@ impl TickerCatalogService {
         industry_keys: &[String],
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let symbols = parse_symbols(self.industry_tickers(industry_keys).await?)?;
+        let symbols = self.industry_tickers(industry_keys).await?;
         self.stream_symbols(stream_id, symbols, !industry_keys.is_empty(), sender)
             .await
     }
@@ -71,7 +71,7 @@ impl TickerCatalogService {
         include_unassigned: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let symbols = parse_symbols(self.theme_tickers(theme_ids, include_unassigned).await?)?;
+        let symbols = self.theme_tickers(theme_ids, include_unassigned).await?;
         self.stream_symbols(
             stream_id,
             symbols,
@@ -84,31 +84,30 @@ impl TickerCatalogService {
     pub async fn stream_ranked_symbols(
         &self,
         stream_id: u64,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let symbols = normalize_symbols(symbols)?;
+        let symbols = deduplicate_symbols(symbols);
         self.stream_symbols(stream_id, symbols, true, sender).await
     }
 
-    pub async fn ticker_ranking(&self, symbol: &str) -> anyhow::Result<TickerRanking> {
-        let symbol = normalize_symbol(symbol)?;
+    pub async fn ticker_ranking(&self, symbol: &TickerSymbol) -> anyhow::Result<TickerRanking> {
         let watchlist_ids = self
             .store
-            .ticker_watchlists(std::slice::from_ref(&symbol))
+            .ticker_watchlists(std::slice::from_ref(symbol))
             .await?
             .into_iter()
             .next()
             .map_or_else(Vec::new, |membership| membership.watchlist_ids);
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
+        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
         let performance = candle_performance(&candles, as_of);
         let adr_percent = average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
         let latest_close = candles.last().map(|candle| candle.close);
         let average_volume =
             average_volume(latest_sessions(&candles, self.average_volume_sessions));
         Ok(TickerRanking {
-            symbol,
+            symbol: symbol.clone(),
             watchlist_ids,
             absolute_strength: Some(performance.absolute_strength()),
             performance: Some(performance),
@@ -121,9 +120,9 @@ impl TickerCatalogService {
 
     pub async fn relative_strength_ratings(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerRelativeStrengthRatings>> {
-        let symbols = normalize_symbols(symbols)?;
+        let symbols = deduplicate_symbols(symbols);
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
         let anchors = TickerRelativeStrengthAnchors {
             as_of,
@@ -173,7 +172,10 @@ impl TickerCatalogService {
         ))
     }
 
-    pub async fn industry_tickers(&self, industry_keys: &[String]) -> anyhow::Result<Vec<String>> {
+    pub async fn industry_tickers(
+        &self,
+        industry_keys: &[String],
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         validate_industry_keys(industry_keys)?;
         for industry_key in industry_keys {
             self.refresh_membership_if_stale(industry_key).await?;
@@ -185,7 +187,7 @@ impl TickerCatalogService {
         &self,
         theme_ids: &[i64],
         include_unassigned: bool,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(
             theme_ids.iter().all(|id| *id > 0),
             "theme IDs must be positive"
@@ -197,14 +199,14 @@ impl TickerCatalogService {
 
     pub async fn industries_for_symbols(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
         self.store.industries_for_symbols(symbols).await
     }
 
     pub async fn themes_for_symbols(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerThemeMembership>> {
         self.store.themes_for_symbols(symbols).await
     }
@@ -306,17 +308,16 @@ impl TickerCatalogService {
         Ok(())
     }
 
-    pub async fn ensure_ticker(&self, symbol: &str) -> anyhow::Result<()> {
-        let symbol = TickerSymbol::parse(symbol)?;
-        if !self.store.ticker_has_industry(symbol.as_str()).await? {
-            let industry = self.finviz.ticker_industry(symbol.as_str()).await?;
-            self.yahoo.profile(&symbol).await?;
+    pub async fn ensure_ticker_symbol(&self, symbol: &TickerSymbol) -> anyhow::Result<()> {
+        if !self.store.ticker_has_industry(symbol).await? {
+            let industry = self.finviz.ticker_industry(symbol).await?;
+            self.yahoo.profile(symbol).await?;
             let present_in_latest_snapshot = self
                 .store
                 .latest_snapshot_has_industry(&industry.key)
                 .await?;
             self.store
-                .add_ticker_industry(&industry.key, &industry.name, symbol.as_str())
+                .add_ticker_industry(&industry.key, &industry.name, symbol)
                 .await?;
             if !present_in_latest_snapshot {
                 warn!(
@@ -327,12 +328,12 @@ impl TickerCatalogService {
                 );
             }
         } else {
-            self.yahoo.profile(&symbol).await?;
+            self.yahoo.profile(symbol).await?;
         }
         Ok(())
     }
 
-    async fn refresh_membership_if_stale(&self, industry_key: &str) -> anyhow::Result<()> {
+    async fn refresh_membership_if_stale(&self, industry_key: &String) -> anyhow::Result<()> {
         let _guard = self.membership_locks.lock(industry_key).await;
         let fetched_at = self
             .store
@@ -356,10 +357,6 @@ impl TickerCatalogService {
     }
 }
 
-pub fn normalize_symbol(symbol: &str) -> anyhow::Result<TickerSymbol> {
-    TickerSymbol::parse(symbol).map_err(anyhow::Error::new)
-}
-
 fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
     anyhow::ensure!(
         industry_keys.iter().all(|key| {
@@ -373,23 +370,14 @@ fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<TickerSymbol>> {
+fn deduplicate_symbols(symbols: &[TickerSymbol]) -> Vec<TickerSymbol> {
     let mut normalized = Vec::with_capacity(symbols.len());
     for symbol in symbols {
-        let symbol = normalize_symbol(symbol)?;
-        if !normalized.contains(&symbol) {
-            normalized.push(symbol);
+        if !normalized.contains(symbol) {
+            normalized.push(symbol.clone());
         }
     }
-    Ok(normalized)
-}
-
-fn parse_symbols(symbols: Vec<String>) -> anyhow::Result<Vec<TickerSymbol>> {
-    symbols
-        .into_iter()
-        .map(TickerSymbol::try_from)
-        .collect::<Result<_, _>>()
-        .map_err(anyhow::Error::new)
+    normalized
 }
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {

@@ -21,10 +21,6 @@ impl TickerSymbol {
         &self.0
     }
 
-    pub fn into_string(self) -> String {
-        self.0
-    }
-
     fn normalize(mut value: String) -> Result<Self, InvalidTickerSymbol> {
         value.make_ascii_uppercase();
         let valid = !value.is_empty()
@@ -70,12 +66,6 @@ impl TryFrom<String> for TickerSymbol {
             value = trimmed.to_owned();
         }
         Self::normalize(value)
-    }
-}
-
-impl From<TickerSymbol> for String {
-    fn from(symbol: TickerSymbol) -> Self {
-        symbol.into_string()
     }
 }
 

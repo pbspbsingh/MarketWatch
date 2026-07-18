@@ -1,6 +1,6 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::{Forecast, Fundamentals, QuarterFundamentals};
+use crate::models::{Forecast, Fundamentals, QuarterFundamentals, TickerSymbol};
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{Client, Url};
@@ -144,7 +144,7 @@ impl FinvizClient {
         Ok(classifications)
     }
 
-    pub async fn industry_tickers(&self, industry_key: &str) -> anyhow::Result<Vec<String>> {
+    pub async fn industry_tickers(&self, industry_key: &str) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(!industry_key.trim().is_empty(), "industry key is required");
 
         let filters = std::iter::once(format!("ind_{industry_key}"))
@@ -165,7 +165,7 @@ impl FinvizClient {
         sort: &str,
         count: usize,
         additional_filters: &[String],
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(!sort.trim().is_empty(), "Finviz sort is required");
         anyhow::ensure!(count > 0, "top stock count must be positive");
 
@@ -189,7 +189,7 @@ impl FinvizClient {
         &self,
         screen_url: &str,
         count: usize,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(count > 0, "top stock count must be positive");
         let url = Url::parse(screen_url).context("invalid Finviz screen URL")?;
         let pairs = url
@@ -206,17 +206,15 @@ impl FinvizClient {
         Ok(tickers)
     }
 
-    pub async fn ticker_industry(&self, ticker: &str) -> anyhow::Result<IndustryIdentity> {
-        anyhow::ensure!(!ticker.trim().is_empty(), "ticker is required");
-
+    pub async fn ticker_industry(&self, ticker: &TickerSymbol) -> anyhow::Result<IndustryIdentity> {
         let mut url = self.quote_url.clone();
         url.query_pairs_mut()
             .clear()
-            .append_pair("t", ticker)
+            .append_pair("t", ticker.as_str())
             .append_pair("p", "d");
         let industry = parse_ticker_industry(&self.get(url).await?)?;
         info!(
-            ticker,
+            %ticker,
             industry_key = industry.key,
             industry_name = industry.name,
             "fetched Finviz ticker industry"
@@ -224,19 +222,16 @@ impl FinvizClient {
         Ok(industry)
     }
 
-    pub async fn fundamentals(&self, ticker: &str) -> anyhow::Result<Fundamentals> {
-        let ticker = ticker.trim();
-        anyhow::ensure!(!ticker.is_empty(), "ticker is required");
-
+    pub async fn fundamentals(&self, ticker: &TickerSymbol) -> anyhow::Result<Fundamentals> {
         let mut url = self.stock_url.clone();
         url.query_pairs_mut()
             .clear()
-            .append_pair("t", ticker)
+            .append_pair("t", ticker.as_str())
             .append_pair("ty", "ea")
             .append_pair("p", "d")
             .append_pair("b", "1");
         let fundamentals = parse_fundamentals(ticker, &self.get(url).await?)?;
-        info!(ticker, "fetched Finviz fundamentals");
+        info!(%ticker, "fetched Finviz fundamentals");
         Ok(fundamentals)
     }
 
@@ -272,7 +267,7 @@ impl FinvizClient {
         filters: &str,
         sort: Option<&str>,
         count: usize,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         let mut pairs = vec![("f".to_owned(), filters.to_owned())];
         if let Some(sort) = sort {
             pairs.push(("o".to_owned(), sort.to_owned()));
@@ -284,7 +279,7 @@ impl FinvizClient {
         &self,
         pairs: &[(String, String)],
         count: usize,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         let mut tickers = Vec::new();
         loop {
             let mut url = self.screener_url.clone();
@@ -300,7 +295,12 @@ impl FinvizClient {
             }
 
             let page = parse_screener_page(&self.get(url).await?)?;
-            tickers.extend(page.tickers);
+            tickers.extend(
+                page.tickers
+                    .into_iter()
+                    .map(TickerSymbol::try_from)
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
             if tickers.len() >= count || tickers.len() >= page.total {
                 tickers.truncate(count.min(page.total));
                 return Ok(tickers);
@@ -419,7 +419,7 @@ fn parse_ticker_industry(html: &str) -> anyhow::Result<IndustryIdentity> {
     })
 }
 
-fn parse_fundamentals(symbol: &str, html: &str) -> anyhow::Result<Fundamentals> {
+fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Fundamentals> {
     let document = Html::parse_document(html);
     let route_data_selector = selector("script#route-init-data")?;
     let route_data = document
@@ -461,7 +461,7 @@ fn parse_fundamentals(symbol: &str, html: &str) -> anyhow::Result<Fundamentals> 
         .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
 
     Ok(Fundamentals {
-        symbol: symbol.trim().to_uppercase(),
+        symbol: symbol.clone(),
         currency: None,
         quarters,
         next_quarter: Forecast {
@@ -581,7 +581,9 @@ mod tests {
         let config = Config::load("config.toml")?;
         let client = FinvizClient::new(&config.finviz, &config.providers)?;
 
-        let fundamentals = client.fundamentals("TSLA").await?;
+        let fundamentals = client
+            .fundamentals(&TickerSymbol::parse("TSLA").unwrap())
+            .await?;
 
         assert_eq!(fundamentals.symbol, "TSLA");
         println!("symbol: {}", fundamentals.symbol);

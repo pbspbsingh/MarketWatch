@@ -1,5 +1,7 @@
 use crate::config::MarketConfig;
-use crate::models::{DailyCandle, TickerSymbol, average_daily_range_percent, average_volume};
+use crate::models::{
+    DailyCandle, TickerSymbol, TradingViewSymbol, average_daily_range_percent, average_volume,
+};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use serde::Serialize;
@@ -11,21 +13,21 @@ const FIFTY_SESSION_SMA: usize = 50;
 pub struct ChartService {
     store: Store,
     yahoo: Arc<YahooService>,
-    benchmark: String,
+    benchmark: TickerSymbol,
     adr_sessions: usize,
     average_volume_sessions: usize,
 }
 
 #[derive(Serialize)]
 pub struct ChartSummary {
-    symbol: String,
+    symbol: TickerSymbol,
     company_name: Option<String>,
     description: Option<String>,
     industry: Option<ChartIndustry>,
     themes: Vec<String>,
     theme_benchmarks: Vec<ChartThemeBenchmark>,
-    tradingview_symbol: String,
-    benchmark_symbol: String,
+    tradingview_symbol: TradingViewSymbol,
+    benchmark_symbol: TradingViewSymbol,
     adr_percent: f64,
     extension_from_50_sma: Option<f64>,
     average_volume: i64,
@@ -40,55 +42,59 @@ pub struct ChartIndustry {
 #[derive(Serialize)]
 pub struct ChartThemeBenchmark {
     theme_name: String,
-    etf_symbol: String,
-    tradingview_symbol: String,
+    etf_symbol: TickerSymbol,
+    tradingview_symbol: TradingViewSymbol,
 }
 
 impl ChartService {
-    pub fn new(store: Store, yahoo: Arc<YahooService>, market: &MarketConfig) -> Self {
-        Self {
+    pub fn new(
+        store: Store,
+        yahoo: Arc<YahooService>,
+        market: &MarketConfig,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             store,
             yahoo,
-            benchmark: market.benchmark.clone(),
+            benchmark: TickerSymbol::parse(&market.benchmark)?,
             adr_sessions: usize::from(market.adr_sessions),
             average_volume_sessions: usize::from(market.average_volume_sessions),
-        }
+        })
     }
 
     pub async fn summary(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         industry_keys: &[String],
     ) -> anyhow::Result<ChartSummary> {
-        let symbol = TickerSymbol::parse(symbol)?;
-        let benchmark = TickerSymbol::parse(&self.benchmark)?;
-        let profile = self.yahoo.profile(&symbol).await?;
-        let benchmark_profile = self.yahoo.profile(&benchmark).await?;
-        let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
+        let profile = self.yahoo.profile(symbol).await?;
+        let benchmark_profile = self.yahoo.profile(&self.benchmark).await?;
+        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
         let industry = self
             .store
-            .industry_for_ticker(symbol.as_str(), industry_keys)
+            .industry_for_ticker(symbol, industry_keys)
             .await?;
         let industry = if industry.is_none() && !industry_keys.is_empty() {
-            self.store.industry_for_ticker(symbol.as_str(), &[]).await?
+            self.store.industry_for_ticker(symbol, &[]).await?
         } else {
             industry
         };
-        let themes = self.store.theme_names_for_ticker(symbol.as_str()).await?;
+        let themes = self.store.theme_names_for_ticker(symbol).await?;
         let mut theme_benchmarks = Vec::new();
-        for theme in self.store.theme_etfs_for_ticker(symbol.as_str()).await? {
-            let etf_symbol = TickerSymbol::parse(&theme.etf_symbol)?;
-            match self.yahoo.profile(&etf_symbol).await {
+        for theme in self.store.theme_etfs_for_ticker(symbol).await? {
+            match self.yahoo.profile(&theme.etf_symbol).await {
                 Ok(profile) => theme_benchmarks.push(ChartThemeBenchmark {
                     theme_name: theme.name,
                     etf_symbol: theme.etf_symbol.clone(),
-                    tradingview_symbol: format!("{}:{}", profile.exchange, theme.etf_symbol),
+                    tradingview_symbol: TradingViewSymbol::new(
+                        profile.exchange,
+                        theme.etf_symbol.clone(),
+                    ),
                 }),
                 Err(error) => {
                     warn!(
                         %symbol,
                         theme_name = theme.name,
-                        etf_symbol = theme.etf_symbol,
+                        etf_symbol = %theme.etf_symbol,
                         %error,
                         "failed to load theme ETF profile"
                     );
@@ -97,14 +103,17 @@ impl ChartService {
         }
 
         Ok(ChartSummary {
-            symbol: symbol.to_string(),
+            symbol: symbol.clone(),
             company_name: profile.name.clone(),
             description: profile.description.clone(),
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
             theme_benchmarks,
-            tradingview_symbol: format!("{}:{symbol}", profile.exchange),
-            benchmark_symbol: format!("{}:{}", benchmark_profile.exchange, self.benchmark),
+            tradingview_symbol: TradingViewSymbol::new(profile.exchange, symbol.clone()),
+            benchmark_symbol: TradingViewSymbol::new(
+                benchmark_profile.exchange,
+                self.benchmark.clone(),
+            ),
             adr_percent: average_daily_range_percent(latest_sessions(&candles, self.adr_sessions)),
             extension_from_50_sma: extension_from_50_sma(&candles, self.adr_sessions),
             average_volume: average_volume(latest_sessions(&candles, self.average_volume_sessions)),

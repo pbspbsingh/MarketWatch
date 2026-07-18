@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::{TickerRanking, TickerRelativeStrengthRatings};
+use crate::models::{TickerRanking, TickerRelativeStrengthRatings, TickerSymbol};
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -31,7 +31,7 @@ enum TickerRequest {
         include_unassigned: bool,
     },
     Symbols {
-        symbols: Vec<String>,
+        symbols: Vec<TickerSymbol>,
     },
 }
 
@@ -62,12 +62,12 @@ enum MembershipRequest {
 
 #[derive(Deserialize)]
 struct TickerRankingRequest {
-    symbol: String,
+    symbol: TickerSymbol,
 }
 
 #[derive(Deserialize)]
 struct TickerRelativeStrengthRequest {
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
 }
 
 #[derive(Serialize)]
@@ -86,7 +86,7 @@ enum GroupSummaryMode {
 struct GroupSummaryRequest {
     mode: GroupSummaryMode,
     group_keys: Vec<String>,
-    symbols: Option<Vec<String>>,
+    symbols: Option<Vec<TickerSymbol>>,
 }
 
 #[derive(Serialize)]
@@ -298,7 +298,7 @@ async fn run_ticker_stream(
 async fn membership(
     State(state): State<AppState>,
     Json(request): Json<MembershipRequest>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<TickerSymbol>>, StatusCode> {
     let result = match request {
         MembershipRequest::Industry { keys } => state.ticker_catalog.industry_tickers(&keys).await,
         MembershipRequest::Theme {
@@ -327,7 +327,7 @@ async fn ticker_ranking(
         .await
         .map(Json)
         .map_err(|error| {
-            error!(symbol = request.symbol, %error, "failed to load ticker ranking");
+            error!(symbol = %request.symbol, %error, "failed to load ticker ranking");
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }
@@ -381,9 +381,9 @@ async fn group_summary(
 async fn summary_symbols(
     state: &AppState,
     request: &GroupSummaryRequest,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<Vec<TickerSymbol>> {
     let base_symbols = match &request.symbols {
-        Some(symbols) => unique_sorted(symbols.iter().cloned()),
+        Some(symbols) => unique_sorted(symbols),
         None => state.ticker_catalog.industry_tickers(&[]).await?,
     };
     if request.group_keys.is_empty() {
@@ -426,8 +426,8 @@ async fn summary_symbols(
 async fn selected_base_symbols(
     state: &AppState,
     request: &GroupSummaryRequest,
-    base_symbols: Vec<String>,
-) -> anyhow::Result<Vec<String>> {
+    base_symbols: Vec<TickerSymbol>,
+) -> anyhow::Result<Vec<TickerSymbol>> {
     let base_symbol_set = base_symbols.iter().cloned().collect::<HashSet<_>>();
     let selected_symbol_set = match request.mode {
         GroupSummaryMode::Industry => state
@@ -476,7 +476,10 @@ async fn selected_base_symbols(
         .collect())
 }
 
-async fn industry_summary(state: &AppState, symbols: &[String]) -> anyhow::Result<GroupSummary> {
+async fn industry_summary(
+    state: &AppState,
+    symbols: &[TickerSymbol],
+) -> anyhow::Result<GroupSummary> {
     let industries = state.ticker_catalog.industries_for_symbols(symbols).await?;
     let themes = state.ticker_catalog.themes_for_symbols(symbols).await?;
     Ok(GroupSummary {
@@ -485,7 +488,7 @@ async fn industry_summary(state: &AppState, symbols: &[String]) -> anyhow::Resul
     })
 }
 
-async fn theme_summary(state: &AppState, symbols: &[String]) -> anyhow::Result<GroupSummary> {
+async fn theme_summary(state: &AppState, symbols: &[TickerSymbol]) -> anyhow::Result<GroupSummary> {
     let themes = state.ticker_catalog.themes_for_symbols(symbols).await?;
     let industries = state.ticker_catalog.industries_for_symbols(symbols).await?;
     Ok(GroupSummary {
@@ -497,7 +500,7 @@ async fn theme_summary(state: &AppState, symbols: &[String]) -> anyhow::Result<G
 fn industry_counts(
     memberships: Vec<crate::store::TickerIndustryMembership>,
 ) -> Vec<GroupSummaryItem> {
-    let mut counts = HashMap::<String, (String, HashSet<String>)>::new();
+    let mut counts = HashMap::<String, (String, HashSet<TickerSymbol>)>::new();
     for membership in memberships {
         counts
             .entry(membership.industry_key)
@@ -509,11 +512,11 @@ fn industry_counts(
 }
 
 fn theme_counts(
-    symbols: &[String],
+    symbols: &[TickerSymbol],
     memberships: Vec<crate::store::TickerThemeMembership>,
 ) -> Vec<GroupSummaryItem> {
     let mut assigned_symbols = HashSet::new();
-    let mut counts = HashMap::<String, (String, HashSet<String>)>::new();
+    let mut counts = HashMap::<String, (String, HashSet<TickerSymbol>)>::new();
     for membership in memberships {
         assigned_symbols.insert(membership.symbol.clone());
         counts
@@ -537,7 +540,7 @@ fn theme_counts(
 }
 
 fn sorted_summary_items(
-    counts: HashMap<String, (String, HashSet<String>)>,
+    counts: HashMap<String, (String, HashSet<TickerSymbol>)>,
 ) -> Vec<GroupSummaryItem> {
     let mut items = counts
         .into_iter()
@@ -556,8 +559,10 @@ fn sorted_summary_items(
     items
 }
 
-fn unique_sorted(symbols: impl Iterator<Item = String>) -> Vec<String> {
+fn unique_sorted(symbols: &[TickerSymbol]) -> Vec<TickerSymbol> {
     let mut symbols = symbols
+        .iter()
+        .cloned()
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

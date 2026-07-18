@@ -1,5 +1,5 @@
-use crate::models::{TickerWatchlists, Watchlist};
-use crate::services::tickers::{TickerCatalogService, normalize_symbol};
+use crate::models::{TickerSymbol, TickerWatchlists, Watchlist};
+use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use std::sync::Arc;
 use thiserror::Error;
@@ -142,7 +142,7 @@ impl WatchlistService {
             .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
     }
 
-    pub async fn symbols(&self, id: i64) -> Result<Vec<String>, WatchlistServiceError> {
+    pub async fn symbols(&self, id: i64) -> Result<Vec<TickerSymbol>, WatchlistServiceError> {
         validate_id(id)?;
         self.store
             .watchlist_symbols(id)
@@ -151,56 +151,51 @@ impl WatchlistService {
             .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
     }
 
-    pub async fn add_symbol(&self, id: i64, symbol: &str) -> Result<(), WatchlistServiceError> {
+    pub async fn add_symbol(
+        &self,
+        id: i64,
+        symbol: &TickerSymbol,
+    ) -> Result<(), WatchlistServiceError> {
         validate_id(id)?;
-        let symbol = normalize_symbol(symbol)
-            .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
         self.ticker_catalog
-            .ensure_ticker(symbol.as_str())
+            .ensure_ticker_symbol(symbol)
             .await
             .map_err(WatchlistServiceError::TickerCatalog)?;
         self.store
-            .add_watchlist_symbol(id, symbol.as_str())
+            .add_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
             .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
     }
 
-    pub async fn remove_symbol(&self, id: i64, symbol: &str) -> Result<(), WatchlistServiceError> {
+    pub async fn remove_symbol(
+        &self,
+        id: i64,
+        symbol: &TickerSymbol,
+    ) -> Result<(), WatchlistServiceError> {
         validate_id(id)?;
-        let symbol = normalize_symbol(symbol)
-            .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
         self.store
-            .remove_watchlist_symbol(id, symbol.as_str())
+            .remove_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
             .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
     }
 
-    pub async fn clear_symbol(&self, symbol: &str) -> Result<(), WatchlistServiceError> {
-        let symbol = normalize_symbol(symbol)
-            .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
+    pub async fn clear_symbol(&self, symbol: &TickerSymbol) -> Result<(), WatchlistServiceError> {
         self.store
-            .clear_symbol_watchlists(symbol.as_str())
+            .clear_symbol_watchlists(symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)
     }
 
     pub async fn memberships(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<TickerWatchlists>, WatchlistServiceError> {
-        let symbols = symbols
-            .iter()
-            .map(|symbol| {
-                normalize_symbol(symbol)
-                    .map_err(|error| WatchlistServiceError::Validation(error.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
         self.store
-            .ticker_watchlists(&symbols)
+            .ticker_watchlists(symbols)
             .await
             .map_err(WatchlistServiceError::Persistence)
     }

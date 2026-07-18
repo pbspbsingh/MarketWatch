@@ -1,5 +1,5 @@
 use crate::config::FinvizConfig;
-use crate::models::TopStockScreen;
+use crate::models::{TickerSymbol, TopStockScreen};
 use crate::providers::FinvizClient;
 use crate::store::Store;
 use reqwest::Url;
@@ -58,7 +58,7 @@ pub enum TopStocksSource {
 #[derive(Clone, Debug, Serialize)]
 pub struct TopStocksSnapshot {
     pub source: TopStocksSource,
-    pub symbols: Vec<String>,
+    pub symbols: Vec<TickerSymbol>,
     pub period_selections: Vec<TopStocksSelection>,
 }
 
@@ -100,12 +100,12 @@ pub struct TopStocksService {
 #[derive(Default)]
 struct Cache {
     periods: HashMap<PeriodCacheKey, CachedPeriod>,
-    screens: HashMap<ScreenCacheKey, Vec<String>>,
+    screens: HashMap<ScreenCacheKey, Vec<TickerSymbol>>,
 }
 
 struct CachedPeriod {
     requested_count: usize,
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -249,7 +249,7 @@ impl TopStocksService {
         Ok(())
     }
 
-    async fn fetch(&self, source: &TopStocksSource) -> Result<Vec<String>, TopStocksError> {
+    async fn fetch(&self, source: &TopStocksSource) -> Result<Vec<TickerSymbol>, TopStocksError> {
         match source {
             TopStocksSource::Periods {
                 selections,
@@ -266,7 +266,7 @@ impl TopStocksService {
         &self,
         selections: &[TopStocksSelection],
         apply_additional_filters: bool,
-    ) -> Result<Vec<String>, TopStocksError> {
+    ) -> Result<Vec<TickerSymbol>, TopStocksError> {
         let mut cache = self.cache.lock().await;
         let mut symbols = Vec::new();
         let mut seen = HashSet::new();
@@ -307,7 +307,7 @@ impl TopStocksService {
         Ok(symbols)
     }
 
-    async fn fetch_screen(&self, id: i64) -> Result<Vec<String>, TopStocksError> {
+    async fn fetch_screen(&self, id: i64) -> Result<Vec<TickerSymbol>, TopStocksError> {
         let screen = self.find_screen(id).await?;
         let key = ScreenCacheKey {
             id,

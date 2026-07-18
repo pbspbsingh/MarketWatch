@@ -1,3 +1,4 @@
+use crate::models::{TickerSymbol, YahooSymbol};
 use crate::providers::{ChartInterval, YahooClient, YahooError};
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
@@ -17,7 +18,7 @@ pub struct StudyCandle {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct StudySeries {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub candles: Vec<StudyCandle>,
     pub moving_averages: Vec<StudyMovingAverage>,
 }
@@ -42,7 +43,7 @@ pub struct StudyResult {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct CacheKey {
-    symbol: String,
+    symbol: TickerSymbol,
     start: NaiveDate,
     end: NaiveDate,
 }
@@ -93,7 +94,7 @@ impl StudyService {
 
     pub async fn load(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
         date: NaiveDate,
         refresh: bool,
     ) -> Result<StudyResult, StudyError> {
@@ -142,7 +143,12 @@ impl StudyService {
                     let fetch_start = Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap());
                     let fetch_end = Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).unwrap());
                     self.yahoo
-                        .chart(&symbol, ChartInterval::OneDay, fetch_start, fetch_end)
+                        .chart(
+                            &YahooSymbol::from(&symbol),
+                            ChartInterval::OneDay,
+                            fetch_start,
+                            fetch_end,
+                        )
                         .await?
                         .into_iter()
                         .map(|candle| StudyCandle {
@@ -209,24 +215,13 @@ fn simple_moving_average(candles: &[StudyCandle], period: usize) -> Vec<StudyMov
     points
 }
 
-fn validate(symbols: &[String], date: NaiveDate) -> Result<Vec<String>, StudyError> {
+fn validate(symbols: &[TickerSymbol], date: NaiveDate) -> Result<Vec<TickerSymbol>, StudyError> {
     if symbols.len() != 2 {
         return Err(StudyError::InvalidInput(
             "exactly two symbols are required".to_owned(),
         ));
     }
-    let symbols = symbols
-        .iter()
-        .map(|symbol| symbol.trim().to_uppercase())
-        .collect::<Vec<_>>();
-    if symbols.iter().any(|symbol| {
-        symbol.is_empty()
-            || !symbol.chars().all(|character| {
-                character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
-            })
-    }) {
-        return Err(StudyError::InvalidInput("invalid ticker symbol".to_owned()));
-    }
+    let symbols = symbols.to_vec();
     if symbols[0] == symbols[1] {
         return Err(StudyError::InvalidInput(
             "symbols must be different".to_owned(),
@@ -252,11 +247,18 @@ mod tests {
     fn validates_symbols_and_date() {
         let today = Utc::now().date_naive();
         assert_eq!(
-            validate(&[" spy ".to_owned(), "qqq".to_owned()], today).unwrap(),
+            validate(
+                &[
+                    TickerSymbol::parse("spy").unwrap(),
+                    TickerSymbol::parse("qqq").unwrap(),
+                ],
+                today,
+            )
+            .unwrap(),
             ["SPY", "QQQ"]
         );
-        assert!(validate(&["SPY".to_owned(), "SPY".to_owned()], today).is_err());
-        assert!(validate(&["BAD/ONE".to_owned(), "QQQ".to_owned()], today).is_err());
+        let spy = TickerSymbol::parse("SPY").unwrap();
+        assert!(validate(&[spy.clone(), spy], today).is_err());
     }
 
     #[test]

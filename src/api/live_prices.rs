@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::services::tickers::normalize_symbol;
+use crate::models::YahooSymbol;
 use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate};
 use crate::utils::{MarketSchedule, MarketSession};
 use axum::Router;
@@ -38,11 +38,11 @@ enum LivePriceEvent<'a> {
     },
     Subscribed {
         request_id: u64,
-        symbols: &'a [String],
+        symbols: &'a [YahooSymbol],
     },
     Price {
         request_id: u64,
-        symbol: &'a str,
+        symbol: &'a YahooSymbol,
         price: f64,
         updated_at: DateTime<Utc>,
     },
@@ -72,8 +72,8 @@ async fn handle_live_prices_socket(
     market_schedule: MarketSchedule,
 ) {
     let (updates, mut update_receiver) =
-        mpsc::channel::<(String, YahooLiveUpdate)>(EVENT_BUFFER_SIZE);
-    let mut forwarders = HashMap::<String, PriceForwarder>::new();
+        mpsc::channel::<(YahooSymbol, YahooLiveUpdate)>(EVENT_BUFFER_SIZE);
+    let mut forwarders = HashMap::<YahooSymbol, PriceForwarder>::new();
     let mut request_id = 0;
     let mut session = market_schedule.session(Utc::now());
     let mut session_check = tokio::time::interval(SESSION_CHECK_INTERVAL);
@@ -173,10 +173,10 @@ async fn handle_live_prices_socket(
     }
 }
 
-fn normalize_symbols(symbols: Vec<String>) -> Result<Vec<String>, String> {
+fn normalize_symbols(symbols: Vec<String>) -> Result<Vec<YahooSymbol>, String> {
     let mut symbols = symbols
         .into_iter()
-        .map(|symbol| normalize_symbol(&symbol).map_err(|error| error.to_string()))
+        .map(|symbol| YahooSymbol::parse(symbol).map_err(|error| error.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
     symbols.sort_unstable();
     symbols.dedup();
@@ -185,14 +185,14 @@ fn normalize_symbols(symbols: Vec<String>) -> Result<Vec<String>, String> {
             "live prices supports at most {CLIENT_SYMBOL_LIMIT} symbols"
         ));
     }
-    Ok(symbols.into_iter().map(Into::into).collect())
+    Ok(symbols)
 }
 
 async fn replace_symbols(
     yahoo_live: &YahooLiveHandle,
-    updates: &mpsc::Sender<(String, YahooLiveUpdate)>,
-    forwarders: &mut HashMap<String, PriceForwarder>,
-    symbols: &[String],
+    updates: &mpsc::Sender<(YahooSymbol, YahooLiveUpdate)>,
+    forwarders: &mut HashMap<YahooSymbol, PriceForwarder>,
+    symbols: &[YahooSymbol],
 ) -> Result<(), String> {
     let mut additions = Vec::new();
     for symbol in symbols {
@@ -214,7 +214,7 @@ async fn replace_symbols(
 
 async fn forward_prices(
     mut subscription: YahooLiveSubscription,
-    updates: mpsc::Sender<(String, YahooLiveUpdate)>,
+    updates: mpsc::Sender<(YahooSymbol, YahooLiveUpdate)>,
 ) {
     while let Ok(update) = subscription.recv().await {
         let symbol = update.symbol().to_owned();
@@ -230,7 +230,7 @@ fn trading_day_available(session: MarketSession) -> bool {
 
 fn price_event<'a>(
     request_id: u64,
-    symbol: &'a str,
+    symbol: &'a YahooSymbol,
     update: &YahooLiveUpdate,
     current_session: MarketSession,
 ) -> Option<LivePriceEvent<'a>> {
@@ -268,28 +268,28 @@ mod tests {
     use crate::models::DailyCandle;
     use crate::services::yahoo_live::{YahooLiveCandle, YahooLivePrice};
 
+    fn yahoo(value: &str) -> YahooSymbol {
+        YahooSymbol::parse(value).unwrap()
+    }
+
     #[test]
     fn symbols_are_normalized_sorted_and_deduplicated() {
         assert_eq!(
-            normalize_symbols(vec![
-                " msft ".to_owned(),
-                "AAPL".to_owned(),
-                "MSFT".to_owned()
-            ]),
-            Ok(vec!["AAPL".to_owned(), "MSFT".to_owned()])
+            normalize_symbols(vec![" msft ".into(), "AAPL".into(), "MSFT".into()]),
+            Ok(vec![yahoo("AAPL"), yahoo("MSFT")])
         );
     }
 
     #[test]
     fn rejects_invalid_or_excessive_symbols() {
-        assert!(normalize_symbols(vec!["bad symbol".to_owned()]).is_err());
+        assert!(normalize_symbols(vec!["bad symbol".into()]).is_err());
         let excessive = (0..=CLIENT_SYMBOL_LIMIT)
             .map(|index| format!("S{index}"))
             .collect();
         assert!(normalize_symbols(excessive).is_err());
         assert_eq!(
             normalize_symbols(vec!["AAPL".to_owned(); CLIENT_SYMBOL_LIMIT + 1]),
-            Ok(vec!["AAPL".to_owned()]),
+            Ok(vec![yahoo("AAPL")]),
         );
     }
 
@@ -297,7 +297,7 @@ mod tests {
     fn forwards_only_prices_matching_the_current_trading_session() {
         let updated_at = Utc::now();
         let candle = YahooLiveCandle {
-            symbol: "AAPL".to_owned(),
+            symbol: yahoo("AAPL"),
             candle: DailyCandle {
                 market_date: updated_at.date_naive(),
                 open: 100.0,
@@ -311,16 +311,17 @@ mod tests {
         let regular = YahooLiveUpdate::Regular(candle.clone());
         let pre_market = YahooLiveUpdate::PreMarket(candle);
         let post_market = YahooLiveUpdate::PostMarket(YahooLivePrice {
-            symbol: "AAPL".to_owned(),
+            symbol: yahoo("AAPL"),
             market_date: updated_at.date_naive(),
             price: 101.0,
             updated_at,
         });
 
-        assert!(price_event(1, "AAPL", &regular, MarketSession::Regular).is_some());
-        assert!(price_event(1, "AAPL", &regular, MarketSession::PreMarket).is_none());
-        assert!(price_event(1, "AAPL", &pre_market, MarketSession::PreMarket).is_some());
-        assert!(price_event(1, "AAPL", &pre_market, MarketSession::Regular).is_none());
-        assert!(price_event(1, "AAPL", &post_market, MarketSession::PostMarket).is_none());
+        let symbol = yahoo("AAPL");
+        assert!(price_event(1, &symbol, &regular, MarketSession::Regular).is_some());
+        assert!(price_event(1, &symbol, &regular, MarketSession::PreMarket).is_none());
+        assert!(price_event(1, &symbol, &pre_market, MarketSession::PreMarket).is_some());
+        assert!(price_event(1, &symbol, &pre_market, MarketSession::Regular).is_none());
+        assert!(price_event(1, &symbol, &post_market, MarketSession::PostMarket).is_none());
     }
 }

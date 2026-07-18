@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::PerformancePeriods;
+use super::{PerformancePeriods, TickerSymbol};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TickerCollection {
     pub version: u8,
     pub source: TickerCollectionSource,
-    pub symbols: Vec<String>,
+    pub symbols: Vec<TickerSymbol>,
     pub skipped_rows: usize,
     pub created_at: DateTime<Utc>,
 }
@@ -34,12 +34,12 @@ pub struct TickerCollectionGroup {
     pub sector_name: Option<String>,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
-    pub symbols: Vec<String>,
+    pub symbols: Vec<TickerSymbol>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TickerCollectionGroups {
-    pub symbols: Vec<String>,
+    pub symbols: Vec<TickerSymbol>,
     pub groups: Vec<TickerCollectionGroup>,
-    pub failed_symbols: Vec<String>,
+    pub failed_symbols: Vec<TickerSymbol>,
 }

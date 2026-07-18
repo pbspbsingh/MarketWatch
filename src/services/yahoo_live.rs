@@ -1,4 +1,4 @@
-use crate::models::DailyCandle;
+use crate::models::{DailyCandle, YahooSymbol};
 use crate::providers::{PricingData, spawn_transport};
 use crate::services::yahoo::{IntradayCandle, IntradaySessionSeed, YahooService};
 use crate::utils::{MarketSchedule, MarketSession};
@@ -20,14 +20,14 @@ const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLiveCandle {
-    pub symbol: String,
+    pub symbol: YahooSymbol,
     pub candle: DailyCandle,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLivePrice {
-    pub symbol: String,
+    pub symbol: YahooSymbol,
     pub market_date: chrono::NaiveDate,
     pub price: f64,
     pub updated_at: DateTime<Utc>,
@@ -41,7 +41,7 @@ pub enum YahooLiveUpdate {
 }
 
 impl YahooLiveUpdate {
-    pub fn symbol(&self) -> &str {
+    pub fn symbol(&self) -> &YahooSymbol {
         match self {
             Self::Regular(update) | Self::PreMarket(update) => &update.symbol,
             Self::PostMarket(update) => &update.symbol,
@@ -67,7 +67,7 @@ pub struct YahooLiveHandle {
 }
 
 pub struct YahooLiveSubscription {
-    symbol: String,
+    symbol: YahooSymbol,
     commands: mpsc::UnboundedSender<Command>,
     updates: watch::Receiver<YahooLiveState>,
     delivered: YahooLiveState,
@@ -86,18 +86,18 @@ pub enum YahooLiveError {
 
 enum Command {
     Subscribe {
-        symbol: String,
+        symbol: YahooSymbol,
         reply: oneshot::Sender<Result<watch::Receiver<YahooLiveState>, YahooLiveError>>,
     },
     Unsubscribe {
-        symbol: String,
+        symbol: YahooSymbol,
     },
     Latest {
-        symbol: String,
+        symbol: YahooSymbol,
         reply: oneshot::Sender<Option<YahooLiveCandle>>,
     },
     Seeded {
-        symbol: String,
+        symbol: YahooSymbol,
         result: Box<Result<IntradaySessionSeed, String>>,
     },
 }
@@ -108,15 +108,15 @@ struct YahooLiveActor {
     commands: mpsc::UnboundedReceiver<Command>,
     command_sender: mpsc::UnboundedSender<Command>,
     pricing: mpsc::Receiver<PricingData>,
-    desired: watch::Sender<Vec<String>>,
-    streams: HashMap<String, watch::Sender<YahooLiveState>>,
-    subscriptions: HashMap<String, usize>,
-    idle_subscriptions: HashMap<String, Instant>,
-    seed_tasks: HashMap<String, JoinHandle<()>>,
-    cache: HashMap<String, CachedCandle>,
-    pre_market_cache: HashMap<String, CachedCandle>,
-    post_market_cache: HashMap<String, YahooLivePrice>,
-    latest_frame_at: HashMap<String, DateTime<Utc>>,
+    desired: watch::Sender<Vec<YahooSymbol>>,
+    streams: HashMap<YahooSymbol, watch::Sender<YahooLiveState>>,
+    subscriptions: HashMap<YahooSymbol, usize>,
+    idle_subscriptions: HashMap<YahooSymbol, Instant>,
+    seed_tasks: HashMap<YahooSymbol, JoinHandle<()>>,
+    cache: HashMap<YahooSymbol, CachedCandle>,
+    pre_market_cache: HashMap<YahooSymbol, CachedCandle>,
+    post_market_cache: HashMap<YahooSymbol, YahooLivePrice>,
+    latest_frame_at: HashMap<YahooSymbol, DateTime<Utc>>,
     live_enabled: bool,
     lru_clock: u64,
 }
@@ -167,8 +167,10 @@ impl YahooLiveHandle {
         }
     }
 
-    pub async fn subscribe(&self, symbol: &str) -> Result<YahooLiveSubscription, YahooLiveError> {
-        let symbol = normalize_symbol(symbol)?;
+    pub async fn subscribe(
+        &self,
+        symbol: &YahooSymbol,
+    ) -> Result<YahooLiveSubscription, YahooLiveError> {
         let (reply, result) = oneshot::channel();
         self.commands
             .send(Command::Subscribe {
@@ -178,7 +180,7 @@ impl YahooLiveHandle {
             .map_err(|_| YahooLiveError::Unavailable)?;
         let updates = result.await.map_err(|_| YahooLiveError::Unavailable)??;
         Ok(YahooLiveSubscription {
-            symbol,
+            symbol: symbol.clone(),
             commands: self.commands.clone(),
             updates,
             delivered: YahooLiveState::default(),
@@ -186,11 +188,16 @@ impl YahooLiveHandle {
         })
     }
 
-    pub async fn latest(&self, symbol: &str) -> Result<Option<YahooLiveCandle>, YahooLiveError> {
-        let symbol = normalize_symbol(symbol)?;
+    pub async fn latest(
+        &self,
+        symbol: &YahooSymbol,
+    ) -> Result<Option<YahooLiveCandle>, YahooLiveError> {
         let (reply, result) = oneshot::channel();
         self.commands
-            .send(Command::Latest { symbol, reply })
+            .send(Command::Latest {
+                symbol: symbol.clone(),
+                reply,
+            })
             .map_err(|_| YahooLiveError::Unavailable)?;
         result.await.map_err(|_| YahooLiveError::Unavailable)
     }
@@ -312,7 +319,7 @@ impl YahooLiveActor {
                         }
                         if let Some(price) = seed.post_market {
                             self.publish_post_market(YahooLivePrice {
-                                symbol: price.symbol,
+                                symbol: symbol.clone(),
                                 market_date: price.market_date,
                                 price: price.price,
                                 updated_at: price.updated_at,
@@ -321,7 +328,7 @@ impl YahooLiveActor {
                     }
                     Ok(_) => {}
                     Err(error) if self.is_watched(&symbol) => {
-                        warn!(symbol, %error, "failed to seed Yahoo live candle")
+                        warn!(%symbol, %error, "failed to seed Yahoo live candle")
                     }
                     Err(_) => {}
                 }
@@ -331,7 +338,7 @@ impl YahooLiveActor {
 
     fn add_subscription(
         &mut self,
-        symbol: &str,
+        symbol: &YahooSymbol,
     ) -> Result<watch::Receiver<YahooLiveState>, YahooLiveError> {
         let retained = retain_subscription(
             &mut self.subscriptions,
@@ -359,7 +366,7 @@ impl YahooLiveActor {
         Ok(updates)
     }
 
-    fn start_seed(&mut self, symbol: &str) {
+    fn start_seed(&mut self, symbol: &YahooSymbol) {
         if !self.live_enabled || self.schedule.session(Utc::now()) == MarketSession::Closed {
             return;
         }
@@ -384,7 +391,7 @@ impl YahooLiveActor {
         self.seed_tasks.insert(symbol, task);
     }
 
-    fn remove_subscription(&mut self, symbol: &str) {
+    fn remove_subscription(&mut self, symbol: &YahooSymbol) {
         release_subscription(
             &mut self.subscriptions,
             &mut self.idle_subscriptions,
@@ -451,18 +458,18 @@ impl YahooLiveActor {
         }
     }
 
-    fn is_watched(&self, symbol: &str) -> bool {
+    fn is_watched(&self, symbol: &YahooSymbol) -> bool {
         self.subscriptions.contains_key(symbol) || self.idle_subscriptions.contains_key(symbol)
     }
 
-    fn has_current_candle(&self, symbol: &str) -> bool {
+    fn has_current_candle(&self, symbol: &YahooSymbol) -> bool {
         let current_date = self.schedule.market_date(Utc::now());
         self.cache
             .get(symbol)
             .is_some_and(|cached| cached.market_date == current_date && cached.published.is_some())
     }
 
-    fn merge_seed(&mut self, symbol: &str, seed: IntradayCandle, pre_market: bool) {
+    fn merge_seed(&mut self, symbol: &YahooSymbol, seed: IntradayCandle, pre_market: bool) {
         let date = seed.candle.market_date;
         let expected_session = if pre_market {
             MarketSession::PreMarket
@@ -625,7 +632,7 @@ impl YahooLiveActor {
         self.publish_if_changed(&symbol, pre_market);
     }
 
-    fn publish_if_changed(&mut self, symbol: &str, pre_market: bool) {
+    fn publish_if_changed(&mut self, symbol: &YahooSymbol, pre_market: bool) {
         let cache = if pre_market {
             &mut self.pre_market_cache
         } else {
@@ -731,8 +738,8 @@ fn valid_frame_session(
 }
 
 fn accept_frame_timestamp(
-    latest_frame_at: &mut HashMap<String, DateTime<Utc>>,
-    symbol: &str,
+    latest_frame_at: &mut HashMap<YahooSymbol, DateTime<Utc>>,
+    symbol: &YahooSymbol,
     timestamp: DateTime<Utc>,
 ) -> bool {
     if latest_frame_at
@@ -771,7 +778,7 @@ impl CachedCandle {
         })
     }
 
-    fn live_candle(&self, symbol: &str) -> Option<YahooLiveCandle> {
+    fn live_candle(&self, symbol: &YahooSymbol) -> Option<YahooLiveCandle> {
         Some(YahooLiveCandle {
             symbol: symbol.to_owned(),
             candle: self.published.clone()?,
@@ -811,9 +818,9 @@ enum RetainResult {
 }
 
 fn retain_subscription(
-    subscriptions: &mut HashMap<String, usize>,
-    idle_subscriptions: &mut HashMap<String, Instant>,
-    symbol: &str,
+    subscriptions: &mut HashMap<YahooSymbol, usize>,
+    idle_subscriptions: &mut HashMap<YahooSymbol, Instant>,
+    symbol: &YahooSymbol,
 ) -> Result<RetainResult, YahooLiveError> {
     if let Some(count) = subscriptions.get_mut(symbol) {
         *count += 1;
@@ -836,9 +843,9 @@ fn retain_subscription(
 }
 
 fn release_subscription(
-    subscriptions: &mut HashMap<String, usize>,
-    idle_subscriptions: &mut HashMap<String, Instant>,
-    symbol: &str,
+    subscriptions: &mut HashMap<YahooSymbol, usize>,
+    idle_subscriptions: &mut HashMap<YahooSymbol, Instant>,
+    symbol: &YahooSymbol,
     expiry: Instant,
 ) {
     let Some(count) = subscriptions.get_mut(symbol) else {
@@ -852,14 +859,8 @@ fn release_subscription(
     idle_subscriptions.insert(symbol.to_owned(), expiry);
 }
 
-fn normalize_symbol(symbol: &str) -> Result<String, YahooLiveError> {
-    let symbol = symbol.trim().to_ascii_uppercase();
-    let valid = !symbol.is_empty()
-        && symbol.len() <= 32
-        && symbol
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'^' | b'='));
-    valid.then_some(symbol).ok_or(YahooLiveError::InvalidSymbol)
+fn normalize_symbol(symbol: &str) -> Result<YahooSymbol, YahooLiveError> {
+    YahooSymbol::parse(symbol).map_err(|_| YahooLiveError::InvalidSymbol)
 }
 
 #[cfg(test)]
@@ -867,6 +868,10 @@ mod tests {
     use super::*;
     use crate::config::MarketConfig;
     use chrono::NaiveTime;
+
+    fn yahoo(value: &str) -> YahooSymbol {
+        YahooSymbol::parse(value).unwrap()
+    }
 
     #[test]
     fn normalizes_supported_yahoo_symbols() {
@@ -923,16 +928,17 @@ mod tests {
         let first = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
         let mut latest = HashMap::new();
 
-        assert!(accept_frame_timestamp(&mut latest, "AAPL", first));
-        assert!(accept_frame_timestamp(&mut latest, "AAPL", first));
+        let symbol = yahoo("AAPL");
+        assert!(accept_frame_timestamp(&mut latest, &symbol, first));
+        assert!(accept_frame_timestamp(&mut latest, &symbol, first));
         assert!(!accept_frame_timestamp(
             &mut latest,
-            "AAPL",
+            &symbol,
             first - chrono::TimeDelta::milliseconds(1),
         ));
         assert!(accept_frame_timestamp(
             &mut latest,
-            "AAPL",
+            &symbol,
             first + chrono::TimeDelta::milliseconds(1),
         ));
     }
@@ -945,7 +951,7 @@ mod tests {
         let first_time = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
         let latest_time = first_time + chrono::TimeDelta::seconds(1);
         let candle = |close, updated_at| YahooLiveCandle {
-            symbol: "AAPL".to_owned(),
+            symbol: yahoo("AAPL"),
             candle: DailyCandle {
                 market_date: date,
                 open: 100.0,
@@ -957,7 +963,7 @@ mod tests {
             updated_at,
         };
         let mut subscription = YahooLiveSubscription {
-            symbol: "AAPL".to_owned(),
+            symbol: yahoo("AAPL"),
             commands,
             updates: receiver,
             delivered: YahooLiveState::default(),
@@ -968,7 +974,7 @@ mod tests {
         updates.send_modify(|state| {
             state.regular = Some(candle(101.5, latest_time));
             state.session = Some(YahooLiveSessionUpdate::PostMarket(YahooLivePrice {
-                symbol: "AAPL".to_owned(),
+                symbol: yahoo("AAPL"),
                 market_date: date,
                 price: 101.75,
                 updated_at: latest_time,
@@ -978,7 +984,7 @@ mod tests {
         let regular = subscription.recv().await.unwrap();
         updates.send_modify(|state| {
             state.session = Some(YahooLiveSessionUpdate::PostMarket(YahooLivePrice {
-                symbol: "AAPL".to_owned(),
+                symbol: yahoo("AAPL"),
                 market_date: date,
                 price: 102.0,
                 updated_at: latest_time + chrono::TimeDelta::seconds(1),
@@ -1022,39 +1028,42 @@ mod tests {
         let mut subscriptions = HashMap::new();
         let mut idle = HashMap::new();
         let expiry = Instant::now() + IDLE_GRACE_PERIOD;
+        let aapl = yahoo("AAPL");
+        let overflow = yahoo("OVERFLOW");
         assert_eq!(
-            retain_subscription(&mut subscriptions, &mut idle, "AAPL").unwrap(),
+            retain_subscription(&mut subscriptions, &mut idle, &aapl).unwrap(),
             RetainResult::Added,
         );
         assert_eq!(
-            retain_subscription(&mut subscriptions, &mut idle, "AAPL").unwrap(),
+            retain_subscription(&mut subscriptions, &mut idle, &aapl).unwrap(),
             RetainResult::Existing,
         );
-        release_subscription(&mut subscriptions, &mut idle, "AAPL", expiry);
-        assert_eq!(subscriptions.get("AAPL"), Some(&1));
-        release_subscription(&mut subscriptions, &mut idle, "AAPL", expiry);
-        assert_eq!(idle.get("AAPL"), Some(&expiry));
+        release_subscription(&mut subscriptions, &mut idle, &aapl, expiry);
+        assert_eq!(subscriptions.get(&aapl), Some(&1));
+        release_subscription(&mut subscriptions, &mut idle, &aapl, expiry);
+        assert_eq!(idle.get(&aapl), Some(&expiry));
         assert_eq!(
-            retain_subscription(&mut subscriptions, &mut idle, "AAPL").unwrap(),
+            retain_subscription(&mut subscriptions, &mut idle, &aapl).unwrap(),
             RetainResult::Resumed,
         );
 
         for index in 1..MAX_ACTIVE_SYMBOLS {
             assert_eq!(
-                retain_subscription(&mut subscriptions, &mut idle, &format!("S{index}")).unwrap(),
+                retain_subscription(&mut subscriptions, &mut idle, &yahoo(&format!("S{index}")))
+                    .unwrap(),
                 RetainResult::Added,
             );
         }
         assert_eq!(
-            retain_subscription(&mut subscriptions, &mut idle, "OVERFLOW"),
+            retain_subscription(&mut subscriptions, &mut idle, &overflow),
             Err(YahooLiveError::Capacity),
         );
-        release_subscription(&mut subscriptions, &mut idle, "AAPL", expiry);
+        release_subscription(&mut subscriptions, &mut idle, &aapl, expiry);
         assert_eq!(
-            retain_subscription(&mut subscriptions, &mut idle, "OVERFLOW").unwrap(),
+            retain_subscription(&mut subscriptions, &mut idle, &overflow).unwrap(),
             RetainResult::Added,
         );
-        assert!(!idle.contains_key("AAPL"));
+        assert!(!idle.contains_key(&aapl));
         assert_eq!(subscriptions.len(), MAX_ACTIVE_SYMBOLS);
     }
 

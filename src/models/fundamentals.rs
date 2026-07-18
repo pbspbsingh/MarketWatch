@@ -1,9 +1,10 @@
+use super::TickerSymbol;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Fundamentals {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub currency: Option<String>,
     pub quarters: Vec<QuarterFundamentals>,
     pub next_quarter: Forecast,

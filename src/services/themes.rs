@@ -5,7 +5,7 @@ use crate::models::{
 use crate::providers::{AiClient, AiError};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -16,6 +16,14 @@ const MAX_THEMES_PER_TICKER: usize = 2;
 struct AutomaticValidation {
     suggestions: Vec<ThemeSuggestion>,
     errors: Vec<ThemeSuggestionError>,
+}
+
+#[derive(Deserialize)]
+struct RawThemeSuggestion {
+    symbol: String,
+    themes: Vec<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
 }
 
 pub struct ThemeService {
@@ -72,7 +80,7 @@ impl ThemeService {
     pub async fn create(
         &self,
         name: &str,
-        etf_symbol: &str,
+        etf_symbol: &TickerSymbol,
         description: Option<&str>,
     ) -> Result<i64, ThemeServiceError> {
         let (name, etf_symbol, description) = normalize_theme(name, etf_symbol, description)?;
@@ -96,7 +104,7 @@ impl ThemeService {
         &self,
         id: i64,
         name: &str,
-        etf_symbol: &str,
+        etf_symbol: &TickerSymbol,
         description: Option<&str>,
     ) -> Result<(), ThemeServiceError> {
         let (name, etf_symbol, description) = normalize_theme(name, etf_symbol, description)?;
@@ -147,21 +155,19 @@ impl ThemeService {
             .map_err(ThemeServiceError::Persistence)
     }
 
-    pub async fn delete_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {
-        let symbol = normalize_symbol(symbol)?;
+    pub async fn delete_ticker(&self, symbol: &TickerSymbol) -> Result<(), ThemeServiceError> {
         self.store
-            .delete_ticker(symbol.as_str())
+            .delete_ticker(symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .then_some(())
             .ok_or_else(|| ThemeServiceError::Validation("ticker does not exist".to_owned()))
     }
 
-    pub async fn ticker(&self, symbol: &str) -> Result<ThemeTicker, ThemeServiceError> {
-        let symbol = normalize_symbol(symbol)?;
-        self.ensure_ticker(symbol.as_str()).await?;
+    pub async fn ticker(&self, symbol: &TickerSymbol) -> Result<ThemeTicker, ThemeServiceError> {
+        self.ensure_ticker(symbol).await?;
         self.store
-            .theme_ticker(symbol.as_str())
+            .theme_ticker(symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .ok_or_else(|| ThemeServiceError::Validation(format!("ticker {symbol} does not exist")))
@@ -169,12 +175,11 @@ impl ThemeService {
 
     pub async fn replace_manual(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         theme_ids: &[i64],
     ) -> Result<(), ThemeServiceError> {
-        let symbol = normalize_symbol(symbol)?;
         validate_count(theme_ids.len())?;
-        self.ensure_ticker(symbol.as_str()).await?;
+        self.ensure_ticker(symbol).await?;
         let known_ids = self
             .themes()
             .await?
@@ -192,18 +197,12 @@ impl ThemeService {
             ));
         }
         self.store
-            .replace_theme_assignments(
-                symbol.as_str(),
-                theme_ids,
-                AssignmentSource::Manual,
-                None,
-                None,
-            )
+            .replace_theme_assignments(symbol, theme_ids, AssignmentSource::Manual, None, None)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
 
-    pub async fn prompt(&self, symbols: &[String]) -> Result<String, ThemeServiceError> {
+    pub async fn prompt(&self, symbols: &[TickerSymbol]) -> Result<String, ThemeServiceError> {
         let themes = self.themes().await?;
         let tickers = self.selected_tickers(symbols).await?;
         Ok(build_prompt(&themes, &tickers))
@@ -213,14 +212,14 @@ impl ThemeService {
         &self,
         response: &str,
     ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
-        let suggestions: Vec<ThemeSuggestion> = serde_json::from_str(strip_code_fence(response))
+        let suggestions: Vec<RawThemeSuggestion> = serde_json::from_str(strip_code_fence(response))
             .map_err(ThemeServiceError::InvalidAiResponse)?;
-        self.validate_suggestions(suggestions).await
+        self.validate_raw_suggestions(suggestions).await
     }
 
     pub async fn suggest(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("AI theme suggestion is disabled".into())
@@ -229,26 +228,28 @@ impl ThemeService {
         let tickers = self.selected_tickers(symbols).await?;
         let prompt = build_prompt(&themes, &tickers);
         let response = ai.complete(&prompt).await?;
-        let suggestions: Vec<ThemeSuggestion> = serde_json::from_str(strip_code_fence(&response))
-            .map_err(ThemeServiceError::InvalidAiResponse)?;
+        let suggestions: Vec<RawThemeSuggestion> =
+            serde_json::from_str(strip_code_fence(&response))
+                .map_err(ThemeServiceError::InvalidAiResponse)?;
         let symbols = tickers
             .iter()
-            .map(|ticker| ticker.symbol.to_string())
+            .map(|ticker| ticker.symbol.clone())
             .collect::<Vec<_>>();
+        let suggestions = typed_suggestions(suggestions)?;
         self.validate_automatic_suggestions(suggestions, &symbols)
             .await
     }
 
     pub async fn create_automatic_jobs(
         self: &Arc<Self>,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<i64>, ThemeServiceError> {
         self.create_automatic_jobs_for_attempt(symbols, None).await
     }
 
     async fn create_automatic_jobs_for_attempt(
         self: &Arc<Self>,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
         retry_of_job_id: Option<i64>,
     ) -> Result<Vec<i64>, ThemeServiceError> {
         let ai = self.ai.as_ref().ok_or_else(|| {
@@ -262,7 +263,7 @@ impl ThemeService {
                 (
                     batch
                         .iter()
-                        .map(|ticker| ticker.symbol.to_string())
+                        .map(|ticker| ticker.symbol.clone())
                         .collect::<Vec<_>>(),
                     build_prompt(&themes, batch),
                 )
@@ -425,12 +426,9 @@ impl ThemeService {
 
     async fn selected_tickers(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<ThemeTicker>, ThemeServiceError> {
-        let requested = symbols
-            .iter()
-            .map(|symbol| symbol.trim().to_uppercase())
-            .collect::<HashSet<_>>();
+        let requested = symbols.iter().cloned().collect::<HashSet<_>>();
         if requested.is_empty() {
             return Err(ThemeServiceError::Validation(
                 "select at least one ticker".to_owned(),
@@ -440,7 +438,7 @@ impl ThemeService {
             .tickers()
             .await?
             .into_iter()
-            .filter(|ticker| requested.contains(ticker.symbol.as_str()))
+            .filter(|ticker| requested.contains(&ticker.symbol))
             .collect::<Vec<_>>();
         if tickers.len() != requested.len() {
             return Err(ThemeServiceError::Validation(
@@ -450,18 +448,18 @@ impl ThemeService {
         for ticker in &tickers {
             let profile = self
                 .store
-                .company_profile(ticker.symbol.as_str())
+                .company_profile(&ticker.symbol)
                 .await
                 .map_err(ThemeServiceError::Persistence)?;
             if profile.is_none() {
-                self.ensure_ticker(ticker.symbol.as_str()).await?;
+                self.ensure_ticker(&ticker.symbol).await?;
             }
         }
         let tickers = self
             .tickers()
             .await?
             .into_iter()
-            .filter(|ticker| requested.contains(ticker.symbol.as_str()))
+            .filter(|ticker| requested.contains(&ticker.symbol))
             .collect::<Vec<_>>();
         Ok(tickers)
     }
@@ -478,7 +476,6 @@ impl ThemeService {
             .collect::<HashMap<_, _>>();
         let mut seen = HashSet::new();
         for suggestion in &mut suggestions {
-            suggestion.symbol = normalize_symbol(&suggestion.symbol)?.into_string();
             self.ensure_ticker(&suggestion.symbol).await?;
             if !seen.insert(suggestion.symbol.clone()) {
                 return Err(ThemeServiceError::Validation(format!(
@@ -507,18 +504,22 @@ impl ThemeService {
         Ok(suggestions)
     }
 
+    async fn validate_raw_suggestions(
+        &self,
+        suggestions: Vec<RawThemeSuggestion>,
+    ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
+        let suggestions = typed_suggestions(suggestions)?;
+        self.validate_suggestions(suggestions).await
+    }
+
     async fn validate_automatic_suggestions(
         &self,
-        mut suggestions: Vec<ThemeSuggestion>,
-        job_symbols: &[String],
+        suggestions: Vec<ThemeSuggestion>,
+        job_symbols: &[TickerSymbol],
     ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
-        let job_symbols = job_symbols
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        for suggestion in &mut suggestions {
-            suggestion.symbol = suggestion.symbol.trim().to_uppercase();
-            if !job_symbols.contains(suggestion.symbol.as_str()) {
+        let job_symbols = job_symbols.iter().collect::<HashSet<_>>();
+        for suggestion in &suggestions {
+            if !job_symbols.contains(&suggestion.symbol) {
                 return Err(ThemeServiceError::Validation(format!(
                     "{} is not part of this AI job",
                     suggestion.symbol
@@ -531,7 +532,7 @@ impl ThemeService {
     async fn validate_automatic_response(
         &self,
         response: &str,
-        job_symbols: &[String],
+        job_symbols: &[TickerSymbol],
     ) -> Result<AutomaticValidation, ThemeServiceError> {
         let values: Vec<serde_json::Value> = serde_json::from_str(strip_code_fence(response))
             .map_err(ThemeServiceError::InvalidAiResponse)?;
@@ -551,7 +552,7 @@ impl ThemeService {
             if let Some(symbol) = &symbol {
                 returned.insert(symbol.clone());
             }
-            let suggestion = match serde_json::from_value::<ThemeSuggestion>(value) {
+            let suggestion = match serde_json::from_value::<RawThemeSuggestion>(value) {
                 Ok(suggestion) => suggestion,
                 Err(error) => {
                     errors.push(ThemeSuggestionError {
@@ -571,9 +572,9 @@ impl ThemeService {
         }
 
         for symbol in job_symbols {
-            if !returned.contains(symbol) {
+            if !returned.contains(symbol.as_str()) {
                 errors.push(ThemeSuggestionError {
-                    symbol: Some(symbol.clone()),
+                    symbol: Some(symbol.to_string()),
                     error: "AI response omitted this ticker".to_owned(),
                 });
             }
@@ -596,54 +597,50 @@ impl ThemeService {
 
     async fn validate_one_suggestion(
         &self,
-        mut suggestion: ThemeSuggestion,
+        mut suggestion: RawThemeSuggestion,
         known_themes: &HashMap<String, String>,
-        allowed_symbols: Option<&HashSet<String>>,
-        seen: &mut HashSet<String>,
+        allowed_symbols: Option<&HashSet<TickerSymbol>>,
+        seen: &mut HashSet<TickerSymbol>,
     ) -> Result<ThemeSuggestion, (Option<String>, String)> {
-        suggestion.symbol = suggestion.symbol.trim().to_uppercase();
-        let symbol = (!suggestion.symbol.is_empty()).then(|| suggestion.symbol.clone());
-        suggestion.symbol = normalize_symbol(&suggestion.symbol)
-            .map_err(|error| (symbol.clone(), error.to_string()))?
-            .into_string();
-        if allowed_symbols.is_some_and(|allowed| !allowed.contains(&suggestion.symbol)) {
-            return Err((
-                symbol,
-                format!("{} is not part of this AI job", suggestion.symbol),
-            ));
+        let raw_symbol = suggestion.symbol.trim().to_uppercase();
+        let error_symbol = (!raw_symbol.is_empty()).then(|| raw_symbol.clone());
+        let symbol = normalize_symbol(&raw_symbol)
+            .map_err(|error| (error_symbol.clone(), error.to_string()))?;
+        if allowed_symbols.is_some_and(|allowed| !allowed.contains(&symbol)) {
+            return Err((error_symbol, format!("{symbol} is not part of this AI job")));
         }
-        if !seen.insert(suggestion.symbol.clone()) {
-            return Err((
-                symbol,
-                format!("duplicate suggestion for {}", suggestion.symbol),
-            ));
+        if !seen.insert(symbol.clone()) {
+            return Err((error_symbol, format!("duplicate suggestion for {symbol}")));
         }
-        if let Err(error) = self.ensure_ticker(&suggestion.symbol).await {
-            return Err((symbol, error.to_string()));
+        if let Err(error) = self.ensure_ticker(&symbol).await {
+            return Err((error_symbol, error.to_string()));
         }
         if let Err(error) = validate_count(suggestion.themes.len()) {
-            return Err((symbol, error.to_string()));
+            return Err((error_symbol, error.to_string()));
         }
         let mut unique = HashSet::new();
         for theme in &mut suggestion.themes {
             let Some(canonical) = known_themes.get(&theme.trim().to_lowercase()) else {
-                return Err((symbol, format!("unknown theme {theme}")));
+                return Err((error_symbol, format!("unknown theme {theme}")));
             };
             *theme = canonical.clone();
             if !unique.insert(theme.clone()) {
                 return Err((
-                    symbol,
-                    format!("duplicate theme {} for {}", theme, suggestion.symbol),
+                    error_symbol,
+                    format!("duplicate theme {theme} for {symbol}"),
                 ));
             }
         }
-        Ok(suggestion)
+        Ok(ThemeSuggestion {
+            symbol,
+            themes: suggestion.themes,
+            reasoning: suggestion.reasoning,
+        })
     }
 
-    pub async fn ensure_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {
-        let symbol = normalize_symbol(symbol)?;
+    pub async fn ensure_ticker(&self, symbol: &TickerSymbol) -> Result<(), ThemeServiceError> {
         self.ticker_catalog
-            .ensure_ticker(symbol.as_str())
+            .ensure_ticker_symbol(symbol)
             .await
             .map_err(ThemeServiceError::TickerCatalog)
     }
@@ -651,11 +648,10 @@ impl ThemeService {
 
 fn normalize_theme(
     name: &str,
-    etf_symbol: &str,
+    etf_symbol: &TickerSymbol,
     description: Option<&str>,
-) -> Result<(String, String, Option<String>), ThemeServiceError> {
+) -> Result<(String, TickerSymbol, Option<String>), ThemeServiceError> {
     let name = name.trim();
-    let etf_symbol = normalize_symbol(etf_symbol)?;
     if name.is_empty() {
         return Err(ThemeServiceError::Validation(
             "theme name is required".into(),
@@ -663,7 +659,7 @@ fn normalize_theme(
     }
     Ok((
         name.to_owned(),
-        etf_symbol.into_string(),
+        etf_symbol.clone(),
         description
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -674,6 +670,21 @@ fn normalize_theme(
 fn normalize_symbol(symbol: &str) -> Result<TickerSymbol, ThemeServiceError> {
     TickerSymbol::parse(symbol)
         .map_err(|_| ThemeServiceError::Validation(format!("invalid ticker symbol {symbol}")))
+}
+
+fn typed_suggestions(
+    suggestions: Vec<RawThemeSuggestion>,
+) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
+    suggestions
+        .into_iter()
+        .map(|suggestion| {
+            Ok(ThemeSuggestion {
+                symbol: normalize_symbol(&suggestion.symbol)?,
+                themes: suggestion.themes,
+                reasoning: suggestion.reasoning,
+            })
+        })
+        .collect()
 }
 
 fn validate_count(count: usize) -> Result<(), ThemeServiceError> {

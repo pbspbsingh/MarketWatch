@@ -1,3 +1,4 @@
+use crate::models::YahooSymbol;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures_util::{SinkExt, StreamExt};
@@ -46,20 +47,20 @@ struct StreamEnvelope {
 #[derive(Serialize)]
 struct SubscriptionCommand<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    subscribe: Option<&'a [String]>,
+    subscribe: Option<&'a [YahooSymbol]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    unsubscribe: Option<&'a [String]>,
+    unsubscribe: Option<&'a [YahooSymbol]>,
 }
 
 pub(crate) fn spawn_transport(
-    desired: watch::Receiver<Vec<String>>,
+    desired: watch::Receiver<Vec<YahooSymbol>>,
     pricing: mpsc::Sender<PricingData>,
 ) {
     tokio::spawn(run_transport(desired, pricing));
 }
 
 async fn run_transport(
-    mut desired: watch::Receiver<Vec<String>>,
+    mut desired: watch::Receiver<Vec<YahooSymbol>>,
     pricing: mpsc::Sender<PricingData>,
 ) {
     let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
@@ -100,7 +101,7 @@ async fn run_connection(
     mut socket: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
-    desired: &mut watch::Receiver<Vec<String>>,
+    desired: &mut watch::Receiver<Vec<YahooSymbol>>,
     pricing: &mpsc::Sender<PricingData>,
 ) -> anyhow::Result<()> {
     let mut subscribed = HashSet::new();
@@ -156,8 +157,8 @@ async fn run_connection(
 
 async fn synchronize_subscriptions<S>(
     socket: &mut S,
-    subscribed: &mut HashSet<String>,
-    desired: Vec<String>,
+    subscribed: &mut HashSet<YahooSymbol>,
+    desired: Vec<YahooSymbol>,
 ) -> anyhow::Result<()>
 where
     S: futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -168,13 +169,13 @@ where
     if !removed.is_empty() {
         send_command(socket, None, Some(&removed)).await?;
         for symbol in &removed {
-            info!(symbol, "unsubscribed from Yahoo live stream");
+            info!(%symbol, "unsubscribed from Yahoo live stream");
         }
     }
     if !added.is_empty() {
         send_command(socket, Some(&added), None).await?;
         for symbol in &added {
-            info!(symbol, "subscribed to Yahoo live stream");
+            info!(%symbol, "subscribed to Yahoo live stream");
         }
     }
     *subscribed = desired;
@@ -183,8 +184,8 @@ where
 
 async fn send_command<S>(
     socket: &mut S,
-    subscribe: Option<&[String]>,
-    unsubscribe: Option<&[String]>,
+    subscribe: Option<&[YahooSymbol]>,
+    unsubscribe: Option<&[YahooSymbol]>,
 ) -> anyhow::Result<()>
 where
     S: futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -197,7 +198,7 @@ where
     Ok(())
 }
 
-fn sorted_symbols(symbols: &HashSet<String>) -> Vec<String> {
+fn sorted_symbols(symbols: &HashSet<YahooSymbol>) -> Vec<YahooSymbol> {
     let mut symbols = symbols.iter().cloned().collect::<Vec<_>>();
     symbols.sort_unstable();
     symbols

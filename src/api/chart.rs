@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::models::TickerSymbol;
 use crate::services::chart::ChartSummary;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -9,7 +10,7 @@ use tracing::error;
 
 #[derive(Deserialize)]
 struct ChartSummaryRequest {
-    symbol: String,
+    symbol: TickerSymbol,
     industry_keys: Vec<String>,
 }
 
@@ -27,7 +28,7 @@ async fn summary(
         .await
         .map(Json)
         .map_err(|error| {
-            error!(symbol = request.symbol, %error, "failed to load chart summary");
+            error!(symbol = %request.symbol, %error, "failed to load chart summary");
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }

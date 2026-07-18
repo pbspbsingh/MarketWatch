@@ -29,7 +29,7 @@ pub struct ThemeTickerIndustry {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ThemeSuggestion {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub themes: Vec<String>,
     #[serde(default)]
     pub reasoning: Option<String>,
@@ -56,7 +56,7 @@ pub enum ThemeAiJobStatus {
 pub struct ThemeAiJob {
     pub id: i64,
     pub status: ThemeAiJobStatus,
-    pub symbols: Vec<String>,
+    pub symbols: Vec<TickerSymbol>,
     pub model: String,
     pub prompt: String,
     pub response: Option<String>,

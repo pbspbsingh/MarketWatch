@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::models::TickerSymbol;
 use crate::services::details::TickerDetails;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -14,21 +15,21 @@ pub fn router() -> Router<AppState> {
 
 async fn details(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
 ) -> Result<Json<TickerDetails>, StatusCode> {
     load(state, symbol, false).await
 }
 
 async fn refresh(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
 ) -> Result<Json<TickerDetails>, StatusCode> {
     load(state, symbol, true).await
 }
 
 async fn load(
     state: AppState,
-    symbol: String,
+    symbol: TickerSymbol,
     force_refresh: bool,
 ) -> Result<Json<TickerDetails>, StatusCode> {
     state
@@ -37,7 +38,7 @@ async fn load(
         .await
         .map(Json)
         .map_err(|error| {
-            error!(symbol, force_refresh, %error, "failed to load ticker details");
+            error!(%symbol, force_refresh, %error, "failed to load ticker details");
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }

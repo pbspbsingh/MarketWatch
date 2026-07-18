@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::models::TickerSymbol;
 use crate::services::study::StudyError;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -10,7 +11,7 @@ use tracing::error;
 
 #[derive(Deserialize)]
 struct StudyRequest {
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
     date: NaiveDate,
     #[serde(default)]
     refresh: bool,

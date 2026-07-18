@@ -1,4 +1,3 @@
-use crate::models::ticker_symbol::InvalidTickerSymbol;
 use crate::models::{CompanyProfile, Fundamentals, TickerSymbol};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::{YahooService, YahooServiceError};
@@ -20,7 +19,7 @@ pub struct TickerDetailsService {
     store: Store,
     finviz: Arc<FinvizClient>,
     yahoo: Arc<YahooService>,
-    fundamentals_locks: KeyedLock,
+    fundamentals_locks: KeyedLock<TickerSymbol>,
 }
 
 #[derive(Serialize)]
@@ -43,9 +42,6 @@ pub enum TickerDetailsError {
     #[error(transparent)]
     Yahoo(#[from] YahooServiceError),
 
-    #[error(transparent)]
-    InvalidSymbol(#[from] InvalidTickerSymbol),
-
     #[error("Finviz fundamentals failed: {0}")]
     Finviz(#[source] anyhow::Error),
 
@@ -65,11 +61,10 @@ impl TickerDetailsService {
 
     pub async fn details(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         force_refresh: bool,
     ) -> Result<TickerDetails, TickerDetailsError> {
-        let ticker_symbol = TickerSymbol::parse(symbol)?;
-        let profile = self.yahoo.profile(&ticker_symbol).await?;
+        let profile = self.yahoo.profile(symbol).await?;
         let _guard = self.fundamentals_locks.lock(symbol).await;
         let cached = self
             .store
@@ -92,7 +87,7 @@ impl TickerDetailsService {
                     (fundamentals, false)
                 }
                 Err(error) if !force_refresh && cached.is_some() => {
-                    warn!(symbol, %error, "using stale Finviz fundamentals");
+                    warn!(%symbol, %error, "using stale Finviz fundamentals");
                     (cached.expect("cache checked"), true)
                 }
                 Err(error) => return Err(TickerDetailsError::Finviz(error)),
@@ -106,7 +101,7 @@ impl TickerDetailsService {
         })
     }
 
-    async fn fetch_fundamentals(&self, symbol: &str) -> anyhow::Result<Fundamentals> {
+    async fn fetch_fundamentals(&self, symbol: &TickerSymbol) -> anyhow::Result<Fundamentals> {
         let mut delay = INITIAL_RETRY_DELAY;
         let mut last_error = None;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
@@ -115,7 +110,7 @@ impl TickerDetailsService {
                 Err(error) if attempt < MAX_PROVIDER_ATTEMPTS => {
                     let retry_delay = jitter(delay);
                     warn!(
-                        symbol,
+                        %symbol,
                         attempt,
                         delay_ms = retry_delay.as_millis(),
                         %error,

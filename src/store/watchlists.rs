@@ -76,7 +76,7 @@ impl Store {
         Ok(result.rows_affected() == 1)
     }
 
-    pub async fn watchlist_symbols(&self, id: i64) -> anyhow::Result<Option<Vec<String>>> {
+    pub async fn watchlist_symbols(&self, id: i64) -> anyhow::Result<Option<Vec<TickerSymbol>>> {
         let exists = sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
             .fetch_one(&self.pool)
             .await
@@ -85,17 +85,26 @@ impl Store {
         if !exists {
             return Ok(None);
         }
-        sqlx::query_scalar!(
+        let symbols = sqlx::query_scalar!(
             "SELECT symbol FROM watchlist_tickers WHERE watchlist_id = ? ORDER BY symbol COLLATE NOCASE",
             id,
         )
         .fetch_all(&self.pool)
         .await
-        .map(Some)
-        .context("failed to load watchlist symbols")
+        .context("failed to load watchlist symbols")?;
+        symbols
+            .into_iter()
+            .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map(Some)
     }
 
-    pub async fn add_watchlist_symbol(&self, id: i64, symbol: &str) -> anyhow::Result<bool> {
+    pub async fn add_watchlist_symbol(
+        &self,
+        id: i64,
+        symbol: &TickerSymbol,
+    ) -> anyhow::Result<bool> {
+        let symbol = symbol.as_str();
         let result = sqlx::query!(
             r#"
             INSERT OR IGNORE INTO watchlist_tickers (watchlist_id, symbol, added_at)
@@ -118,7 +127,12 @@ impl Store {
         )
     }
 
-    pub async fn remove_watchlist_symbol(&self, id: i64, symbol: &str) -> anyhow::Result<bool> {
+    pub async fn remove_watchlist_symbol(
+        &self,
+        id: i64,
+        symbol: &TickerSymbol,
+    ) -> anyhow::Result<bool> {
+        let symbol = symbol.as_str();
         let exists = sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
             .fetch_one(&self.pool)
             .await
@@ -138,7 +152,8 @@ impl Store {
         Ok(true)
     }
 
-    pub async fn clear_symbol_watchlists(&self, symbol: &str) -> anyhow::Result<()> {
+    pub async fn clear_symbol_watchlists(&self, symbol: &TickerSymbol) -> anyhow::Result<()> {
+        let symbol = symbol.as_str();
         sqlx::query!("DELETE FROM watchlist_tickers WHERE symbol = ?", symbol)
             .execute(&self.pool)
             .await
@@ -200,11 +215,16 @@ mod tests {
 
         assert!(
             store
-                .add_watchlist_symbol(favourite.id, "TEST")
+                .add_watchlist_symbol(favourite.id, &TickerSymbol::parse("TEST").unwrap())
                 .await
                 .unwrap()
         );
-        assert!(store.add_watchlist_symbol(growth, "TEST").await.unwrap());
+        assert!(
+            store
+                .add_watchlist_symbol(growth, &TickerSymbol::parse("TEST").unwrap())
+                .await
+                .unwrap()
+        );
         assert_eq!(
             store
                 .ticker_watchlists(std::slice::from_ref(&symbol))

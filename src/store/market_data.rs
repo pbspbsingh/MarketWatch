@@ -57,7 +57,11 @@ impl Store {
             .context("failed to commit NYSE holiday calendar")
     }
 
-    pub async fn company_profile(&self, symbol: &str) -> anyhow::Result<Option<CompanyProfile>> {
+    pub async fn company_profile(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> anyhow::Result<Option<CompanyProfile>> {
+        let symbol = symbol.as_str();
         let profile = sqlx::query_as!(
             StoredProfile,
             r#"SELECT symbol, name, exchange, description,
@@ -112,8 +116,9 @@ impl Store {
 
     pub async fn latest_daily_candle_date(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
     ) -> anyhow::Result<Option<NaiveDate>> {
+        let symbol = symbol.as_str();
         sqlx::query_scalar!(
             r#"SELECT MAX(market_date) AS "market_date: NaiveDate"
              FROM daily_candles
@@ -127,8 +132,9 @@ impl Store {
 
     pub async fn earliest_daily_candle_date(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
     ) -> anyhow::Result<Option<NaiveDate>> {
+        let symbol = symbol.as_str();
         sqlx::query_scalar!(
             r#"SELECT MIN(market_date) AS "market_date: NaiveDate"
              FROM daily_candles
@@ -142,10 +148,11 @@ impl Store {
 
     pub async fn daily_candles(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
     ) -> anyhow::Result<Vec<DailyCandle>> {
+        let symbol = symbol.as_str();
         sqlx::query_as!(
             DailyCandle,
             r#"SELECT market_date AS "market_date: NaiveDate", open, high, low,
@@ -307,7 +314,7 @@ mod tests {
         assert_eq!(
             store
                 .daily_candles(
-                    "TEST",
+                    &TickerSymbol::parse("TEST").unwrap(),
                     NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
                 )
@@ -324,7 +331,7 @@ mod tests {
         assert_eq!(
             store
                 .daily_candles(
-                    "TEST",
+                    &TickerSymbol::parse("TEST").unwrap(),
                     NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
                 )

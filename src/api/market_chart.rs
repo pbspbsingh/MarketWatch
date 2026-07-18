@@ -3,10 +3,10 @@ use crate::models::chart::{
     MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength, MarketChartSeries,
     MarketChartSnapshot,
 };
+use crate::models::{TickerSymbol, YahooSymbol};
 use crate::providers::YahooError;
 use crate::services::market_chart::MarketChartError;
 use crate::services::market_chart::MarketChartService;
-use crate::services::tickers::normalize_symbol;
 use crate::services::yahoo::YahooServiceError;
 use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -34,7 +34,7 @@ const LIVE_DELTA_DEBOUNCE: Duration = Duration::from_millis(250);
 #[derive(Deserialize)]
 struct SnapshotQuery {
     interval: MarketChartInterval,
-    comparison_symbol: Option<String>,
+    comparison_symbol: Option<TickerSymbol>,
 }
 
 #[derive(Deserialize)]
@@ -42,7 +42,7 @@ struct HistoryQuery {
     interval: MarketChartInterval,
     start: chrono::NaiveDate,
     end: chrono::NaiveDate,
-    comparison_symbol: Option<String>,
+    comparison_symbol: Option<TickerSymbol>,
 }
 
 #[derive(Deserialize)]
@@ -50,22 +50,30 @@ struct HistoryQuery {
 enum LiveChartCommand {
     SetCharts {
         request_id: u64,
-        charts: Vec<LiveChartRequest>,
+        charts: Vec<RawLiveChartRequest>,
     },
 }
 
-#[derive(Clone, Deserialize)]
-struct LiveChartRequest {
+#[derive(Deserialize)]
+struct RawLiveChartRequest {
     chart_id: String,
     symbol: String,
     interval: MarketChartInterval,
     comparison_symbol: Option<String>,
 }
 
+#[derive(Clone)]
+struct LiveChartRequest {
+    chart_id: String,
+    symbol: TickerSymbol,
+    interval: MarketChartInterval,
+    comparison_symbol: Option<TickerSymbol>,
+}
+
 #[derive(Serialize)]
 struct LiveChartDelta {
     chart_id: String,
-    symbol: String,
+    symbol: TickerSymbol,
     interval: MarketChartInterval,
     candle: MarketChartCandle,
     moving_averages: Vec<MarketChartSeries>,
@@ -83,7 +91,7 @@ enum LiveSessionKind {
 #[derive(Serialize)]
 struct LiveSessionDelta {
     chart_id: String,
-    symbol: String,
+    symbol: YahooSymbol,
     date: NaiveDate,
     session: LiveSessionKind,
     candle: Option<MarketChartCandle>,
@@ -95,7 +103,7 @@ struct LiveSessionDelta {
 enum LiveChartEvent<'a> {
     Subscribed {
         request_id: u64,
-        symbols: &'a [String],
+        symbols: &'a [YahooSymbol],
     },
     Delta {
         request_id: u64,
@@ -135,11 +143,11 @@ async fn handle_live_chart_socket(
     market_chart: Arc<MarketChartService>,
 ) {
     let (updates, mut update_receiver) = mpsc::channel::<YahooLiveUpdate>(LIVE_EVENT_BUFFER_SIZE);
-    let mut forwarders = HashMap::<String, LiveForwarder>::new();
+    let mut forwarders = HashMap::<YahooSymbol, LiveForwarder>::new();
     let mut request_id = 0;
     let mut charts = Vec::<LiveChartRequest>::new();
-    let mut dirty_symbols = HashSet::<String>::new();
-    let mut session_updates = HashMap::<String, YahooLiveUpdate>::new();
+    let mut dirty_symbols = HashSet::<YahooSymbol>::new();
+    let mut session_updates = HashMap::<YahooSymbol, YahooLiveUpdate>::new();
     let mut delta_deadline = None;
     let mut ping = tokio::time::interval(LIVE_HEARTBEAT_INTERVAL);
     ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -172,13 +180,15 @@ async fn handle_live_chart_socket(
                 let changed = std::mem::take(&mut dirty_symbols);
                 let sessions = std::mem::take(&mut session_updates);
                 for chart in charts.iter().filter(|chart| {
-                    changed.contains(&chart.symbol)
-                        || chart.comparison_symbol.as_ref().is_some_and(|symbol| changed.contains(symbol))
+                    changed.contains(&YahooSymbol::from(&chart.symbol))
+                        || chart.comparison_symbol.as_ref().is_some_and(|symbol| {
+                            changed.contains(&YahooSymbol::from(symbol))
+                        })
                 }) {
                     match market_chart.snapshot(
                         &chart.symbol,
                         chart.interval,
-                        chart.comparison_symbol.as_deref(),
+                        chart.comparison_symbol.as_ref(),
                     ).await {
                         Ok(snapshot) => {
                             let Some(delta) = snapshot_delta(chart, snapshot) else { continue };
@@ -202,7 +212,8 @@ async fn handle_live_chart_socket(
                 }
                 for update in sessions.into_values() {
                     for chart in charts.iter().filter(|chart| {
-                        chart.interval == MarketChartInterval::Daily && chart.symbol == update.symbol()
+                        chart.interval == MarketChartInterval::Daily
+                            && YahooSymbol::from(&chart.symbol) == *update.symbol()
                     }) {
                         let delta = session_delta(chart, &update);
                         if !send_live_event(
@@ -302,8 +313,8 @@ async fn handle_live_chart_socket(
 }
 
 fn normalize_live_charts(
-    charts: Vec<LiveChartRequest>,
-) -> Result<(Vec<LiveChartRequest>, Vec<String>), String> {
+    charts: Vec<RawLiveChartRequest>,
+) -> Result<(Vec<LiveChartRequest>, Vec<YahooSymbol>), String> {
     if charts.len() > LIVE_CLIENT_SYMBOL_LIMIT {
         return Err(format!(
             "live chart supports at most {LIVE_CLIENT_SYMBOL_LIMIT} charts per client"
@@ -322,18 +333,19 @@ fn normalize_live_charts(
         {
             return Err("live chart IDs must be unique ASCII identifiers".to_owned());
         }
-        let symbol = normalize_symbol(&chart.symbol).map_err(|error| error.to_string())?;
+        let symbol = TickerSymbol::parse(chart.symbol).map_err(|error| error.to_string())?;
         let comparison_symbol = chart
             .comparison_symbol
-            .map(|symbol| normalize_symbol(&symbol).map_err(|error| error.to_string()))
-            .transpose()?;
-        symbols.push(symbol.to_string());
-        symbols.extend(comparison_symbol.iter().map(ToString::to_string));
+            .map(TickerSymbol::parse)
+            .transpose()
+            .map_err(|error| error.to_string())?;
+        symbols.push(YahooSymbol::from(&symbol));
+        symbols.extend(comparison_symbol.iter().map(YahooSymbol::from));
         normalized_charts.push(LiveChartRequest {
             chart_id: chart.chart_id,
-            symbol: symbol.into_string(),
+            symbol,
             interval: chart.interval,
-            comparison_symbol: comparison_symbol.map(Into::into),
+            comparison_symbol,
         });
     }
     symbols.sort_unstable();
@@ -356,8 +368,8 @@ async fn wait_for_delta(deadline: Option<Instant>) {
 async fn replace_live_symbols(
     yahoo_live: &YahooLiveHandle,
     updates: &mpsc::Sender<YahooLiveUpdate>,
-    forwarders: &mut HashMap<String, LiveForwarder>,
-    symbols: &[String],
+    forwarders: &mut HashMap<YahooSymbol, LiveForwarder>,
+    symbols: &[YahooSymbol],
 ) -> Result<(), String> {
     let desired = symbols.iter().cloned().collect::<HashSet<_>>();
     forwarders.retain(|symbol, _| desired.contains(symbol));
@@ -484,82 +496,55 @@ impl Drop for LiveForwarder {
 
 async fn snapshot(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
     Query(query): Query<SnapshotQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
-    let symbol =
-        normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
+    let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .snapshot(
-            symbol.as_str(),
-            query.interval,
-            comparison_symbol.as_deref(),
-        )
+        .snapshot(&symbol, query.interval, comparison_symbol.as_ref())
         .await
         .map(Json)
-        .map_err(|error| map_error(symbol.as_str(), error))
+        .map_err(|error| map_error(&symbol, error))
 }
 
 async fn refresh_snapshot(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
     Query(query): Query<SnapshotQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
-    let symbol =
-        normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
+    let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .refresh_snapshot(
-            symbol.as_str(),
-            query.interval,
-            comparison_symbol.as_deref(),
-        )
+        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_ref())
         .await
         .map(Json)
-        .map_err(|error| map_error(symbol.as_str(), error))
+        .map_err(|error| map_error(&symbol, error))
 }
 
 async fn history_snapshot(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
-    let symbol =
-        normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
+    let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
         .history_snapshot(
-            symbol.as_str(),
+            &symbol,
             query.interval,
             query.start,
             query.end,
-            comparison_symbol.as_deref(),
+            comparison_symbol.as_ref(),
         )
         .await
         .map(Json)
-        .map_err(|error| map_error(symbol.as_str(), error))
+        .map_err(|error| map_error(&symbol, error))
 }
 
-fn normalize_optional_symbol(
-    symbol: Option<String>,
-) -> Result<Option<String>, (StatusCode, String)> {
-    symbol
-        .map(|symbol| {
-            normalize_symbol(&symbol)
-                .map(Into::into)
-                .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))
-        })
-        .transpose()
-}
-
-fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
+fn map_error(symbol: &TickerSymbol, error: MarketChartError) -> (StatusCode, String) {
     let status = match &error {
         MarketChartError::InvalidRange => StatusCode::BAD_REQUEST,
-        MarketChartError::InvalidSymbol(_) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::InvalidRange) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::Provider(YahooError::NotFound { .. })) => {
             StatusCode::NOT_FOUND
@@ -569,7 +554,7 @@ fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
         | MarketChartError::Calculation(_)
         | MarketChartError::RelativeStrength(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    error!(symbol, %error, "failed to load market chart snapshot");
+    error!(%symbol, %error, "failed to load market chart snapshot");
     (status, error.to_string())
 }
 
@@ -585,7 +570,7 @@ mod tests {
     #[test]
     fn normalizes_and_bounds_live_chart_configuration() {
         let request =
-            |chart_id: &str, symbol: &str, comparison_symbol: Option<&str>| LiveChartRequest {
+            |chart_id: &str, symbol: &str, comparison_symbol: Option<&str>| RawLiveChartRequest {
                 chart_id: chart_id.to_owned(),
                 symbol: symbol.to_owned(),
                 interval: MarketChartInterval::Daily,
@@ -597,7 +582,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(charts[0].symbol, "AAPL");
-        assert_eq!(charts[0].comparison_symbol.as_deref(), Some("QQQ"));
+        assert_eq!(charts[0].comparison_symbol.as_ref().unwrap(), "QQQ");
         assert_eq!(symbols, vec!["AAPL", "QQQ"]);
         assert!(normalize_live_charts(vec![request("top", "?", None)]).is_err());
         assert!(
@@ -634,7 +619,7 @@ mod tests {
             ],
         };
         let snapshot = MarketChartSnapshot {
-            symbol: "AAPL".to_owned(),
+            symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             candles: vec![MarketChartCandle {
                 date: date(16),
@@ -653,7 +638,7 @@ mod tests {
         };
         let chart = LiveChartRequest {
             chart_id: "top".to_owned(),
-            symbol: "AAPL".to_owned(),
+            symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
         };
@@ -671,12 +656,12 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
         let chart = LiveChartRequest {
             chart_id: "top".to_owned(),
-            symbol: "AAPL".to_owned(),
+            symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
         };
         let update = YahooLiveUpdate::PreMarket(YahooLiveCandle {
-            symbol: "AAPL".to_owned(),
+            symbol: YahooSymbol::parse("AAPL").unwrap(),
             candle: DailyCandle {
                 market_date: date,
                 open: 100.0,

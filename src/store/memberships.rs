@@ -8,11 +8,12 @@ use sqlx::{QueryBuilder, Sqlite};
 pub struct TickerIndustryMembership {
     pub industry_key: String,
     pub industry_name: String,
-    pub symbol: String,
+    pub symbol: TickerSymbol,
 }
 
 impl Store {
-    pub async fn ticker_has_industry(&self, symbol: &str) -> anyhow::Result<bool> {
+    pub async fn ticker_has_industry(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+        let symbol = symbol.as_str();
         sqlx::query_scalar!(
             "SELECT EXISTS(
                 SELECT 1 FROM industry_membership_tickers WHERE symbol = ?
@@ -28,8 +29,9 @@ impl Store {
         &self,
         industry_key: &str,
         industry_name: &str,
-        symbol: &str,
+        symbol: &TickerSymbol,
     ) -> anyhow::Result<()> {
+        let symbol = symbol.as_str();
         let mut transaction = self
             .pool
             .begin()
@@ -83,7 +85,7 @@ impl Store {
         &self,
         industry_key: &str,
         fetched_at: DateTime<Utc>,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<()> {
         let mut transaction = self
             .pool
@@ -114,7 +116,7 @@ impl Store {
                 "INSERT INTO industry_membership_tickers (industry_key, symbol)
                  VALUES (?, ?)",
                 industry_key,
-                symbol,
+                symbol.as_str(),
             )
             .execute(&mut *transaction)
             .await
@@ -128,8 +130,8 @@ impl Store {
         Ok(())
     }
 
-    pub async fn known_tickers(&self) -> anyhow::Result<Vec<String>> {
-        sqlx::query_scalar!(
+    pub async fn known_tickers(&self) -> anyhow::Result<Vec<TickerSymbol>> {
+        let symbols = sqlx::query_scalar!(
             "SELECT symbol FROM tickers
              UNION
              SELECT symbol FROM industry_membership_tickers
@@ -139,13 +141,17 @@ impl Store {
         )
         .fetch_all(&self.pool)
         .await
-        .context("failed to load known tickers")
+        .context("failed to load known tickers")?;
+        symbols
+            .into_iter()
+            .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+            .collect()
     }
 
     pub async fn tickers_for_industries(
         &self,
         industry_keys: &[String],
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
         if industry_keys.is_empty() {
             return self.known_tickers().await;
         }
@@ -162,16 +168,20 @@ impl Store {
             }
         }
         query.push(") ORDER BY symbol");
-        query
+        let symbols = query
             .build_query_scalar::<String>()
             .fetch_all(&self.pool)
             .await
-            .context("failed to load tickers for industries")
+            .context("failed to load tickers for industries")?;
+        symbols
+            .into_iter()
+            .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+            .collect()
     }
 
     pub async fn industry_for_ticker(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         industry_keys: &[String],
     ) -> anyhow::Result<Option<(String, String)>> {
         let mut query = QueryBuilder::<Sqlite>::new(
@@ -183,7 +193,7 @@ impl Store {
                ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
              WHERE symbol = ",
         );
-        query.push_bind(symbol);
+        query.push_bind(symbol.as_str());
         if !industry_keys.is_empty() {
             query.push(" AND industry_membership_tickers.industry_key IN (");
             let mut separated = query.separated(", ");
@@ -202,7 +212,7 @@ impl Store {
 
     pub async fn industries_for_symbols(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
         if symbols.is_empty() {
             return Ok(Vec::new());
@@ -225,28 +235,26 @@ impl Store {
         {
             let mut separated = query.separated(", ");
             for symbol in symbols {
-                separated.push_bind(symbol);
+                separated.push_bind(symbol.as_str());
             }
         }
         query.push(
             ") ORDER BY industry_snapshot_rows.industry_name, industry_membership_tickers.symbol",
         );
-        query
+        let rows = query
             .build_query_as::<(String, String, String)>()
             .fetch_all(&self.pool)
             .await
-            .context("failed to load industries for symbols")
-            .map(|rows| {
-                rows.into_iter()
-                    .map(
-                        |(industry_key, industry_name, symbol)| TickerIndustryMembership {
-                            industry_key,
-                            industry_name,
-                            symbol,
-                        },
-                    )
-                    .collect()
+            .context("failed to load industries for symbols")?;
+        rows.into_iter()
+            .map(|(industry_key, industry_name, symbol)| {
+                Ok(TickerIndustryMembership {
+                    industry_key,
+                    industry_name,
+                    symbol: TickerSymbol::try_from(symbol)?,
+                })
             })
+            .collect()
     }
 
     pub async fn all_industries_for_symbols<'a>(
@@ -286,22 +294,20 @@ impl Store {
             }
         }
         query.push(" ) ORDER BY industry_name, industry_membership_tickers.symbol");
-        query
+        let rows = query
             .build_query_as::<(String, String, String)>()
             .fetch_all(&self.pool)
             .await
-            .context("failed to load all ticker industries")
-            .map(|rows| {
-                rows.into_iter()
-                    .map(
-                        |(industry_key, industry_name, symbol)| TickerIndustryMembership {
-                            industry_key,
-                            industry_name,
-                            symbol,
-                        },
-                    )
-                    .collect()
+            .context("failed to load all ticker industries")?;
+        rows.into_iter()
+            .map(|(industry_key, industry_name, symbol)| {
+                Ok(TickerIndustryMembership {
+                    industry_key,
+                    industry_name,
+                    symbol: TickerSymbol::try_from(symbol)?,
+                })
             })
+            .collect()
     }
 }
 
@@ -318,7 +324,10 @@ mod tests {
             .replace_industry_membership(
                 "semiconductors",
                 Utc::now(),
-                &["AMD".to_owned(), "NVDA".to_owned()],
+                &[
+                    TickerSymbol::parse("AMD").unwrap(),
+                    TickerSymbol::parse("NVDA").unwrap(),
+                ],
             )
             .await
             .unwrap();
@@ -326,7 +335,10 @@ mod tests {
             .replace_industry_membership(
                 "computerhardware",
                 Utc::now(),
-                &["NVDA".to_owned(), "SMCI".to_owned()],
+                &[
+                    TickerSymbol::parse("NVDA").unwrap(),
+                    TickerSymbol::parse("SMCI").unwrap(),
+                ],
             )
             .await
             .unwrap();
@@ -371,12 +383,18 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            store.industry_for_ticker("NVDA", &[]).await.unwrap(),
+            store
+                .industry_for_ticker(&TickerSymbol::parse("NVDA").unwrap(), &[])
+                .await
+                .unwrap(),
             Some(("semiconductors".to_owned(), "Semiconductors".to_owned()))
         );
         assert_eq!(
             store
-                .industry_for_ticker("NVDA", &["computerhardware".to_owned()])
+                .industry_for_ticker(
+                    &TickerSymbol::parse("NVDA").unwrap(),
+                    &["computerhardware".to_owned()],
+                )
                 .await
                 .unwrap(),
             None
@@ -388,11 +406,20 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
 
         store
-            .add_ticker_industry("unknownindustry", "Unknown Industry", "TICKER")
+            .add_ticker_industry(
+                "unknownindustry",
+                "Unknown Industry",
+                &TickerSymbol::parse("TICKER").unwrap(),
+            )
             .await
             .unwrap();
 
-        assert!(store.ticker_has_industry("TICKER").await.unwrap());
+        assert!(
+            store
+                .ticker_has_industry(&TickerSymbol::parse("TICKER").unwrap())
+                .await
+                .unwrap()
+        );
         assert_eq!(store.known_tickers().await.unwrap(), ["TICKER"]);
         assert_eq!(
             store
@@ -404,7 +431,7 @@ mod tests {
             [TickerIndustryMembership {
                 industry_key: "unknownindustry".to_owned(),
                 industry_name: "Unknown Industry".to_owned(),
-                symbol: "TICKER".to_owned(),
+                symbol: TickerSymbol::parse("TICKER").unwrap(),
             }]
         );
     }

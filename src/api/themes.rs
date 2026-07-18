@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::{AssignmentSource, ThemeSuggestion};
+use crate::models::{AssignmentSource, ThemeSuggestion, TickerSymbol};
 use crate::services::themes::{AiCapability, ThemeServiceError};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -14,7 +14,7 @@ type ApiResult<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;
 #[derive(Deserialize)]
 struct ThemeInput {
     name: String,
-    etf_symbol: String,
+    etf_symbol: TickerSymbol,
     description: Option<String>,
 }
 
@@ -25,12 +25,12 @@ struct AssignmentInput {
 
 #[derive(Deserialize)]
 struct TickerInput {
-    symbol: String,
+    symbol: TickerSymbol,
 }
 
 #[derive(Deserialize)]
 struct SymbolsInput {
-    symbols: Vec<String>,
+    symbols: Vec<TickerSymbol>,
 }
 
 #[derive(Deserialize)]
@@ -144,7 +144,7 @@ async fn filter_industries(
 
 async fn ticker(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
 ) -> ApiResult<crate::models::ThemeTicker> {
     state
         .themes
@@ -156,7 +156,7 @@ async fn ticker(
 
 async fn delete_ticker(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
 ) -> ApiResult<serde_json::Value> {
     state
         .themes
@@ -180,7 +180,7 @@ async fn add_ticker(
 
 async fn replace_assignments(
     State(state): State<AppState>,
-    Path(symbol): Path<String>,
+    Path(symbol): Path<TickerSymbol>,
     Json(input): Json<AssignmentInput>,
 ) -> ApiResult<serde_json::Value> {
     state

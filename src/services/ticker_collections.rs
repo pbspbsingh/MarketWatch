@@ -93,13 +93,13 @@ impl TickerCollectionService {
     pub async fn groups(
         &self,
         mode: TickerCollectionGroupMode,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<TickerCollectionGroups, TickerCollectionError> {
-        let symbols = normalize_symbols(symbols);
+        let symbols = symbols.to_vec();
         let mut failed_symbols = Vec::new();
         for symbol in &symbols {
-            if let Err(error) = self.ticker_catalog.ensure_ticker(symbol).await {
-                warn!(symbol, %error, "failed to enrich bounded ticker");
+            if let Err(error) = self.ticker_catalog.ensure_ticker_symbol(symbol).await {
+                warn!(%symbol, %error, "failed to enrich bounded ticker");
                 failed_symbols.push(symbol.clone());
             }
         }
@@ -121,7 +121,7 @@ impl TickerCollectionService {
 
     async fn industry_groups(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<TickerCollectionGroup>, TickerCollectionError> {
         let memberships = self
             .ticker_catalog
@@ -136,7 +136,7 @@ impl TickerCollectionService {
             .map(|ranking| (ranking.key.clone(), ranking))
             .collect::<HashMap<_, _>>();
 
-        let mut grouped = HashMap::<String, (String, Vec<String>)>::new();
+        let mut grouped = HashMap::<String, (String, Vec<TickerSymbol>)>::new();
         for membership in memberships {
             let entry = grouped
                 .entry(membership.industry_key)
@@ -167,7 +167,7 @@ impl TickerCollectionService {
 
     async fn theme_groups(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> Result<Vec<TickerCollectionGroup>, TickerCollectionError> {
         let memberships = self
             .ticker_catalog
@@ -183,7 +183,7 @@ impl TickerCollectionService {
             .collect::<HashMap<_, _>>();
 
         let mut assigned = HashSet::new();
-        let mut grouped = HashMap::<i64, (String, Vec<String>)>::new();
+        let mut grouped = HashMap::<i64, (String, Vec<TickerSymbol>)>::new();
         for membership in memberships {
             assigned.insert(membership.symbol.clone());
             let entry = grouped
@@ -277,20 +277,7 @@ fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
     }
 }
 
-fn normalize_symbols(symbols: &[String]) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut normalized = Vec::with_capacity(symbols.len());
-    for symbol in symbols {
-        if let Ok(symbol) = TickerSymbol::parse(symbol)
-            && seen.insert(symbol.clone())
-        {
-            normalized.push(symbol.into_string());
-        }
-    }
-    normalized
-}
-
-fn symbol_from_line(line: &str) -> Option<String> {
+fn symbol_from_line(line: &str) -> Option<TickerSymbol> {
     let line = line.trim().trim_start_matches('\u{feff}');
     if line.is_empty() || line.starts_with('#') || line.starts_with("//") || line.starts_with("--")
     {
@@ -302,7 +289,7 @@ fn symbol_from_line(line: &str) -> Option<String> {
         .trim_matches('"')
         .trim_matches('\'');
     let symbol = normalize_symbol(first)?;
-    let lower = symbol.to_ascii_lowercase();
+    let lower = symbol.as_str().to_ascii_lowercase();
     if HEADER_VALUES.contains(&lower.as_str()) {
         return None;
     }
@@ -321,16 +308,14 @@ fn first_field(line: &str) -> &str {
     line
 }
 
-fn normalize_symbol(value: &str) -> Option<String> {
+fn normalize_symbol(value: &str) -> Option<TickerSymbol> {
     let value = value.trim().trim_start_matches('$');
     let value = value.rsplit_once(':').map_or(value, |(_, symbol)| symbol);
     let symbol = value.trim().to_ascii_uppercase();
     if symbol.is_empty() || matches!(symbol.as_str(), "N/A" | "NA" | "NULL") {
         return None;
     }
-    TickerSymbol::parse(&symbol)
-        .ok()
-        .map(TickerSymbol::into_string)
+    TickerSymbol::parse(&symbol).ok()
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::models::{TickerSymbol, YahooSymbol};
 use reqwest::StatusCode;
 use thiserror::Error;
 
@@ -7,7 +8,7 @@ pub enum YahooError {
     Transport(#[source] reqwest::Error),
 
     #[error("Yahoo Finance resource not found for {symbol}")]
-    NotFound { symbol: String },
+    NotFound { symbol: YahooSymbol },
 
     #[error("Yahoo Finance rate limit exceeded")]
     RateLimited,
@@ -29,7 +30,7 @@ pub enum YahooError {
 
     #[error("unsupported Yahoo Finance exchange for {symbol}: code={code:?}, name={name:?}")]
     UnsupportedExchange {
-        symbol: String,
+        symbol: TickerSymbol,
         code: Option<String>,
         name: Option<String>,
     },
