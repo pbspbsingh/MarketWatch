@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   CircularProgress,
@@ -48,7 +48,8 @@ export function DailyNotesPage() {
   const [readingWidth, setReadingWidth] = useState(readReadingWidth);
   const [split, setSplit] = useState(readEditorSplit);
   const [allNotes, setAllNotes] = useState<DailyNoteSummary[]>([]);
-  const [visibleNotes, setVisibleNotes] = useState<DailyNoteSummary[]>([]);
+  const [loadedNotesRevision, setLoadedNotesRevision] = useState(-1);
+  const [searchResult, setSearchResult] = useState<{ query: string; notes: DailyNoteSummary[] }>();
   const [selectedDate, setSelectedDate] = useState<string>();
   const [document, setDocument] = useState<DailyNoteDocument>();
   const [mode, setMode] = useState<PageMode>("read");
@@ -63,9 +64,7 @@ export function DailyNotesPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [highlightQuery, setHighlightQuery] = useState<string>();
-  const [listLoading, setListLoading] = useState(true);
-  const [allNotesLoaded, setAllNotesLoaded] = useState(false);
-  const [documentLoading, setDocumentLoading] = useState(false);
+  const [loadedDocumentKey, setLoadedDocumentKey] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DailyNoteSummary>();
   const [conflictRevision, setConflictRevision] = useState<number>();
   const [matchIndex, setMatchIndex] = useState(0);
@@ -83,10 +82,13 @@ export function DailyNotesPage() {
   const uploadPromiseRef = useRef<Promise<boolean> | null>(null);
   const conflictBlockedRef = useRef(false);
   const saveDraftRef = useRef<() => Promise<boolean>>(async () => true);
-  selectedDateRef.current = selectedDate;
-  modeRef.current = mode;
-  draftRef.current = draft;
-  dirtyRef.current = dirty;
+
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+    modeRef.current = mode;
+    draftRef.current = draft;
+    dirtyRef.current = dirty;
+  }, [dirty, draft, mode, selectedDate]);
 
   const openEditor = (note: DailyNoteDocument) => {
     revisionRef.current = note.revision;
@@ -103,7 +105,7 @@ export function DailyNotesPage() {
     setMode("edit");
   };
 
-  const saveDraft = (): Promise<boolean> => {
+  const saveDraft = useCallback((): Promise<boolean> => {
     if (!dirtyRef.current) return Promise.resolve(true);
     if (savingPromiseRef.current !== null) return savingPromiseRef.current;
     const date = selectedDateRef.current;
@@ -152,75 +154,71 @@ export function DailyNotesPage() {
       });
     savingPromiseRef.current = promise;
     return promise;
-  };
-  saveDraftRef.current = saveDraft;
+  }, []);
 
-  const leaveEditor = async () => {
+  useEffect(() => {
+    saveDraftRef.current = saveDraft;
+  }, [saveDraft]);
+
+  const leaveEditor = useCallback(async () => {
     if (modeRef.current !== "edit") return true;
     if (uploadPromiseRef.current !== null && !await uploadPromiseRef.current) return false;
     while (dirtyRef.current) {
       if (!await saveDraftRef.current()) return false;
     }
     return true;
-  };
+  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
-    if (search.trim() !== highlightQuery) setHighlightQuery(undefined);
     return () => window.clearTimeout(timeout);
-  }, [search, highlightQuery]);
+  }, [search]);
+
+  const visibleNotes = debouncedSearch === ""
+    ? allNotes
+    : searchResult?.query === debouncedSearch ? searchResult.notes : [];
+  const listLoading = debouncedSearch === ""
+    ? loadedNotesRevision !== refreshRevision
+    : searchResult?.query !== debouncedSearch;
 
   useEffect(() => {
     const controller = new AbortController();
-    setListLoading(true);
     fetchDailyNotes(undefined, controller.signal)
       .then((notes) => {
         if (controller.signal.aborted) return;
         setAllNotes(notes);
-        if (debouncedSearch === "") setVisibleNotes(notes);
+        setLoadedNotesRevision(refreshRevision);
         setSelectedDate((current) => current ?? notes[0]?.note_date);
       })
       .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) setError(message(requestError));
-      })
-      .finally(() => {
         if (!controller.signal.aborted) {
-          setAllNotesLoaded(true);
-          if (debouncedSearch === "") setListLoading(false);
+          setLoadedNotesRevision(refreshRevision);
+          setError(message(requestError));
         }
       });
     return () => controller.abort();
   }, [refreshRevision]);
 
   useEffect(() => {
-    if (debouncedSearch === "") {
-      setVisibleNotes(allNotes);
-      if (allNotesLoaded) setListLoading(false);
-      return;
-    }
+    if (debouncedSearch === "") return;
     const controller = new AbortController();
-    setListLoading(true);
     fetchDailyNotes(debouncedSearch, controller.signal)
       .then((notes) => {
-        if (!controller.signal.aborted) setVisibleNotes(notes);
+        if (!controller.signal.aborted) setSearchResult({ query: debouncedSearch, notes });
       })
       .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) setError(message(requestError));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setListLoading(false);
+        if (!controller.signal.aborted) {
+          setSearchResult({ query: debouncedSearch, notes: [] });
+          setError(message(requestError));
+        }
       });
     return () => controller.abort();
-  }, [allNotes, allNotesLoaded, debouncedSearch]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
-    if (selectedDate === undefined) {
-      setDocument(undefined);
-      return;
-    }
+    if (selectedDate === undefined) return;
     const controller = new AbortController();
-    setDocument((current) => current?.note_date === selectedDate ? current : undefined);
-    setDocumentLoading(true);
+    const requestKey = `${selectedDate}\0${highlightQuery ?? ""}`;
     fetchDailyNote(selectedDate, controller.signal)
       .then(async (note) => {
         if (controller.signal.aborted) return;
@@ -232,13 +230,14 @@ export function DailyNotesPage() {
         if (!controller.signal.aborted && note !== undefined) {
           revisionRef.current = note.revision;
           setDocument(note);
+          setLoadedDocumentKey(requestKey);
         }
       })
       .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) setError(message(requestError));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setDocumentLoading(false);
+        if (!controller.signal.aborted) {
+          setLoadedDocumentKey(requestKey);
+          setError(message(requestError));
+        }
       });
     return () => controller.abort();
   }, [highlightQuery, selectedDate]);
@@ -365,9 +364,9 @@ export function DailyNotesPage() {
     }
   };
 
-  const exitEditMode = async () => {
+  const exitEditMode = useCallback(async () => {
     if (await leaveEditor()) setMode("read");
-  };
+  }, [leaveEditor]);
 
   useEffect(() => {
     const exitOnEscape = (event: KeyboardEvent) => {
@@ -384,7 +383,7 @@ export function DailyNotesPage() {
     };
     window.addEventListener("keydown", exitOnEscape);
     return () => window.removeEventListener("keydown", exitOnEscape);
-  }, [annotationImageId, conflictRevision, deleteTarget, mode]);
+  }, [annotationImageId, conflictRevision, deleteTarget, exitEditMode, mode]);
 
   const pasteImage = (source: Blob) => {
     if (uploadPromiseRef.current !== null) {
@@ -441,7 +440,12 @@ export function DailyNotesPage() {
     setSaveStatus(conflictBlockedRef.current ? "failed" : "unsaved");
   };
 
-  const showContents = mode === "read" && document !== undefined;
+  const activeDocument = document?.note_date === selectedDate ? document : undefined;
+  const documentRequestKey = selectedDate === undefined
+    ? ""
+    : `${selectedDate}\0${highlightQuery ?? ""}`;
+  const documentLoading = selectedDate !== undefined && loadedDocumentKey !== documentRequestKey;
+  const showContents = mode === "read" && activeDocument !== undefined;
   const scrollToHeading = (sourcePosition: string) => {
     const heading = [...(previewRef.current?.querySelectorAll<HTMLElement>("h1, h2, h3") ?? [])]
       .find((candidate) => candidate.dataset.sourcepos === sourcePosition);
@@ -457,18 +461,21 @@ export function DailyNotesPage() {
           selectedDate={selectedDate}
           search={search}
           loading={listLoading}
-          onSearchChange={setSearch}
+          onSearchChange={(value) => {
+            setSearch(value);
+            if (value.trim() !== highlightQuery) setHighlightQuery(undefined);
+          }}
           onSelect={(note) => void selectNote(note)}
           onCreate={create}
           onDelete={setDeleteTarget}
         />
       )}
       {showContents && (
-        <DailyNoteContents html={document.html} onSelect={scrollToHeading} />
+        <DailyNoteContents html={activeDocument.html} onSelect={scrollToHeading} />
       )}
       <main className="daily-note-workspace">
         <DailyNoteHeader
-          note={document}
+          note={activeDocument}
           sidebarCollapsed={sidebarCollapsed}
           readingWidth={readingWidth}
           matchIndex={matchIndex}
@@ -485,14 +492,14 @@ export function DailyNotesPage() {
             localStorage.setItem(readingWidthStorageKey, String(width));
           }}
           onSelectMatch={selectMatch}
-          onEdit={() => document !== undefined && openEditor(document)}
+          onEdit={() => activeDocument !== undefined && openEditor(activeDocument)}
           onSave={() => void saveDraft()}
           onExitEdit={() => void exitEditMode()}
         />
         <div className={`daily-note-content${mode === "edit" ? " daily-note-content-editing" : ""}`}>
-          {documentLoading && document === undefined ? (
+          {documentLoading && activeDocument === undefined ? (
             <CircularProgress className="daily-note-document-loading" size="1.5rem" />
-          ) : document === undefined ? (
+          ) : activeDocument === undefined ? (
             <div className="panel-status"><Typography color="text.secondary">Create or select a daily note</Typography></div>
           ) : mode === "edit" ? (
             <SplitPane
@@ -549,7 +556,7 @@ export function DailyNotesPage() {
               ref={previewRef}
               className="daily-note-preview"
               style={{ width: `${readingWidth}%` }}
-              dangerouslySetInnerHTML={{ __html: document.html }}
+              dangerouslySetInnerHTML={{ __html: activeDocument.html }}
             />
           )}
         </div>
