@@ -42,6 +42,7 @@ import {
   themeGroupsMarketWatchUrl,
   themeMarketWatchUrl,
 } from "./utils";
+import "./chart-panel.css";
 
 const SplitLightweightCharts = lazy(() => import("./SplitLightweightCharts"));
 
@@ -370,7 +371,7 @@ function GroupSummaryPanel({
 
   if (summary === undefined) {
     return (
-      <Typography className="panel-empty" color="text.secondary">
+      <Typography className="chart-panel-empty" color="text.secondary">
         Select a ticker to display charts
       </Typography>
     );

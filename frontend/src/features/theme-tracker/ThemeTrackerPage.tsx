@@ -425,8 +425,8 @@ export function ThemeTrackerPage() {
             </ToggleButtonGroup>
           )}
           <ToggleButtonGroup exclusive size="small" value={range} onChange={selectRange} aria-label="Performance range">
-            {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
             {!stockMode && mode === "theme" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
+            {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
           </ToggleButtonGroup>
         </header>
         {range === "trading_day" && latestLiveUpdate !== undefined && (
