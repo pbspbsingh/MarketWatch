@@ -97,6 +97,10 @@ export function GroupPanel({
     () => localStorage.getItem(sectorGroupingKey) === "true",
   );
   const [expandedSectors, setExpandedSectors] = useState(readExpandedSectors);
+  const [collapsedRequiredSectors, setCollapsedRequiredSectors] = useState<{
+    key: string;
+    sectors: Set<string>;
+  }>(() => ({ key: "", sectors: new Set() }));
   const exploredGroupKeys = exploredGroups[mode];
   const setExploredGroupKeys = useCallback((action: SetStateAction<Set<string>>) => {
     setExploredGroups((current) => {
@@ -225,10 +229,21 @@ export function GroupPanel({
         .filter((key): key is string => key !== undefined),
     );
   }, [groupBySector, highlightedGroupKey, mode, revealGroup, sectorKeyByGroup, selectedGroupKeys]);
-  const visibleExpandedSectors = useMemo(
-    () => new Set([...expandedSectors, ...requiredExpandedSectors]),
-    [expandedSectors, requiredExpandedSectors],
-  );
+  const requiredExpansionKey = [
+    mode,
+    [...selectedGroupKeys].sort().join("\0"),
+    revealGroup === undefined ? "" : `${revealGroup.value}\0${revealGroup.revision}`,
+    highlightedGroupKey ?? "",
+  ].join("\u0001");
+  const visibleExpandedSectors = useMemo(() => {
+    const collapsed = collapsedRequiredSectors.key === requiredExpansionKey
+      ? collapsedRequiredSectors.sectors
+      : new Set<string>();
+    return new Set(
+      [...expandedSectors, ...requiredExpandedSectors]
+        .filter((key) => !collapsed.has(key)),
+    );
+  }, [collapsedRequiredSectors, expandedSectors, requiredExpandedSectors, requiredExpansionKey]);
   const scrollGroupKey = highlightedGroupKey ?? revealGroup?.value;
 
   useLayoutEffect(() => {
@@ -403,14 +418,26 @@ export function GroupPanel({
                         type="button"
                         className="sector-group-toggle"
                         aria-expanded={visibleExpandedSectors.has(sector.key)}
-                        onClick={() =>
+                        onClick={() => {
+                          const collapsing = visibleExpandedSectors.has(sector.key);
                           setExpandedSectors((current) => {
                             const next = new Set(current);
-                            if (next.has(sector.key)) next.delete(sector.key);
+                            if (collapsing) next.delete(sector.key);
                             else next.add(sector.key);
                             return next;
-                          })
-                        }
+                          });
+                          setCollapsedRequiredSectors((current) => {
+                            const sectors = new Set(
+                              current.key === requiredExpansionKey ? current.sectors : undefined,
+                            );
+                            if (collapsing && requiredExpandedSectors.has(sector.key)) {
+                              sectors.add(sector.key);
+                            } else {
+                              sectors.delete(sector.key);
+                            }
+                            return { key: requiredExpansionKey, sectors };
+                          });
+                        }}
                       >
                         <span>
                           {sector.name}

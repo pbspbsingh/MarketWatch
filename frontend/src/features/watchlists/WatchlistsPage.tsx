@@ -46,6 +46,7 @@ export function WatchlistsPage() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
   const [symbolsWatchlistId, setSymbolsWatchlistId] = useState<number>();
+  const [loadedSymbolsRequestKey, setLoadedSymbolsRequestKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [addingTicker, setAddingTicker] = useState(false);
@@ -57,8 +58,11 @@ export function WatchlistsPage() {
   const selectedIdRef = useRef(selectedId);
   const selected = watchlists.find((watchlist) => watchlist.id === selectedId);
   const selectedWatchlistId = selected?.id;
-  const symbolsLoading = selectedWatchlistId !== undefined
-    && symbolsWatchlistId !== selectedWatchlistId;
+  const symbolsRequestKey = selectedWatchlistId === undefined
+    ? undefined
+    : `${selectedWatchlistId}\0${focusRevision}`;
+  const symbolsLoading = symbolsRequestKey !== undefined
+    && loadedSymbolsRequestKey !== symbolsRequestKey;
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -93,20 +97,24 @@ export function WatchlistsPage() {
   }, [selectedWatchlistId]);
 
   useEffect(() => {
-    if (selectedWatchlistId === undefined) return;
+    if (selectedWatchlistId === undefined || symbolsRequestKey === undefined) return;
     const controller = new AbortController();
     fetchWatchlistSymbols(selectedWatchlistId, controller.signal)
       .then((items) => {
         if (!controller.signal.aborted) {
           setSymbols(items);
           setSymbolsWatchlistId(selectedWatchlistId);
+          setLoadedSymbolsRequestKey(symbolsRequestKey);
         }
       })
       .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) setError(message(requestError));
+        if (!controller.signal.aborted) {
+          setLoadedSymbolsRequestKey(symbolsRequestKey);
+          setError(message(requestError));
+        }
       });
     return () => controller.abort();
-  }, [focusRevision, selectedWatchlistId]);
+  }, [selectedWatchlistId, symbolsRequestKey]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {

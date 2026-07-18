@@ -606,6 +606,11 @@ export function TickerPanel({
       <Toast message={panelError} onClose={() => {
         setErrorState(undefined);
         rankingStream.clearError();
+        setResolvedTickerState((current) =>
+          current.key === resolvedTickerRequestKey
+            ? { ...current, error: undefined }
+            : current,
+        );
       }} />
     </section>
   );

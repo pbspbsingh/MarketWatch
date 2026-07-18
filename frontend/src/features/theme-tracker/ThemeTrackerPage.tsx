@@ -170,8 +170,6 @@ export function ThemeTrackerPage() {
       .then((next) => {
         if (controller.signal.aborted) return;
         setIndustries(next);
-        setActiveIndustry((current) => current ?? [...next]
-          .sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0]);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);

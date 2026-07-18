@@ -166,17 +166,23 @@ function OpenTickerDetailsDialog({
   useEffect(() => {
     if (tab !== "profile-themes") return;
     let active = true;
-    Promise.all([fetchThemes(), fetchThemeTicker(symbol), fetchAiCapability()])
-      .then(([nextThemes, nextTicker, nextCapability]) => {
+    Promise.all([fetchThemes(), fetchThemeTicker(symbol)])
+      .then(([nextThemes, nextTicker]) => {
         if (!active) return;
         setThemes(nextThemes);
         setThemeTicker(nextTicker);
         setDraftThemeIds(nextTicker.assignments.map((assignment) => assignment.theme_id));
         setSuggestedThemeIds([]);
-        setAiCapability(nextCapability);
       })
       .catch((loadError: unknown) => {
         if (active) setError(errorMessage(loadError));
+      });
+    fetchAiCapability()
+      .then((nextCapability) => {
+        if (active) setAiCapability(nextCapability);
+      })
+      .catch((capabilityError: unknown) => {
+        if (active) setError(errorMessage(capabilityError));
       });
     return () => {
       active = false;
