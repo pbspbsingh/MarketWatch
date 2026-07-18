@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import BubbleChartIcon from "@mui/icons-material/BubbleChart";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -28,7 +27,6 @@ const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
-  ["Relative Rotation Graph", "/rrg", BubbleChartIcon, "cyan"],
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],

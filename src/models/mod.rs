@@ -5,7 +5,6 @@ mod exchange;
 mod fundamentals;
 mod market_data;
 mod performance;
-mod rrg;
 mod themes;
 mod ticker_collection;
 mod top_stock_screens;
@@ -23,9 +22,6 @@ pub use performance::{
     IndustryRanking, PerformancePeriods, ThemeRanking, TickerRanking, average_daily_range_percent,
     average_volume, candle_performance, candle_relative_strength_trend,
     candle_relative_strength_trend_series, close_above_sma,
-};
-pub use rrg::{
-    RrgInterval, ThemeRrgSeries, aggregate_weekly, compute_rrg_series, normalize_universe,
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,

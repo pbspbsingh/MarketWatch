@@ -22,9 +22,6 @@ const ThemeManagementPage = lazy(() =>
     default: ThemeManagementPage,
   })),
 );
-const RrgPage = lazy(() =>
-  import("../features/rrg/RrgPage").then(({ RrgPage }) => ({ default: RrgPage })),
-);
 const ThemeTrackerPage = lazy(() =>
   import("../features/theme-tracker/ThemeTrackerPage").then(({ ThemeTrackerPage }) => ({
     default: ThemeTrackerPage,
@@ -59,7 +56,6 @@ export function App() {
         <Route path="/top-stocks" element={<Page title="Top Stocks"><TopStocksPage /></Page>} />
         <Route path="/csv-analyzer" element={<Page title="CSV Analyzer"><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page title="Theme Management"><ThemeManagementPage /></Page>} />
-        <Route path="/rrg" element={<Page title="Relative Rotation Graph"><RrgPage /></Page>} />
         <Route path="/theme-tracker" element={<Page title="Theme Tracker"><ThemeTrackerPage /></Page>} />
         <Route path="/theme-rank" element={<Page title="Theme Rank"><ThemeRankPage /></Page>} />
         <Route path="/study" element={<Page title="Study"><StudyPage /></Page>} />
