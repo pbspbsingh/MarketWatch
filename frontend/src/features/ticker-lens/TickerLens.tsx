@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
 import { createTickerStreamClient } from "../../api/tickerStream";
@@ -47,6 +47,31 @@ interface TickerLensProps {
   accent?: "purple" | "yellow" | "blue" | "green" | "coral";
 }
 
+interface GroupSelectionState {
+  searchKey: string;
+  mode: GroupMode;
+  keys: Set<string>;
+}
+
+interface GroupsState {
+  key: string;
+  groups: GroupRanking[];
+  boundedSymbolsByGroup: Map<string, string[]>;
+  resolvedBoundedSymbols?: string[];
+  error?: string;
+  warning?: string;
+}
+
+interface GroupCountsState {
+  key: string;
+  counts: Map<string, number>;
+}
+
+const emptyGroups: GroupRanking[] = [];
+const emptySymbols: string[] = [];
+const emptySymbolsByGroup = new Map<string, string[]>();
+const emptyGroupCounts = new Map<string, number>();
+
 export function TickerLens({
   universe,
   watchlists,
@@ -56,28 +81,42 @@ export function TickerLens({
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
-  const [groupMode, setGroupMode] = useState<GroupMode>(() => readGroupMode(searchParams));
-  const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() =>
-    readGroupMode(searchParams) === "industry"
-      ? searchIndustryKeys(searchParams)
-      : searchIncludesUnassigned(searchParams)
-        ? new Set([unassignedGroupKey])
-        : new Set(),
+  const searchKey = searchParams.toString();
+  const parsedSearchSelection = useMemo(
+    () => selectionFromSearch(searchParams, searchKey),
+    [searchKey, searchParams],
   );
+  const [groupSelection, setGroupSelection] = useState<GroupSelectionState>(() =>
+    parsedSearchSelection ?? {
+      searchKey,
+      mode: readGroupMode(searchParams),
+      keys: initialGroupKeys(searchParams),
+    },
+  );
+  const activeGroupSelection = parsedSearchSelection !== undefined
+    && groupSelection.searchKey !== searchKey
+    ? parsedSearchSelection
+    : groupSelection;
+  const groupMode = activeGroupSelection.mode;
+  const selectedGroupKeys = activeGroupSelection.keys;
+  const setSelectedGroupKeys = useCallback<Dispatch<SetStateAction<Set<string>>>>((action) => {
+    setGroupSelection((current) => {
+      const base = parsedSearchSelection !== undefined && current.searchKey !== searchKey
+        ? parsedSearchSelection.keys
+        : current.keys;
+      const keys = typeof action === "function" ? action(base) : action;
+      return { searchKey, mode: groupMode, keys };
+    });
+  }, [groupMode, parsedSearchSelection, searchKey]);
   const [selectedTicker, setSelectedTicker] = useState<string>();
   const [selectedTickerContext, setSelectedTickerContext] =
     useState<SelectedTickerContext>();
-  const [selectedGroupTickerCounts, setSelectedGroupTickerCounts] = useState(
-    () => new Map<string, number>(),
-  );
-  const [groups, setGroups] = useState<GroupRanking[]>([]);
-  const [boundedSymbolsByGroup, setBoundedSymbolsByGroup] = useState<Map<string, string[]>>(
-    new Map(),
-  );
-  const [resolvedBoundedSymbols, setResolvedBoundedSymbols] = useState<string[]>();
-  const [groupsLoading, setGroupsLoading] = useState(false);
-  const [groupsError, setGroupsError] = useState<string>();
-  const [groupsWarning, setGroupsWarning] = useState<string>();
+  const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
+  const [groupsState, setGroupsState] = useState<GroupsState>({
+    key: "",
+    groups: [],
+    boundedSymbolsByGroup: new Map(),
+  });
   const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
@@ -89,52 +128,54 @@ export function TickerLens({
   const bounded = universe.type === "bounded";
   const sourceBoundedSymbols = bounded ? universe.symbols : [];
   const sourceBoundedSymbolsKey = sourceBoundedSymbols.join("\0");
-  const boundedSymbols = bounded ? (resolvedBoundedSymbols ?? sourceBoundedSymbols) : [];
-  const boundedSymbolsKey = boundedSymbols.join("\0");
   const marketResolveTickers =
     universe.type === "market-watch" ? universe.resolveTickers : undefined;
   const marketResolveGroups =
     universe.type === "market-watch" ? universe.resolveGroups : undefined;
   const marketResolveGroupCounts =
     universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
-  const selectedGroupKey = [...selectedGroupKeys].sort().join(",");
+  const groupsRequestKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
+  const activeGroupsState = groupsState.key === groupsRequestKey ? groupsState : undefined;
+  const groups = activeGroupsState?.groups ?? emptyGroups;
+  const groupsLoading = activeGroupsState === undefined;
+  const groupsError = activeGroupsState?.error;
+  const groupsWarning = activeGroupsState?.warning;
+  const boundedSymbolsByGroup = activeGroupsState?.boundedSymbolsByGroup ?? emptySymbolsByGroup;
+  const boundedSymbols = bounded
+    ? activeGroupsState?.resolvedBoundedSymbols ?? sourceBoundedSymbols
+    : emptySymbols;
+  const boundedSymbolsKey = boundedSymbols.join("\0");
+  const selectedGroupKey = [...selectedGroupKeys].sort().join("\0");
+  const groupCountsRequestKey = !bounded
+    && selectedGroupKey !== ""
+    && marketResolveGroupCounts !== undefined
+    ? `${groupMode}\0${selectedGroupKey}`
+    : undefined;
+  const selectedGroupTickerCounts = groupCountsState.key === groupCountsRequestKey
+    ? groupCountsState.counts
+    : emptyGroupCounts;
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
 
   useEffect(() => {
     writeTickerFilterValues(tickerFilters);
-  }, [tickerFilters.adr.min, tickerFilters.dollarVolume.min]);
+  }, [tickerFilters]);
 
   useEffect(() => {
     writeTickerFilterState(tickerFilters, tickerFiltersPersisted);
-  }, [
-    tickerFilters.adr.enabled,
-    tickerFilters.dollarVolume.enabled,
-    tickerFilters.above200Sma.enabled,
-    tickerFiltersPersisted,
-  ]);
+  }, [tickerFilters, tickerFiltersPersisted]);
 
   useEffect(() => {
     const mode = searchGroupMode(searchParams);
     if (mode === undefined) return;
-
     localStorage.setItem(groupModeKey, mode);
-    setGroupMode(mode);
-    if (mode === "industry") {
-      setSelectedGroupKeys(searchIndustryKeys(searchParams));
-    } else {
-      setSelectedGroupKeys(
-        searchIncludesUnassigned(searchParams) ? new Set([unassignedGroupKey]) : new Set(),
-      );
-    }
   }, [searchParams]);
 
   const setMode = (mode: GroupMode) => {
     setSearchParams({}, { replace: true });
     localStorage.setItem(groupModeKey, mode);
-    setGroupMode(mode);
-    setSelectedGroupKeys(new Set());
+    setGroupSelection({ searchKey: "", mode, keys: new Set() });
   };
   const handleSelectedTickerContext = useCallback(
     (context: SelectedTickerContext | undefined) => setSelectedTickerContext(context),
@@ -143,55 +184,63 @@ export function TickerLens({
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
   useEffect(() => {
     const controller = new AbortController();
-    setGroupsLoading(true);
-    setGroupsError(undefined);
-    setGroupsWarning(undefined);
-    setGroups([]);
-    setBoundedSymbolsByGroup(new Map());
-    setResolvedBoundedSymbols(undefined);
-
     const request = bounded
-      ? fetchBoundedTickerGroups(groupMode, sourceBoundedSymbols, controller.signal).then(
+      ? fetchBoundedTickerGroups(
+          groupMode,
+          sourceBoundedSymbolsKey === "" ? [] : sourceBoundedSymbolsKey.split("\0"),
+          controller.signal,
+        ).then(
           ({ symbols, groups, failed_symbols }) => {
-            if (controller.signal.aborted) return [];
-            setResolvedBoundedSymbols(symbols);
-            onBoundedResolution?.(failed_symbols.length);
-            if (failed_symbols.length > 0) {
-              setGroupsWarning(
-                `${failed_symbols.length} ticker${failed_symbols.length === 1 ? "" : "s"} could not be enriched`,
-              );
+            if (controller.signal.aborted) {
+              return {
+                key: groupsRequestKey,
+                groups: [],
+                boundedSymbolsByGroup: new Map(),
+              } satisfies GroupsState;
             }
-            setBoundedSymbolsByGroup(
-              new Map(groups.map((group) => [group.key, group.symbols])),
-            );
-            return groups.map(({ key, name, sector_key, sector_name, performance, absolute_strength, symbols }) => ({
-              key,
-              name,
-              sector_key,
-              sector_name,
-              ticker_count: symbols.length,
-              performance,
-              absolute_strength,
-            }));
+            onBoundedResolution?.(failed_symbols.length);
+            return {
+              key: groupsRequestKey,
+              resolvedBoundedSymbols: symbols,
+              warning: failed_symbols.length === 0
+                ? undefined
+                : `${failed_symbols.length} ticker${failed_symbols.length === 1 ? "" : "s"} could not be enriched`,
+              boundedSymbolsByGroup: new Map(groups.map((group) => [group.key, group.symbols])),
+              groups: groups.map(({ key, name, sector_key, sector_name, performance, absolute_strength, symbols }) => ({
+                key,
+                name,
+                sector_key,
+                sector_name,
+                ticker_count: symbols.length,
+                performance,
+                absolute_strength,
+              })),
+            } satisfies GroupsState;
           },
         )
       : (marketResolveGroups?.({ mode: groupMode, signal: controller.signal }) ??
-        Promise.resolve([]));
+        Promise.resolve([])).then((groups): GroupsState => ({
+          key: groupsRequestKey,
+          groups,
+          boundedSymbolsByGroup: new Map(),
+        }));
 
     request
-      .then((groups) => {
-        if (!controller.signal.aborted) setGroups(groups);
+      .then((state) => {
+        if (!controller.signal.aborted) setGroupsState(state);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setGroupsError(requestError.message);
+          setGroupsState({
+            key: groupsRequestKey,
+            groups: [],
+            boundedSymbolsByGroup: new Map(),
+            error: requestError.message,
+          });
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setGroupsLoading(false);
       });
     return () => controller.abort();
-  }, [bounded, groupMode, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
+  }, [bounded, groupMode, groupsRequestKey, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
 
   const resolveTickers = useCallback(
     (request: ResolveTickersRequest) => {
@@ -199,7 +248,7 @@ export function TickerLens({
         return marketResolveTickers?.(request) ?? Promise.resolve([]);
       }
       if (request.groupKeys.size === 0) {
-        return Promise.resolve(boundedSymbols);
+        return Promise.resolve(boundedSymbolsKey === "" ? [] : boundedSymbolsKey.split("\0"));
       }
       const symbols = [...request.groupKeys].flatMap(
         (key) => boundedSymbolsByGroup.get(key) ?? [],
@@ -210,28 +259,26 @@ export function TickerLens({
   );
 
   useEffect(() => {
-    if (bounded || selectedGroupKeys.size === 0 || marketResolveGroupCounts === undefined) {
-      setSelectedGroupTickerCounts(new Map());
-      return;
-    }
+    if (groupCountsRequestKey === undefined || marketResolveGroupCounts === undefined) return;
 
     const controller = new AbortController();
-    setSelectedGroupTickerCounts(new Map());
     marketResolveGroupCounts({
       mode: groupMode,
-      groupKeys: selectedGroupKeys,
+      groupKeys: new Set(selectedGroupKey.split("\0")),
       signal: controller.signal,
     })
       .then((counts) => {
-        if (!controller.signal.aborted) setSelectedGroupTickerCounts(counts);
+        if (!controller.signal.aborted) {
+          setGroupCountsState({ key: groupCountsRequestKey, counts });
+        }
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setSelectedGroupTickerCounts(new Map());
+          setGroupCountsState({ key: groupCountsRequestKey, counts: new Map() });
         }
       });
     return () => controller.abort();
-  }, [bounded, groupMode, marketResolveGroupCounts, selectedGroupKey]);
+  }, [groupCountsRequestKey, groupMode, marketResolveGroupCounts, selectedGroupKey]);
 
   return (
     <section
@@ -310,9 +357,37 @@ export function TickerLens({
       <Toast
         message={groupsWarning}
         severity="warning"
-        onClose={() => setGroupsWarning(undefined)}
+        onClose={() => setGroupsState((current) => ({ ...current, warning: undefined }))}
       />
-      <Toast message={groupsError} onClose={() => setGroupsError(undefined)} />
+      <Toast
+        message={groupsError}
+        onClose={() => setGroupsState((current) => ({ ...current, error: undefined }))}
+      />
     </section>
   );
+}
+
+function initialGroupKeys(searchParams: URLSearchParams) {
+  return readGroupMode(searchParams) === "industry"
+    ? searchIndustryKeys(searchParams)
+    : searchIncludesUnassigned(searchParams)
+      ? new Set([unassignedGroupKey])
+      : new Set<string>();
+}
+
+function selectionFromSearch(
+  searchParams: URLSearchParams,
+  searchKey: string,
+): GroupSelectionState | undefined {
+  const mode = searchGroupMode(searchParams);
+  if (mode === undefined) return undefined;
+  return {
+    searchKey,
+    mode,
+    keys: mode === "industry"
+      ? searchIndustryKeys(searchParams)
+      : searchIncludesUnassigned(searchParams)
+        ? new Set([unassignedGroupKey])
+        : new Set(),
+  };
 }
