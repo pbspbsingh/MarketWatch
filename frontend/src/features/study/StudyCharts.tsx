@@ -46,9 +46,9 @@ export function StudyCharts({
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const syncCrosshairRef = useRef(syncCrosshair);
-  syncCrosshairRef.current = syncCrosshair;
 
   useEffect(() => {
+    syncCrosshairRef.current = syncCrosshair;
     if (!syncCrosshair) chartsRef.current.forEach((chart) => chart.clearCrosshairPosition());
   }, [syncCrosshair]);
 
