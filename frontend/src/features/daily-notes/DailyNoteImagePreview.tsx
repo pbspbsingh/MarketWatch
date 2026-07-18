@@ -26,7 +26,15 @@ export function DailyNoteImagePreview({
 }: DailyNoteImagePreviewProps) {
   const previewRef = useRef<HTMLElement>(null);
   const callbacksRef = useRef({ onCrop, onResize, onAnnotate });
-  callbacksRef.current = { onCrop, onResize, onAnnotate };
+  const cursorLineRef = useRef(cursorLine);
+
+  useEffect(() => {
+    callbacksRef.current = { onCrop, onResize, onAnnotate };
+  }, [onAnnotate, onCrop, onResize]);
+
+  useEffect(() => {
+    cursorLineRef.current = cursorLine;
+  }, [cursorLine]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -37,7 +45,7 @@ export function DailyNoteImagePreview({
       onResize: (...arguments_) => callbacksRef.current.onResize(...arguments_),
       onAnnotate: (...arguments_) => callbacksRef.current.onAnnotate(...arguments_),
     });
-    scrollToSourceLine(preview, cursorLine, "auto");
+    scrollToSourceLine(preview, cursorLineRef.current, "auto");
     return uninstall;
   }, [html, imageRevision, interactionsDisabled]);
 
