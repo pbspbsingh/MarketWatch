@@ -67,6 +67,7 @@ import {
 } from "./utils";
 
 const tickerRowHeight = 28;
+const emptyTickers: TickerRanking[] = [];
 
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
@@ -91,6 +92,12 @@ interface TickerRowProps {
   watchlists: Watchlist[];
   onFavouriteClick: (ticker: TickerRanking) => void;
   onContextMenu: (event: MouseEvent, symbol: string) => void;
+}
+
+interface TickerRequestState {
+  key: string;
+  tickers?: TickerRanking[];
+  error?: string;
 }
 
 function TickerRow({
@@ -168,7 +175,11 @@ export function TickerPanel({
   revealTicker,
 }: TickerPanelProps) {
   const focusRevision = useFocusRefresh();
-  const [tickers, setTickers] = useState<TickerRanking[]>([]);
+  const [resolvedTickerState, setResolvedTickerState] = useState<TickerRequestState>({ key: "" });
+  const [rankingOverrideState, setRankingOverrideState] = useState<{
+    key: string;
+    rankings: Map<string, TickerRanking>;
+  }>(() => ({ key: "", rankings: new Map() }));
   const [loadedWatchlists, setLoadedWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const watchlists = providedWatchlists ?? loadedWatchlists;
@@ -177,17 +188,17 @@ export function TickerPanel({
   const [sortSetting, setSortSetting] = useState(() =>
     readTickerSortSetting(tickerSortSettingKey),
   );
-  const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
-  const groupKey = [...groupKeys].sort().join(",");
+  const [errorState, setErrorState] = useState<{ key: string; message: string }>();
+  const groupKey = [...groupKeys].sort().join("\0");
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
-  const filterKey = tickerFilters === undefined
-    ? ""
-    : `${tickerFilters.adr.enabled}:${tickerFilters.adr.min}:${tickerFilters.dollarVolume.enabled}:${tickerFilters.dollarVolume.min}:${tickerFilters.above200Sma.enabled}`;
   const metricsActive = groupKeys.size > 0 || filtersActive;
   const resolveRankedSymbols = useCallback(
-    (signal: AbortSignal) => resolveTickers({ mode, groupKeys, signal }),
-    [groupKeys, mode, resolveTickers],
+    (signal: AbortSignal) => resolveTickers({
+      mode,
+      groupKeys: new Set(groupKey === "" ? [] : groupKey.split("\0")),
+      signal,
+    }),
+    [groupKey, mode, resolveTickers],
   );
   const rankingStream = useTickerRankingStream({
     client: tickerStream,
@@ -195,12 +206,34 @@ export function TickerPanel({
     requestKey: `${mode}:${groupKey}`,
     resolveSymbols: resolveRankedSymbols,
   });
-  const panelLoading = metricsActive ? rankingStream.loading : loading;
-  const panelError = error ?? rankingStream.error;
+  const resolvedTickerRequestKey = `${mode}\0${groupKey}`;
+  const panelRequestKey = `${metricsActive ? "ranked" : "resolved"}\0${resolvedTickerRequestKey}`;
+  const reportError = useCallback((message: string) => {
+    setErrorState({ key: panelRequestKey, message });
+  }, [panelRequestKey]);
+  const resolvedTickers = resolvedTickerState.key === resolvedTickerRequestKey
+    ? resolvedTickerState.tickers
+    : undefined;
+  const baseTickers = metricsActive ? rankingStream.tickers : resolvedTickers ?? emptyTickers;
+  const rankingOverrides = rankingOverrideState.key === panelRequestKey
+    ? rankingOverrideState.rankings
+    : undefined;
+  const tickers = useMemo(
+    () => baseTickers.map((ticker) => {
+      const override = ticker.performance === null ? rankingOverrides?.get(ticker.symbol) : undefined;
+      return override === undefined ? ticker : { ...override, watchlist_ids: ticker.watchlist_ids };
+    }),
+    [baseTickers, rankingOverrides],
+  );
+  const panelLoading = metricsActive
+    ? rankingStream.loading
+    : resolvedTickerState.key !== resolvedTickerRequestKey;
+  const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
+    ?? rankingStream.error
+    ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
 
   useEffect(() => {
     setSelectedTicker(undefined);
-    setError(undefined);
   }, [groupKey, metricsActive, mode, setSelectedTicker]);
 
   useEffect(() => {
@@ -209,21 +242,20 @@ export function TickerPanel({
     fetchWatchlists(controller.signal)
       .then(setLoadedWatchlists)
       .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
+        if (requestError instanceof Error && requestError.name !== "AbortError") reportError(requestError.message);
       });
     return () => controller.abort();
-  }, [focusRevision, providedWatchlists]);
+  }, [focusRevision, providedWatchlists, reportError]);
 
   useEffect(() => {
-    if (metricsActive) {
-      setTickers(rankingStream.tickers);
-      return;
-    }
+    if (metricsActive) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError(undefined);
 
-    resolveTickers({ mode, groupKeys, signal: controller.signal })
+    resolveTickers({
+      mode,
+      groupKeys: new Set(groupKey === "" ? [] : groupKey.split("\0")),
+      signal: controller.signal,
+    })
       .then(async (symbols) => {
         if (controller.signal.aborted) return;
         let memberships = new Map<string, number[]>();
@@ -231,62 +263,74 @@ export function TickerPanel({
           memberships = new Map((await fetchTickerWatchlists(symbols, controller.signal)).map((item) => [item.symbol, item.watchlist_ids]));
         } catch (requestError: unknown) {
           if (requestError instanceof Error && requestError.name !== "AbortError") {
-            setError(requestError.message);
+            reportError(requestError.message);
           }
         }
         if (controller.signal.aborted) return;
-        setTickers(symbols.map((symbol) => ({
-          symbol,
-          watchlist_ids: memberships.get(symbol) ?? [],
-          performance: null,
-          absolute_strength: null,
-          adr_percent: null,
-          latest_close: null,
-          average_volume: null,
-          above_200_sma: null,
-        })));
+        setResolvedTickerState({
+          key: resolvedTickerRequestKey,
+          tickers: symbols.map((symbol) => ({
+            symbol,
+            watchlist_ids: memberships.get(symbol) ?? [],
+            performance: null,
+            absolute_strength: null,
+            adr_percent: null,
+            latest_close: null,
+            average_volume: null,
+            above_200_sma: null,
+          })),
+        });
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
+          setResolvedTickerState({ key: resolvedTickerRequestKey, error: requestError.message });
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [groupKey, metricsActive, mode, rankingStream.tickers, resolveTickers, setSelectedTicker]);
+  }, [groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
 
   useEffect(() => {
     localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
 
+  const tickerDataSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
+  const setStreamTickerWatchlists = rankingStream.setTickerWatchlists;
   useEffect(() => {
-    if (focusRevision === 0 || tickers.length === 0) return;
+    if (focusRevision === 0 || tickerDataSymbolsKey === "") return;
     const controller = new AbortController();
-    const symbols = tickers.map((ticker) => ticker.symbol);
-    fetchTickerWatchlists(symbols, controller.signal)
+    fetchTickerWatchlists(tickerDataSymbolsKey.split("\0"), controller.signal)
       .then((memberships) => {
         if (controller.signal.aborted) return;
         const idsBySymbol = new Map(
           memberships.map((membership) => [membership.symbol, membership.watchlist_ids]),
         );
-        setTickers((current) => current.map((ticker) => ({
-          ...ticker,
-          watchlist_ids: idsBySymbol.get(ticker.symbol) ?? [],
-        })));
+        if (metricsActive) {
+          memberships.forEach((membership) => {
+            setStreamTickerWatchlists(membership.symbol, membership.watchlist_ids);
+          });
+        } else {
+          setResolvedTickerState((current) => current.key !== resolvedTickerRequestKey
+            ? current
+            : {
+                ...current,
+                tickers: current.tickers?.map((ticker) => ({
+                  ...ticker,
+                  watchlist_ids: idsBySymbol.get(ticker.symbol) ?? [],
+                })),
+              });
+        }
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
+          reportError(requestError.message);
         }
-      });
+    });
     return () => controller.abort();
-  }, [focusRevision]);
+  }, [focusRevision, metricsActive, reportError, resolvedTickerRequestKey, setStreamTickerWatchlists, tickerDataSymbolsKey]);
 
   const filteredTickers = useMemo(
     () => filterTickers(tickers, tickerFilters),
-    [filterKey, tickerFilters, tickers],
+    [tickerFilters, tickers],
   );
   const sortedTickers = useMemo(
     () => sortTickers(filteredTickers, sortSetting, metricsActive),
@@ -296,11 +340,11 @@ export function TickerPanel({
 
   useEffect(() => {
     if (panelLoading) return;
-    const availableSymbols = new Set(filteredTickers.map((ticker) => ticker.symbol));
+    const availableSymbols = new Set(tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0"));
     setSelectedTicker((current) =>
       current !== undefined && !availableSymbols.has(current) ? undefined : current,
     );
-  }, [filteredTickers, panelLoading, setSelectedTicker, tickerSymbolsKey]);
+  }, [panelLoading, setSelectedTicker, tickerSymbolsKey]);
 
   useEffect(() => {
     const symbols = filteredTickers.map((ticker) => ticker.symbol);
@@ -314,7 +358,7 @@ export function TickerPanel({
     if (revealTicker === undefined) return;
     const index = sortedTickers.findIndex((ticker) => ticker.symbol === revealTicker.value);
     if (index >= 0) tickerListRef.current?.scrollToRow({ align: "center", index });
-  }, [revealTicker]);
+  }, [revealTicker, sortedTickers, tickerListRef]);
 
   useEffect(() => {
     if (selectedTicker === undefined) return;
@@ -328,33 +372,29 @@ export function TickerPanel({
     }
 
     const controller = new AbortController();
-    rankingRequests.current.add(selectedTicker);
+    const requests = rankingRequests.current;
+    requests.add(selectedTicker);
     fetchTickerRanking(selectedTicker, controller.signal)
       .then((ranking) => {
-        setTickers((current) =>
-          current.map((currentTicker) =>
-            currentTicker.symbol === ranking.symbol
-              ? {
-                  ...ranking,
-                  watchlist_ids: currentTicker.watchlist_ids,
-                }
-              : currentTicker,
-          ),
-        );
+        setRankingOverrideState((current) => ({
+          key: panelRequestKey,
+          rankings: new Map(current.key === panelRequestKey ? current.rankings : undefined)
+            .set(ranking.symbol, ranking),
+        }));
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
+          reportError(requestError.message);
         }
       })
       .finally(() => {
-        rankingRequests.current.delete(selectedTicker);
+        requests.delete(selectedTicker);
       });
     return () => {
       controller.abort();
-      rankingRequests.current.delete(selectedTicker);
+      requests.delete(selectedTicker);
     };
-  }, [selectedTicker, tickers]);
+  }, [panelRequestKey, reportError, selectedTicker, tickers]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -390,16 +430,23 @@ export function TickerPanel({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedTicker, setSelectedTicker, sortedTickers]);
+  }, [selectedTicker, setSelectedTicker, sortedTickers, tickerListRef]);
 
   const setTickerWatchlists = useCallback((symbol: string, watchlistIds: number[]) => {
-    setTickers((current) =>
-      current.map((ticker) =>
-        ticker.symbol === symbol ? { ...ticker, watchlist_ids: watchlistIds } : ticker,
-      ),
-    );
+    if (metricsActive) {
+      setStreamTickerWatchlists(symbol, watchlistIds);
+    } else {
+      setResolvedTickerState((current) => current.key !== resolvedTickerRequestKey
+        ? current
+        : {
+            ...current,
+            tickers: current.tickers?.map((ticker) =>
+              ticker.symbol === symbol ? { ...ticker, watchlist_ids: watchlistIds } : ticker,
+            ),
+          });
+    }
     onWatchlistsChange?.(symbol, watchlistIds);
-  }, [onWatchlistsChange]);
+  }, [metricsActive, onWatchlistsChange, resolvedTickerRequestKey, setStreamTickerWatchlists]);
 
   const handleFavouriteClick = useCallback((ticker: TickerRanking) => {
     const favourite = watchlists.find((watchlist) => watchlist.is_default);
@@ -409,9 +456,9 @@ export function TickerPanel({
     request
       .then(() => setTickerWatchlists(ticker.symbol, removing ? ticker.watchlist_ids.filter((id) => id !== favourite.id) : [favourite.id, ...ticker.watchlist_ids]))
       .catch((requestError: unknown) => {
-        if (requestError instanceof Error) setError(requestError.message);
+        if (requestError instanceof Error) reportError(requestError.message);
       });
-  }, [setTickerWatchlists, watchlists]);
+  }, [reportError, setTickerWatchlists, watchlists]);
 
   const toggleMembership = useCallback((symbol: string, watchlist: Watchlist) => {
     const ticker = tickers.find((item) => item.symbol === symbol);
@@ -420,14 +467,14 @@ export function TickerPanel({
     const request = removing ? removeTickerFromWatchlist(watchlist.id, symbol) : addTickerToWatchlist(watchlist.id, symbol);
     request
       .then(() => setTickerWatchlists(symbol, removing ? ticker.watchlist_ids.filter((id) => id !== watchlist.id) : [watchlist.id, ...ticker.watchlist_ids]))
-      .catch((requestError: unknown) => { if (requestError instanceof Error) setError(requestError.message); });
-  }, [setTickerWatchlists, tickers]);
+      .catch((requestError: unknown) => { if (requestError instanceof Error) reportError(requestError.message); });
+  }, [reportError, setTickerWatchlists, tickers]);
 
   const clearMemberships = useCallback((symbol: string) => {
     clearTickerWatchlists(symbol)
       .then(() => { setTickerWatchlists(symbol, []); setContextMenu(undefined); })
-      .catch((requestError: unknown) => { if (requestError instanceof Error) setError(requestError.message); });
-  }, [setTickerWatchlists]);
+      .catch((requestError: unknown) => { if (requestError instanceof Error) reportError(requestError.message); });
+  }, [reportError, setTickerWatchlists]);
 
   const handleContextMenu = useCallback((event: MouseEvent, symbol: string) => {
     event.preventDefault();
@@ -557,7 +604,7 @@ export function TickerPanel({
         </MenuItem>
       </Menu>
       <Toast message={panelError} onClose={() => {
-        setError(undefined);
+        setErrorState(undefined);
         rankingStream.clearError();
       }} />
     </section>
