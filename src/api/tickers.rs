@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::TickerRanking;
+use crate::models::{TickerRanking, TickerRelativeStrengthRatings};
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -66,6 +66,16 @@ struct TickerRankingRequest {
 }
 
 #[derive(Deserialize)]
+struct TickerRelativeStrengthRequest {
+    symbols: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct TickerRelativeStrengthResponse {
+    ratings: Vec<TickerRelativeStrengthRatings>,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum GroupSummaryMode {
     Industry,
@@ -115,6 +125,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/tickers", get(tickers_socket))
         .route("/ticker-ranking", post(ticker_ranking))
+        .route(
+            "/ticker-relative-strength-ratings",
+            post(ticker_relative_strength_ratings),
+        )
         .route("/ticker-membership", post(membership))
         .route("/ticker-group-summary", post(group_summary))
 }
@@ -316,6 +330,27 @@ async fn ticker_ranking(
             error!(symbol = request.symbol, %error, "failed to load ticker ranking");
             StatusCode::INTERNAL_SERVER_ERROR
         })
+}
+
+async fn ticker_relative_strength_ratings(
+    State(state): State<AppState>,
+    Json(request): Json<TickerRelativeStrengthRequest>,
+) -> Result<Json<TickerRelativeStrengthResponse>, StatusCode> {
+    let requested_count = request.symbols.len();
+    let ratings = state
+        .ticker_catalog
+        .relative_strength_ratings(&request.symbols)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to load ticker relative-strength ratings");
+            StatusCode::BAD_REQUEST
+        })?;
+    info!(
+        requested_count,
+        rating_count = ratings.len(),
+        "loaded ticker relative-strength ratings"
+    );
+    Ok(Json(TickerRelativeStrengthResponse { ratings }))
 }
 
 async fn group_summary(

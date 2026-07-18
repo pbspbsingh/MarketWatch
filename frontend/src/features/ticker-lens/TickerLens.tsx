@@ -316,6 +316,8 @@ export function TickerLens({
       />
       <TickerPanel
         tickerStream={tickerStream}
+        bounded={bounded}
+        boundedSymbols={bounded ? activeGroupsState?.resolvedBoundedSymbols : undefined}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}

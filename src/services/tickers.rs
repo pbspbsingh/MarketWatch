@@ -1,14 +1,17 @@
 use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
 use crate::models::{
-    DailyCandle, TickerRanking, average_daily_range_percent, average_volume, candle_performance,
-    close_above_sma,
+    DailyCandle, TickerRanking, TickerRelativeStrengthAnchors, TickerRelativeStrengthRatings,
+    TickerRelativeStrengthScores, average_daily_range_percent, average_volume,
+    calculate_ticker_relative_strength_scores, candle_performance, close_above_sma,
+    rank_ticker_relative_strength_scores,
 };
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{TimeDelta, Utc};
+use futures_util::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +20,7 @@ use tracing::{info, warn};
 
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const TWO_HUNDRED_SESSION_SMA: usize = 200;
+const MAX_CONCURRENT_RS_LOADS: usize = 8;
 
 pub struct TickerCatalogService {
     store: Store,
@@ -113,6 +117,60 @@ impl TickerCatalogService {
             average_volume: Some(average_volume),
             above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
         })
+    }
+
+    pub async fn relative_strength_ratings(
+        &self,
+        symbols: &[String],
+    ) -> anyhow::Result<Vec<TickerRelativeStrengthRatings>> {
+        let symbols = normalize_symbols(symbols)?;
+        let as_of = self.market_schedule.recent_trading_day(Utc::now());
+        let anchors = TickerRelativeStrengthAnchors {
+            as_of,
+            one_month_start: self.market_schedule.previous_trading_days(as_of, 21),
+            three_month: [
+                as_of,
+                self.market_schedule.previous_trading_days(as_of, 16),
+                self.market_schedule.previous_trading_days(as_of, 32),
+                self.market_schedule.previous_trading_days(as_of, 48),
+                self.market_schedule.previous_trading_days(as_of, 63),
+            ],
+            six_month: [
+                as_of,
+                self.market_schedule.previous_trading_days(as_of, 32),
+                self.market_schedule.previous_trading_days(as_of, 64),
+                self.market_schedule.previous_trading_days(as_of, 95),
+                self.market_schedule.previous_trading_days(as_of, 126),
+            ],
+            one_year: [
+                as_of,
+                self.market_schedule.previous_trading_days(as_of, 63),
+                self.market_schedule.previous_trading_days(as_of, 126),
+                self.market_schedule.previous_trading_days(as_of, 189),
+                self.market_schedule.previous_trading_days(as_of, 252),
+            ],
+        };
+        let mut scores = stream::iter(symbols.into_iter().enumerate())
+            .map(|(index, symbol)| async move {
+                let score = match self.yahoo.daily_candles_for_year(&symbol).await {
+                    Ok(candles) => calculate_ticker_relative_strength_scores(&candles, anchors),
+                    Err(error) => {
+                        warn!(symbol, %error, "failed to load Yahoo ticker RS history");
+                        TickerRelativeStrengthScores::default()
+                    }
+                };
+                (index, symbol, score)
+            })
+            .buffer_unordered(MAX_CONCURRENT_RS_LOADS)
+            .collect::<Vec<_>>()
+            .await;
+        scores.sort_unstable_by_key(|(index, _, _)| *index);
+        Ok(rank_ticker_relative_strength_scores(
+            &scores
+                .into_iter()
+                .map(|(_, symbol, score)| (symbol, score))
+                .collect::<Vec<_>>(),
+        ))
     }
 
     pub async fn industry_tickers(&self, industry_keys: &[String]) -> anyhow::Result<Vec<String>> {

@@ -7,6 +7,7 @@ mod market_data;
 mod performance;
 mod themes;
 mod ticker_collection;
+mod ticker_relative_strength;
 mod top_stock_screens;
 mod watchlists;
 
@@ -29,6 +30,11 @@ pub use themes::{
 pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
+};
+pub use ticker_relative_strength::TickerRelativeStrengthRatings;
+pub(crate) use ticker_relative_strength::{
+    TickerRelativeStrengthAnchors, TickerRelativeStrengthScores,
+    calculate_ticker_relative_strength_scores, rank_ticker_relative_strength_scores,
 };
 pub use top_stock_screens::TopStockScreen;
 pub use watchlists::{TickerWatchlists, Watchlist};

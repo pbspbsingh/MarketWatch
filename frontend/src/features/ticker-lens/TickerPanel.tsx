@@ -28,7 +28,9 @@ import {
 } from "@mui/material";
 import {
   fetchTickerRanking,
+  fetchTickerRelativeStrengthRatings,
   type TickerRanking,
+  type TickerRelativeStrengthRating,
 } from "../../api/tickers";
 import type { TickerStreamClient } from "../../api/tickerStream";
 import {
@@ -46,6 +48,7 @@ import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import {
   tickerSortOptions,
+  tickerRelativeStrengthSortOptions,
   tickerSortSettingKey,
 } from "./constants";
 import type {
@@ -60,6 +63,7 @@ import type {
 import {
   formatMetric,
   isArrowKeyControl,
+  isTickerRelativeStrengthSortKey,
   metricColor,
   readTickerSortSetting,
   sortTickers,
@@ -71,6 +75,8 @@ const emptyTickers: TickerRanking[] = [];
 
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
+  bounded: boolean;
+  boundedSymbols?: string[];
   mode: GroupMode;
   groupKeys: Set<string>;
   selectedTicker: string | undefined;
@@ -87,6 +93,7 @@ interface TickerPanelProps {
 interface TickerRowProps {
   tickers: TickerRanking[];
   sortKey: TickerSortKey;
+  relativeStrengthRatings?: Map<string, TickerRelativeStrengthRating>;
   selectedTicker: string | undefined;
   onSelect: (symbol: string) => void;
   watchlists: Watchlist[];
@@ -106,6 +113,7 @@ function TickerRow({
   ariaAttributes,
   tickers,
   sortKey,
+  relativeStrengthRatings,
   selectedTicker,
   onSelect,
   watchlists,
@@ -113,7 +121,7 @@ function TickerRow({
   onContextMenu,
 }: RowComponentProps<TickerRowProps>) {
   const ticker = tickers[index];
-  const metric = tickerSortValue(ticker, sortKey);
+  const metric = tickerSortValue(ticker, sortKey, relativeStrengthRatings);
   const memberships = ticker.watchlist_ids
     .map((id) => watchlists.find((watchlist) => watchlist.id === id))
     .filter((watchlist): watchlist is Watchlist => watchlist !== undefined);
@@ -162,6 +170,8 @@ function TickerRow({
 
 export function TickerPanel({
   tickerStream,
+  bounded,
+  boundedSymbols,
   mode,
   groupKeys,
   selectedTicker,
@@ -189,9 +199,31 @@ export function TickerPanel({
     readTickerSortSetting(tickerSortSettingKey),
   );
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
+  const [relativeStrengthState, setRelativeStrengthState] = useState<{
+    key: string;
+    ratings?: Map<string, TickerRelativeStrengthRating>;
+    loading: boolean;
+    error?: string;
+  }>({ key: "", loading: false });
   const groupKey = [...groupKeys].sort().join("\0");
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
   const metricsActive = groupKeys.size > 0 || filtersActive;
+  const relativeStrengthSortActive = bounded && isTickerRelativeStrengthSortKey(sortSetting.key);
+  const sortActive = metricsActive || relativeStrengthSortActive;
+  const normalizedBoundedSymbols = useMemo(
+    () => boundedSymbols === undefined ? undefined : [...new Set(boundedSymbols)].sort(),
+    [boundedSymbols],
+  );
+  const relativeStrengthRequestKey = normalizedBoundedSymbols?.join("\0");
+  const activeRelativeStrengthState = relativeStrengthSortActive
+    && relativeStrengthRequestKey !== undefined
+    && relativeStrengthState.key === relativeStrengthRequestKey
+    ? relativeStrengthState
+    : undefined;
+  const relativeStrengthRatings = activeRelativeStrengthState?.ratings;
+  const relativeStrengthLoading = relativeStrengthSortActive
+    && relativeStrengthRequestKey !== undefined
+    && (activeRelativeStrengthState === undefined || activeRelativeStrengthState.loading);
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
       mode,
@@ -229,6 +261,7 @@ export function TickerPanel({
     ? rankingStream.loading
     : resolvedTickerState.key !== resolvedTickerRequestKey;
   const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
+    ?? activeRelativeStrengthState?.error
     ?? rankingStream.error
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
 
@@ -290,8 +323,53 @@ export function TickerPanel({
   }, [groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
 
   useEffect(() => {
-    localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
+    if (!isTickerRelativeStrengthSortKey(sortSetting.key)) {
+      localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
+    }
   }, [sortSetting]);
+
+  useEffect(() => {
+    if (
+      !relativeStrengthSortActive
+      || normalizedBoundedSymbols === undefined
+      || relativeStrengthRequestKey === undefined
+    ) return;
+
+    if (normalizedBoundedSymbols.length === 0) {
+      const ratings = new Map<string, TickerRelativeStrengthRating>();
+      queueMicrotask(() => {
+        setRelativeStrengthState({ key: relativeStrengthRequestKey, ratings, loading: false });
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        setRelativeStrengthState({ key: relativeStrengthRequestKey, loading: true });
+      }
+    });
+    fetchTickerRelativeStrengthRatings(normalizedBoundedSymbols, controller.signal)
+      .then((ratings) => {
+        if (controller.signal.aborted) return;
+        const bySymbol = new Map(ratings.map((rating) => [rating.symbol, rating]));
+        setRelativeStrengthState({
+          key: relativeStrengthRequestKey,
+          ratings: bySymbol,
+          loading: false,
+        });
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setRelativeStrengthState({
+            key: relativeStrengthRequestKey,
+            loading: false,
+            error: requestError.message,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [normalizedBoundedSymbols, relativeStrengthRequestKey, relativeStrengthSortActive]);
 
   const tickerDataSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
   const setStreamTickerWatchlists = rankingStream.setTickerWatchlists;
@@ -333,8 +411,8 @@ export function TickerPanel({
     [tickerFilters, tickers],
   );
   const sortedTickers = useMemo(
-    () => sortTickers(filteredTickers, sortSetting, metricsActive),
-    [filteredTickers, metricsActive, sortSetting],
+    () => sortTickers(filteredTickers, sortSetting, sortActive, relativeStrengthRatings),
+    [filteredTickers, relativeStrengthRatings, sortActive, sortSetting],
   );
   const tickerSymbolsKey = filteredTickers.map((ticker) => ticker.symbol).join("\0");
 
@@ -489,6 +567,7 @@ export function TickerPanel({
   const tickerRowProps = useMemo<TickerRowProps>(() => ({
     tickers: sortedTickers,
     sortKey: sortSetting.key,
+    relativeStrengthRatings,
     selectedTicker,
     onSelect: toggleSelectedTicker,
     watchlists,
@@ -497,6 +576,7 @@ export function TickerPanel({
   }), [
     handleContextMenu,
     handleFavouriteClick,
+    relativeStrengthRatings,
     selectedTicker,
     sortSetting.key,
     sortedTickers,
@@ -514,27 +594,33 @@ export function TickerPanel({
               {selectedTickerPosition}/{sortedTickers.length}
             </Typography>
           </Tooltip>
-          {panelLoading && <CircularProgress size="0.75rem" />}
+          {(panelLoading || relativeStrengthLoading) && <CircularProgress size="0.75rem" />}
         </div>
         <div className="metric-sort-controls">
           <Select
             size="small"
             value={sortSetting.key}
-            disabled={!metricsActive}
+            disabled={!bounded && !metricsActive}
             aria-label="Sort tickers by"
             onChange={(event) =>
               setSortSetting({ key: event.target.value as TickerSortKey, direction: "desc" })
             }
           >
-            {tickerSortOptions.map((option) => (
-              <MenuItem key={option.key} value={option.key}>
+            {(bounded
+              ? [...tickerSortOptions, ...tickerRelativeStrengthSortOptions]
+              : tickerSortOptions).map((option) => (
+              <MenuItem
+                key={option.key}
+                value={option.key}
+                disabled={!isTickerRelativeStrengthSortKey(option.key) && !metricsActive}
+              >
                 {option.label}
               </MenuItem>
             ))}
           </Select>
           <IconButton
             size="small"
-            disabled={!metricsActive}
+            disabled={!sortActive}
             aria-label={`Sort ${sortSetting.direction === "desc" ? "ascending" : "descending"}`}
             onClick={() =>
               setSortSetting((current: TickerSortSetting) => ({
@@ -606,6 +692,7 @@ export function TickerPanel({
       <Toast message={panelError} onClose={() => {
         setErrorState(undefined);
         rankingStream.clearError();
+        setRelativeStrengthState((current) => ({ ...current, error: undefined }));
         setResolvedTickerState((current) =>
           current.key === resolvedTickerRequestKey
             ? { ...current, error: undefined }

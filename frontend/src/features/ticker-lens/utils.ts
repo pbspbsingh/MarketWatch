@@ -1,6 +1,19 @@
-import type { TickerRanking } from "../../api/tickers";
+import type { TickerRanking, TickerRelativeStrengthRating } from "../../api/tickers";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { ChartEngine, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+import type { ChartEngine, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerRelativeStrengthSortKey, TickerSortKey, TickerSortSetting } from "./types";
+
+const tickerRelativeStrengthSortKeys = new Set<string>([
+  "rs_1m",
+  "rs_3m",
+  "rs_6m",
+  "rs_1y",
+]);
+
+export function isTickerRelativeStrengthSortKey(
+  key: SortKey | TickerSortKey,
+): key is TickerRelativeStrengthSortKey {
+  return tickerRelativeStrengthSortKeys.has(key);
+}
 
 export function readChartEngine(storageKey: string): ChartEngine {
   return localStorage.getItem(storageKey) === "lightweight" ? "lightweight" : "tradingview";
@@ -44,7 +57,14 @@ export function sortValue(group: GroupRanking, key: SortKey) {
   return group.performance?.[key] ?? undefined;
 }
 
-export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
+export function tickerSortValue(
+  ticker: TickerRanking,
+  key: TickerSortKey,
+  relativeStrengthRatings?: Map<string, TickerRelativeStrengthRating>,
+) {
+  if (isTickerRelativeStrengthSortKey(key)) {
+    return relativeStrengthRatings?.get(ticker.symbol)?.[key] ?? undefined;
+  }
   if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
@@ -88,11 +108,16 @@ export function highlightedGroups({
   return new Set(groups.filter((group) => themeNames.has(group.name)).map((group) => group.key));
 }
 
-export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSetting, metricsActive: boolean) {
+export function sortTickers(
+  tickers: TickerRanking[],
+  sortSetting: TickerSortSetting,
+  sortActive: boolean,
+  relativeStrengthRatings?: Map<string, TickerRelativeStrengthRating>,
+) {
   return [...tickers].sort((left, right) => {
-    if (!metricsActive) return left.symbol.localeCompare(right.symbol);
-    const leftValue = tickerSortValue(left, sortSetting.key);
-    const rightValue = tickerSortValue(right, sortSetting.key);
+    if (!sortActive) return left.symbol.localeCompare(right.symbol);
+    const leftValue = tickerSortValue(left, sortSetting.key, relativeStrengthRatings);
+    const rightValue = tickerSortValue(right, sortSetting.key, relativeStrengthRatings);
     if (leftValue === undefined && rightValue === undefined) {
       return left.symbol.localeCompare(right.symbol);
     }
@@ -108,6 +133,7 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
 }
 
 export function formatMetric(value: number, key: SortKey | TickerSortKey) {
+  if (isTickerRelativeStrengthSortKey(key)) return Math.round(value).toString();
   if (key === "count") return value.toLocaleString();
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
@@ -115,10 +141,18 @@ export function formatMetric(value: number, key: SortKey | TickerSortKey) {
 }
 
 export function metricColor(value: number, key: SortKey | TickerSortKey) {
+  if (isTickerRelativeStrengthSortKey(key)) return relativeStrengthRatingColor(value);
   if (key === "count") return "#c8d0da";
   if (key === "adr_percent") return adrColor(value);
   if (key === "dollar_volume") return "#c8d0da";
   return performanceColor(value, key);
+}
+
+function relativeStrengthRatingColor(rating: number) {
+  const value = Math.max(1, Math.min(99, rating));
+  return value <= 50
+    ? interpolateColor([180, 30, 30], [230, 200, 79], (value - 1) / 49)
+    : interpolateColor([230, 200, 79], [0, 184, 63], (value - 50) / 49);
 }
 
 function dollarVolume(ticker: TickerRanking) {

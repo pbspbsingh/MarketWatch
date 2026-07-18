@@ -19,6 +19,12 @@ export const tickerSortOptions: ReadonlyArray<{ key: TickerSortKey; label: strin
   { key: "half_year", label: "6M" },
   { key: "year", label: "1Y" },
 ];
+export const tickerRelativeStrengthSortOptions: ReadonlyArray<{ key: TickerSortKey; label: string }> = [
+  { key: "rs_1m", label: "RS-1M" },
+  { key: "rs_3m", label: "RS-3M" },
+  { key: "rs_6m", label: "RS-6M" },
+  { key: "rs_1y", label: "RS-1Y" },
+];
 
 export const sortSettingKey = "market-watch.industry-sort";
 export const groupModeKey = "market-watch.group-mode";
