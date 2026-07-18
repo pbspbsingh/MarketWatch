@@ -56,6 +56,8 @@ export function AutomaticTab({
   const visibleJobs = showAppliedJobs ? jobs : jobs.filter((job) => job.status !== "applied");
   const selectedSummary = jobs.find((job) => job.id === selectedId);
   const selected = selectedJob?.id === selectedSummary?.id ? selectedJob : undefined;
+  const selectedJobId = selectedSummary?.id;
+  const selectedJobUpdatedAt = selectedSummary?.updated_at;
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return tickers.filter(
@@ -68,20 +70,6 @@ export function AutomaticTab({
           ticker.name?.toLowerCase().includes(query)),
     );
   }, [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly]);
-
-  useEffect(() => {
-    const visible = new Set(filtered.map((ticker) => ticker.symbol));
-    setSelectedSymbols((current) => {
-      const next = new Set([...current].filter((symbol) => visible.has(symbol)));
-      return next.size === current.size ? current : next;
-    });
-  }, [filtered]);
-
-  useEffect(() => {
-    if (!showAppliedJobs && selectedSummary?.status === "applied") {
-      setSelectedId(undefined);
-    }
-  }, [selectedSummary?.status, showAppliedJobs]);
 
   const reloadJobs = async () => {
     const next = await fetchThemeAiJobs();
@@ -107,12 +95,9 @@ export function AutomaticTab({
   }, [onError]);
 
   useEffect(() => {
-    if (selectedSummary === undefined) {
-      setSelectedJob(undefined);
-      return;
-    }
+    if (selectedJobId === undefined) return;
     let active = true;
-    fetchThemeAiJob(selectedSummary.id)
+    fetchThemeAiJob(selectedJobId)
       .then((job) => {
         if (active) setSelectedJob(job);
       })
@@ -122,7 +107,7 @@ export function AutomaticTab({
     return () => {
       active = false;
     };
-  }, [onError, selectedSummary?.id, selectedSummary?.updated_at]);
+  }, [onError, selectedJobId, selectedJobUpdatedAt]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -142,19 +127,31 @@ export function AutomaticTab({
           <IndustryFilter
             industries={industries}
             selectedIndustryKeys={selectedIndustryKeys}
-            setSelectedIndustryKeys={setSelectedIndustryKeys}
+            setSelectedIndustryKeys={(update) => {
+              setSelectedSymbols(new Set());
+              setSelectedIndustryKeys(update);
+            }}
           />
           <TextField
             size="small"
             placeholder="Search tickers"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSelectedSymbols(new Set());
+              setSearch(event.target.value);
+            }}
           />
           <TickerFilters
             unprocessedOnly={unprocessedOnly}
-            setUnprocessedOnly={setUnprocessedOnly}
+            setUnprocessedOnly={(update) => {
+              setSelectedSymbols(new Set());
+              setUnprocessedOnly(update);
+            }}
             unassignedOnly={unassignedOnly}
-            setUnassignedOnly={setUnassignedOnly}
+            setUnassignedOnly={(update) => {
+              setSelectedSymbols(new Set());
+              setUnassignedOnly(update);
+            }}
           />
         </div>
         <TickerSelectionHeader
@@ -217,7 +214,15 @@ export function AutomaticTab({
             <div className="theme-pane-header">
               <Typography component="h2">Jobs ({visibleJobs.length})</Typography>
               {appliedJobCount > 0 && (
-                <Button size="small" onClick={() => setShowAppliedJobs((current) => !current)}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    if (showAppliedJobs && selectedSummary?.status === "applied") {
+                      setSelectedId(undefined);
+                    }
+                    setShowAppliedJobs((current) => !current);
+                  }}
+                >
                   {showAppliedJobs ? "Hide Applied" : `Show Applied (${appliedJobCount})`}
                 </Button>
               )}

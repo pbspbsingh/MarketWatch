@@ -47,18 +47,24 @@ export function AssignmentsTab({
   const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbol, setSelectedSymbol] = useState<string>();
   const [batchSymbols, setBatchSymbols] = useState<Set<string>>(new Set());
-  const [draftThemeIds, setDraftThemeIds] = useState<number[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [response, setResponse] = useState("");
-  const [suggestions, setSuggestions] = useState<ThemeSuggestion[]>([]);
+  const [themeDraft, setThemeDraft] = useState<TickerThemeDraft>({ themeIds: [] });
+  const [promptSession, setPromptSession] = useState<PromptSession>({
+    key: "",
+    status: "loading",
+    prompt: "",
+    response: "",
+    suggestions: [],
+  });
   const [busy, setBusy] = useState(false);
-  const [promptLoading, setPromptLoading] = useState(false);
   const selectedTicker = tickers.find((ticker) => ticker.symbol === selectedSymbol);
   const batchTicker =
     batchSymbols.size === 1
       ? tickers.find((ticker) => batchSymbols.has(ticker.symbol))
       : undefined;
   const editedTicker = batchSymbols.size === 0 ? selectedTicker : batchTicker;
+  const draftThemeIds = themeDraft.symbol === editedTicker?.symbol
+    ? themeDraft.themeIds
+    : editedTicker?.assignments.map((assignment) => assignment.theme_id) ?? [];
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return tickers.filter(
@@ -81,46 +87,45 @@ export function AssignmentsTab({
       }),
     [batchSymbols, themes, tickers],
   );
-
-  useEffect(() => {
-    const visible = new Set(filtered.map((ticker) => ticker.symbol));
-    setBatchSymbols((current) => {
-      const next = new Set([...current].filter((symbol) => visible.has(symbol)));
-      return next.size === current.size ? current : next;
-    });
-  }, [filtered]);
-
-  useEffect(() => {
-    setDraftThemeIds(editedTicker?.assignments.map((assignment) => assignment.theme_id) ?? []);
-  }, [editedTicker]);
-
-  useEffect(() => {
-    setPrompt("");
-    setResponse("");
-    setSuggestions([]);
-  }, [batchSymbols]);
+  const activePromptSession = promptSession.key === promptFingerprint
+    ? promptSession
+    : {
+      key: promptFingerprint,
+      status: "loading" as const,
+      prompt: "",
+      response: "",
+      suggestions: [],
+    };
+  const { prompt, response, suggestions } = activePromptSession;
+  const promptLoading = batchSymbols.size > 1 && activePromptSession.status === "loading";
 
   useEffect(() => {
     if (batchSymbols.size < 2) return;
 
     let active = true;
-    setPromptLoading(true);
     generateThemePrompt([...batchSymbols])
       .then((result) => {
         if (active) {
-          setPrompt((current) => {
-            if (current === result.prompt) return current;
-            setResponse("");
-            setSuggestions([]);
-            return result.prompt;
+          setPromptSession({
+            key: promptFingerprint,
+            status: "ready",
+            prompt: result.prompt,
+            response: "",
+            suggestions: [],
           });
         }
       })
       .catch((promptError: unknown) => {
-        if (active) onError(errorMessage(promptError));
-      })
-      .finally(() => {
-        if (active) setPromptLoading(false);
+        if (active) {
+          setPromptSession({
+            key: promptFingerprint,
+            status: "error",
+            prompt: "",
+            response: "",
+            suggestions: [],
+          });
+          onError(errorMessage(promptError));
+        }
       });
     return () => {
       active = false;
@@ -132,11 +137,12 @@ export function AssignmentsTab({
       onError("A ticker may have at most two themes");
       return;
     }
-    setDraftThemeIds((current) =>
-      current.includes(id)
-        ? current.filter((themeId) => themeId !== id)
-        : [...current, id],
-    );
+    setThemeDraft({
+      symbol: editedTicker?.symbol,
+      themeIds: draftThemeIds.includes(id)
+        ? draftThemeIds.filter((themeId) => themeId !== id)
+        : [...draftThemeIds, id],
+    });
   };
 
   const run = async (action: () => Promise<void>) => {
@@ -174,19 +180,31 @@ export function AssignmentsTab({
           <IndustryFilter
             industries={industries}
             selectedIndustryKeys={selectedIndustryKeys}
-            setSelectedIndustryKeys={setSelectedIndustryKeys}
+            setSelectedIndustryKeys={(update) => {
+              setBatchSymbols(new Set());
+              setSelectedIndustryKeys(update);
+            }}
           />
           <TextField
             size="small"
             placeholder="Search tickers"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setBatchSymbols(new Set());
+              setSearch(event.target.value);
+            }}
           />
           <TickerFilters
             unprocessedOnly={unprocessedOnly}
-            setUnprocessedOnly={setUnprocessedOnly}
+            setUnprocessedOnly={(update) => {
+              setBatchSymbols(new Set());
+              setUnprocessedOnly(update);
+            }}
             unassignedOnly={unassignedOnly}
-            setUnassignedOnly={setUnassignedOnly}
+            setUnassignedOnly={(update) => {
+              setBatchSymbols(new Set());
+              setUnassignedOnly(update);
+            }}
           />
         </div>
         <TickerSelectionHeader
@@ -330,13 +348,19 @@ export function AssignmentsTab({
                   multiline
                   label="Paste AI JSON response"
                   value={response}
-                  onChange={(event) => setResponse(event.target.value)}
+                  onChange={(event) => setPromptSession({
+                    ...activePromptSession,
+                    response: event.target.value,
+                  })}
                 />
                 <Button
                   disabled={busy || !response.trim()}
                   onClick={() =>
                     run(async () => {
-                      setSuggestions(await parseThemeSuggestions(response));
+                      setPromptSession({
+                        ...activePromptSession,
+                        suggestions: await parseThemeSuggestions(response),
+                      });
                     })
                   }
                 >
@@ -360,7 +384,7 @@ export function AssignmentsTab({
                       onClick={() =>
                         run(async () => {
                           await applyThemeSuggestions(suggestions, "manual_ai");
-                          setSuggestions([]);
+                          setPromptSession({ ...activePromptSession, suggestions: [] });
                           onMessage("Bulk assignments applied");
                           onChanged();
                         })
@@ -385,4 +409,17 @@ export function AssignmentsTab({
       </main>
     </div>
   );
+}
+
+interface TickerThemeDraft {
+  symbol?: string;
+  themeIds: number[];
+}
+
+interface PromptSession {
+  key: string;
+  status: "loading" | "ready" | "error";
+  prompt: string;
+  response: string;
+  suggestions: ThemeSuggestion[];
 }

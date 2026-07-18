@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircularProgress, Tab, Tabs, Typography } from "@mui/material";
 import {
   fetchAiCapability,
@@ -36,43 +36,43 @@ export function ThemeManagementPage() {
   );
   const [selectedIndustryKeys, setSelectedIndustryKeys] = useState<Set<string>>();
 
-  useEffect(() => {
-    if (industries.length === 0) return;
-    setSelectedIndustryKeys((current) => current ?? new Set(industries.map((industry) => industry.key)));
-  }, [industries]);
-
   const selectedIndustries =
     selectedIndustryKeys ?? new Set(industries.map((industry) => industry.key));
 
-  const reload = async () => {
-    const [nextThemes, nextTickers, nextIndustries, nextCapability] = await Promise.all([
-      fetchThemes(),
-      fetchThemeTickers(),
-      fetchThemeIndustries(),
-      fetchAiCapability(),
-    ]);
+  const applyData = useCallback(([
+    nextThemes,
+    nextTickers,
+    nextIndustries,
+    nextCapability,
+  ]: ThemeManagementData) => {
     setThemes((current) => (sameData(current, nextThemes) ? current : nextThemes));
     setTickers((current) => (sameData(current, nextTickers) ? current : nextTickers));
     setThemeIndustries((current) => (sameData(current, nextIndustries) ? current : nextIndustries));
     setCapability((current) => (sameData(current, nextCapability) ? current : nextCapability));
-  };
+  }, []);
+
+  const reload = useCallback(async () => {
+    applyData(await fetchThemeManagementData());
+  }, [applyData]);
 
   useEffect(() => {
     let active = true;
-    const refresh = () =>
-      reload().catch((loadError: unknown) => {
+    const refresh = () => fetchThemeManagementData()
+      .then((data) => {
+        if (active) applyData(data);
+      })
+      .catch((loadError: unknown) => {
         if (active) setError(errorMessage(loadError));
       });
 
-    reload()
-      .catch((loadError: unknown) => setError(errorMessage(loadError)))
+    refresh()
       .finally(() => setLoading(false));
     const interval = window.setInterval(refresh, 10_000);
     return () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [applyData]);
 
   if (loading) {
     return (
@@ -127,4 +127,15 @@ export function ThemeManagementPage() {
       <Toast message={message} severity="success" onClose={() => setMessage(undefined)} />
     </section>
   );
+}
+
+type ThemeManagementData = [Theme[], ThemeTicker[], ThemeTickerIndustry[], AiCapability];
+
+function fetchThemeManagementData(): Promise<ThemeManagementData> {
+  return Promise.all([
+    fetchThemes(),
+    fetchThemeTickers(),
+    fetchThemeIndustries(),
+    fetchAiCapability(),
+  ]);
 }

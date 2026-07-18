@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import { Button, Chip, IconButton, TextField, Typography } from "@mui/material";
@@ -18,19 +18,16 @@ export function ThemesTab({
 }) {
   const [selectedId, setSelectedId] = useState<number>();
   const selected = themes.find((theme) => theme.id === selectedId);
-  const [draft, setDraft] = useState({ name: "", etf_symbol: "", description: "" });
-
-  useEffect(() => {
-    setDraft({
-      name: selected?.name ?? "",
-      etf_symbol: selected?.etf_symbol ?? "",
-      description: selected?.description ?? "",
-    });
-  }, [selected]);
+  const [draft, setDraft] = useState<ThemeDraft>(() => emptyDraft());
+  const currentDraft = draft.themeId === selectedId ? draft : draftFor(selected);
 
   const save = async () => {
     try {
-      const input = { ...draft, description: draft.description || null };
+      const input = {
+        name: currentDraft.name,
+        etf_symbol: currentDraft.etf_symbol,
+        description: currentDraft.description || null,
+      };
       if (selected === undefined) {
         const created = await createTheme(input);
         setSelectedId(created.id);
@@ -67,7 +64,7 @@ export function ThemesTab({
             aria-label="Add theme"
             onClick={() => {
               setSelectedId(undefined);
-              setDraft({ name: "", etf_symbol: "", description: "" });
+              setDraft(emptyDraft());
             }}
           >
             <AddIcon fontSize="small" />
@@ -102,29 +99,51 @@ export function ThemesTab({
         </div>
         <TextField
           label="Name"
-          value={draft.name}
-          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+          value={currentDraft.name}
+          onChange={(event) => setDraft({ ...currentDraft, name: event.target.value })}
         />
         <TextField
           label="ETF"
-          value={draft.etf_symbol}
+          value={currentDraft.etf_symbol}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, etf_symbol: event.target.value.toUpperCase() }))
+            setDraft({ ...currentDraft, etf_symbol: event.target.value.toUpperCase() })
           }
         />
         <TextField
           multiline
           minRows={4}
           label="Description"
-          value={draft.description}
+          value={currentDraft.description}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, description: event.target.value }))
+            setDraft({ ...currentDraft, description: event.target.value })
           }
         />
-        <Button variant="contained" disabled={!draft.name.trim() || !draft.etf_symbol.trim()} onClick={save}>
+        <Button variant="contained" disabled={!currentDraft.name.trim() || !currentDraft.etf_symbol.trim()} onClick={save}>
           {selected === undefined ? "Create Theme" : "Save Changes"}
         </Button>
       </main>
     </div>
   );
+}
+
+interface ThemeDraft {
+  themeId?: number;
+  name: string;
+  etf_symbol: string;
+  description: string;
+}
+
+function emptyDraft(): ThemeDraft {
+  return { name: "", etf_symbol: "", description: "" };
+}
+
+function draftFor(theme?: Theme): ThemeDraft {
+  return theme === undefined
+    ? emptyDraft()
+    : {
+      themeId: theme.id,
+      name: theme.name,
+      etf_symbol: theme.etf_symbol,
+      description: theme.description ?? "",
+    };
 }
