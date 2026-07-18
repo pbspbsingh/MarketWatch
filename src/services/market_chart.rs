@@ -31,6 +31,16 @@ struct RelativeStrengthSource {
     ephemeral: Vec<DailyCandle>,
 }
 
+type MovingAverageCalculation =
+    fn(&[MarketChartCandle], usize) -> Result<MarketChartSeries, ChartCalculationError>;
+
+struct IntervalCalculationPlan {
+    candles: Vec<MarketChartCandle>,
+    moving_average_periods: &'static [usize],
+    moving_average: MovingAverageCalculation,
+    volume_average_period: usize,
+}
+
 #[derive(Debug, Error)]
 pub enum MarketChartError {
     #[error(
@@ -261,32 +271,33 @@ fn build_snapshot(
         .iter()
         .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
-    let (candles, periods, moving_average, volume_period): (
-        Vec<_>,
-        &[_],
-        fn(&[MarketChartCandle], usize) -> Result<MarketChartSeries, ChartCalculationError>,
-        _,
-    ) = match interval {
-        MarketChartInterval::Daily => (daily, &DAILY_SMA_PERIODS, close_sma, DAILY_VOLUME_PERIOD),
-        MarketChartInterval::Weekly => (
-            aggregate_market_weeks(&daily)?,
-            &WEEKLY_EMA_PERIODS,
-            close_ema,
-            WEEKLY_VOLUME_PERIOD,
-        ),
+    let plan = match interval {
+        MarketChartInterval::Daily => IntervalCalculationPlan {
+            candles: daily,
+            moving_average_periods: &DAILY_SMA_PERIODS,
+            moving_average: close_sma,
+            volume_average_period: DAILY_VOLUME_PERIOD,
+        },
+        MarketChartInterval::Weekly => IntervalCalculationPlan {
+            candles: aggregate_market_weeks(&daily)?,
+            moving_average_periods: &WEEKLY_EMA_PERIODS,
+            moving_average: close_ema,
+            volume_average_period: WEEKLY_VOLUME_PERIOD,
+        },
     };
-    let moving_averages = periods
+    let moving_averages = plan
+        .moving_average_periods
         .iter()
-        .map(|period| moving_average(&candles, *period))
+        .map(|period| (plan.moving_average)(&plan.candles, *period))
         .collect::<Result<Vec<_>, _>>()?;
-    let volume_average = volume_sma(&candles, volume_period)?;
-    let earliest_date = candles.first().map(|candle| candle.date);
-    let latest_date = candles.last().map(|candle| candle.date);
+    let volume_average = volume_sma(&plan.candles, plan.volume_average_period)?;
+    let earliest_date = plan.candles.first().map(|candle| candle.date);
+    let latest_date = plan.candles.last().map(|candle| candle.date);
 
     Ok(MarketChartSnapshot {
         symbol,
         interval,
-        candles,
+        candles: plan.candles,
         moving_averages,
         volume_average,
         relative_strength: None,
