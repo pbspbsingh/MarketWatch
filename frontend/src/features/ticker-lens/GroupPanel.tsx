@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -88,22 +89,25 @@ export function GroupPanel({
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
-  const [exploredGroupKeys, setExploredGroupKeys] = useState(() => new Set<string>());
+  const [exploredGroups, setExploredGroups] = useState<Record<GroupMode, Set<string>>>(() => ({
+    industry: new Set(),
+    theme: new Set(),
+  }));
   const [groupBySector, setGroupBySector] = useState(
     () => localStorage.getItem(sectorGroupingKey) === "true",
   );
   const [expandedSectors, setExpandedSectors] = useState(readExpandedSectors);
-  const [pendingScrollGroupKey, setPendingScrollGroupKey] = useState<string>();
+  const exploredGroupKeys = exploredGroups[mode];
+  const setExploredGroupKeys = useCallback((action: SetStateAction<Set<string>>) => {
+    setExploredGroups((current) => {
+      const next = typeof action === "function" ? action(current[mode]) : action;
+      return next === current[mode] ? current : { ...current, [mode]: next };
+    });
+  }, [mode]);
 
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
-
-  useEffect(() => {
-    if (!countSortAvailable && sortSetting.key === "count") {
-      setSortSetting({ key: "absolute_strength", direction: "desc" });
-    }
-  }, [countSortAvailable, sortSetting.key]);
 
   useEffect(() => {
     localStorage.setItem(sectorGroupingKey, String(groupBySector));
@@ -112,10 +116,6 @@ export function GroupPanel({
   useEffect(() => {
     localStorage.setItem(expandedSectorsKey, JSON.stringify([...expandedSectors]));
   }, [expandedSectors]);
-
-  useEffect(() => {
-    setExploredGroupKeys(new Set());
-  }, [mode]);
 
   useEffect(() => {
     if (mode !== "theme") return;
@@ -147,9 +147,12 @@ export function GroupPanel({
       })),
     [groups, selectedGroupTickerCounts],
   );
-  const activeSortSetting = !countSortAvailable && sortSetting.key === "count"
-    ? ({ key: "absolute_strength", direction: "desc" } as const)
-    : sortSetting;
+  const activeSortSetting = useMemo(
+    () => !countSortAvailable && sortSetting.key === "count"
+      ? ({ key: "absolute_strength", direction: "desc" } as const)
+      : sortSetting,
+    [countSortAvailable, sortSetting],
+  );
   const sortedGroups = useMemo(() => sortGroups(groupsWithCounts, activeSortSetting), [groupsWithCounts, activeSortSetting]);
   const availableSortOptions = useMemo(
     () => sortOptions.filter((option) =>
@@ -203,47 +206,37 @@ export function GroupPanel({
     () => new Map(sectors.flatMap((sector) => sector.groups.map((group) => [group.key, sector.key]))),
     [sectors],
   );
-
-  useEffect(() => {
-    if (revealGroup === undefined) return;
-    const sectorKey = sectorKeyByGroup.get(revealGroup.value);
-    if (groupBySector && sectorKey !== undefined) {
-      setExpandedSectors((current) => new Set(current).add(sectorKey));
-    }
-    setPendingScrollGroupKey(revealGroup.value);
-  }, [groupBySector, revealGroup, sectorKeyByGroup]);
   const highlightedGroupKeys = useMemo(() => {
     return highlightedGroups({ groups, mode, selectedTickerContext, unassignedGroupKey });
   }, [groups, mode, selectedTickerContext]);
-
-  useEffect(() => {
-    const highlightedKey =
-      sortedGroups.find((group) => highlightedGroupKeys.has(group.key))?.key ??
-      (highlightedGroupKeys.has(unassignedGroupKey) ? unassignedGroupKey : undefined);
-    if (highlightedKey === undefined) return;
-    const sectorKey = sectorKeyByGroup.get(highlightedKey);
-    if (groupBySector && sectorKey !== undefined) {
-      setExpandedSectors((current) => new Set(current).add(sectorKey));
-    }
-    setPendingScrollGroupKey(highlightedKey);
-  }, [groupBySector, highlightedGroupKeys, sectorKeyByGroup, sortedGroups]);
+  const highlightedGroupKey = useMemo(
+    () => sortedGroups.find((group) => highlightedGroupKeys.has(group.key))?.key
+      ?? (highlightedGroupKeys.has(unassignedGroupKey) ? unassignedGroupKey : undefined),
+    [highlightedGroupKeys, sortedGroups],
+  );
+  const requiredExpandedSectors = useMemo(() => {
+    if (!groupBySector || mode !== "industry") return new Set<string>();
+    const groupKeysToReveal = new Set(selectedGroupKeys);
+    if (revealGroup !== undefined) groupKeysToReveal.add(revealGroup.value);
+    if (highlightedGroupKey !== undefined) groupKeysToReveal.add(highlightedGroupKey);
+    return new Set(
+      [...groupKeysToReveal]
+        .map((key) => sectorKeyByGroup.get(key))
+        .filter((key): key is string => key !== undefined),
+    );
+  }, [groupBySector, highlightedGroupKey, mode, revealGroup, sectorKeyByGroup, selectedGroupKeys]);
+  const visibleExpandedSectors = useMemo(
+    () => new Set([...expandedSectors, ...requiredExpandedSectors]),
+    [expandedSectors, requiredExpandedSectors],
+  );
+  const scrollGroupKey = highlightedGroupKey ?? revealGroup?.value;
 
   useLayoutEffect(() => {
-    if (pendingScrollGroupKey === undefined) return;
-    const element = groupElements.current.get(pendingScrollGroupKey);
+    if (scrollGroupKey === undefined) return;
+    const element = groupElements.current.get(scrollGroupKey);
     if (element === undefined) return;
     element.scrollIntoView({ block: "nearest" });
-    setPendingScrollGroupKey(undefined);
-  }, [expandedSectors, pendingScrollGroupKey]);
-
-  useEffect(() => {
-    if (!groupBySector || mode !== "industry") return;
-    const selectedSectors = [...selectedGroupKeys]
-      .map((key) => sectorKeyByGroup.get(key))
-      .filter((key): key is string => key !== undefined);
-    if (selectedSectors.length === 0) return;
-    setExpandedSectors((current) => new Set([...current, ...selectedSectors]));
-  }, [groupBySector, mode, sectorKeyByGroup, selectedGroupKeys]);
+  }, [scrollGroupKey, visibleExpandedSectors]);
 
   const markExplored = (groupKey: string) => {
     const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
@@ -349,15 +342,13 @@ export function GroupPanel({
           </Select>
           <IconButton
             size="small"
-            aria-label={`Sort ${sortSetting.direction === "desc" ? "ascending" : "descending"}`}
-            onClick={() =>
-              setSortSetting((current) => ({
-                ...current,
-                direction: current.direction === "desc" ? "asc" : "desc",
-              }))
-            }
+            aria-label={`Sort ${activeSortSetting.direction === "desc" ? "ascending" : "descending"}`}
+            onClick={() => setSortSetting({
+              ...activeSortSetting,
+              direction: activeSortSetting.direction === "desc" ? "asc" : "desc",
+            })}
           >
-            {sortSetting.direction === "desc" ? (
+            {activeSortSetting.direction === "desc" ? (
               <ArrowDownwardIcon fontSize="small" />
             ) : (
               <ArrowUpwardIcon fontSize="small" />
@@ -411,7 +402,7 @@ export function GroupPanel({
                       <button
                         type="button"
                         className="sector-group-toggle"
-                        aria-expanded={expandedSectors.has(sector.key)}
+                        aria-expanded={visibleExpandedSectors.has(sector.key)}
                         onClick={() =>
                           setExpandedSectors((current) => {
                             const next = new Set(current);
@@ -437,7 +428,7 @@ export function GroupPanel({
                         <ExpandMoreIcon fontSize="small" />
                       </button>
                     </div>
-                    {expandedSectors.has(sector.key) && (
+                    {visibleExpandedSectors.has(sector.key) && (
                       <ol className="sector-industry-list">
                         {sector.groups.map(renderGroup)}
                       </ol>
