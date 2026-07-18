@@ -7,6 +7,14 @@ use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
 
+struct StoredTheme {
+    id: i64,
+    name: String,
+    etf_symbol: String,
+    description: Option<String>,
+    stock_count: i64,
+}
+
 struct StoredThemeTicker {
     symbol: String,
     name: Option<String>,
@@ -145,8 +153,8 @@ impl Store {
     }
 
     pub async fn themes_with_assignments(&self) -> anyhow::Result<Vec<Theme>> {
-        sqlx::query_as!(
-            Theme,
+        let themes = sqlx::query_as!(
+            StoredTheme,
             r#"SELECT themes.id, themes.name, themes.etf_symbol, themes.description,
                       COUNT(theme_stocks.symbol) AS "stock_count!: i64"
                FROM themes
@@ -156,7 +164,8 @@ impl Store {
         )
         .fetch_all(&self.pool)
         .await
-        .context("failed to load assigned themes")
+        .context("failed to load assigned themes")?;
+        themes.into_iter().map(stored_theme).collect()
     }
 
     pub async fn tickers_for_themes(
@@ -242,8 +251,8 @@ impl Store {
     }
 
     pub async fn themes(&self) -> anyhow::Result<Vec<Theme>> {
-        sqlx::query_as!(
-            Theme,
+        let themes = sqlx::query_as!(
+            StoredTheme,
             r#"SELECT themes.id, themes.name, themes.etf_symbol, themes.description,
                       COUNT(theme_stocks.symbol) AS "stock_count!: i64"
                FROM themes
@@ -253,7 +262,8 @@ impl Store {
         )
         .fetch_all(&self.pool)
         .await
-        .context("failed to load themes")
+        .context("failed to load themes")?;
+        themes.into_iter().map(stored_theme).collect()
     }
 
     pub async fn create_theme(
@@ -419,15 +429,13 @@ impl Store {
         &self,
         mut tickers: Vec<ThemeTicker>,
     ) -> anyhow::Result<Vec<ThemeTicker>> {
-        let symbols = tickers
-            .iter()
-            .map(|ticker| ticker.symbol.clone())
-            .collect::<Vec<_>>();
-        let industries = self.all_industries_for_symbols(&symbols).await?;
+        let industries = self
+            .all_industries_for_symbols(tickers.iter().map(|ticker| &ticker.symbol))
+            .await?;
         for ticker in &mut tickers {
             ticker.industries = industries
                 .iter()
-                .filter(|industry| industry.symbol == ticker.symbol)
+                .filter(|industry| industry.symbol == ticker.symbol.as_str())
                 .map(|industry| ThemeTickerIndustry {
                     key: industry.industry_key.clone(),
                     name: industry.industry_name.clone(),
@@ -803,12 +811,10 @@ fn parse_source(source: Option<&str>) -> anyhow::Result<AssignmentSource> {
 fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<ThemeTicker>> {
     let mut tickers = Vec::<ThemeTicker>::new();
     for row in rows {
-        if tickers
-            .last()
-            .is_none_or(|ticker| ticker.symbol != row.symbol)
-        {
+        let symbol = crate::models::TickerSymbol::try_from(row.symbol.clone())?;
+        if tickers.last().is_none_or(|ticker| ticker.symbol != symbol) {
             tickers.push(ThemeTicker {
-                symbol: row.symbol.clone(),
+                symbol,
                 name: row.name,
                 description: row.description,
                 industries: Vec::new(),
@@ -838,17 +844,27 @@ fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<T
     Ok(tickers)
 }
 
+fn stored_theme(theme: StoredTheme) -> anyhow::Result<Theme> {
+    Ok(Theme {
+        id: theme.id,
+        name: theme.name,
+        etf_symbol: crate::models::TickerSymbol::try_from(theme.etf_symbol)?,
+        description: theme.description,
+        stock_count: theme.stock_count,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CompanyProfile, Exchange};
+    use crate::models::{CompanyProfile, Exchange, TickerSymbol};
 
     #[tokio::test]
     async fn deleting_theme_removes_assignment_but_preserves_ticker() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         store
             .upsert_company_profile(&CompanyProfile {
-                symbol: "TEST".to_owned(),
+                symbol: TickerSymbol::parse("TEST").unwrap(),
                 name: Some("Test Company".to_owned()),
                 exchange: Exchange::Nasdaq,
                 description: None,
@@ -886,7 +902,7 @@ mod tests {
         for symbol in ["AAPL", "MSFT", "NVDA"] {
             store
                 .upsert_company_profile(&CompanyProfile {
-                    symbol: symbol.to_owned(),
+                    symbol: TickerSymbol::parse(symbol).unwrap(),
                     name: None,
                     exchange: Exchange::Nasdaq,
                     description: None,
@@ -949,7 +965,7 @@ mod tests {
         for symbol in ["EMPTY", "ASSIGNED", "INVALID"] {
             store
                 .upsert_company_profile(&CompanyProfile {
-                    symbol: symbol.to_owned(),
+                    symbol: TickerSymbol::parse(symbol).unwrap(),
                     name: None,
                     exchange: Exchange::Nasdaq,
                     description: None,
@@ -1029,7 +1045,7 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         store
             .upsert_company_profile(&CompanyProfile {
-                symbol: "DELETE".to_owned(),
+                symbol: TickerSymbol::parse("DELETE").unwrap(),
                 name: None,
                 exchange: Exchange::Nasdaq,
                 description: None,

@@ -6,7 +6,7 @@ pub use error::YahooError;
 
 use crate::config::ProviderConfig;
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::{CompanyProfile, Exchange};
+use crate::models::{CompanyProfile, Exchange, TickerSymbol};
 use chrono::Timelike;
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
@@ -389,7 +389,8 @@ fn parse_profile(
     })?;
 
     Ok(CompanyProfile {
-        symbol: symbol.to_owned(),
+        symbol: TickerSymbol::parse(symbol)
+            .map_err(|error| invalid(format!("{error}: {symbol}")))?,
         name: price
             .as_ref()
             .and_then(|price| price.long_name.clone().or_else(|| price.short_name.clone())),

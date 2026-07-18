@@ -66,7 +66,7 @@ impl ThemeAnalysisService {
                 Err(error) => {
                     warn!(
                         theme_id = theme.id,
-                        etf_symbol = theme.etf_symbol,
+                        etf_symbol = %theme.etf_symbol,
                         %error,
                         "failed to load theme ETF performance"
                     );

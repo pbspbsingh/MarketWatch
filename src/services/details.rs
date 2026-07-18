@@ -1,4 +1,5 @@
-use crate::models::{CompanyProfile, Fundamentals};
+use crate::models::ticker_symbol::InvalidTickerSymbol;
+use crate::models::{CompanyProfile, Fundamentals, TickerSymbol};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
@@ -31,7 +32,7 @@ pub struct TickerDetails {
 
 #[derive(Serialize)]
 pub struct ProfileDetails {
-    symbol: String,
+    symbol: TickerSymbol,
     name: Option<String>,
     exchange: String,
     description: Option<String>,
@@ -41,6 +42,9 @@ pub struct ProfileDetails {
 pub enum TickerDetailsError {
     #[error(transparent)]
     Yahoo(#[from] YahooServiceError),
+
+    #[error(transparent)]
+    InvalidSymbol(#[from] InvalidTickerSymbol),
 
     #[error("Finviz fundamentals failed: {0}")]
     Finviz(#[source] anyhow::Error),
@@ -64,7 +68,8 @@ impl TickerDetailsService {
         symbol: &str,
         force_refresh: bool,
     ) -> Result<TickerDetails, TickerDetailsError> {
-        let profile = self.yahoo.profile(symbol).await?;
+        let ticker_symbol = TickerSymbol::parse(symbol)?;
+        let profile = self.yahoo.profile(&ticker_symbol).await?;
         let _guard = self.fundamentals_locks.lock(symbol).await;
         let cached = self
             .store

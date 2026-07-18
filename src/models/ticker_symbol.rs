@@ -1,7 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Borrow;
 use std::fmt;
-use std::ops::Deref;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -44,14 +43,6 @@ impl AsRef<str> for TickerSymbol {
 
 impl Borrow<str> for TickerSymbol {
     fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl Deref for TickerSymbol {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
         self.as_str()
     }
 }

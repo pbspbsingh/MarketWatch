@@ -1,3 +1,4 @@
+use super::TickerSymbol;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -5,14 +6,14 @@ use serde::{Deserialize, Serialize};
 pub struct Theme {
     pub id: i64,
     pub name: String,
-    pub etf_symbol: String,
+    pub etf_symbol: TickerSymbol,
     pub description: Option<String>,
     pub stock_count: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ThemeTicker {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub name: Option<String>,
     pub description: Option<String>,
     pub industries: Vec<ThemeTickerIndustry>,

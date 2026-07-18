@@ -308,15 +308,15 @@ impl TickerCatalogService {
 
     pub async fn ensure_ticker(&self, symbol: &str) -> anyhow::Result<()> {
         let symbol = TickerSymbol::parse(symbol)?;
-        if !self.store.ticker_has_industry(&symbol).await? {
-            let industry = self.finviz.ticker_industry(&symbol).await?;
+        if !self.store.ticker_has_industry(symbol.as_str()).await? {
+            let industry = self.finviz.ticker_industry(symbol.as_str()).await?;
             self.yahoo.profile(&symbol).await?;
             let present_in_latest_snapshot = self
                 .store
                 .latest_snapshot_has_industry(&industry.key)
                 .await?;
             self.store
-                .add_ticker_industry(&industry.key, &industry.name, &symbol)
+                .add_ticker_industry(&industry.key, &industry.name, symbol.as_str())
                 .await?;
             if !present_in_latest_snapshot {
                 warn!(

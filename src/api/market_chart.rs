@@ -492,10 +492,14 @@ async fn snapshot(
     let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
     state
         .market_chart
-        .snapshot(&symbol, query.interval, comparison_symbol.as_deref())
+        .snapshot(
+            symbol.as_str(),
+            query.interval,
+            comparison_symbol.as_deref(),
+        )
         .await
         .map(Json)
-        .map_err(|error| map_error(&symbol, error))
+        .map_err(|error| map_error(symbol.as_str(), error))
 }
 
 async fn refresh_snapshot(
@@ -508,10 +512,14 @@ async fn refresh_snapshot(
     let comparison_symbol = normalize_optional_symbol(query.comparison_symbol)?;
     state
         .market_chart
-        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_deref())
+        .refresh_snapshot(
+            symbol.as_str(),
+            query.interval,
+            comparison_symbol.as_deref(),
+        )
         .await
         .map(Json)
-        .map_err(|error| map_error(&symbol, error))
+        .map_err(|error| map_error(symbol.as_str(), error))
 }
 
 async fn history_snapshot(
@@ -525,7 +533,7 @@ async fn history_snapshot(
     state
         .market_chart
         .history_snapshot(
-            &symbol,
+            symbol.as_str(),
             query.interval,
             query.start,
             query.end,
@@ -533,7 +541,7 @@ async fn history_snapshot(
         )
         .await
         .map(Json)
-        .map_err(|error| map_error(&symbol, error))
+        .map_err(|error| map_error(symbol.as_str(), error))
 }
 
 fn normalize_optional_symbol(
@@ -551,6 +559,7 @@ fn normalize_optional_symbol(
 fn map_error(symbol: &str, error: MarketChartError) -> (StatusCode, String) {
     let status = match &error {
         MarketChartError::InvalidRange => StatusCode::BAD_REQUEST,
+        MarketChartError::InvalidSymbol(_) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::InvalidRange) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::Provider(YahooError::NotFound { .. })) => {
             StatusCode::NOT_FOUND

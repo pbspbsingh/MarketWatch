@@ -1,6 +1,7 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
-use crate::models::{CompanyProfile, DailyCandle};
+use crate::models::ticker_symbol::InvalidTickerSymbol;
+use crate::models::{CompanyProfile, DailyCandle, TickerSymbol};
 use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
@@ -54,6 +55,9 @@ pub enum YahooServiceError {
     #[error(transparent)]
     Provider(#[from] YahooError),
 
+    #[error(transparent)]
+    InvalidSymbol(#[from] InvalidTickerSymbol),
+
     #[error("Yahoo persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
 
@@ -83,17 +87,20 @@ impl YahooService {
         })
     }
 
-    pub async fn profile(&self, symbol: &str) -> Result<CompanyProfile, YahooServiceError> {
+    pub async fn profile(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> Result<CompanyProfile, YahooServiceError> {
         if let Some(profile) = self
             .store
-            .company_profile(symbol)
+            .company_profile(symbol.as_str())
             .await
             .map_err(YahooServiceError::Persistence)?
         {
             return Ok(profile);
         }
 
-        let profile = self.fetch_profile(symbol).await?;
+        let profile = self.fetch_profile(symbol.as_str()).await?;
         self.store
             .upsert_company_profile(&profile)
             .await
@@ -103,7 +110,7 @@ impl YahooService {
 
     pub async fn daily_candles_for_year(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         let (start, end) = self.completed_year_range()?;
         self.daily_candles(symbol, start, end).await
@@ -111,27 +118,27 @@ impl YahooService {
 
     pub async fn refresh_daily_candles_for_year(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         let (start, end) = self.completed_year_range()?;
-        let _guard = self.daily_candle_locks.lock(symbol).await;
+        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
         self.profile(symbol).await?;
         let latest_session = self.market_schedule.previous_trading_day(end);
         let (candles, first_trade_at) = self
-            .fetch_daily_candles_from_provider(symbol, start, end, Some(latest_session))
+            .fetch_daily_candles_from_provider(symbol.as_str(), start, end, Some(latest_session))
             .await?;
         self.store
             .replace_daily_candles(symbol, &candles)
             .await
             .map_err(YahooServiceError::Persistence)?;
-        self.cache_first_trade_date(symbol, first_trade_at);
+        self.cache_first_trade_date(symbol.as_str(), first_trade_at);
         Ok(candles)
     }
 
     /// Loads completed history from storage, persisting only a missing older range plus overlap.
     pub async fn historical_daily_candles(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
     ) -> Result<HistoricalDailyCandles, YahooServiceError> {
@@ -147,15 +154,15 @@ impl YahooService {
         if start >= end {
             return Err(YahooServiceError::InvalidRange);
         }
-        let _guard = self.daily_candle_locks.lock(symbol).await;
+        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
         self.profile(symbol).await?;
         let provider_has_more_before = self
-            .backfill_daily_candles_locked(symbol, start, end)
+            .backfill_daily_candles_locked(symbol.as_str(), start, end)
             .await?;
 
         let candles = self
             .store
-            .daily_candles(symbol, start, end)
+            .daily_candles(symbol.as_str(), start, end)
             .await
             .map_err(YahooServiceError::Persistence)?;
         let has_more_before = provider_has_more_before.unwrap_or(!candles.is_empty());
@@ -167,7 +174,7 @@ impl YahooService {
 
     pub async fn daily_candles(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
@@ -175,20 +182,20 @@ impl YahooService {
             return Err(YahooServiceError::InvalidRange);
         }
 
-        let _guard = self.daily_candle_locks.lock(symbol).await;
+        let _guard = self.daily_candle_locks.lock(symbol.as_str()).await;
         self.daily_candles_locked(symbol, start, end).await
     }
 
     async fn daily_candles_locked(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         start: NaiveDate,
         end: NaiveDate,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         self.profile(symbol).await?;
         let latest = self
             .store
-            .latest_daily_candle_date(symbol)
+            .latest_daily_candle_date(symbol.as_str())
             .await
             .map_err(YahooServiceError::Persistence)?;
         let recent_trading_day = self.market_schedule.recent_trading_day(Utc::now());
@@ -209,24 +216,24 @@ impl YahooService {
                 (requested_last_date == recent_trading_day).then_some(requested_last_date);
             let (candles, first_trade_at) = self
                 .fetch_daily_candles_from_provider(
-                    symbol,
+                    symbol.as_str(),
                     fetch_start,
                     fetch_end_date,
                     repair_latest,
                 )
                 .await?;
             self.store
-                .upsert_daily_candles(symbol, &candles)
+                .upsert_daily_candles(&TickerSymbol::parse(symbol)?, &candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
-            self.cache_first_trade_date(symbol, first_trade_at);
+            self.cache_first_trade_date(symbol.as_str(), first_trade_at);
         }
 
-        self.backfill_daily_candles_locked(symbol, start, fetch_end_date)
+        self.backfill_daily_candles_locked(symbol.as_str(), start, fetch_end_date)
             .await?;
 
         self.store
-            .daily_candles(symbol, start, end)
+            .daily_candles(symbol.as_str(), start, end)
             .await
             .map_err(YahooServiceError::Persistence)
     }
@@ -271,7 +278,7 @@ impl YahooService {
             .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
             .unwrap_or(!fetched.is_empty());
         self.store
-            .upsert_daily_candles(symbol, &fetched)
+            .upsert_daily_candles(&TickerSymbol::parse(symbol)?, &fetched)
             .await
             .map_err(YahooServiceError::Persistence)?;
         self.cache_first_trade_date(symbol, first_trade_at);

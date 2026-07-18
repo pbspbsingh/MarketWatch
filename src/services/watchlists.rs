@@ -156,11 +156,11 @@ impl WatchlistService {
         let symbol = normalize_symbol(symbol)
             .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
         self.ticker_catalog
-            .ensure_ticker(&symbol)
+            .ensure_ticker(symbol.as_str())
             .await
             .map_err(WatchlistServiceError::TickerCatalog)?;
         self.store
-            .add_watchlist_symbol(id, &symbol)
+            .add_watchlist_symbol(id, symbol.as_str())
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
@@ -172,7 +172,7 @@ impl WatchlistService {
         let symbol = normalize_symbol(symbol)
             .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
         self.store
-            .remove_watchlist_symbol(id, &symbol)
+            .remove_watchlist_symbol(id, symbol.as_str())
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
@@ -183,7 +183,7 @@ impl WatchlistService {
         let symbol = normalize_symbol(symbol)
             .map_err(|error| WatchlistServiceError::Validation(error.to_string()))?;
         self.store
-            .clear_symbol_watchlists(&symbol)
+            .clear_symbol_watchlists(symbol.as_str())
             .await
             .map_err(WatchlistServiceError::Persistence)
     }

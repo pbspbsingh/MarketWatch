@@ -1,4 +1,5 @@
 use super::Store;
+use crate::models::TickerSymbol;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
@@ -248,10 +249,11 @@ impl Store {
             })
     }
 
-    pub async fn all_industries_for_symbols(
+    pub async fn all_industries_for_symbols<'a>(
         &self,
-        symbols: &[String],
+        symbols: impl IntoIterator<Item = &'a TickerSymbol>,
     ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
+        let symbols = symbols.into_iter().collect::<Vec<_>>();
         if symbols.is_empty() {
             return Ok(Vec::new());
         }
@@ -280,7 +282,7 @@ impl Store {
         {
             let mut separated = query.separated(", ");
             for symbol in symbols {
-                separated.push_bind(symbol);
+                separated.push_bind(symbol.as_str());
             }
         }
         query.push(" ) ORDER BY industry_name, industry_membership_tickers.symbol");
@@ -394,7 +396,9 @@ mod tests {
         assert_eq!(store.known_tickers().await.unwrap(), ["TICKER"]);
         assert_eq!(
             store
-                .all_industries_for_symbols(&["TICKER".to_owned()])
+                .all_industries_for_symbols(std::iter::once(
+                    &TickerSymbol::parse("TICKER").unwrap(),
+                ))
                 .await
                 .unwrap(),
             [TickerIndustryMembership {

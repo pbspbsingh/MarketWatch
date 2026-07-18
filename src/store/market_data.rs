@@ -1,5 +1,5 @@
 use super::Store;
-use crate::models::{CompanyProfile, DailyCandle, Exchange};
+use crate::models::{CompanyProfile, DailyCandle, Exchange, TickerSymbol};
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
 
@@ -75,7 +75,7 @@ impl Store {
                 let exchange = Exchange::from_tradingview_code(&profile.exchange)
                     .with_context(|| format!("invalid stored exchange: {}", profile.exchange))?;
                 Ok(CompanyProfile {
-                    symbol: profile.symbol,
+                    symbol: TickerSymbol::try_from(profile.symbol)?,
                     name: profile.name,
                     exchange,
                     description: profile.description,
@@ -98,7 +98,7 @@ impl Store {
                 exchange = excluded.exchange,
                 description = excluded.description,
                 profile_fetched_at = excluded.profile_fetched_at",
-            profile.symbol,
+            profile.symbol.as_str(),
             profile.name,
             exchange,
             profile.description,
@@ -164,7 +164,7 @@ impl Store {
 
     pub async fn upsert_daily_candles(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         candles: &[DailyCandle],
     ) -> anyhow::Result<()> {
         if candles.is_empty() {
@@ -189,7 +189,7 @@ impl Store {
                     low = excluded.low,
                     close = excluded.close,
                     volume = excluded.volume",
-                symbol,
+                symbol.as_str(),
                 candle.market_date,
                 candle.open,
                 candle.high,
@@ -211,7 +211,7 @@ impl Store {
 
     pub async fn replace_daily_candles(
         &self,
-        symbol: &str,
+        symbol: &TickerSymbol,
         candles: &[DailyCandle],
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
@@ -223,16 +223,19 @@ impl Store {
             .begin()
             .await
             .context("failed to begin daily candle replacement transaction")?;
-        sqlx::query!("DELETE FROM daily_candles WHERE symbol = ?", symbol)
-            .execute(&mut *transaction)
-            .await
-            .context("failed to delete replaced daily candles")?;
+        sqlx::query!(
+            "DELETE FROM daily_candles WHERE symbol = ?",
+            symbol.as_str()
+        )
+        .execute(&mut *transaction)
+        .await
+        .context("failed to delete replaced daily candles")?;
         for candle in candles {
             sqlx::query!(
                 "INSERT INTO daily_candles (
                     symbol, market_date, open, high, low, close, volume
                  ) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                symbol,
+                symbol.as_str(),
                 candle.market_date,
                 candle.open,
                 candle.high,
@@ -289,12 +292,15 @@ mod tests {
             .await
             .unwrap();
         store
-            .upsert_daily_candles("TEST", &[candle(1, 10.0), candle(2, 11.0)])
+            .upsert_daily_candles(
+                &TickerSymbol::parse("TEST").unwrap(),
+                &[candle(1, 10.0), candle(2, 11.0)],
+            )
             .await
             .unwrap();
 
         store
-            .replace_daily_candles("TEST", &[candle(3, 12.0)])
+            .replace_daily_candles(&TickerSymbol::parse("TEST").unwrap(), &[candle(3, 12.0)])
             .await
             .unwrap();
 
@@ -309,7 +315,12 @@ mod tests {
                 .unwrap(),
             vec![candle(3, 12.0)],
         );
-        assert!(store.replace_daily_candles("TEST", &[]).await.is_err());
+        assert!(
+            store
+                .replace_daily_candles(&TickerSymbol::parse("TEST").unwrap(), &[])
+                .await
+                .is_err()
+        );
         assert_eq!(
             store
                 .daily_candles(

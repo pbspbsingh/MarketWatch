@@ -1,4 +1,4 @@
-use super::Exchange;
+use super::{Exchange, TickerSymbol};
 use chrono::{DateTime, NaiveDate, Utc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -13,7 +13,7 @@ pub struct DailyCandle {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompanyProfile {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub name: Option<String>,
     pub exchange: Exchange,
     pub description: Option<String>,

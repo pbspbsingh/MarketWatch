@@ -8,7 +8,7 @@ mod performance;
 mod themes;
 mod ticker_collection;
 mod ticker_relative_strength;
-mod ticker_symbol;
+pub mod ticker_symbol;
 mod top_stock_screens;
 mod watchlists;
 

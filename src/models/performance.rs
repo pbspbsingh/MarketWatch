@@ -33,7 +33,7 @@ pub struct IndustryRanking {
 pub struct ThemeRanking {
     pub id: i64,
     pub name: String,
-    pub etf_symbol: String,
+    pub etf_symbol: TickerSymbol,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
     pub previous_close: Option<f64>,

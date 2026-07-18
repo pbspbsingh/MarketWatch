@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::{DailyCandle, average_daily_range_percent, average_volume};
+use crate::models::{DailyCandle, TickerSymbol, average_daily_range_percent, average_volume};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use serde::Serialize;
@@ -60,22 +60,25 @@ impl ChartService {
         symbol: &str,
         industry_keys: &[String],
     ) -> anyhow::Result<ChartSummary> {
-        let profile = self.yahoo.profile(symbol).await?;
-        let benchmark_profile = self.yahoo.profile(&self.benchmark).await?;
-        let candles = self.yahoo.daily_candles_for_year(symbol).await?;
+        let symbol = TickerSymbol::parse(symbol)?;
+        let benchmark = TickerSymbol::parse(&self.benchmark)?;
+        let profile = self.yahoo.profile(&symbol).await?;
+        let benchmark_profile = self.yahoo.profile(&benchmark).await?;
+        let candles = self.yahoo.daily_candles_for_year(&symbol).await?;
         let industry = self
             .store
-            .industry_for_ticker(symbol, industry_keys)
+            .industry_for_ticker(symbol.as_str(), industry_keys)
             .await?;
         let industry = if industry.is_none() && !industry_keys.is_empty() {
-            self.store.industry_for_ticker(symbol, &[]).await?
+            self.store.industry_for_ticker(symbol.as_str(), &[]).await?
         } else {
             industry
         };
-        let themes = self.store.theme_names_for_ticker(symbol).await?;
+        let themes = self.store.theme_names_for_ticker(symbol.as_str()).await?;
         let mut theme_benchmarks = Vec::new();
-        for theme in self.store.theme_etfs_for_ticker(symbol).await? {
-            match self.yahoo.profile(&theme.etf_symbol).await {
+        for theme in self.store.theme_etfs_for_ticker(symbol.as_str()).await? {
+            let etf_symbol = TickerSymbol::parse(&theme.etf_symbol)?;
+            match self.yahoo.profile(&etf_symbol).await {
                 Ok(profile) => theme_benchmarks.push(ChartThemeBenchmark {
                     theme_name: theme.name,
                     etf_symbol: theme.etf_symbol.clone(),
@@ -83,7 +86,7 @@ impl ChartService {
                 }),
                 Err(error) => {
                     warn!(
-                        symbol,
+                        %symbol,
                         theme_name = theme.name,
                         etf_symbol = theme.etf_symbol,
                         %error,
@@ -94,7 +97,7 @@ impl ChartService {
         }
 
         Ok(ChartSummary {
-            symbol: symbol.to_owned(),
+            symbol: symbol.to_string(),
             company_name: profile.name.clone(),
             description: profile.description.clone(),
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),

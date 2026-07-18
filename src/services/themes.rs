@@ -148,10 +148,9 @@ impl ThemeService {
     }
 
     pub async fn delete_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {
-        let symbol = symbol.trim().to_uppercase();
-        validate_symbol(&symbol)?;
+        let symbol = normalize_symbol(symbol)?;
         self.store
-            .delete_ticker(&symbol)
+            .delete_ticker(symbol.as_str())
             .await
             .map_err(ThemeServiceError::Persistence)?
             .then_some(())
@@ -159,11 +158,10 @@ impl ThemeService {
     }
 
     pub async fn ticker(&self, symbol: &str) -> Result<ThemeTicker, ThemeServiceError> {
-        let symbol = symbol.trim().to_uppercase();
-        validate_symbol(&symbol)?;
-        self.ensure_ticker(&symbol).await?;
+        let symbol = normalize_symbol(symbol)?;
+        self.ensure_ticker(symbol.as_str()).await?;
         self.store
-            .theme_ticker(&symbol)
+            .theme_ticker(symbol.as_str())
             .await
             .map_err(ThemeServiceError::Persistence)?
             .ok_or_else(|| ThemeServiceError::Validation(format!("ticker {symbol} does not exist")))
@@ -174,9 +172,9 @@ impl ThemeService {
         symbol: &str,
         theme_ids: &[i64],
     ) -> Result<(), ThemeServiceError> {
-        validate_symbol(symbol)?;
+        let symbol = normalize_symbol(symbol)?;
         validate_count(theme_ids.len())?;
-        self.ensure_ticker(symbol).await?;
+        self.ensure_ticker(symbol.as_str()).await?;
         let known_ids = self
             .themes()
             .await?
@@ -195,7 +193,7 @@ impl ThemeService {
         }
         self.store
             .replace_theme_assignments(
-                &symbol.trim().to_uppercase(),
+                symbol.as_str(),
                 theme_ids,
                 AssignmentSource::Manual,
                 None,
@@ -235,7 +233,7 @@ impl ThemeService {
             .map_err(ThemeServiceError::InvalidAiResponse)?;
         let symbols = tickers
             .iter()
-            .map(|ticker| ticker.symbol.clone())
+            .map(|ticker| ticker.symbol.to_string())
             .collect::<Vec<_>>();
         self.validate_automatic_suggestions(suggestions, &symbols)
             .await
@@ -264,7 +262,7 @@ impl ThemeService {
                 (
                     batch
                         .iter()
-                        .map(|ticker| ticker.symbol.clone())
+                        .map(|ticker| ticker.symbol.to_string())
                         .collect::<Vec<_>>(),
                     build_prompt(&themes, batch),
                 )
@@ -442,7 +440,7 @@ impl ThemeService {
             .tickers()
             .await?
             .into_iter()
-            .filter(|ticker| requested.contains(&ticker.symbol))
+            .filter(|ticker| requested.contains(ticker.symbol.as_str()))
             .collect::<Vec<_>>();
         if tickers.len() != requested.len() {
             return Err(ThemeServiceError::Validation(
@@ -452,18 +450,18 @@ impl ThemeService {
         for ticker in &tickers {
             let profile = self
                 .store
-                .company_profile(&ticker.symbol)
+                .company_profile(ticker.symbol.as_str())
                 .await
                 .map_err(ThemeServiceError::Persistence)?;
             if profile.is_none() {
-                self.ensure_ticker(&ticker.symbol).await?;
+                self.ensure_ticker(ticker.symbol.as_str()).await?;
             }
         }
         let tickers = self
             .tickers()
             .await?
             .into_iter()
-            .filter(|ticker| requested.contains(&ticker.symbol))
+            .filter(|ticker| requested.contains(ticker.symbol.as_str()))
             .collect::<Vec<_>>();
         Ok(tickers)
     }
@@ -480,8 +478,7 @@ impl ThemeService {
             .collect::<HashMap<_, _>>();
         let mut seen = HashSet::new();
         for suggestion in &mut suggestions {
-            suggestion.symbol = suggestion.symbol.trim().to_uppercase();
-            validate_symbol(&suggestion.symbol)?;
+            suggestion.symbol = normalize_symbol(&suggestion.symbol)?.into_string();
             self.ensure_ticker(&suggestion.symbol).await?;
             if !seen.insert(suggestion.symbol.clone()) {
                 return Err(ThemeServiceError::Validation(format!(
@@ -606,9 +603,9 @@ impl ThemeService {
     ) -> Result<ThemeSuggestion, (Option<String>, String)> {
         suggestion.symbol = suggestion.symbol.trim().to_uppercase();
         let symbol = (!suggestion.symbol.is_empty()).then(|| suggestion.symbol.clone());
-        if let Err(error) = validate_symbol(&suggestion.symbol) {
-            return Err((symbol, error.to_string()));
-        }
+        suggestion.symbol = normalize_symbol(&suggestion.symbol)
+            .map_err(|error| (symbol.clone(), error.to_string()))?
+            .into_string();
         if allowed_symbols.is_some_and(|allowed| !allowed.contains(&suggestion.symbol)) {
             return Err((
                 symbol,
@@ -644,9 +641,9 @@ impl ThemeService {
     }
 
     pub async fn ensure_ticker(&self, symbol: &str) -> Result<(), ThemeServiceError> {
-        validate_symbol(symbol)?;
+        let symbol = normalize_symbol(symbol)?;
         self.ticker_catalog
-            .ensure_ticker(symbol)
+            .ensure_ticker(symbol.as_str())
             .await
             .map_err(ThemeServiceError::TickerCatalog)
     }
@@ -658,16 +655,15 @@ fn normalize_theme(
     description: Option<&str>,
 ) -> Result<(String, String, Option<String>), ThemeServiceError> {
     let name = name.trim();
-    let etf_symbol = etf_symbol.trim().to_uppercase();
+    let etf_symbol = normalize_symbol(etf_symbol)?;
     if name.is_empty() {
         return Err(ThemeServiceError::Validation(
             "theme name is required".into(),
         ));
     }
-    validate_symbol(&etf_symbol)?;
     Ok((
         name.to_owned(),
-        etf_symbol,
+        etf_symbol.into_string(),
         description
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -675,9 +671,8 @@ fn normalize_theme(
     ))
 }
 
-fn validate_symbol(symbol: &str) -> Result<(), ThemeServiceError> {
+fn normalize_symbol(symbol: &str) -> Result<TickerSymbol, ThemeServiceError> {
     TickerSymbol::parse(symbol)
-        .map(|_| ())
         .map_err(|_| ThemeServiceError::Validation(format!("invalid ticker symbol {symbol}")))
 }
 

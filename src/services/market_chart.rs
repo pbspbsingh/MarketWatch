@@ -1,13 +1,14 @@
-use crate::models::DailyCandle;
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
     MarketChartSeries, MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma,
     validate_market_chart_candle, volume_sma,
 };
+use crate::models::ticker_symbol::InvalidTickerSymbol;
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, calculate_relative_strength_line,
     calculate_relative_strength_trend,
 };
+use crate::models::{DailyCandle, TickerSymbol};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::services::yahoo_live::YahooLiveHandle;
 use std::collections::BTreeMap;
@@ -53,6 +54,9 @@ pub enum MarketChartError {
     Calculation(#[from] ChartCalculationError),
     #[error(transparent)]
     RelativeStrength(#[from] RelativeStrengthCalculationError),
+
+    #[error(transparent)]
+    InvalidSymbol(#[from] InvalidTickerSymbol),
 }
 
 impl MarketChartService {
@@ -66,15 +70,16 @@ impl MarketChartService {
         interval: MarketChartInterval,
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
+        let symbol = TickerSymbol::parse(symbol)?;
         let candles = merge_live_candles(
-            self.yahoo.daily_candles_for_year(symbol).await?,
-            self.live_candles(symbol).await,
+            self.yahoo.daily_candles_for_year(&symbol).await?,
+            self.live_candles(symbol.as_str()).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .relative_strength_source(symbol.as_str(), &candles, comparison_symbol)
             .await?;
         build_expanded_snapshot(
-            symbol.to_owned(),
+            symbol.into_string(),
             interval,
             candles,
             Vec::new(),
@@ -88,15 +93,16 @@ impl MarketChartService {
         interval: MarketChartInterval,
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
+        let symbol = TickerSymbol::parse(symbol)?;
         let candles = merge_live_candles(
-            self.yahoo.refresh_daily_candles_for_year(symbol).await?,
-            self.live_candles(symbol).await,
+            self.yahoo.refresh_daily_candles_for_year(&symbol).await?,
+            self.live_candles(symbol.as_str()).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .relative_strength_source(symbol.as_str(), &candles, comparison_symbol)
             .await?;
         build_expanded_snapshot(
-            symbol.to_owned(),
+            symbol.into_string(),
             interval,
             candles,
             Vec::new(),
@@ -117,7 +123,9 @@ impl MarketChartService {
             candles.to_vec()
         } else {
             merge_live_candles(
-                self.yahoo.daily_candles_for_year(comparison_symbol).await?,
+                self.yahoo
+                    .daily_candles_for_year(&TickerSymbol::parse(comparison_symbol)?)
+                    .await?,
                 self.live_candles(comparison_symbol).await,
             )?
         };
@@ -147,20 +155,24 @@ impl MarketChartService {
         comparison_symbol: Option<&str>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
-        self.yahoo.daily_candles_for_year(symbol).await?;
+        let symbol = TickerSymbol::parse(symbol)?;
+        self.yahoo.daily_candles_for_year(&symbol).await?;
         let history = self
             .yahoo
-            .historical_daily_candles(symbol, start, end)
+            .historical_daily_candles(&symbol, start, end)
             .await?;
         let has_more_before = history.has_more_before;
         let relative_strength = if let Some(comparison_symbol) = comparison_symbol {
             let comparison = if symbol == comparison_symbol {
                 history.candles.clone()
             } else {
-                self.yahoo.daily_candles_for_year(comparison_symbol).await?;
+                let comparison_symbol = TickerSymbol::parse(comparison_symbol)?;
+                self.yahoo
+                    .daily_candles_for_year(&comparison_symbol)
+                    .await?;
                 let comparison_history = self
                     .yahoo
-                    .historical_daily_candles(comparison_symbol, start, end)
+                    .historical_daily_candles(&comparison_symbol, start, end)
                     .await?;
                 comparison_history.candles
             };
@@ -173,7 +185,7 @@ impl MarketChartService {
             None
         };
         let mut snapshot = build_expanded_snapshot(
-            symbol.to_owned(),
+            symbol.into_string(),
             interval,
             history.candles,
             Vec::new(),
