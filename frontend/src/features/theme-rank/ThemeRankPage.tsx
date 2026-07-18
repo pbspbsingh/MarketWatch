@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, CircularProgress, MenuItem, Select, TextField, Typography } from "@mui/material";
-import { fetchThemeRankings, type PerformancePeriods, type ThemeRanking } from "../../api/industries";
+import { fetchThemeRankings, type ThemeRanking } from "../../api/industries";
 import { fetchThemes } from "../../api/themes";
 import { Toast } from "../../components/Toast";
 import "./theme-rank.css";
