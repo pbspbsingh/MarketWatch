@@ -33,7 +33,6 @@ export function ThemeRankPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
     Promise.all([fetchThemes(controller.signal), fetchThemeRankings(controller.signal)])
       .then(([metadata, rankings]) => {
         if (controller.signal.aborted) return;

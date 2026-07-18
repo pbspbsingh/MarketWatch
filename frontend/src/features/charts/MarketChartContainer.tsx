@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type RefObject,
 } from "react";
 import { Button, CircularProgress, Typography } from "@mui/material";
 import type { LogicalRange } from "lightweight-charts";
@@ -51,7 +52,7 @@ interface MarketChartContainerProps {
   priceScaleBottomMargin?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
-  historyInteractionTracker?: ChartHistoryInteractionTracker;
+  historyInteractionTrackerRef?: RefObject<ChartHistoryInteractionTracker>;
   relativeStrengthComparisonSymbol?: string;
   relativeStrengthMode?: RelativeStrengthMode;
   showLoadingOverlay?: boolean;
@@ -75,7 +76,7 @@ export function MarketChartContainer({
   priceScaleBottomMargin,
   onChartContext,
   onError,
-  historyInteractionTracker,
+  historyInteractionTrackerRef,
   relativeStrengthComparisonSymbol,
   relativeStrengthMode,
   showLoadingOverlay = true,
@@ -98,7 +99,7 @@ export function MarketChartContainer({
     sequence: 0,
     occurredAt: 0,
   });
-  const interactionTracker = historyInteractionTracker ?? localInteractionTrackerRef.current;
+  const interactionTrackerRef = historyInteractionTrackerRef ?? localInteractionTrackerRef;
   const onErrorRef = useRef(onError);
   const onChartContextRef = useRef(onChartContext);
   const onLoadStatusChangeRef = useRef(onLoadStatusChange);
@@ -109,25 +110,30 @@ export function MarketChartContainer({
   const [retryVersion, setRetryVersion] = useState(0);
   const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
   const [historyTrigger, setHistoryTrigger] = useState(0);
-  snapshotRef.current = snapshot;
-  onErrorRef.current = onError;
-  onChartContextRef.current = onChartContext;
-  onLoadStatusChangeRef.current = onLoadStatusChange;
-  onRefreshSettledRef.current = onRefreshSettled;
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+    onChartContextRef.current = onChartContext;
+    onLoadStatusChangeRef.current = onLoadStatusChange;
+    onRefreshSettledRef.current = onRefreshSettled;
+  }, [onChartContext, onError, onLoadStatusChange, onRefreshSettled]);
 
   const handleChartContext = useCallback((context: ChartSyncTarget | null) => {
     setChartContext(context);
     onChartContextRef.current?.(context);
   }, []);
 
-  const markChartInteraction = useCallback(() => {
-    interactionTracker.sequence += 1;
-    interactionTracker.occurredAt = performance.now();
-  }, [interactionTracker]);
+  const markChartInteraction = () => {
+    interactionTrackerRef.current.sequence += 1;
+    interactionTrackerRef.current.occurredAt = performance.now();
+  };
 
-  const markChartDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
+  const markChartDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (event.buttons !== 0) markChartInteraction();
-  }, [markChartInteraction]);
+  };
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -225,6 +231,7 @@ export function MarketChartContainer({
     if (chartContext === null) return;
     const timeScale = chartContext.chart.timeScale();
     const handleRange = (range: LogicalRange | null) => {
+      const interactionTracker = interactionTrackerRef.current;
       if (
         range === null
         || range.from > historyLoadThresholdBars
@@ -241,7 +248,7 @@ export function MarketChartContainer({
         timeScale.unsubscribeVisibleLogicalRangeChange(handleRange);
       }
     };
-  }, [chartContext, interactionTracker]);
+  }, [chartContext, interactionTrackerRef]);
 
   const state = loadState?.key === datasetKey ? loadState : undefined;
   useEffect(() => {

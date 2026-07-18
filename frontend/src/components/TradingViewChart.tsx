@@ -48,10 +48,14 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TradingViewWidget | undefined>(undefined);
   const requestedChart = useRef({ symbol, interval });
-  requestedChart.current = { symbol, interval };
+
+  useEffect(() => {
+    requestedChart.current = { symbol, interval };
+  }, [interval, symbol]);
 
   useEffect(() => {
     let active = true;
+    const container = containerRef.current;
     loadTradingView()
       .then(() => {
         const TradingView = (window as TradingViewWindow).TradingView;
@@ -89,7 +93,7 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
         widget.remove();
       }
       widgetRef.current = undefined;
-      containerRef.current?.replaceChildren();
+      container?.replaceChildren();
     };
   }, [containerId, onError]);
 

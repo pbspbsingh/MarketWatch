@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -102,21 +103,14 @@ export default function SplitLightweightCharts({
   const viewportOwnerRef = useRef<"top" | "bottom">("top");
   const liveClientRef = useRef<MarketChartLiveClient | null>(null);
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
   const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
     occurredAt: 0,
   });
-  const viewportsRef = useRef<{
-    D: ChartViewport | undefined;
-    W: ChartViewport | undefined;
-  }>(null);
-  const viewports = viewportsRef.current ?? {
-    D: readChartViewport("D"),
-    W: readChartViewport("W"),
-  };
-  viewportsRef.current = viewports;
-  const initialViewport = viewports[interval];
+  const initialViewport = useMemo(() => readChartViewport(interval), [interval]);
   const chartInterval = interval === "D" ? "daily" : "weekly";
   const liveTopKey = `${marketDataSymbol(topSymbol)}\0${chartInterval}\0${marketDataSymbol(bottomSymbol)}`;
   const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain`;
@@ -128,10 +122,9 @@ export default function SplitLightweightCharts({
     || bottomLoadState.status === "loading";
   const saveViewport = useCallback(
     (viewport: ChartViewport) => {
-      viewports[interval] = viewport;
       writeChartViewport(interval, viewport);
     },
-    [interval, viewports],
+    [interval],
   );
 
   useEffect(() => {
@@ -298,7 +291,7 @@ export default function SplitLightweightCharts({
               interval={chartInterval}
               initialViewport={initialViewport}
               priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
-              historyInteractionTracker={historyInteractionTrackerRef.current}
+              historyInteractionTrackerRef={historyInteractionTrackerRef}
               relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthMode={relativeStrengthMode}
               showLoadingOverlay={false}
@@ -330,7 +323,7 @@ export default function SplitLightweightCharts({
               interval={chartInterval}
               initialViewport={initialViewport}
               priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
-              historyInteractionTracker={historyInteractionTrackerRef.current}
+              historyInteractionTrackerRef={historyInteractionTrackerRef}
               showLoadingOverlay={false}
               refreshCandlesVersion={bottomRefreshVersion}
               onRefreshSettled={handleBottomRefreshSettled}

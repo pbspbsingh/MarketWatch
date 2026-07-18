@@ -1,4 +1,5 @@
 import type { SvgIconComponent } from "@mui/icons-material";
+import { createElement } from "react";
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import AgricultureIcon from "@mui/icons-material/Agriculture";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
@@ -86,6 +87,5 @@ export const watchlistIcons: { key: string; label: string; Icon: SvgIconComponen
 const iconsByKey = new Map(watchlistIcons.map((entry) => [entry.key, entry.Icon]));
 
 export function WatchlistIcon({ iconKey, ...props }: { iconKey: string; fontSize?: "inherit" | "small" | "medium" | "large" }) {
-  const Icon = iconsByKey.get(iconKey) ?? BookmarkIcon;
-  return <Icon {...props} />;
+  return createElement(iconsByKey.get(iconKey) ?? BookmarkIcon, props);
 }

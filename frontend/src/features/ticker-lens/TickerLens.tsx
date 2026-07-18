@@ -55,7 +55,7 @@ export function TickerLens({
   accent,
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tickerStream = useMemo(createTickerStreamClient, []);
+  const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const [groupMode, setGroupMode] = useState<GroupMode>(() => readGroupMode(searchParams));
   const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(() =>
     readGroupMode(searchParams) === "industry"

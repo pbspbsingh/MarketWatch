@@ -51,7 +51,7 @@ function initialRange(storageKey: string, fallback: Range): Range {
 
 export function ThemeTrackerPage() {
   const focusRevision = useFocusRefresh();
-  const tickerStream = useMemo(createTickerStreamClient, []);
+  const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const stockListRef = useListRef(null);
   const [topRange, setTopRange] = useState<Range>(() => initialRange(topRangeStorageKey, "week"));
   const [drillDownRange, setDrillDownRange] = useState<Range>(() => initialRange(drillDownRangeStorageKey, "month"));

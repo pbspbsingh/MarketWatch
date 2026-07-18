@@ -116,9 +116,13 @@ export function MarketChart({
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
   const seriesDatasetKeyRef = useRef<string | undefined>(undefined);
-  symbolRef.current = data.symbol;
-  initialViewportRef.current = initialViewport;
-  onChartContextRef.current = onChartContext;
+  useEffect(() => {
+    initialViewportRef.current = initialViewport;
+  }, [initialViewport]);
+
+  useEffect(() => {
+    onChartContextRef.current = onChartContext;
+  }, [onChartContext]);
   const chartOptions = useMemo(() => priceScaleBottomMargin === undefined
     ? undefined
     : {
@@ -399,7 +403,7 @@ export function MarketChart({
       onChartContextRef.current?.(chartContextRef.current);
       contextReportedRef.current = true;
     }
-  }, [data.candles, data.interval, data.moving_averages, data.volume_average]);
+  }, [data.candles, data.interval, data.moving_averages, data.symbol, data.volume_average]);
 
   return (
     <ChartHost

@@ -31,7 +31,10 @@ export function ImageAnnotator({ imageId, onClose, onSaved, onError }: ImageAnno
   const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  onErrorRef.current = onError;
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     document.body.classList.add("daily-note-image-editor-open");

@@ -41,6 +41,7 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
   const onChangeRef = useRef(onChange);
   const onCursorLineChangeRef = useRef(onCursorLineChange);
   const onPasteImageRef = useRef(onPasteImage);
+  const initialValueRef = useRef(value);
   const cursorLineRef = useRef(0);
   const synchronizingRef = useRef(false);
   onChangeRef.current = onChange;
@@ -68,7 +69,7 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
     const view = new EditorView({
       parent: hostRef.current,
       state: EditorState.create({
-        doc: value,
+        doc: initialValueRef.current,
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),

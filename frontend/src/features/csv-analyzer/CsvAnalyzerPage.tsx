@@ -23,7 +23,7 @@ import "./csv-analyzer.css";
 export function CsvAnalyzerPage() {
   const [collection, setCollection] = useState<TickerCollection | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [uploadProgress, setUploadProgress] = useState<number>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [failedResolutionCount, setFailedResolutionCount] = useState(0);
@@ -31,7 +31,6 @@ export function CsvAnalyzerPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setLoading(true);
     fetchLastTickerCollection()
       .then(setCollection)
       .catch((loadError: unknown) => setError(errorMessage(loadError)))
