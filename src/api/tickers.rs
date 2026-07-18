@@ -31,6 +31,7 @@ enum TickerRequest {
         include_unassigned: bool,
     },
     Symbols {
+        #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
         symbols: Vec<TickerSymbol>,
     },
 }
@@ -67,6 +68,7 @@ struct TickerRankingRequest {
 
 #[derive(Deserialize)]
 struct TickerRelativeStrengthRequest {
+    #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
     symbols: Vec<TickerSymbol>,
 }
 
@@ -86,6 +88,10 @@ enum GroupSummaryMode {
 struct GroupSummaryRequest {
     mode: GroupSummaryMode,
     group_keys: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::deserialize_optional_valid_ticker_symbols"
+    )]
     symbols: Option<Vec<TickerSymbol>>,
 }
 
@@ -578,5 +584,34 @@ async fn send_socket_event(socket: &mut WebSocket, event: TickerStreamMessage) -
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.handle.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbol_stream_keeps_valid_tickers_when_one_is_invalid() {
+        let command = serde_json::from_str::<TickerSocketCommand>(
+            r#"{"type":"stream","request_id":7,"group_type":"symbols","symbols":["AAPL","bad symbol","msft"]}"#,
+        )
+        .unwrap();
+
+        let TickerSocketCommand::Stream {
+            request_id,
+            request: TickerRequest::Symbols { symbols },
+        } = command
+        else {
+            panic!("expected symbol stream command");
+        };
+        assert_eq!(request_id, 7);
+        assert_eq!(
+            symbols,
+            [
+                TickerSymbol::parse("AAPL").unwrap(),
+                TickerSymbol::parse("MSFT").unwrap(),
+            ]
+        );
     }
 }

@@ -13,7 +13,9 @@ mod top_stocks;
 mod watchlists;
 
 use crate::app::AppState;
+use crate::models::TickerSymbol;
 use axum::Router;
+use serde::{Deserialize, Deserializer};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -30,4 +32,59 @@ pub fn router() -> Router<AppState> {
         .merge(themes::router())
         .merge(top_stocks::router())
         .merge(watchlists::router())
+}
+
+fn deserialize_valid_ticker_symbols<'de, D>(deserializer: D) -> Result<Vec<TickerSymbol>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(valid_ticker_symbols(Vec::<String>::deserialize(
+        deserializer,
+    )?))
+}
+
+fn deserialize_optional_valid_ticker_symbols<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<TickerSymbol>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Vec<String>>::deserialize(deserializer)?.map(valid_ticker_symbols))
+}
+
+fn valid_ticker_symbols(symbols: Vec<String>) -> Vec<TickerSymbol> {
+    symbols
+        .into_iter()
+        .filter_map(|symbol| TickerSymbol::try_from(symbol).ok())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct Batch {
+        #[serde(deserialize_with = "deserialize_valid_ticker_symbols")]
+        symbols: Vec<TickerSymbol>,
+    }
+
+    #[test]
+    fn ticker_batches_keep_valid_symbols_when_one_is_invalid() {
+        let batch =
+            serde_json::from_str::<Batch>(r#"{"symbols":["aapl","bad symbol","MSFT"]}"#).unwrap();
+
+        assert_eq!(
+            batch.symbols,
+            [
+                TickerSymbol::parse("AAPL").unwrap(),
+                TickerSymbol::parse("MSFT").unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ticker_batches_still_reject_malformed_json_values() {
+        assert!(serde_json::from_str::<Batch>(r#"{"symbols":["AAPL",42]}"#).is_err());
+    }
 }

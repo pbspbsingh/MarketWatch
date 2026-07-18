@@ -13,6 +13,7 @@ use tracing::{error, info};
 #[derive(Deserialize)]
 struct BoundedGroupsRequest {
     mode: BoundedGroupMode,
+    #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
     symbols: Vec<TickerSymbol>,
 }
 
