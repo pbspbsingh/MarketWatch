@@ -19,7 +19,7 @@ export const chartColors = {
 } as const;
 
 export const defaultChartBarSpacing = 6;
-export const chartRightOffsetPixels = 36;
+export const chartRightOffsetPixels = 40;
 export const defaultPriceScaleMargins = { top: 0.08, bottom: 0.25 } as const;
 export const overlappingPriceScaleMargins = {
   ...defaultPriceScaleMargins,
