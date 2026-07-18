@@ -1,3 +1,4 @@
+use super::TickerSymbol;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -11,6 +12,6 @@ pub struct Watchlist {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerWatchlists {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub watchlist_ids: Vec<i64>,
 }

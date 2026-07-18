@@ -1,6 +1,6 @@
 use crate::models::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
-    TickerCollectionSource,
+    TickerCollectionSource, TickerSymbol,
 };
 use crate::services::industry_analysis::{IndustryAnalysisError, IndustryAnalysisService};
 use crate::services::theme_analysis::{ThemeAnalysisError, ThemeAnalysisService};
@@ -281,14 +281,10 @@ fn normalize_symbols(symbols: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::with_capacity(symbols.len());
     for symbol in symbols {
-        let symbol = symbol.trim().to_uppercase();
-        if !symbol.is_empty()
-            && symbol.chars().all(|character| {
-                character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
-            })
+        if let Ok(symbol) = TickerSymbol::parse(symbol)
             && seen.insert(symbol.clone())
         {
-            normalized.push(symbol);
+            normalized.push(symbol.into_string());
         }
     }
     normalized
@@ -332,10 +328,9 @@ fn normalize_symbol(value: &str) -> Option<String> {
     if symbol.is_empty() || matches!(symbol.as_str(), "N/A" | "NA" | "NULL") {
         return None;
     }
-    symbol
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-'))
-        .then_some(symbol)
+    TickerSymbol::parse(&symbol)
+        .ok()
+        .map(TickerSymbol::into_string)
 }
 
 #[cfg(test)]

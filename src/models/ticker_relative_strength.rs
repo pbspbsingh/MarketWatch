@@ -1,4 +1,4 @@
-use super::DailyCandle;
+use super::{DailyCandle, TickerSymbol};
 use chrono::NaiveDate;
 use serde::Serialize;
 
@@ -25,7 +25,7 @@ pub struct TickerRelativeStrengthScores {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerRelativeStrengthRatings {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub rs_1m: Option<u8>,
     pub rs_3m: Option<u8>,
     pub rs_6m: Option<u8>,
@@ -53,7 +53,7 @@ pub fn calculate_ticker_relative_strength_scores(
 }
 
 pub fn rank_ticker_relative_strength_scores(
-    scores: &[(String, TickerRelativeStrengthScores)],
+    scores: &[(TickerSymbol, TickerRelativeStrengthScores)],
 ) -> Vec<TickerRelativeStrengthRatings> {
     let rs_1m = percentile_ratings(
         &scores
@@ -180,7 +180,6 @@ mod tests {
     fn candles(days: usize, close: impl Fn(usize) -> f64) -> Vec<DailyCandle> {
         (0..days)
             .map(|day| DailyCandle {
-                symbol: "TEST".to_owned(),
                 market_date: date(day as i64),
                 open: close(day),
                 high: close(day),
@@ -285,35 +284,35 @@ mod tests {
     fn ranks_scores_with_ties_and_missing_values() {
         let scores = vec![
             (
-                "LOW".to_owned(),
+                TickerSymbol::parse("LOW").unwrap(),
                 TickerRelativeStrengthScores {
                     rs_1m: Some(-1.0),
                     ..Default::default()
                 },
             ),
             (
-                "MID-A".to_owned(),
+                TickerSymbol::parse("MID-A").unwrap(),
                 TickerRelativeStrengthScores {
                     rs_1m: Some(0.0),
                     ..Default::default()
                 },
             ),
             (
-                "MID-B".to_owned(),
+                TickerSymbol::parse("MID-B").unwrap(),
                 TickerRelativeStrengthScores {
                     rs_1m: Some(0.0),
                     ..Default::default()
                 },
             ),
             (
-                "HIGH".to_owned(),
+                TickerSymbol::parse("HIGH").unwrap(),
                 TickerRelativeStrengthScores {
                     rs_1m: Some(1.0),
                     ..Default::default()
                 },
             ),
             (
-                "MISSING".to_owned(),
+                TickerSymbol::parse("MISSING").unwrap(),
                 TickerRelativeStrengthScores::default(),
             ),
         ];

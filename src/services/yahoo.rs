@@ -216,7 +216,7 @@ impl YahooService {
                 )
                 .await?;
             self.store
-                .upsert_daily_candles(&candles)
+                .upsert_daily_candles(symbol, &candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
             self.cache_first_trade_date(symbol, first_trade_at);
@@ -271,7 +271,7 @@ impl YahooService {
             .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
             .unwrap_or(!fetched.is_empty());
         self.store
-            .upsert_daily_candles(&fetched)
+            .upsert_daily_candles(symbol, &fetched)
             .await
             .map_err(YahooServiceError::Persistence)?;
         self.cache_first_trade_date(symbol, first_trade_at);
@@ -384,7 +384,6 @@ impl YahooService {
                 market_date,
             })?;
         Ok(DailyCandle {
-            symbol: symbol.to_owned(),
             market_date,
             open: candle.open,
             high: candle.high,
@@ -547,7 +546,6 @@ fn aggregate_regular_candle(
     })?;
     Ok(Some(IntradayCandle {
         candle: DailyCandle {
-            symbol: symbol.to_owned(),
             market_date,
             open: first.open,
             high,

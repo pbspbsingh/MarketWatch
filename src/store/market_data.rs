@@ -148,7 +148,7 @@ impl Store {
     ) -> anyhow::Result<Vec<DailyCandle>> {
         sqlx::query_as!(
             DailyCandle,
-            r#"SELECT symbol, market_date AS "market_date: NaiveDate", open, high, low,
+            r#"SELECT market_date AS "market_date: NaiveDate", open, high, low,
                     close, volume
              FROM daily_candles
              WHERE symbol = ? AND market_date >= ? AND market_date < ?
@@ -162,16 +162,14 @@ impl Store {
         .context("failed to load daily candles")
     }
 
-    pub async fn upsert_daily_candles(&self, candles: &[DailyCandle]) -> anyhow::Result<()> {
+    pub async fn upsert_daily_candles(
+        &self,
+        symbol: &str,
+        candles: &[DailyCandle],
+    ) -> anyhow::Result<()> {
         if candles.is_empty() {
             return Ok(());
         }
-
-        let symbol = &candles[0].symbol;
-        anyhow::ensure!(
-            candles.iter().all(|candle| &candle.symbol == symbol),
-            "daily candle batch must contain one symbol"
-        );
 
         let mut transaction = self
             .pool
@@ -191,7 +189,7 @@ impl Store {
                     low = excluded.low,
                     close = excluded.close,
                     volume = excluded.volume",
-                candle.symbol,
+                symbol,
                 candle.market_date,
                 candle.open,
                 candle.high,
@@ -220,11 +218,6 @@ impl Store {
             !candles.is_empty(),
             "refusing to replace candles with an empty batch"
         );
-        anyhow::ensure!(
-            candles.iter().all(|candle| candle.symbol == symbol),
-            "replacement candle batch must match its symbol"
-        );
-
         let mut transaction = self
             .pool
             .begin()
@@ -239,7 +232,7 @@ impl Store {
                 "INSERT INTO daily_candles (
                     symbol, market_date, open, high, low, close, volume
                  ) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                candle.symbol,
+                symbol,
                 candle.market_date,
                 candle.open,
                 candle.high,
@@ -262,9 +255,8 @@ impl Store {
 mod tests {
     use super::*;
 
-    fn candle(symbol: &str, day: u32, close: f64) -> DailyCandle {
+    fn candle(day: u32, close: f64) -> DailyCandle {
         DailyCandle {
-            symbol: symbol.to_owned(),
             market_date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
             open: close,
             high: close,
@@ -297,12 +289,12 @@ mod tests {
             .await
             .unwrap();
         store
-            .upsert_daily_candles(&[candle("TEST", 1, 10.0), candle("TEST", 2, 11.0)])
+            .upsert_daily_candles("TEST", &[candle(1, 10.0), candle(2, 11.0)])
             .await
             .unwrap();
 
         store
-            .replace_daily_candles("TEST", &[candle("TEST", 3, 12.0)])
+            .replace_daily_candles("TEST", &[candle(3, 12.0)])
             .await
             .unwrap();
 
@@ -315,7 +307,7 @@ mod tests {
                 )
                 .await
                 .unwrap(),
-            vec![candle("TEST", 3, 12.0)],
+            vec![candle(3, 12.0)],
         );
         assert!(store.replace_daily_candles("TEST", &[]).await.is_err());
         assert_eq!(

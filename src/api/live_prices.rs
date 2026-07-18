@@ -185,7 +185,7 @@ fn normalize_symbols(symbols: Vec<String>) -> Result<Vec<String>, String> {
             "live prices supports at most {CLIENT_SYMBOL_LIMIT} symbols"
         ));
     }
-    Ok(symbols)
+    Ok(symbols.into_iter().map(Into::into).collect())
 }
 
 async fn replace_symbols(
@@ -297,8 +297,8 @@ mod tests {
     fn forwards_only_prices_matching_the_current_trading_session() {
         let updated_at = Utc::now();
         let candle = YahooLiveCandle {
+            symbol: "AAPL".to_owned(),
             candle: DailyCandle {
-                symbol: "AAPL".to_owned(),
                 market_date: updated_at.date_naive(),
                 open: 100.0,
                 high: 102.0,

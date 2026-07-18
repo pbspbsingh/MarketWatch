@@ -157,7 +157,7 @@ async fn handle_live_chart_socket(
                 }
                 match update {
                     YahooLiveUpdate::Regular(update) => {
-                        dirty_symbols.insert(update.candle.symbol);
+                        dirty_symbols.insert(update.symbol);
                     }
                     update => {
                         session_updates.insert(update.symbol().to_owned(), update);
@@ -327,13 +327,13 @@ fn normalize_live_charts(
             .comparison_symbol
             .map(|symbol| normalize_symbol(&symbol).map_err(|error| error.to_string()))
             .transpose()?;
-        symbols.push(symbol.clone());
-        symbols.extend(comparison_symbol.iter().cloned());
+        symbols.push(symbol.to_string());
+        symbols.extend(comparison_symbol.iter().map(ToString::to_string));
         normalized_charts.push(LiveChartRequest {
             chart_id: chart.chart_id,
-            symbol,
+            symbol: symbol.into_string(),
             interval: chart.interval,
-            comparison_symbol,
+            comparison_symbol: comparison_symbol.map(Into::into),
         });
     }
     symbols.sort_unstable();
@@ -453,7 +453,7 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
     match update {
         YahooLiveUpdate::PreMarket(update) => LiveSessionDelta {
             chart_id: chart.chart_id.clone(),
-            symbol: update.candle.symbol.clone(),
+            symbol: update.symbol.clone(),
             date: update.candle.market_date,
             session: LiveSessionKind::PreMarket,
             candle: Some(MarketChartCandle::from(&update.candle)),
@@ -541,7 +541,9 @@ fn normalize_optional_symbol(
 ) -> Result<Option<String>, (StatusCode, String)> {
     symbol
         .map(|symbol| {
-            normalize_symbol(&symbol).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))
+            normalize_symbol(&symbol)
+                .map(Into::into)
+                .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))
         })
         .transpose()
 }
@@ -665,8 +667,8 @@ mod tests {
             comparison_symbol: None,
         };
         let update = YahooLiveUpdate::PreMarket(YahooLiveCandle {
+            symbol: "AAPL".to_owned(),
             candle: DailyCandle {
-                symbol: "AAPL".to_owned(),
                 market_date: date,
                 open: 100.0,
                 high: 102.0,

@@ -3,7 +3,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DailyCandle {
-    pub symbol: String,
     pub market_date: NaiveDate,
     pub open: f64,
     pub high: f64,

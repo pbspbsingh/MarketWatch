@@ -244,7 +244,6 @@ mod tests {
             .map(|index| {
                 let close = 100.0 + index as f64 * ratio_step;
                 DailyCandle {
-                    symbol: "TEST".to_owned(),
                     market_date: start + Days::new(index),
                     open: close,
                     high: close,

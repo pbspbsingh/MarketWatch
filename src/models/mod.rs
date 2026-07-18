@@ -8,6 +8,7 @@ mod performance;
 mod themes;
 mod ticker_collection;
 mod ticker_relative_strength;
+mod ticker_symbol;
 mod top_stock_screens;
 mod watchlists;
 
@@ -36,5 +37,6 @@ pub(crate) use ticker_relative_strength::{
     TickerRelativeStrengthAnchors, TickerRelativeStrengthScores,
     calculate_ticker_relative_strength_scores, rank_ticker_relative_strength_scores,
 };
+pub use ticker_symbol::TickerSymbol;
 pub use top_stock_screens::TopStockScreen;
 pub use watchlists::{TickerWatchlists, Watchlist};

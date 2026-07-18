@@ -1,6 +1,6 @@
 use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeSuggestion,
-    ThemeSuggestionError, ThemeTicker,
+    ThemeSuggestionError, ThemeTicker, TickerSymbol,
 };
 use crate::providers::{AiClient, AiError};
 use crate::services::tickers::TickerCatalogService;
@@ -676,16 +676,9 @@ fn normalize_theme(
 }
 
 fn validate_symbol(symbol: &str) -> Result<(), ThemeServiceError> {
-    if symbol.is_empty()
-        || !symbol
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-'))
-    {
-        return Err(ThemeServiceError::Validation(format!(
-            "invalid ticker symbol {symbol}"
-        )));
-    }
-    Ok(())
+    TickerSymbol::parse(symbol)
+        .map(|_| ())
+        .map_err(|_| ThemeServiceError::Validation(format!("invalid ticker symbol {symbol}")))
 }
 
 fn validate_count(count: usize) -> Result<(), ThemeServiceError> {

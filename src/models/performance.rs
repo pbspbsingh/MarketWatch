@@ -1,4 +1,4 @@
-use crate::models::DailyCandle;
+use crate::models::{DailyCandle, TickerSymbol};
 use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -41,7 +41,7 @@ pub struct ThemeRanking {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerRanking {
-    pub symbol: String,
+    pub symbol: TickerSymbol,
     pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
@@ -212,7 +212,6 @@ mod tests {
 
     fn candle(date: &str, close: f64) -> DailyCandle {
         DailyCandle {
-            symbol: "TEST".to_owned(),
             market_date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
             open: close,
             high: close,
@@ -253,7 +252,6 @@ mod tests {
     fn calculates_candle_relative_strength_trend() {
         let benchmark = (0..80)
             .map(|index| DailyCandle {
-                symbol: "TEST".to_owned(),
                 market_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
                     + TimeDelta::days(index as i64),
                 open: 100.0,
@@ -283,7 +281,6 @@ mod tests {
     fn relative_strength_trend_requires_medium_term_history() {
         let candles = (0..66)
             .map(|index| DailyCandle {
-                symbol: "TEST".to_owned(),
                 market_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
                     + TimeDelta::days(index as i64),
                 open: 100.0,

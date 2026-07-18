@@ -315,7 +315,6 @@ mod tests {
     fn candles(count: u64, step_days: u64) -> Vec<DailyCandle> {
         (0..count)
             .map(|index| DailyCandle {
-                symbol: "TEST".to_owned(),
                 market_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
                     + Days::new(index * step_days),
                 open: index as f64 + 1.0,

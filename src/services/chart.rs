@@ -139,7 +139,6 @@ mod tests {
 
     fn candle(day: u32, high: f64, low: f64, close: f64, volume: i64) -> DailyCandle {
         DailyCandle {
-            symbol: "TEST".to_owned(),
             market_date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
             open: close,
             high,
@@ -166,7 +165,6 @@ mod tests {
     fn calculates_extension_from_50_sma_in_average_ranges() {
         let candles = (1..=50)
             .map(|day| DailyCandle {
-                symbol: "TEST".to_owned(),
                 market_date: NaiveDate::from_ymd_opt(2026, 1, 1)
                     .unwrap()
                     .checked_add_days(Days::new(day))

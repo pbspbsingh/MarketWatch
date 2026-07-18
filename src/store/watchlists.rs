@@ -1,5 +1,5 @@
 use super::Store;
-use crate::models::{TickerWatchlists, Watchlist};
+use crate::models::{TickerSymbol, TickerWatchlists, Watchlist};
 use anyhow::Context;
 use sqlx::{QueryBuilder, Row};
 use std::collections::HashMap;
@@ -148,7 +148,7 @@ impl Store {
 
     pub async fn ticker_watchlists(
         &self,
-        symbols: &[String],
+        symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerWatchlists>> {
         if symbols.is_empty() {
             return Ok(Vec::new());
@@ -158,7 +158,7 @@ impl Store {
         );
         let mut separated = query.separated(", ");
         for symbol in symbols {
-            separated.push_bind(symbol);
+            separated.push_bind(symbol.as_str());
         }
         separated.push_unseparated(") ORDER BY symbol, added_at DESC, watchlist_id");
         let rows = query
@@ -177,7 +177,7 @@ impl Store {
             .iter()
             .map(|symbol| TickerWatchlists {
                 symbol: symbol.clone(),
-                watchlist_ids: memberships.remove(symbol).unwrap_or_default(),
+                watchlist_ids: memberships.remove(symbol.as_str()).unwrap_or_default(),
             })
             .collect())
     }
@@ -190,6 +190,7 @@ mod tests {
     #[tokio::test]
     async fn stores_multiple_watchlist_memberships_and_cascades_deleted_lists() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = TickerSymbol::parse("TEST").unwrap();
         sqlx::query!("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
             .execute(&store.pool)
             .await
@@ -205,7 +206,10 @@ mod tests {
         );
         assert!(store.add_watchlist_symbol(growth, "TEST").await.unwrap());
         assert_eq!(
-            store.ticker_watchlists(&["TEST".to_owned()]).await.unwrap()[0]
+            store
+                .ticker_watchlists(std::slice::from_ref(&symbol))
+                .await
+                .unwrap()[0]
                 .watchlist_ids
                 .len(),
             2
@@ -213,7 +217,11 @@ mod tests {
 
         assert!(store.delete_watchlist(growth).await.unwrap());
         assert_eq!(
-            store.ticker_watchlists(&["TEST".to_owned()]).await.unwrap()[0].watchlist_ids,
+            store
+                .ticker_watchlists(std::slice::from_ref(&symbol))
+                .await
+                .unwrap()[0]
+                .watchlist_ids,
             [favourite.id]
         );
         assert!(!store.delete_watchlist(favourite.id).await.unwrap());

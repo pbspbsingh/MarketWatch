@@ -20,6 +20,7 @@ const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLiveCandle {
+    pub symbol: String,
     pub candle: DailyCandle,
     pub updated_at: DateTime<Utc>,
 }
@@ -42,7 +43,7 @@ pub enum YahooLiveUpdate {
 impl YahooLiveUpdate {
     pub fn symbol(&self) -> &str {
         match self {
-            Self::Regular(update) | Self::PreMarket(update) => &update.candle.symbol,
+            Self::Regular(update) | Self::PreMarket(update) => &update.symbol,
             Self::PostMarket(update) => &update.symbol,
         }
     }
@@ -296,7 +297,7 @@ impl YahooLiveActor {
                     .cache
                     .get(&symbol)
                     .filter(|cached| cached.market_date == current_date)
-                    .and_then(CachedCandle::live_candle);
+                    .and_then(|cached| cached.live_candle(&symbol));
                 let _ = reply.send(latest);
             }
             Command::Seeded { symbol, result } => {
@@ -633,7 +634,7 @@ impl YahooLiveActor {
         let Some(entry) = cache.get_mut(symbol) else {
             return;
         };
-        let Some(candle) = entry.complete(symbol) else {
+        let Some(candle) = entry.complete() else {
             return;
         };
         if entry.published.as_ref() == Some(&candle) {
@@ -644,6 +645,7 @@ impl YahooLiveActor {
             return;
         }
         let update = YahooLiveCandle {
+            symbol: symbol.to_owned(),
             candle,
             updated_at: entry.updated_at,
         };
@@ -758,9 +760,8 @@ impl CachedCandle {
         }
     }
 
-    fn complete(&self, symbol: &str) -> Option<DailyCandle> {
+    fn complete(&self) -> Option<DailyCandle> {
         Some(DailyCandle {
-            symbol: symbol.to_owned(),
             market_date: self.market_date,
             open: self.open?,
             high: self.high?,
@@ -770,8 +771,9 @@ impl CachedCandle {
         })
     }
 
-    fn live_candle(&self) -> Option<YahooLiveCandle> {
+    fn live_candle(&self, symbol: &str) -> Option<YahooLiveCandle> {
         Some(YahooLiveCandle {
+            symbol: symbol.to_owned(),
             candle: self.published.clone()?,
             updated_at: self.updated_at,
         })
@@ -943,8 +945,8 @@ mod tests {
         let first_time = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
         let latest_time = first_time + chrono::TimeDelta::seconds(1);
         let candle = |close, updated_at| YahooLiveCandle {
+            symbol: "AAPL".to_owned(),
             candle: DailyCandle {
-                symbol: "AAPL".to_owned(),
                 market_date: date,
                 open: 100.0,
                 high: 102.0,

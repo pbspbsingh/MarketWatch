@@ -2,7 +2,7 @@ use crate::config::FinvizConfig;
 use crate::config::MarketConfig;
 use crate::models::{
     DailyCandle, TickerRanking, TickerRelativeStrengthAnchors, TickerRelativeStrengthRatings,
-    TickerRelativeStrengthScores, average_daily_range_percent, average_volume,
+    TickerRelativeStrengthScores, TickerSymbol, average_daily_range_percent, average_volume,
     calculate_ticker_relative_strength_scores, candle_performance, close_above_sma,
     rank_ticker_relative_strength_scores,
 };
@@ -59,7 +59,7 @@ impl TickerCatalogService {
         industry_keys: &[String],
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let symbols = self.industry_tickers(industry_keys).await?;
+        let symbols = parse_symbols(self.industry_tickers(industry_keys).await?)?;
         self.stream_symbols(stream_id, symbols, !industry_keys.is_empty(), sender)
             .await
     }
@@ -71,7 +71,7 @@ impl TickerCatalogService {
         include_unassigned: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
-        let symbols = self.theme_tickers(theme_ids, include_unassigned).await?;
+        let symbols = parse_symbols(self.theme_tickers(theme_ids, include_unassigned).await?)?;
         self.stream_symbols(
             stream_id,
             symbols,
@@ -155,7 +155,7 @@ impl TickerCatalogService {
                 let score = match self.yahoo.daily_candles_for_year(&symbol).await {
                     Ok(candles) => calculate_ticker_relative_strength_scores(&candles, anchors),
                     Err(error) => {
-                        warn!(symbol, %error, "failed to load Yahoo ticker RS history");
+                        warn!(%symbol, %error, "failed to load Yahoo ticker RS history");
                         TickerRelativeStrengthScores::default()
                     }
                 };
@@ -212,7 +212,7 @@ impl TickerCatalogService {
     async fn stream_symbols(
         &self,
         stream_id: u64,
-        symbols: Vec<String>,
+        symbols: Vec<TickerSymbol>,
         metrics_active: bool,
         sender: &mpsc::Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
@@ -282,7 +282,7 @@ impl TickerCatalogService {
                     }
                 }
                 Err(error) => {
-                    warn!(stream_id, symbol, %error, "failed to load Yahoo ticker performance");
+                    warn!(stream_id, %symbol, %error, "failed to load Yahoo ticker performance");
                     TickerRanking {
                         watchlist_ids: watchlists_by_symbol
                             .get(&symbol)
@@ -307,15 +307,7 @@ impl TickerCatalogService {
     }
 
     pub async fn ensure_ticker(&self, symbol: &str) -> anyhow::Result<()> {
-        let symbol = symbol.trim().to_uppercase();
-        anyhow::ensure!(
-            !symbol.is_empty()
-                && symbol
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric()
-                        || matches!(character, '.' | '-')),
-            "invalid ticker symbol"
-        );
+        let symbol = TickerSymbol::parse(symbol)?;
         if !self.store.ticker_has_industry(&symbol).await? {
             let industry = self.finviz.ticker_industry(&symbol).await?;
             self.yahoo.profile(&symbol).await?;
@@ -328,7 +320,7 @@ impl TickerCatalogService {
                 .await?;
             if !present_in_latest_snapshot {
                 warn!(
-                    symbol,
+                    %symbol,
                     industry_key = industry.key,
                     industry_name = industry.name,
                     "stored ticker industry absent from latest snapshot"
@@ -364,16 +356,8 @@ impl TickerCatalogService {
     }
 }
 
-pub fn normalize_symbol(symbol: &str) -> anyhow::Result<String> {
-    let symbol = symbol.trim().to_uppercase();
-    anyhow::ensure!(
-        !symbol.is_empty()
-            && symbol.chars().all(
-                |character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
-            ),
-        "invalid ticker symbol"
-    );
-    Ok(symbol)
+pub fn normalize_symbol(symbol: &str) -> anyhow::Result<TickerSymbol> {
+    TickerSymbol::parse(symbol).map_err(anyhow::Error::new)
 }
 
 fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
@@ -389,7 +373,7 @@ fn validate_industry_keys(industry_keys: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<String>> {
+fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<TickerSymbol>> {
     let mut normalized = Vec::with_capacity(symbols.len());
     for symbol in symbols {
         let symbol = normalize_symbol(symbol)?;
@@ -398,6 +382,14 @@ fn normalize_symbols(symbols: &[String]) -> anyhow::Result<Vec<String>> {
         }
     }
     Ok(normalized)
+}
+
+fn parse_symbols(symbols: Vec<String>) -> anyhow::Result<Vec<TickerSymbol>> {
+    symbols
+        .into_iter()
+        .map(TickerSymbol::try_from)
+        .collect::<Result<_, _>>()
+        .map_err(anyhow::Error::new)
 }
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
