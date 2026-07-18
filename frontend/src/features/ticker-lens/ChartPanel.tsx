@@ -55,6 +55,12 @@ interface ChartPanelProps {
   horizontalDetailsNavigation?: boolean | "right";
 }
 
+interface RequestState<T> {
+  key: string;
+  value?: T;
+  error?: string;
+}
+
 export function ChartPanel({
   mode,
   groupKeys,
@@ -64,21 +70,20 @@ export function ChartPanel({
   onSelectedTickerContext,
   horizontalDetailsNavigation = true,
 }: ChartPanelProps) {
-  const [summary, setSummary] = useState<ChartSummary>();
-  const [groupSummary, setGroupSummary] = useState<TickerGroupSummary>();
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [groupSummaryLoading, setGroupSummaryLoading] = useState(false);
+  const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
+  const [groupSummaryState, setGroupSummaryState] = useState<RequestState<TickerGroupSummary>>({ key: "" });
   const [interval, setInterval] = useState<"D" | "W">(() =>
     readChartInterval(chartIntervalKey),
   );
   const [showThemeEtfChart, setShowThemeEtfChart] = useState(() =>
     readEnabled(chartThemeEtfKey),
   );
-  const [selectedThemeEtf, setSelectedThemeEtf] = useState<string>();
-  const [error, setError] = useState<string>();
+  const [themeSelection, setThemeSelection] = useState<{ ticker: string; etf: string }>();
+  const [panelError, setPanelError] = useState<{ key: string; message: string }>();
   const [warning, setWarning] = useState<string>();
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
+  const [detailsSelection, setDetailsSelection] = useState<typeof tickerSelection>();
   const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
     readChartEngine(chartEngineKey),
   );
@@ -86,9 +91,31 @@ export function ChartPanel({
     readRelativeStrengthMode(chartRelativeStrengthModeKey),
   );
   const [summaryVersion, setSummaryVersion] = useState(0);
-  const groupKeysKey = [...groupKeys].sort().join(",");
+  const groupKeysKey = [...groupKeys].sort().join("\0");
+  const industryKeysKey = [...industryKeys].sort().join("\0");
+  const symbolsProvided = symbols !== undefined;
   const symbolsKey = symbols?.join("\0") ?? "";
-  const activeSummary = summary?.symbol === selectedTicker ? summary : undefined;
+  const summaryRequestKey = selectedTicker === undefined
+    ? undefined
+    : `${selectedTicker}\0${industryKeysKey}\0${summaryVersion}`;
+  const groupSummaryRequestKey = selectedTicker === undefined
+    ? `${mode}\0${groupKeysKey}\0${symbolsProvided ? symbolsKey : "undefined"}`
+    : undefined;
+  const summary = summaryState.key === summaryRequestKey ? summaryState.value : undefined;
+  const groupSummary = groupSummaryState.key === groupSummaryRequestKey
+    ? groupSummaryState.value
+    : undefined;
+  const summaryLoading = summaryRequestKey !== undefined && summaryState.key !== summaryRequestKey;
+  const groupSummaryLoading = groupSummaryRequestKey !== undefined
+    && groupSummaryState.key !== groupSummaryRequestKey;
+  const summaryError = summaryState.key === summaryRequestKey ? summaryState.error : undefined;
+  const groupSummaryError = groupSummaryState.key === groupSummaryRequestKey
+    ? groupSummaryState.error
+    : undefined;
+  const error = panelError?.key === summaryRequestKey ? panelError?.message : undefined;
+  const detailsOpen = detailsSelection === tickerSelection && selectedTicker !== undefined;
+  const selectedThemeEtf = themeSelection?.ticker === selectedTicker ? themeSelection?.etf : undefined;
+  const activeSummary = summary;
   const selectedIndustry = activeSummary?.industry?.name ?? "All industries";
   const selectedThemeBenchmark = activeSummary?.theme_benchmarks.find(
     (theme) => theme.etf_symbol === selectedThemeEtf,
@@ -119,13 +146,6 @@ export function ChartPanel({
   }, []);
 
   useEffect(() => {
-    if (selectedTicker === undefined) {
-      setDetailsOpen(false);
-      onSelectedTickerContext(undefined);
-    }
-  }, [onSelectedTickerContext, selectedTicker]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         !horizontalDetailsNavigation ||
@@ -139,7 +159,7 @@ export function ChartPanel({
       }
       if (event.key === "Escape" && detailsOpen) {
         event.preventDefault();
-        setDetailsOpen(false);
+        setDetailsSelection(undefined);
         return;
       }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -149,32 +169,30 @@ export function ChartPanel({
       if (selectedTicker === undefined) {
         if (horizontalDetailsNavigation !== "right") setWarning("No ticker is selected");
       } else {
-        setDetailsOpen(true);
+        setDetailsSelection(tickerSelection);
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [detailsOpen, horizontalDetailsNavigation, selectedTicker]);
+  }, [detailsOpen, horizontalDetailsNavigation, selectedTicker, tickerSelection]);
 
   useEffect(() => {
-    setError(undefined);
     if (selectedTicker === undefined) {
-      setSummary(undefined);
-      setSummaryLoading(false);
       onSelectedTickerContext(undefined);
       return;
     }
 
     const controller = new AbortController();
-    const tickerChanged = summary?.symbol !== selectedTicker;
-    setSummaryLoading(true);
     onSelectedTickerContext(undefined);
-    fetchChartSummary(selectedTicker, [...industryKeys], controller.signal)
+    fetchChartSummary(
+      selectedTicker,
+      industryKeysKey === "" ? [] : industryKeysKey.split("\0"),
+      controller.signal,
+    )
       .then((chartSummary) => {
-        if (tickerChanged) setSelectedThemeEtf(undefined);
-        setSummary(chartSummary);
-        setSummaryLoading(false);
+        if (controller.signal.aborted || summaryRequestKey === undefined) return;
+        setSummaryState({ key: summaryRequestKey, value: chartSummary });
         onSelectedTickerContext({
           industry: chartSummary.industry,
           themeNames: chartSummary.themes,
@@ -182,39 +200,37 @@ export function ChartPanel({
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setSummary(undefined);
-          setSummaryLoading(false);
+          if (summaryRequestKey !== undefined) {
+            setSummaryState({ key: summaryRequestKey, error: requestError.message });
+          }
           onSelectedTickerContext(undefined);
-          setError(requestError.message);
         }
       });
     return () => controller.abort();
-  }, [industryKeys, onSelectedTickerContext, selectedTicker, summaryVersion]);
+  }, [industryKeysKey, onSelectedTickerContext, selectedTicker, summaryRequestKey]);
 
   useEffect(() => {
-    if (selectedTicker !== undefined) {
-      setGroupSummary(undefined);
-      setGroupSummaryLoading(false);
-      return;
-    }
+    if (groupSummaryRequestKey === undefined) return;
 
     const controller = new AbortController();
-    setGroupSummary(undefined);
-    setGroupSummaryLoading(true);
-    fetchTickerGroupSummary(mode, [...groupKeys].sort(), symbols, controller.signal)
+    fetchTickerGroupSummary(
+      mode,
+      groupKeysKey === "" ? [] : groupKeysKey.split("\0"),
+      symbolsProvided ? symbolsKey === "" ? [] : symbolsKey.split("\0") : undefined,
+      controller.signal,
+    )
       .then((nextSummary) => {
-        if (!controller.signal.aborted) setGroupSummary(nextSummary);
+        if (!controller.signal.aborted) {
+          setGroupSummaryState({ key: groupSummaryRequestKey, value: nextSummary });
+        }
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
+          setGroupSummaryState({ key: groupSummaryRequestKey, error: requestError.message });
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setGroupSummaryLoading(false);
       });
     return () => controller.abort();
-  }, [groupKeysKey, mode, selectedTicker, symbolsKey]);
+  }, [groupKeysKey, groupSummaryRequestKey, mode, symbolsKey, symbolsProvided]);
 
   return (
     <section className="workspace-panel ticker-lens-chart-panel">
@@ -228,8 +244,10 @@ export function ChartPanel({
         selectedThemeEtf={selectedThemeBenchmark?.etf_symbol}
         setInterval={setInterval}
         setShowThemeEtfChart={setShowThemeEtfChart}
-        setSelectedThemeEtf={setSelectedThemeEtf}
-        setDetailsOpen={setDetailsOpen}
+        setSelectedThemeEtf={(etf) => {
+          if (selectedTicker !== undefined) setThemeSelection({ ticker: selectedTicker, etf });
+        }}
+        setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
         chartEngine={chartEngine}
         setChartEngine={setChartEngine}
         relativeStrengthMode={relativeStrengthMode}
@@ -237,6 +255,7 @@ export function ChartPanel({
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
+          key={groupSummary === undefined ? "empty" : groupSummaryRequestKey}
           summary={groupSummary}
           loading={groupSummaryLoading}
           selectedGroupLabel={selectedGroupLabel}
@@ -253,7 +272,9 @@ export function ChartPanel({
               interval={interval}
               initialSplit={readChartSplit(chartSplitKey)}
               onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-              onError={setError}
+              onError={(message) => {
+                if (summaryRequestKey !== undefined) setPanelError({ key: summaryRequestKey, message });
+              }}
             />
           )}
           {summary !== undefined && chartEngine === "lightweight" && (
@@ -271,7 +292,7 @@ export function ChartPanel({
                 topTradingViewSymbol={summary.tradingview_symbol}
                 bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
-                topPending={activeSummary === undefined && error === undefined}
+                topPending={summaryLoading}
                 relativeStrengthMode={relativeStrengthMode}
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
@@ -282,9 +303,14 @@ export function ChartPanel({
         </div>
       )}
       <Toast
-        message={error ?? chartError}
+        message={error ?? summaryError ?? groupSummaryError ?? chartError}
         onClose={() => {
-          if (error !== undefined) setError(undefined);
+          if (error !== undefined) setPanelError(undefined);
+          else if (summaryError !== undefined && summaryRequestKey !== undefined) {
+            setSummaryState({ key: summaryRequestKey });
+          } else if (groupSummaryError !== undefined && groupSummaryRequestKey !== undefined) {
+            setGroupSummaryState({ key: groupSummaryRequestKey });
+          }
           else if (chartErrors.top !== undefined) handleChartError("top", undefined);
           else handleChartError("bottom", undefined);
         }}
@@ -296,8 +322,8 @@ export function ChartPanel({
       />
       <TickerDetailsDialog
         symbol={selectedTicker}
-        open={detailsOpen && selectedTicker !== undefined}
-        onClose={() => setDetailsOpen(false)}
+        open={detailsOpen}
+        onClose={() => setDetailsSelection(undefined)}
         onThemeChanged={() => setSummaryVersion((version) => version + 1)}
       />
     </section>
@@ -318,16 +344,8 @@ function GroupSummaryPanel({
   relatedGroupMode: GroupMode;
 }) {
   const [selectedRelatedGroupKeys, setSelectedRelatedGroupKeys] = useState<Set<string>>(
-    new Set(),
+    () => new Set(summary?.related_groups.map((group) => group.key)),
   );
-
-  useEffect(() => {
-    if (summary === undefined) {
-      setSelectedRelatedGroupKeys(new Set());
-      return;
-    }
-    setSelectedRelatedGroupKeys(new Set(summary.related_groups.map((group) => group.key)));
-  }, [summary]);
 
   const selectedRelatedGroups = useMemo(() => {
     if (summary === undefined) return [];
