@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::models::{ThemeRanking, candle_performance, candle_relative_strength_trend};
+use crate::models::{ThemeRanking, candle_performance};
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
@@ -14,7 +14,6 @@ const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 pub struct ThemeAnalysisService {
     store: Store,
     yahoo: Arc<YahooService>,
-    benchmark: String,
     market_schedule: MarketSchedule,
 }
 
@@ -33,7 +32,6 @@ impl ThemeAnalysisService {
         Ok(Self {
             store,
             yahoo,
-            benchmark: market.benchmark.clone(),
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
         })
     }
@@ -45,31 +43,9 @@ impl ThemeAnalysisService {
             .await
             .map_err(ThemeAnalysisError::Persistence)?;
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let benchmark = match self.yahoo.daily_candles_for_year(&self.benchmark).await {
-            Ok(candles) => Some(candles),
-            Err(error) => {
-                warn!(
-                    benchmark = self.benchmark,
-                    %error,
-                    "failed to load benchmark candles for theme rankings"
-                );
-                None
-            }
-        };
         let mut rankings = Vec::with_capacity(themes.len());
 
         for theme in themes {
-            let Some(benchmark) = benchmark.as_ref() else {
-                rankings.push(ThemeRanking {
-                    id: theme.id,
-                    name: theme.name,
-                    etf_symbol: theme.etf_symbol,
-                    performance: None,
-                    absolute_strength: None,
-                    relative_strength: None,
-                });
-                continue;
-            };
             match self.yahoo.daily_candles_for_year(&theme.etf_symbol).await {
                 Ok(candles) => {
                     let performance = candle_performance(&candles, as_of);
@@ -78,7 +54,6 @@ impl ThemeAnalysisService {
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
                         absolute_strength: Some(performance.absolute_strength()),
-                        relative_strength: candle_relative_strength_trend(&candles, benchmark),
                         performance: Some(performance),
                     });
                 }
@@ -95,7 +70,6 @@ impl ThemeAnalysisService {
                         etf_symbol: theme.etf_symbol,
                         performance: None,
                         absolute_strength: None,
-                        relative_strength: None,
                     });
                 }
             }

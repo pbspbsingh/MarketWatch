@@ -41,13 +41,11 @@ export function readTickerSortSetting(storageKey: string): TickerSortSetting {
 export function sortValue(group: GroupRanking, key: SortKey) {
   if (key === "count") return group.ticker_count ?? undefined;
   if (key === "absolute_strength") return group.absolute_strength ?? undefined;
-  if (key === "relative_strength") return group[key] ?? undefined;
   return group.performance?.[key] ?? undefined;
 }
 
 export function tickerSortValue(ticker: TickerRanking, key: TickerSortKey) {
   if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
-  if (key === "relative_strength") return ticker.relative_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
   return ticker.performance?.[key] ?? undefined;
@@ -111,7 +109,6 @@ export function sortTickers(tickers: TickerRanking[], sortSetting: TickerSortSet
 
 export function formatMetric(value: number, key: SortKey | TickerSortKey) {
   if (key === "count") return value.toLocaleString();
-  if (key === "relative_strength") return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
@@ -119,7 +116,6 @@ export function formatMetric(value: number, key: SortKey | TickerSortKey) {
 
 export function metricColor(value: number, key: SortKey | TickerSortKey) {
   if (key === "count") return "#c8d0da";
-  if (key === "relative_strength") return rsColor(value).fg;
   if (key === "adr_percent") return adrColor(value);
   if (key === "dollar_volume") return "#c8d0da";
   return performanceColor(value, key);
@@ -137,16 +133,7 @@ function adrColor(adr: number) {
   return "rgb(180,30,30)";
 }
 
-function rsColor(rs: number) {
-  const cap = 5;
-  return {
-    fg: rs < 0
-      ? interpolateColor([255, 126, 126], [180, 30, 30], -rs / cap)
-      : interpolateColor([230, 200, 79], [40, 210, 80], rs / cap),
-  };
-}
-
-const performanceCaps: Record<Exclude<SortKey, "count" | "relative_strength">, number> = {
+const performanceCaps: Record<Exclude<SortKey, "count">, number> = {
   absolute_strength: 0.15,
   day: 0.025,
   week: 0.05,
@@ -156,7 +143,7 @@ const performanceCaps: Record<Exclude<SortKey, "count" | "relative_strength">, n
   year: 0.4,
 };
 
-function performanceColor(value: number, key: Exclude<SortKey, "count" | "relative_strength">) {
+function performanceColor(value: number, key: Exclude<SortKey, "count">) {
   const cap = performanceCaps[key];
   if (value < 0) return interpolateColor([255, 126, 126], [180, 30, 30], -value / cap);
 

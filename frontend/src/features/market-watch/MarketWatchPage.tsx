@@ -30,17 +30,15 @@ export function MarketWatchPage() {
           sector_name,
           performance,
           absolute_strength,
-          relative_strength: null,
         })),
       );
     }
     return fetchThemeRankings(signal).then((themes) =>
-      themes.map(({ id, name, performance, absolute_strength, relative_strength }) => ({
+      themes.map(({ id, name, performance, absolute_strength }) => ({
         key: String(id),
         name,
         performance,
         absolute_strength,
-        relative_strength,
       })),
     );
   }, []);

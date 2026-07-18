@@ -240,7 +240,6 @@ export function TickerPanel({
           watchlist_ids: memberships.get(symbol) ?? [],
           performance: null,
           absolute_strength: null,
-          relative_strength: null,
           adr_percent: null,
           latest_close: null,
           average_volume: null,
@@ -323,7 +322,6 @@ export function TickerPanel({
     if (
       ticker === undefined ||
       ticker.performance !== null ||
-      ticker.relative_strength !== null ||
       rankingRequests.current.has(selectedTicker)
     ) {
       return;

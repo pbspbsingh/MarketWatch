@@ -36,7 +36,6 @@ pub struct ThemeRanking {
     pub etf_symbol: String,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
-    pub relative_strength: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -45,7 +44,6 @@ pub struct TickerRanking {
     pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
-    pub relative_strength: Option<f64>,
     pub adr_percent: Option<f64>,
     pub latest_close: Option<f64>,
     pub average_volume: Option<i64>,
@@ -117,17 +115,6 @@ fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {
         .map(|candle| candle.close);
     closes.next()?;
     closes.next()
-}
-
-/// Returns the weighted 20/63-session regression trend of the smoothed log price ratio,
-/// expressed as an equivalent 20-session relative return percentage.
-pub fn candle_relative_strength_trend(
-    candles: &[DailyCandle],
-    benchmark: &[DailyCandle],
-) -> Option<f64> {
-    candle_relative_strength_trend_series(candles, benchmark)
-        .last()
-        .map(|(_, value)| *value)
 }
 
 pub fn candle_relative_strength_trend_series(
@@ -286,9 +273,8 @@ mod tests {
 
         let expected = 100.0 * (0.001 * RS_SHORT_SESSIONS as f64).exp_m1();
         let series = candle_relative_strength_trend_series(&candles, &benchmark);
-        let actual = candle_relative_strength_trend(&candles, &benchmark).unwrap();
+        let actual = series.last().unwrap().1;
         assert_eq!(series.len(), 14);
-        assert_eq!(series.last().map(|(_, value)| *value), Some(actual));
         assert!((actual - expected).abs() < 1e-10);
     }
 
@@ -307,6 +293,6 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(candle_relative_strength_trend(&candles, &candles), None);
+        assert!(candle_relative_strength_trend_series(&candles, &candles).is_empty());
     }
 }

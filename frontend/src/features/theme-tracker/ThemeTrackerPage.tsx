@@ -129,7 +129,7 @@ export function ThemeTrackerPage() {
         const rankingsById = new Map(rankings?.map((theme) => [theme.id, theme]));
         const allThemes = metadata.map((theme) => rankingsById.get(theme.id) ?? {
           id: theme.id, name: theme.name, etf_symbol: theme.etf_symbol,
-          performance: null, absolute_strength: null, relative_strength: null,
+          performance: null, absolute_strength: null,
         });
         setThemes(allThemes);
         const first = rankings === undefined

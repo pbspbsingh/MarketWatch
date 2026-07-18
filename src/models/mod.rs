@@ -20,8 +20,7 @@ pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use performance::{
     IndustryRanking, PerformancePeriods, ThemeRanking, TickerRanking, average_daily_range_percent,
-    average_volume, candle_performance, candle_relative_strength_trend,
-    candle_relative_strength_trend_series, close_above_sma,
+    average_volume, candle_performance, candle_relative_strength_trend_series, close_above_sma,
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,

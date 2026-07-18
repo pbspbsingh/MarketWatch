@@ -5,7 +5,6 @@ export interface TickerRanking {
   watchlist_ids: number[];
   performance: PerformancePeriods | null;
   absolute_strength: number | null;
-  relative_strength: number | null;
   adr_percent: number | null;
   latest_close: number | null;
   average_volume: number | null;

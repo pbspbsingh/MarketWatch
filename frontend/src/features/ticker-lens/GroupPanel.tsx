@@ -53,7 +53,6 @@ const unassignedGroup: GroupRanking = {
   name: "Unassigned",
   performance: null,
   absolute_strength: null,
-  relative_strength: null,
 };
 
 interface GroupPanelProps {
@@ -101,15 +100,10 @@ export function GroupPanel({
   }, [sortSetting]);
 
   useEffect(() => {
-    if (mode === "industry" && sortSetting.key === "relative_strength") {
+    if (!countSortAvailable && sortSetting.key === "count") {
       setSortSetting({ key: "absolute_strength", direction: "desc" });
-    } else if (!countSortAvailable && sortSetting.key === "count") {
-      setSortSetting({
-        key: mode === "industry" ? "absolute_strength" : "relative_strength",
-        direction: "desc",
-      });
     }
-  }, [countSortAvailable, mode, sortSetting.key]);
+  }, [countSortAvailable, sortSetting.key]);
 
   useEffect(() => {
     localStorage.setItem(sectorGroupingKey, String(groupBySector));
@@ -153,22 +147,15 @@ export function GroupPanel({
       })),
     [groups, selectedGroupTickerCounts],
   );
-  const activeSortSetting =
-    mode === "industry" && sortSetting.key === "relative_strength"
-      ? ({ key: "absolute_strength", direction: "desc" } as const)
-      : !countSortAvailable && sortSetting.key === "count"
-        ? ({
-            key: mode === "industry" ? "absolute_strength" : "relative_strength",
-            direction: "desc",
-          } as const)
-      : sortSetting;
+  const activeSortSetting = !countSortAvailable && sortSetting.key === "count"
+    ? ({ key: "absolute_strength", direction: "desc" } as const)
+    : sortSetting;
   const sortedGroups = useMemo(() => sortGroups(groupsWithCounts, activeSortSetting), [groupsWithCounts, activeSortSetting]);
   const availableSortOptions = useMemo(
     () => sortOptions.filter((option) =>
-      (countSortAvailable || option.key !== "count") &&
-      (mode !== "industry" || option.key !== "relative_strength")
+      countSortAvailable || option.key !== "count"
     ),
-    [countSortAvailable, mode],
+    [countSortAvailable],
   );
   const sectors = useMemo(() => {
     const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[]; value?: number; totalCount?: number }>();

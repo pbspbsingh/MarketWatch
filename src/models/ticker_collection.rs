@@ -34,7 +34,6 @@ pub struct TickerCollectionGroup {
     pub sector_name: Option<String>,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
-    pub relative_strength: Option<f64>,
     pub symbols: Vec<String>,
 }
 
