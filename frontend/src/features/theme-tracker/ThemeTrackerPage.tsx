@@ -122,7 +122,6 @@ export function ThemeTrackerPage() {
   useEffect(() => {
     const controller = new AbortController();
     let rankings: ThemeRanking[] | undefined;
-    setLoading(true);
     fetchThemes(controller.signal)
       .then((metadata) => {
         if (controller.signal.aborted) return;
@@ -167,11 +166,12 @@ export function ThemeTrackerPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setIndustriesLoading(true);
     fetchIndustries(controller.signal)
       .then((next) => {
         if (controller.signal.aborted) return;
         setIndustries(next);
+        setActiveIndustry((current) => current ?? [...next]
+          .sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0]);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
@@ -180,33 +180,29 @@ export function ThemeTrackerPage() {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    if (mode !== "industry" || activeIndustry !== undefined || industries.length === 0) return;
-    setActiveIndustry([...industries].sort((a, b) => metric(b, topRange) - metric(a, topRange))[0]);
-  }, [activeIndustry, industries, mode, topRange]);
-
   const stockSymbolsKey = stockStream.tickers.map((ticker) => ticker.symbol).join("\0");
+  const setStockTickerWatchlists = stockStream.setTickerWatchlists;
   useEffect(() => {
     if (
       focusRevision === 0 ||
       refreshedMembershipRevision.current === focusRevision ||
       !stockMode ||
-      stockStream.tickers.length === 0
+      stockSymbolsKey === ""
     ) return;
     refreshedMembershipRevision.current = focusRevision;
     const controller = new AbortController();
-    fetchTickerWatchlists(stockStream.tickers.map((ticker) => ticker.symbol), controller.signal)
+    fetchTickerWatchlists(stockSymbolsKey.split("\0"), controller.signal)
       .then((memberships) => {
         if (controller.signal.aborted) return;
         memberships.forEach((membership) => {
-          stockStream.setTickerWatchlists(membership.symbol, membership.watchlist_ids);
+          setStockTickerWatchlists(membership.symbol, membership.watchlist_ids);
         });
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") setError(requestError.message);
       });
     return () => controller.abort();
-  }, [focusRevision, stockMode, stockSymbolsKey, stockStream.setTickerWatchlists]);
+  }, [focusRevision, setStockTickerWatchlists, stockMode, stockSymbolsKey]);
 
   const range = stockMode ? drillDownRange : topRange;
   const sortedItems = useMemo(() => {
@@ -235,7 +231,7 @@ export function ThemeTrackerPage() {
       setTopRange(value);
     }
   };
-  const selectItem = (item: RankedItem) => {
+  const selectItem = useCallback((item: RankedItem) => {
     userSelected.current = true;
     setSelectedTicker(item.symbol);
     if (stockMode) setSelectedStock(item.symbol);
@@ -246,7 +242,7 @@ export function ThemeTrackerPage() {
       setSelectedStock(undefined);
       setActiveIndustry(industries.find((industry) => industry.key === item.key));
     }
-  };
+  }, [industries, mode, stockMode, themes]);
   const enterStockMode = (item: RankedItem) => {
     selectItem(item);
     setStockMode(true);
@@ -361,7 +357,7 @@ export function ThemeTrackerPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activeGroupKey, leaveStockMode, selectedStock, sortedItems, stockMode]);
+  }, [activeGroupKey, leaveStockMode, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
 
   return (
     <section className="theme-tracker">
