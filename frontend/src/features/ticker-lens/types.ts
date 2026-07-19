@@ -24,6 +24,12 @@ export type TickerFilters = {
   above200Sma: {
     enabled: boolean;
   };
+  rsTrend: {
+    enabled: boolean;
+    unclear: boolean;
+    downtrend: boolean;
+    uptrend: boolean;
+  };
 };
 
 export type TickerFilterCounts = {

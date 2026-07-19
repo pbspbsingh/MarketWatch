@@ -1,4 +1,4 @@
-use crate::models::{DailyCandle, TickerSymbol};
+use crate::models::{DailyCandle, RelativeStrengthTrend, TickerSymbol};
 use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
 
@@ -42,6 +42,7 @@ pub struct TickerRanking {
     pub latest_close: Option<f64>,
     pub average_volume: Option<i64>,
     pub above_200_sma: Option<bool>,
+    pub rs_trend: Option<RelativeStrengthTrend>,
 }
 
 impl PerformancePeriods {

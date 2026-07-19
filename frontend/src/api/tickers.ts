@@ -9,6 +9,7 @@ export interface TickerRanking {
   latest_close: number | null;
   average_volume: number | null;
   above_200_sma: boolean | null;
+  rs_trend: "uptrend" | "downtrend" | "unclear" | null;
 }
 
 export interface TickerRelativeStrengthRating {

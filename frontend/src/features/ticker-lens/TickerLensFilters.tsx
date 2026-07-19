@@ -25,6 +25,12 @@ export const defaultTickerFilters: TickerFilters = {
   above200Sma: {
     enabled: false,
   },
+  rsTrend: {
+    enabled: false,
+    unclear: true,
+    downtrend: true,
+    uptrend: true,
+  },
 };
 
 export function readTickerFilters(): TickerFilters {
@@ -42,9 +48,21 @@ export function readTickerFilters(): TickerFilters {
     above200Sma: {
       enabled: persistedState?.above200Sma ?? false,
     },
+    rsTrend: {
+      enabled: persistedState?.rsTrend ?? false,
+      unclear: true,
+      downtrend: true,
+      uptrend: true,
+    },
   };
   try {
-    const values = JSON.parse(stored) as { adrMin?: unknown; dollarVolumeMin?: unknown };
+    const values = JSON.parse(stored) as {
+      adrMin?: unknown;
+      dollarVolumeMin?: unknown;
+      rsTrendUnclear?: unknown;
+      rsTrendDowntrend?: unknown;
+      rsTrendUptrend?: unknown;
+    };
     return {
       adr: {
         enabled: persistedState?.adr ?? false,
@@ -57,6 +75,12 @@ export function readTickerFilters(): TickerFilters {
       above200Sma: {
         enabled: persistedState?.above200Sma ?? false,
       },
+      rsTrend: {
+        enabled: persistedState?.rsTrend ?? false,
+        unclear: values.rsTrendUnclear !== false,
+        downtrend: values.rsTrendDowntrend !== false,
+        uptrend: values.rsTrendUptrend !== false,
+      },
     };
   } catch {
     return defaultTickerFilters;
@@ -67,6 +91,9 @@ export function writeTickerFilterValues(filters: TickerFilters) {
   localStorage.setItem(filterValuesStorageKey, JSON.stringify({
     adrMin: filters.adr.min,
     dollarVolumeMin: filters.dollarVolume.min,
+    rsTrendUnclear: filters.rsTrend.unclear,
+    rsTrendDowntrend: filters.rsTrend.downtrend,
+    rsTrendUptrend: filters.rsTrend.uptrend,
   }));
 }
 
@@ -83,6 +110,7 @@ export function writeTickerFilterState(filters: TickerFilters, persisted: boolea
     adr: filters.adr.enabled,
     dollarVolume: filters.dollarVolume.enabled,
     above200Sma: filters.above200Sma.enabled,
+    rsTrend: filters.rsTrend.enabled,
   }));
 }
 
@@ -98,9 +126,11 @@ interface TickerLensFiltersProps {
 export function TickerLensFilters({ filters, enabled, persisted, counts, onChange, onPersistedChange }: TickerLensFiltersProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
-  const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled) + Number(filters.above200Sma.enabled);
+  const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled)
+    + Number(filters.above200Sma.enabled) + Number(filters.rsTrend.enabled);
   const active = activeCount > 0;
-  const hasValues = filters.adr.min > 0 || filters.dollarVolume.min > 0;
+  const hasValues = filters.adr.min > 0 || filters.dollarVolume.min > 0
+    || !filters.rsTrend.unclear || !filters.rsTrend.downtrend || !filters.rsTrend.uptrend;
   const effective = active && enabled;
   const pending = active && !enabled;
   const adrMin = clamp(filters.adr.min, 0, 20);
@@ -225,6 +255,41 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
         />
         <Typography component="span">Close &gt; 200SMA</Typography>
       </label>
+      <div className={[
+        "ticker-lens-filter-rs-trend",
+        filters.rsTrend.enabled && enabled ? "ticker-lens-filter-slider-active" : "",
+        filters.rsTrend.enabled && !enabled ? "ticker-lens-filter-slider-pending" : "",
+      ].filter(Boolean).join(" ")}>
+        <label className="ticker-lens-filter-checkbox">
+          <Checkbox
+            size="small"
+            checked={filters.rsTrend.enabled}
+            slotProps={{ input: { "aria-label": "Enable RS Trend filter" } }}
+            onChange={(event) => onChange({
+              ...filters,
+              rsTrend: { ...filters.rsTrend, enabled: event.target.checked },
+            })}
+          />
+          <Typography component="span">RS Trend</Typography>
+        </label>
+        <div className="ticker-lens-filter-rs-trend-options">
+          {(["uptrend", "unclear", "downtrend"] as const).map((trend) => (
+            <label key={trend} className="ticker-lens-filter-checkbox">
+              <Checkbox
+                size="small"
+                checked={filters.rsTrend[trend]}
+                disabled={!filters.rsTrend.enabled}
+                slotProps={{ input: { "aria-label": `Include RS ${trend}` } }}
+                onChange={(event) => onChange({
+                  ...filters,
+                  rsTrend: { ...filters.rsTrend, [trend]: event.target.checked },
+                })}
+              />
+              <Typography component="span">{trend === "uptrend" ? "Uptrend" : trend === "downtrend" ? "Downtrend" : "Unclear"}</Typography>
+            </label>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
@@ -293,11 +358,17 @@ function readPersistedFilterState() {
   const stored = localStorage.getItem(filterStateStorageKey);
   if (stored === null) return undefined;
   try {
-    const state = JSON.parse(stored) as { adr?: unknown; dollarVolume?: unknown; above200Sma?: unknown };
+    const state = JSON.parse(stored) as {
+      adr?: unknown;
+      dollarVolume?: unknown;
+      above200Sma?: unknown;
+      rsTrend?: unknown;
+    };
     return {
       adr: state.adr === true,
       dollarVolume: state.dollarVolume === true,
       above200Sma: state.above200Sma === true,
+      rsTrend: state.rsTrend === true,
     };
   } catch {
     return undefined;

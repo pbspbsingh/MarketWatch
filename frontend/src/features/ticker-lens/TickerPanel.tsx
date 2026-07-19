@@ -206,7 +206,7 @@ export function TickerPanel({
     error?: string;
   }>({ key: "", loading: false });
   const groupKey = [...groupKeys].sort().join("\0");
-  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
+  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
   const metricsActive = groupKeys.size > 0 || filtersActive;
   const relativeStrengthSortActive = bounded && isTickerRelativeStrengthSortKey(sortSetting.key);
   const sortActive = metricsActive || relativeStrengthSortActive;
@@ -311,6 +311,7 @@ export function TickerPanel({
             latest_close: null,
             average_volume: null,
             above_200_sma: null,
+            rs_trend: null,
           })),
         });
       })
@@ -704,13 +705,14 @@ export function TickerPanel({
 }
 
 function filterTickers(tickers: TickerRanking[], filters: TickerFilters | undefined) {
-  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled)) return tickers;
+  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled && !filters.rsTrend.enabled)) return tickers;
   const adrMin = clamp(filters.adr.min, 0, 20);
   const dollarVolumeMin = clamp(filters.dollarVolume.min, 0, 1_000_000_000);
   return tickers.filter((ticker) => {
     if (filters.adr.enabled && (ticker.adr_percent ?? -Infinity) < adrMin) return false;
     if (filters.dollarVolume.enabled && dollarVolume(ticker) < dollarVolumeMin) return false;
     if (filters.above200Sma.enabled && ticker.above_200_sma === false) return false;
+    if (filters.rsTrend.enabled && (ticker.rs_trend === null || !filters.rsTrend[ticker.rs_trend])) return false;
     return true;
   });
 }

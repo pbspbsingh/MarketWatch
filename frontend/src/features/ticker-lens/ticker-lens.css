@@ -181,6 +181,17 @@
   }
 }
 
+.ticker-lens-filter-rs-trend {
+  display: grid;
+  grid-template-columns: 8rem repeat(3, minmax(0, 1fr));
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.ticker-lens-filter-rs-trend-options {
+  display: contents;
+}
+
 .ticker-lens-filter-slider-active {
   & .MuiTypography-root,
   & .MuiSlider-root {
