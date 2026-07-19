@@ -2,7 +2,7 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::chart_relative_strength::RelativeStrengthCalculation;
+use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{DailyCandle, TickerSymbol};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -64,6 +64,7 @@ pub struct MarketChartSnapshot {
 pub struct MarketChartRelativeStrength {
     pub comparison_symbol: TickerSymbol,
     pub line: RelativeStrengthCalculation,
+    pub structure: RelativeStrengthStructure,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq)]

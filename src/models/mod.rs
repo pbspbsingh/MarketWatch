@@ -16,7 +16,7 @@ mod yahoo_symbol;
 
 pub(crate) use chart_relative_strength::{
     ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationError,
-    calculate_relative_strength_line,
+    analyze_relative_strength_structure, calculate_relative_strength_line,
 };
 pub use daily_notes::DailyNote;
 pub use exchange::Exchange;

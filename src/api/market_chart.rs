@@ -425,6 +425,7 @@ fn snapshot_delta(
             .relative_strength
             .map(|relative| MarketChartRelativeStrength {
                 comparison_symbol: relative.comparison_symbol,
+                structure: relative.structure,
                 line: crate::models::RelativeStrengthCalculation {
                     moving_average_period: relative.line.moving_average_period,
                     points: relative

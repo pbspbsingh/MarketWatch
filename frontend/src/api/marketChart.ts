@@ -32,9 +32,22 @@ export interface MarketChartRelativeStrengthCalculation {
   points: MarketChartRelativeStrengthPoint[];
 }
 
+export interface MarketChartRelativeStrengthSwing {
+  date: string;
+  value: number;
+  kind: "high" | "low";
+}
+
+export interface MarketChartRelativeStrengthStructure {
+  confirmed: MarketChartRelativeStrengthSwing[];
+  provisional: MarketChartRelativeStrengthSwing | null;
+  trend: "uptrend" | "downtrend" | "unclear";
+}
+
 export interface MarketChartRelativeStrength {
   comparison_symbol: string;
   line: MarketChartRelativeStrengthCalculation;
+  structure: MarketChartRelativeStrengthStructure;
 }
 
 export interface MarketChartData {

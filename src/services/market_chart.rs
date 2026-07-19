@@ -4,7 +4,8 @@ use crate::models::chart::{
     validate_market_chart_candle, volume_sma,
 };
 use crate::models::{
-    ChartDateRange, RelativeStrengthCalculationError, calculate_relative_strength_line,
+    ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
+    calculate_relative_strength_line,
 };
 use crate::models::{DailyCandle, TickerSymbol, YahooSymbol};
 use crate::services::yahoo::{YahooService, YahooServiceError};
@@ -254,9 +255,12 @@ fn build_relative_strength(
         return Ok(None);
     };
     let range = ChartDateRange { start, end };
+    let line = calculate_relative_strength_line(ticker, comparison, interval, range)?;
+    let structure = analyze_relative_strength_structure(&line.points);
     Ok(Some(MarketChartRelativeStrength {
         comparison_symbol,
-        line: calculate_relative_strength_line(ticker, comparison, interval, range)?,
+        line,
+        structure,
     }))
 }
 

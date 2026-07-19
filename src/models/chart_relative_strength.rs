@@ -7,6 +7,7 @@ use thiserror::Error;
 
 const DAILY_LINE_SMOOTHING_PERIOD: usize = 5;
 const WEEKLY_LINE_SMOOTHING_PERIOD: usize = 3;
+const SWING_REVERSAL_RATIO: f64 = 0.025;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChartDateRange {
@@ -27,6 +28,42 @@ pub struct RelativeStrengthCalculationPoint {
     pub ticker_return_percent: Option<f64>,
     pub comparison_return_percent: Option<f64>,
     pub relative_return_percent: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthSwingKind {
+    High,
+    Low,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthTrend {
+    Uptrend,
+    Downtrend,
+    Unclear,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct RelativeStrengthSwing {
+    pub date: NaiveDate,
+    pub value: f64,
+    pub kind: RelativeStrengthSwingKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RelativeStrengthStructure {
+    pub confirmed: Vec<RelativeStrengthSwing>,
+    pub provisional: Option<RelativeStrengthSwing>,
+    pub trend: RelativeStrengthTrend,
+}
+
+#[derive(Clone, Copy)]
+struct SwingCandidate {
+    index: usize,
+    date: NaiveDate,
+    value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
@@ -94,6 +131,152 @@ pub fn calculate_relative_strength_line(
         moving_average_period,
         points,
     })
+}
+
+pub fn analyze_relative_strength_structure(
+    points: &[RelativeStrengthCalculationPoint],
+) -> RelativeStrengthStructure {
+    let Some(first) = points
+        .first()
+        .filter(|point| valid_swing_value(point.value))
+    else {
+        return RelativeStrengthStructure {
+            confirmed: Vec::new(),
+            provisional: None,
+            trend: RelativeStrengthTrend::Unclear,
+        };
+    };
+    let first = SwingCandidate {
+        index: 0,
+        date: first.date,
+        value: first.value,
+    };
+    let mut confirmed = Vec::new();
+    let mut direction = None;
+    let mut high = first;
+    let mut low = first;
+
+    for (index, point) in points.iter().enumerate().skip(1) {
+        if !valid_swing_value(point.value) {
+            continue;
+        }
+        let candidate = SwingCandidate {
+            index,
+            date: point.date,
+            value: point.value,
+        };
+        match direction {
+            None => {
+                if point.value > high.value {
+                    high = candidate;
+                }
+                if point.value < low.value {
+                    low = candidate;
+                }
+                if point.value <= high.value * (1.0 - SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, high, RelativeStrengthSwingKind::High);
+                    direction = Some(RelativeStrengthSwingKind::Low);
+                    low = candidate;
+                } else if point.value >= low.value * (1.0 + SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, low, RelativeStrengthSwingKind::Low);
+                    direction = Some(RelativeStrengthSwingKind::High);
+                    high = candidate;
+                }
+            }
+            Some(RelativeStrengthSwingKind::High) => {
+                if point.value >= high.value {
+                    high = candidate;
+                } else if point.value <= high.value * (1.0 - SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, high, RelativeStrengthSwingKind::High);
+                    direction = Some(RelativeStrengthSwingKind::Low);
+                    low = candidate;
+                }
+            }
+            Some(RelativeStrengthSwingKind::Low) => {
+                if point.value <= low.value {
+                    low = candidate;
+                } else if point.value >= low.value * (1.0 + SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, low, RelativeStrengthSwingKind::Low);
+                    direction = Some(RelativeStrengthSwingKind::High);
+                    high = candidate;
+                }
+            }
+        }
+    }
+
+    let provisional = direction.map(|kind| {
+        swing_point(
+            match kind {
+                RelativeStrengthSwingKind::High => high,
+                RelativeStrengthSwingKind::Low => low,
+            },
+            kind,
+        )
+    });
+    let trend = classify_relative_strength_trend(&confirmed, provisional.as_ref());
+    RelativeStrengthStructure {
+        confirmed,
+        provisional,
+        trend,
+    }
+}
+
+fn valid_swing_value(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn add_confirmed_swing(
+    swings: &mut Vec<RelativeStrengthSwing>,
+    candidate: SwingCandidate,
+    kind: RelativeStrengthSwingKind,
+) {
+    if candidate.index > 0 {
+        swings.push(swing_point(candidate, kind));
+    }
+}
+
+fn swing_point(
+    candidate: SwingCandidate,
+    kind: RelativeStrengthSwingKind,
+) -> RelativeStrengthSwing {
+    RelativeStrengthSwing {
+        date: candidate.date,
+        value: candidate.value,
+        kind,
+    }
+}
+
+fn classify_relative_strength_trend(
+    confirmed: &[RelativeStrengthSwing],
+    provisional: Option<&RelativeStrengthSwing>,
+) -> RelativeStrengthTrend {
+    let swings = confirmed.iter().chain(provisional);
+    let highs = last_two_swing_values(swings.clone(), RelativeStrengthSwingKind::High);
+    let lows = last_two_swing_values(swings, RelativeStrengthSwingKind::Low);
+    let (Some((previous_high, latest_high)), Some((previous_low, latest_low))) = (highs, lows)
+    else {
+        return RelativeStrengthTrend::Unclear;
+    };
+    if latest_high > previous_high && latest_low > previous_low {
+        RelativeStrengthTrend::Uptrend
+    } else if latest_high < previous_high && latest_low < previous_low {
+        RelativeStrengthTrend::Downtrend
+    } else {
+        RelativeStrengthTrend::Unclear
+    }
+}
+
+fn last_two_swing_values<'a>(
+    swings: impl Iterator<Item = &'a RelativeStrengthSwing>,
+    kind: RelativeStrengthSwingKind,
+) -> Option<(f64, f64)> {
+    let mut previous = None;
+    let mut latest = None;
+    for swing in swings.filter(|swing| swing.kind == kind) {
+        previous = latest;
+        latest = Some(swing.value);
+    }
+    previous.zip(latest)
 }
 
 impl ChartDateRange {
@@ -203,6 +386,59 @@ mod tests {
             start,
             end: start + Days::new(days),
         }
+    }
+
+    fn calculation_points(values: &[f64]) -> Vec<RelativeStrengthCalculationPoint> {
+        let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| RelativeStrengthCalculationPoint {
+                date: start + Days::new(index as u64),
+                value: *value,
+                ticker_return_percent: None,
+                comparison_return_percent: None,
+                relative_return_percent: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn detects_confirmed_and_provisional_swings() {
+        let structure = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 105.0, 108.0, 112.0,
+        ]));
+
+        assert_eq!(structure.confirmed.len(), 4);
+        assert_eq!(structure.confirmed[0].kind, RelativeStrengthSwingKind::High);
+        assert_eq!(structure.confirmed[0].value, 103.0);
+        assert_eq!(structure.confirmed[3].kind, RelativeStrengthSwingKind::Low);
+        assert_eq!(structure.confirmed[3].value, 105.0);
+        assert_eq!(
+            structure.provisional,
+            Some(RelativeStrengthSwing {
+                date: NaiveDate::from_ymd_opt(2026, 1, 9).unwrap(),
+                value: 112.0,
+                kind: RelativeStrengthSwingKind::High,
+            })
+        );
+    }
+
+    #[test]
+    fn classifies_higher_lower_and_mixed_swing_structures() {
+        let uptrend = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 105.0, 108.0, 112.0,
+        ]));
+        let downtrend = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 97.0, 100.0, 97.0, 90.0, 93.0, 95.0, 92.0, 88.0,
+        ]));
+        let unclear = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 95.0, 98.0, 112.0,
+        ]));
+
+        assert_eq!(uptrend.trend, RelativeStrengthTrend::Uptrend);
+        assert_eq!(downtrend.trend, RelativeStrengthTrend::Downtrend);
+        assert_eq!(unclear.trend, RelativeStrengthTrend::Unclear);
     }
 
     #[test]

@@ -13,3 +13,40 @@
   inset: 0;
   background: #111418;
 }
+
+.market-chart-rs-trend {
+  position: absolute;
+  z-index: 2;
+  top: 0.4rem;
+  left: 0.5rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: rgb(17 20 24 / 82%);
+  font-family: inherit;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.market-chart-rs-trend:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
+}
+
+.market-chart-rs-trend-uptrend {
+  color: #2fbf71;
+}
+
+.market-chart-rs-trend-downtrend {
+  color: #ef5350;
+}
+
+.market-chart-rs-trend-unclear {
+  color: #8f9aa7;
+}
+
+.market-chart-rs-hidden {
+  color: #65707d;
+}

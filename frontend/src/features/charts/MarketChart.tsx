@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createTextWatermark,
@@ -17,6 +17,7 @@ import type {
   MarketChartCandle,
   MarketChartData,
   MarketChartRelativeStrength,
+  MarketChartRelativeStrengthStructure,
   MarketChartInterval,
 } from "../../api/marketChart";
 import type {
@@ -29,6 +30,7 @@ import {
 } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
+  chartColors,
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
   indicatorSeriesOptions,
@@ -58,6 +60,8 @@ import {
 } from "./chartSeries";
 import {
   relativeStrengthLineData,
+  rsSwingHighColor,
+  rsSwingLowColor,
 } from "./relativeStrengthSeries";
 
 interface MarketChartProps {
@@ -100,6 +104,10 @@ export function MarketChart({
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">>(null);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">>(null);
+  const relativeStrengthHighsRef = useRef<ISeriesApi<"Line">>(null);
+  const relativeStrengthLowsRef = useRef<ISeriesApi<"Line">>(null);
+  const relativeStrengthProvisionalOuterRef = useRef<ISeriesApi<"Line">>(null);
+  const relativeStrengthProvisionalInnerRef = useRef<ISeriesApi<"Line">>(null);
   const postMarketLineRef = useRef<IPriceLine>(null);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
   const symbolRef = useRef(data.symbol);
@@ -113,6 +121,14 @@ export function MarketChart({
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
   const seriesDatasetKeyRef = useRef<string | undefined>(undefined);
+  const liveRelativeStrength = liveDelta?.symbol === data.symbol
+    && liveDelta.interval === data.interval
+    ? liveDelta.relative_strength
+    : undefined;
+  const relativeStrengthTrend = liveRelativeStrength?.structure.trend
+    ?? relativeStrength?.structure.trend
+    ?? "unclear";
+  const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   useEffect(() => {
     initialViewportRef.current = initialViewport;
   }, [initialViewport]);
@@ -120,6 +136,16 @@ export function MarketChart({
   useEffect(() => {
     onChartContextRef.current = onChartContext;
   }, [onChartContext]);
+
+  useEffect(() => {
+    [
+      relativeStrengthSeriesRef.current,
+      relativeStrengthHighsRef.current,
+      relativeStrengthLowsRef.current,
+      relativeStrengthProvisionalOuterRef.current,
+      relativeStrengthProvisionalInnerRef.current,
+    ].forEach((series) => series?.applyOptions({ visible: showRelativeStrength }));
+  }, [showRelativeStrength]);
   const chartOptions = useMemo(() => priceScaleBottomMargin === undefined
     ? undefined
     : {
@@ -131,6 +157,31 @@ export function MarketChart({
       },
     },
   [priceScaleBottomMargin]);
+
+  const updateRelativeStrengthStructure = useCallback((
+    structure: MarketChartRelativeStrengthStructure | null | undefined,
+  ) => {
+    const confirmed = structure?.confirmed ?? [];
+    relativeStrengthHighsRef.current?.setData(
+      confirmed
+        .filter((swing) => swing.kind === "high")
+        .map((swing) => ({ time: swing.date, value: swing.value })),
+    );
+    relativeStrengthLowsRef.current?.setData(
+      confirmed
+        .filter((swing) => swing.kind === "low")
+        .map((swing) => ({ time: swing.date, value: swing.value })),
+    );
+    const provisionalData = structure?.provisional === null
+      || structure?.provisional === undefined
+      ? []
+      : [{ time: structure.provisional.date, value: structure.provisional.value }];
+    relativeStrengthProvisionalOuterRef.current?.applyOptions({
+      color: structure?.provisional?.kind === "low" ? rsSwingLowColor : rsSwingHighColor,
+    });
+    relativeStrengthProvisionalOuterRef.current?.setData(provisionalData);
+    relativeStrengthProvisionalInnerRef.current?.setData(provisionalData);
+  }, []);
 
   const initializeSeries = useCallback((chart: IChartApi) => {
     chartDisposedRef.current = false;
@@ -159,6 +210,38 @@ export function MarketChart({
       scaleMargins: relativeStrengthScaleMargins,
     });
     relativeStrengthSeriesRef.current = relativeStrengthSeries;
+    relativeStrengthHighsRef.current = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: rsSwingHighColor,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 2.5,
+      priceScaleId: "left",
+    });
+    relativeStrengthLowsRef.current = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: rsSwingLowColor,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 2.5,
+      priceScaleId: "left",
+    });
+    relativeStrengthProvisionalOuterRef.current = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: rsSwingHighColor,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 2.5,
+      priceScaleId: "left",
+    });
+    relativeStrengthProvisionalInnerRef.current = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: chartColors.background,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 1.25,
+      priceScaleId: "left",
+    });
     watermarkRef.current = createTextWatermark(chart.panes()[0], {
       horzAlign: "center",
       vertAlign: "center",
@@ -177,6 +260,10 @@ export function MarketChart({
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
     watermarkRef.current = null;
+    relativeStrengthHighsRef.current = null;
+    relativeStrengthLowsRef.current = null;
+    relativeStrengthProvisionalOuterRef.current = null;
+    relativeStrengthProvisionalInnerRef.current = null;
     relativeStrengthSeriesRef.current = null;
     postMarketLineRef.current = null;
     chartDisposedRef.current = true;
@@ -250,7 +337,8 @@ export function MarketChart({
     const points = relativeStrengthLineData(relativeStrength);
     chart.applyOptions({ leftPriceScale: { visible: false } });
     series.setData(points);
-  }, [relativeStrength]);
+    updateRelativeStrengthStructure(relativeStrength?.structure);
+  }, [relativeStrength, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     if (
@@ -298,9 +386,11 @@ export function MarketChart({
       liveDelta.relative_strength,
     )[0];
     if (relativePoint !== undefined) {
-      updateLineSeries(relativeStrengthSeriesRef.current, relativePoint, data.interval);
+      const series = relativeStrengthSeriesRef.current;
+      updateLineSeries(series, relativePoint, data.interval);
+      updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
     }
-  }, [data.candles, data.interval, data.symbol, liveDelta]);
+  }, [data.candles, data.interval, data.symbol, liveDelta, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -394,18 +484,39 @@ export function MarketChart({
     }
   }, [data.candles, data.interval, data.moving_averages, data.symbol, data.volume_average]);
 
+  const trendLabel = relativeStrengthTrend === "uptrend"
+    ? "Uptrend"
+    : relativeStrengthTrend === "downtrend"
+      ? "Downtrend"
+      : "Unclear";
   return (
-    <ChartHost
-      ref={hostRef}
-      className={className}
-      ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
-      options={chartOptions}
-      attributionUrl={tradingViewSymbol === undefined
-        ? undefined
-        : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}
-      onChartReady={initializeSeries}
-      onChartDestroy={destroyChart}
-    />
+    <>
+      <ChartHost
+        ref={hostRef}
+        className={className}
+        ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
+        options={chartOptions}
+        attributionUrl={tradingViewSymbol === undefined
+          ? undefined
+          : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}
+        onChartReady={initializeSeries}
+        onChartDestroy={destroyChart}
+      />
+      {relativeStrength !== null && relativeStrength !== undefined && (
+        <button
+          type="button"
+          className={showRelativeStrength
+            ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
+            : "market-chart-rs-trend market-chart-rs-hidden"}
+          aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
+          aria-pressed={showRelativeStrength}
+          title={`Relative Strength ${trendLabel}`}
+          onClick={() => setShowRelativeStrength((visible) => !visible)}
+        >
+          RS
+        </button>
+      )}
+    </>
   );
 }
 
