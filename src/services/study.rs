@@ -1,4 +1,8 @@
-use crate::models::{TickerSymbol, YahooSymbol};
+use crate::models::chart::{MarketChartInterval, MarketChartRelativeStrength};
+use crate::models::{
+    ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
+    analyze_relative_strength_structure, calculate_relative_strength_line,
+};
 use crate::providers::{ChartInterval, YahooClient, YahooError};
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
@@ -39,6 +43,7 @@ pub struct StudyMovingAveragePoint {
 pub struct StudyResult {
     pub date: NaiveDate,
     pub series: Vec<StudySeries>,
+    pub relative_strength: Option<MarketChartRelativeStrength>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -66,6 +71,8 @@ pub enum StudyError {
     InvalidInput(String),
     #[error(transparent)]
     Provider(#[from] YahooError),
+    #[error(transparent)]
+    RelativeStrength(#[from] RelativeStrengthCalculationError),
 }
 
 pub struct StudyService {
@@ -180,7 +187,12 @@ impl StudyService {
             });
         }
 
-        let result = StudyResult { date, series };
+        let relative_strength = study_relative_strength(&series[0], &series[1])?;
+        let result = StudyResult {
+            date,
+            series,
+            relative_strength,
+        };
         let [cache_a, cache_b]: [CacheEntry; 2] = next_cache.try_into().unwrap();
         *self
             .cache
@@ -195,6 +207,49 @@ impl StudyService {
             .expect("study last-result mutex is not poisoned") = Some(result.clone());
         Ok(result)
     }
+}
+
+fn study_relative_strength(
+    ticker: &StudySeries,
+    comparison: &StudySeries,
+) -> Result<Option<MarketChartRelativeStrength>, RelativeStrengthCalculationError> {
+    let Some((first, last)) = ticker.candles.first().zip(ticker.candles.last()) else {
+        return Ok(None);
+    };
+    let Some(end) = last.date.succ_opt() else {
+        return Ok(None);
+    };
+    let ticker_candles = daily_candles(&ticker.candles);
+    let comparison_candles = daily_candles(&comparison.candles);
+    let line = calculate_relative_strength_line(
+        &ticker_candles,
+        &comparison_candles,
+        MarketChartInterval::Daily,
+        ChartDateRange {
+            start: first.date,
+            end,
+        },
+    )?;
+    let structure = analyze_relative_strength_structure(&line.points);
+    Ok(Some(MarketChartRelativeStrength {
+        comparison_symbol: comparison.symbol.clone(),
+        line,
+        structure,
+    }))
+}
+
+fn daily_candles(candles: &[StudyCandle]) -> Vec<DailyCandle> {
+    candles
+        .iter()
+        .map(|candle| DailyCandle {
+            market_date: candle.date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: i64::try_from(candle.volume).unwrap_or(i64::MAX),
+        })
+        .collect()
 }
 
 fn simple_moving_average(candles: &[StudyCandle], period: usize) -> Vec<StudyMovingAveragePoint> {
@@ -279,5 +334,32 @@ mod tests {
         assert_eq!(points.len(), 2);
         assert_eq!(points[0].value, 2.0);
         assert_eq!(points[1].value, 3.0);
+    }
+
+    #[test]
+    fn calculates_relative_strength_against_second_series() {
+        let series = |symbol: &str, daily_gain: f64| StudySeries {
+            symbol: TickerSymbol::parse(symbol).unwrap(),
+            candles: (1..=20)
+                .map(|day| StudyCandle {
+                    date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
+                    open: 100.0,
+                    high: 100.0 + daily_gain * f64::from(day),
+                    low: 100.0,
+                    close: 100.0 + daily_gain * f64::from(day),
+                    volume: 1_000,
+                })
+                .collect(),
+            moving_averages: Vec::new(),
+        };
+        let ticker = series("AAPL", 2.0);
+        let comparison = series("QQQ", 1.0);
+
+        let relative_strength = study_relative_strength(&ticker, &comparison)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(relative_strength.comparison_symbol, "QQQ");
+        assert!(!relative_strength.line.points.is_empty());
     }
 }

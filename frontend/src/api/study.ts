@@ -1,3 +1,5 @@
+import type { MarketChartRelativeStrength } from "./marketChart";
+
 export interface StudyCandle {
   date: string;
   open: number;
@@ -9,6 +11,7 @@ export interface StudyCandle {
 
 export interface StudyResult {
   date: string;
+  relative_strength: MarketChartRelativeStrength | null;
   series: Array<{
     symbol: string;
     candles: StudyCandle[];

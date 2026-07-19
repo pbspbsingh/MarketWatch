@@ -80,6 +80,26 @@
   pointer-events: none;
 }
 
+.study-chart-rs-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 0.35rem;
+  left: 0.5rem;
+  padding: 0.15rem 0.35rem;
+  border: 0.0625rem solid #343b45;
+  border-radius: 0.2rem;
+  color: #e6c84f;
+  background: rgb(17 20 24 / 75%);
+  font: inherit;
+  font-size: 0.65rem;
+  cursor: pointer;
+
+  &[aria-pressed="false"] {
+    color: #8f9aa7;
+    opacity: 0.7;
+  }
+}
+
 .study-attribution {
   position: absolute;
   z-index: 3;

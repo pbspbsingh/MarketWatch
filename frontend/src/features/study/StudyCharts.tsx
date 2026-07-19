@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   CrosshairMode,
@@ -21,9 +21,17 @@ import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 import {
   chartColors,
+  indicatorSeriesOptions,
   overlappingPriceScaleMargins,
+  relativeStrengthScaleMargins,
+  relativeStrengthSeriesOptions,
   volumeScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
+import {
+  relativeStrengthLineData,
+  rsSwingHighColor,
+  rsSwingLowColor,
+} from "../charts/relativeStrengthSeries";
 
 const movingAverages = [
   { period: 10, color: "#3179f5" },
@@ -48,7 +56,17 @@ export function StudyCharts({
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const crosshairOwnerRef = useRef<0 | 1>(0);
+  const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const syncCrosshairRef = useRef(syncCrosshair);
+  const [showRelativeStrength, setShowRelativeStrength] = useState(true);
+  const showRelativeStrengthRef = useRef(showRelativeStrength);
+
+  useEffect(() => {
+    showRelativeStrengthRef.current = showRelativeStrength;
+    relativeStrengthSeriesRef.current.forEach((series) => {
+      series.applyOptions({ visible: showRelativeStrength });
+    });
+  }, [showRelativeStrength]);
 
   const setCrosshairOwner = useCallback((owner: 0 | 1) => {
     crosshairOwnerRef.current = owner;
@@ -146,6 +164,13 @@ export function StudyCharts({
         const candle = byDate.get(date);
         return candle === undefined ? { time: date } : { time: date, value: candle.volume, color: candle.close >= candle.open ? "#26a69a66" : "#ef535066" };
       }));
+      if (index === 0 && result.relative_strength !== null) {
+        relativeStrengthSeriesRef.current = addRelativeStrength(
+          chart,
+          result.relative_strength,
+          showRelativeStrengthRef.current,
+        );
+      }
       const markerDate = dates.find((date) => date >= result.date) ?? dates.at(-1);
       if (markerDate !== undefined) {
         createSeriesMarkers(candles, [{ time: markerDate, position: "aboveBar", shape: "arrowDown", color: "#58a6ff", text: result.date }]);
@@ -215,6 +240,7 @@ export function StudyCharts({
       charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
+      relativeStrengthSeriesRef.current = [];
     };
   }, [result]);
 
@@ -226,6 +252,8 @@ export function StudyCharts({
         <ChartContainer
           containerRef={topRef}
           onPointerEnter={() => setCrosshairOwner(0)}
+          showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
+          onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
         />
       )}
       second={(
@@ -250,16 +278,87 @@ function shiftYears(dateText: string, years: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function addRelativeStrength(
+  chart: IChartApi,
+  relativeStrength: NonNullable<StudyResult["relative_strength"]>,
+  visible: boolean,
+): ISeriesApi<"Line">[] {
+  const series: ISeriesApi<"Line">[] = [];
+  const line = chart.addSeries(LineSeries, relativeStrengthSeriesOptions);
+  line.priceScale().applyOptions({ scaleMargins: relativeStrengthScaleMargins });
+  line.setData(relativeStrengthLineData(relativeStrength));
+  series.push(line);
+
+  const confirmed = relativeStrength.structure.confirmed;
+  for (const [kind, color] of [["high", rsSwingHighColor], ["low", rsSwingLowColor]] as const) {
+    const swings = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 2.5,
+      priceScaleId: "left",
+    });
+    swings.setData(confirmed
+      .filter((swing) => swing.kind === kind)
+      .map((swing) => ({ time: swing.date, value: swing.value })));
+    series.push(swings);
+  }
+
+  const provisional = relativeStrength.structure.provisional;
+  if (provisional !== null) {
+    const data = [{ time: provisional.date, value: provisional.value }];
+    const outer = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: provisional.kind === "low" ? rsSwingLowColor : rsSwingHighColor,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 2.5,
+      priceScaleId: "left",
+    });
+    outer.setData(data);
+    series.push(outer);
+    const inner = chart.addSeries(LineSeries, {
+      ...indicatorSeriesOptions,
+      color: chartColors.background,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 1.25,
+      priceScaleId: "left",
+    });
+    inner.setData(data);
+    series.push(inner);
+  }
+  series.forEach((item) => item.applyOptions({ visible }));
+  return series;
+}
+
 function ChartContainer({
   containerRef,
   onPointerEnter,
+  showRelativeStrength,
+  onToggleRelativeStrength,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   onPointerEnter: () => void;
+  showRelativeStrength?: boolean;
+  onToggleRelativeStrength?: () => void;
 }) {
   return (
     <div className="study-chart-wrap" onPointerEnter={onPointerEnter}>
       <div ref={containerRef} className="study-chart" />
+      {showRelativeStrength !== undefined && (
+        <button
+          type="button"
+          className="study-chart-rs-toggle"
+          aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
+          aria-pressed={showRelativeStrength}
+          title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
+          onClick={onToggleRelativeStrength}
+        >
+          RS
+        </button>
+      )}
       <div className="study-chart-legend" aria-label="Simple moving averages">
         {movingAverages.map(({ period, color }) => (
           <span key={period} style={{ color }}>SMA {period}</span>
