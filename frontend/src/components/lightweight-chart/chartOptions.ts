@@ -110,8 +110,10 @@ export const volumeAverageSeriesOptions = {
 export const relativeStrengthSeriesOptions = {
   ...indicatorSeriesOptions,
   color: "#e6c84f",
+  lineStyle: LineStyle.LargeDashed,
   lineWidth: 1 as const,
   lastValueVisible: true,
+  priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
   priceScaleId: "left",
 };
 

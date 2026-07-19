@@ -64,7 +64,6 @@ pub struct MarketChartSnapshot {
 pub struct MarketChartRelativeStrength {
     pub comparison_symbol: TickerSymbol,
     pub line: RelativeStrengthCalculation,
-    pub trend: RelativeStrengthCalculation,
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq)]

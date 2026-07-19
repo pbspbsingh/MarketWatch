@@ -30,7 +30,6 @@ import {
   overlappingPriceScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
-import type { RelativeStrengthMode } from "./types";
 import { marketDataSymbol } from "../../api/marketChart";
 import {
   MarketChartLiveClient,
@@ -45,7 +44,6 @@ interface SplitLightweightChartsProps {
   bottomTradingViewSymbol: string;
   interval: "D" | "W";
   topPending?: boolean;
-  relativeStrengthMode: RelativeStrengthMode;
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
@@ -80,7 +78,6 @@ export default function SplitLightweightCharts({
   bottomTradingViewSymbol,
   interval,
   topPending = false,
-  relativeStrengthMode,
   initialSplit,
   onSplitChange,
   onError,
@@ -293,7 +290,6 @@ export default function SplitLightweightCharts({
               priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
               historyInteractionTrackerRef={historyInteractionTrackerRef}
               relativeStrengthComparisonSymbol={bottomSymbol}
-              relativeStrengthMode={relativeStrengthMode}
               showLoadingOverlay={false}
               refreshCandlesVersion={topRefreshVersion}
               reloadVersion={topReloadVersion}

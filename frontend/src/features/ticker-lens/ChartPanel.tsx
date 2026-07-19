@@ -19,7 +19,6 @@ import { Toast } from "../../components/Toast";
 import {
   chartEngineKey,
   chartIntervalKey,
-  chartRelativeStrengthModeKey,
   chartSplitKey,
   chartThemeEtfKey,
 } from "./constants";
@@ -27,7 +26,6 @@ import { ChartHeader } from "./ChartHeader";
 import type {
   ChartEngine,
   GroupMode,
-  RelativeStrengthMode,
   SelectedTickerContext,
 } from "./types";
 import {
@@ -36,7 +34,6 @@ import {
   isArrowKeyControl,
   readChartEngine,
   readChartInterval,
-  readRelativeStrengthMode,
   readChartSplit,
   readEnabled,
   themeGroupsMarketWatchUrl,
@@ -87,9 +84,6 @@ export function ChartPanel({
   const [detailsSelection, setDetailsSelection] = useState<typeof tickerSelection>();
   const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
     readChartEngine(chartEngineKey),
-  );
-  const [relativeStrengthMode, setRelativeStrengthMode] = useState<RelativeStrengthMode>(() =>
-    readRelativeStrengthMode(chartRelativeStrengthModeKey),
   );
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join("\0");
@@ -251,8 +245,6 @@ export function ChartPanel({
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
         chartEngine={chartEngine}
         setChartEngine={setChartEngine}
-        relativeStrengthMode={relativeStrengthMode}
-        setRelativeStrengthMode={setRelativeStrengthMode}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
@@ -294,7 +286,6 @@ export function ChartPanel({
                 bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
                 topPending={summaryLoading}
-                relativeStrengthMode={relativeStrengthMode}
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
                 onError={handleChartError}

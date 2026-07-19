@@ -28,7 +28,6 @@ import {
   applyHistoryExpansion,
   previousHistoryRange,
 } from "./chartHistory";
-import type { RelativeStrengthMode } from "./relativeStrengthSeries";
 import "./market-chart.css";
 
 type LoadState =
@@ -54,7 +53,6 @@ interface MarketChartContainerProps {
   onError?: (message: string | undefined) => void;
   historyInteractionTrackerRef?: RefObject<ChartHistoryInteractionTracker>;
   relativeStrengthComparisonSymbol?: string;
-  relativeStrengthMode?: RelativeStrengthMode;
   showLoadingOverlay?: boolean;
   onLoadStatusChange?: (status: MarketChartLoadStatus) => void;
   refreshCandlesVersion?: number;
@@ -78,7 +76,6 @@ export function MarketChartContainer({
   onError,
   historyInteractionTrackerRef,
   relativeStrengthComparisonSymbol,
-  relativeStrengthMode,
   showLoadingOverlay = true,
   onLoadStatusChange,
   refreshCandlesVersion = 0,
@@ -334,7 +331,6 @@ export function MarketChartContainer({
           priceScaleBottomMargin={priceScaleBottomMargin}
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
-          relativeStrengthMode={relativeStrengthMode}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
         />

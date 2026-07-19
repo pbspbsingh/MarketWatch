@@ -1,13 +1,6 @@
 use crate::models::{DailyCandle, TickerSymbol};
 use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
-use std::collections::HashMap;
-
-const RS_SMOOTHING_SESSIONS: usize = 5;
-const RS_SHORT_SESSIONS: usize = 20;
-const RS_MEDIUM_SESSIONS: usize = 63;
-const RS_SHORT_WEIGHT: f64 = 0.55;
-const RS_MEDIUM_WEIGHT: f64 = 0.45;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct PerformancePeriods {
@@ -118,80 +111,6 @@ fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {
     closes.next()
 }
 
-pub fn candle_relative_strength_trend_series(
-    candles: &[DailyCandle],
-    benchmark: &[DailyCandle],
-) -> Vec<(NaiveDate, f64)> {
-    let benchmark_closes = benchmark
-        .iter()
-        .filter(|candle| candle.close > 0.0)
-        .map(|candle| (candle.market_date, candle.close))
-        .collect::<HashMap<_, _>>();
-    let log_ratios = candles
-        .iter()
-        .filter(|candle| candle.close > 0.0)
-        .filter_map(|candle| {
-            benchmark_closes
-                .get(&candle.market_date)
-                .map(|benchmark_close| (candle.market_date, (candle.close / benchmark_close).ln()))
-        })
-        .collect::<Vec<_>>();
-    let values = log_ratios
-        .iter()
-        .map(|(_, value)| *value)
-        .collect::<Vec<_>>();
-    let smoothed = simple_moving_average(&values, RS_SMOOTHING_SESSIONS);
-    if smoothed.len() < RS_MEDIUM_SESSIONS {
-        return Vec::new();
-    }
-
-    smoothed
-        .iter()
-        .enumerate()
-        .skip(RS_MEDIUM_SESSIONS - 1)
-        .filter_map(|(index, _)| {
-            let values = &smoothed[..=index];
-            let short = monthly_relative_trend_percent(values, RS_SHORT_SESSIONS)?;
-            let medium = monthly_relative_trend_percent(values, RS_MEDIUM_SESSIONS)?;
-            let date = log_ratios[index + RS_SMOOTHING_SESSIONS - 1].0;
-            Some((date, RS_SHORT_WEIGHT * short + RS_MEDIUM_WEIGHT * medium))
-        })
-        .collect()
-}
-
-fn simple_moving_average(values: &[f64], sessions: usize) -> Vec<f64> {
-    if sessions == 0 || values.len() < sessions {
-        return Vec::new();
-    }
-    let mut sum = values[..sessions].iter().sum::<f64>();
-    let mut averages = Vec::with_capacity(values.len() - sessions + 1);
-    averages.push(sum / sessions as f64);
-    for index in sessions..values.len() {
-        sum += values[index] - values[index - sessions];
-        averages.push(sum / sessions as f64);
-    }
-    averages
-}
-
-fn monthly_relative_trend_percent(values: &[f64], sessions: usize) -> Option<f64> {
-    let values = values.get(values.len().checked_sub(sessions)?..)?;
-    let mean_x = (sessions - 1) as f64 / 2.0;
-    let mean_y = values.iter().sum::<f64>() / sessions as f64;
-    let (numerator, denominator) =
-        values
-            .iter()
-            .enumerate()
-            .fold((0.0, 0.0), |(numerator, denominator), (index, value)| {
-                let centered_x = index as f64 - mean_x;
-                (
-                    numerator + centered_x * (value - mean_y),
-                    denominator + centered_x * centered_x,
-                )
-            });
-    (denominator > 0.0)
-        .then(|| 100.0 * (RS_SHORT_SESSIONS as f64 * numerator / denominator).exp_m1())
-}
-
 fn period_return(candles: &[DailyCandle], end_close: f64, date: NaiveDate) -> f64 {
     close_on_or_before(candles, date)
         .filter(|close| *close != 0.0)
@@ -246,51 +165,5 @@ mod tests {
         };
 
         assert!((performance.absolute_strength() - 0.245).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn calculates_candle_relative_strength_trend() {
-        let benchmark = (0..80)
-            .map(|index| DailyCandle {
-                market_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
-                    + TimeDelta::days(index as i64),
-                open: 100.0,
-                high: 100.0,
-                low: 100.0,
-                close: 100.0,
-                volume: 1,
-            })
-            .collect::<Vec<_>>();
-        let candles = benchmark
-            .iter()
-            .enumerate()
-            .map(|(index, candle)| DailyCandle {
-                close: 100.0 * (0.001 * index as f64).exp(),
-                ..candle.clone()
-            })
-            .collect::<Vec<_>>();
-
-        let expected = 100.0 * (0.001 * RS_SHORT_SESSIONS as f64).exp_m1();
-        let series = candle_relative_strength_trend_series(&candles, &benchmark);
-        let actual = series.last().unwrap().1;
-        assert_eq!(series.len(), 14);
-        assert!((actual - expected).abs() < 1e-10);
-    }
-
-    #[test]
-    fn relative_strength_trend_requires_medium_term_history() {
-        let candles = (0..66)
-            .map(|index| DailyCandle {
-                market_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
-                    + TimeDelta::days(index as i64),
-                open: 100.0,
-                high: 100.0,
-                low: 100.0,
-                close: 100.0,
-                volume: 1,
-            })
-            .collect::<Vec<_>>();
-
-        assert!(candle_relative_strength_trend_series(&candles, &candles).is_empty());
     }
 }

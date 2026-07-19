@@ -58,7 +58,6 @@ import {
 } from "./chartSeries";
 import {
   relativeStrengthLineData,
-  type RelativeStrengthMode,
 } from "./relativeStrengthSeries";
 
 interface MarketChartProps {
@@ -70,7 +69,6 @@ interface MarketChartProps {
   priceScaleBottomMargin?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
-  relativeStrengthMode?: RelativeStrengthMode;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
 }
@@ -93,7 +91,6 @@ export function MarketChart({
   priceScaleBottomMargin,
   onChartContext,
   relativeStrength,
-  relativeStrengthMode,
   liveDelta,
   sessionDelta,
 }: MarketChartProps) {
@@ -250,17 +247,10 @@ export function MarketChart({
     const chart = hostRef.current?.getChart();
     const series = relativeStrengthSeriesRef.current;
     if (chart === null || chart === undefined || series === null) return;
-    const points = relativeStrengthLineData(relativeStrength, relativeStrengthMode);
-    const trend = relativeStrengthMode === "trend";
+    const points = relativeStrengthLineData(relativeStrength);
     chart.applyOptions({ leftPriceScale: { visible: false } });
-    series.applyOptions({
-      lineStyle: trend ? LineStyle.LargeDashed : LineStyle.Solid,
-      priceFormat: trend
-        ? { type: "custom", formatter: (value: number) => `${value.toFixed(1)}%` }
-        : { type: "price", precision: 2, minMove: 0.01 },
-    });
     series.setData(points);
-  }, [relativeStrength, relativeStrengthMode]);
+  }, [relativeStrength]);
 
   useEffect(() => {
     if (
@@ -306,12 +296,11 @@ export function MarketChart({
 
     const relativePoint = relativeStrengthLineData(
       liveDelta.relative_strength,
-      relativeStrengthMode,
     )[0];
     if (relativePoint !== undefined) {
       updateLineSeries(relativeStrengthSeriesRef.current, relativePoint, data.interval);
     }
-  }, [data.candles, data.interval, data.symbol, liveDelta, relativeStrengthMode]);
+  }, [data.candles, data.interval, data.symbol, liveDelta]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;

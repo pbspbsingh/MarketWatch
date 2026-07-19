@@ -14,10 +14,9 @@ import type { ChartSummary } from "../../api/chart";
 import {
   chartEngineKey,
   chartIntervalKey,
-  chartRelativeStrengthModeKey,
   chartThemeEtfKey,
 } from "./constants";
-import type { ChartEngine, RelativeStrengthMode } from "./types";
+import type { ChartEngine } from "./types";
 import {
   formatVolume,
   industryMarketWatchUrl,
@@ -42,8 +41,6 @@ interface ChartHeaderProps {
   contextLabel?: string;
   chartEngine?: ChartEngine;
   setChartEngine?: (engine: ChartEngine) => void;
-  relativeStrengthMode?: RelativeStrengthMode;
-  setRelativeStrengthMode?: (mode: RelativeStrengthMode) => void;
 }
 
 export function ChartHeader({
@@ -61,14 +58,7 @@ export function ChartHeader({
   contextLabel,
   chartEngine,
   setChartEngine,
-  relativeStrengthMode,
-  setRelativeStrengthMode,
 }: ChartHeaderProps) {
-  const comparisonTicker = showThemeEtfChart && selectedThemeEtf !== undefined
-    ? selectedThemeEtf
-    : summary?.benchmark_symbol.slice(summary.benchmark_symbol.lastIndexOf(":") + 1);
-  const comparisonSuffix = comparisonTicker === undefined ? "" : ` vs. ${comparisonTicker}`;
-
   return (
     <header className="panel-header chart-header">
       <div className="chart-header-identity">
@@ -201,39 +191,6 @@ export function ChartHeader({
             )}
             <ChartIndicators summary={summary} />
           </>
-        )}
-        {summary !== undefined
-          && relativeStrengthMode !== undefined
-          && setRelativeStrengthMode !== undefined && (
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={relativeStrengthMode}
-            aria-label="Relative strength overlay"
-            title={chartEngine === "tradingview" ? "RS overlays require Lightweight Charts" : undefined}
-            onChange={(_, value: RelativeStrengthMode | null) => {
-              const mode = value ?? "none";
-              localStorage.setItem(chartRelativeStrengthModeKey, mode);
-              setRelativeStrengthMode(mode);
-            }}
-          >
-            <ToggleButton
-              value="line"
-              disabled={chartEngine !== "lightweight"}
-              title={`Relative strength${comparisonSuffix}`}
-              aria-label={`Relative strength${comparisonSuffix}`}
-            >
-              RS
-            </ToggleButton>
-            <ToggleButton
-              value="trend"
-              disabled={chartEngine !== "lightweight"}
-              title={`Relative strength trend${comparisonSuffix}`}
-              aria-label={`Relative strength trend${comparisonSuffix}`}
-            >
-              RST
-            </ToggleButton>
-          </ToggleButtonGroup>
         )}
         <ToggleButtonGroup
           exclusive

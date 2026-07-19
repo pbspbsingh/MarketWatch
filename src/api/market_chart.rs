@@ -435,16 +435,6 @@ fn snapshot_delta(
                         .into_iter()
                         .collect(),
                 },
-                trend: crate::models::RelativeStrengthCalculation {
-                    moving_average_period: relative.trend.moving_average_period,
-                    points: relative
-                        .trend
-                        .points
-                        .into_iter()
-                        .next_back()
-                        .into_iter()
-                        .collect(),
-                },
             });
     Some(LiveChartDelta {
         chart_id: chart.chart_id.clone(),

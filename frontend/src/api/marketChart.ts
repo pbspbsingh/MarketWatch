@@ -35,7 +35,6 @@ export interface MarketChartRelativeStrengthCalculation {
 export interface MarketChartRelativeStrength {
   comparison_symbol: string;
   line: MarketChartRelativeStrengthCalculation;
-  trend: MarketChartRelativeStrengthCalculation;
 }
 
 export interface MarketChartData {

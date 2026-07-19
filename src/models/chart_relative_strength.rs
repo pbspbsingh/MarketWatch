@@ -1,5 +1,5 @@
-use super::chart::{MarketChartInterval, MarketChartPoint};
-use super::{DailyCandle, candle_relative_strength_trend_series};
+use super::DailyCandle;
+use super::chart::MarketChartInterval;
 use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -7,7 +7,6 @@ use thiserror::Error;
 
 const DAILY_LINE_SMOOTHING_PERIOD: usize = 5;
 const WEEKLY_LINE_SMOOTHING_PERIOD: usize = 3;
-const TREND_SMOOTHING_PERIOD: usize = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChartDateRange {
@@ -97,44 +96,6 @@ pub fn calculate_relative_strength_line(
     })
 }
 
-pub fn calculate_relative_strength_trend(
-    ticker: &[DailyCandle],
-    comparison: &[DailyCandle],
-    interval: MarketChartInterval,
-    range: ChartDateRange,
-) -> Result<RelativeStrengthCalculation, RelativeStrengthCalculationError> {
-    validate_range(range)?;
-    let ticker = ticker
-        .iter()
-        .filter(|candle| candle.market_date < range.end)
-        .cloned()
-        .collect::<Vec<_>>();
-    let comparison = comparison
-        .iter()
-        .filter(|candle| candle.market_date < range.end)
-        .cloned()
-        .collect::<Vec<_>>();
-    let points = candle_relative_strength_trend_series(&ticker, &comparison)
-        .into_iter()
-        .map(|(date, value)| MarketChartPoint { date, value })
-        .collect::<Vec<_>>();
-    let points = sample_trend_points(points, interval)
-        .into_iter()
-        .filter(|point| range.contains(point.date))
-        .map(|point| RelativeStrengthCalculationPoint {
-            date: point.date,
-            value: point.value,
-            ticker_return_percent: None,
-            comparison_return_percent: None,
-            relative_return_percent: None,
-        })
-        .collect();
-    Ok(RelativeStrengthCalculation {
-        moving_average_period: TREND_SMOOTHING_PERIOD,
-        points,
-    })
-}
-
 impl ChartDateRange {
     fn contains(self, date: NaiveDate) -> bool {
         date >= self.start && date < self.end
@@ -213,24 +174,6 @@ fn relative_strength_points(
                 ),
             }
         })
-        .collect()
-}
-
-fn sample_trend_points(
-    points: Vec<MarketChartPoint>,
-    interval: MarketChartInterval,
-) -> Vec<MarketChartPoint> {
-    if matches!(interval, MarketChartInterval::Daily) {
-        return points;
-    }
-    points
-        .into_iter()
-        .map(|point| {
-            let week = point.date.iso_week();
-            ((week.year(), week.week()), point)
-        })
-        .collect::<BTreeMap<_, _>>()
-        .into_values()
         .collect()
 }
 
@@ -347,44 +290,6 @@ mod tests {
             line.points.last().unwrap().date,
             requested.end.pred_opt().unwrap()
         );
-    }
-
-    #[test]
-    fn trend_filters_daily_and_weekly_points_to_the_requested_range() {
-        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
-        let ticker = candles(start, 400, 0.2);
-        let comparison = candles(start, 400, 0.05);
-        let requested = range(start + Days::new(150), 150);
-
-        for interval in [MarketChartInterval::Daily, MarketChartInterval::Weekly] {
-            let trend =
-                calculate_relative_strength_trend(&ticker, &comparison, interval, requested)
-                    .unwrap();
-            assert!(!trend.points.is_empty());
-            assert!(
-                trend
-                    .points
-                    .iter()
-                    .all(|point| requested.contains(point.date))
-            );
-            assert!(trend.points.last().unwrap().date < requested.end);
-        }
-    }
-
-    #[test]
-    fn weekly_trend_uses_the_last_daily_score() {
-        let point = |date: NaiveDate, value| MarketChartPoint { date, value };
-        let points = vec![
-            point(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), 1.0),
-            point(NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(), 2.0),
-            point(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), 3.0),
-        ];
-
-        let weekly = sample_trend_points(points, MarketChartInterval::Weekly);
-
-        assert_eq!(weekly.len(), 2);
-        assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
-        assert_eq!(weekly[0].value, 2.0);
     }
 
     #[test]

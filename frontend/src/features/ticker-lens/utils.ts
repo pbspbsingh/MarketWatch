@@ -300,11 +300,6 @@ export function readChartInterval(storageKey: string): "D" | "W" {
   return localStorage.getItem(storageKey) === "W" ? "W" : "D";
 }
 
-export function readRelativeStrengthMode(storageKey: string): "line" | "trend" | "none" {
-  const value = localStorage.getItem(storageKey);
-  return value === "trend" || value === "none" ? value : "line";
-}
-
 export function readEnabled(storageKey: string) {
   return localStorage.getItem(storageKey) === "1";
 }

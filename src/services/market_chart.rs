@@ -5,7 +5,6 @@ use crate::models::chart::{
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, calculate_relative_strength_line,
-    calculate_relative_strength_trend,
 };
 use crate::models::{DailyCandle, TickerSymbol, YahooSymbol};
 use crate::services::yahoo::{YahooService, YahooServiceError};
@@ -258,7 +257,6 @@ fn build_relative_strength(
     Ok(Some(MarketChartRelativeStrength {
         comparison_symbol,
         line: calculate_relative_strength_line(ticker, comparison, interval, range)?,
-        trend: calculate_relative_strength_trend(ticker, comparison, interval, range)?,
     }))
 }
 
@@ -512,20 +510,11 @@ mod tests {
 
             assert_eq!(relative_strength.comparison_symbol, "SPY");
             assert!(!relative_strength.line.points.is_empty());
-            assert!(!relative_strength.trend.points.is_empty());
             assert!(
                 relative_strength.line.points.first().unwrap().date
                     > snapshot.earliest_date.unwrap()
             );
-            assert!(
-                relative_strength.trend.points.first().unwrap().date
-                    > snapshot.earliest_date.unwrap()
-            );
             assert!(relative_strength.line.points.iter().all(|point| {
-                point.date >= snapshot.earliest_date.unwrap()
-                    && point.date <= snapshot.latest_date.unwrap()
-            }));
-            assert!(relative_strength.trend.points.iter().all(|point| {
                 point.date >= snapshot.earliest_date.unwrap()
                     && point.date <= snapshot.latest_date.unwrap()
             }));
@@ -566,7 +555,6 @@ mod tests {
             .unwrap();
 
             assert!(expanded.line.points.len() > initial.line.points.len());
-            assert!(expanded.trend.points.len() > initial.trend.points.len());
             for initial_point in &initial.line.points {
                 assert_eq!(
                     Some(initial_point),
@@ -576,15 +564,6 @@ mod tests {
                         .iter()
                         .find(|point| point.date == initial_point.date)
                 );
-            }
-            for initial_point in &initial.trend.points {
-                let expanded_point = expanded
-                    .trend
-                    .points
-                    .iter()
-                    .find(|point| point.date == initial_point.date)
-                    .unwrap();
-                assert!((initial_point.value - expanded_point.value).abs() < 1e-12);
             }
         }
     }
