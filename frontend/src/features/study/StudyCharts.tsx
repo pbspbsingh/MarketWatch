@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   CandlestickSeries,
+  CrosshairMode,
   HistogramSeries,
   LineSeries,
   ColorType,
   createChart,
   createSeriesMarkers,
+  createTextWatermark,
   type CandlestickData,
   type HistogramData,
   type LogicalRange,
@@ -45,7 +47,22 @@ export function StudyCharts({
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
+  const crosshairOwnerRef = useRef<0 | 1>(0);
   const syncCrosshairRef = useRef(syncCrosshair);
+
+  const setCrosshairOwner = useCallback((owner: 0 | 1) => {
+    crosshairOwnerRef.current = owner;
+    chartsRef.current.forEach((chart, index) => {
+      const visible = index === owner;
+      chart.applyOptions({
+        crosshair: { horzLine: { visible, labelVisible: visible } },
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!tickerBVisible) setCrosshairOwner(0);
+  }, [setCrosshairOwner, tickerBVisible]);
 
   useEffect(() => {
     syncCrosshairRef.current = syncCrosshair;
@@ -74,6 +91,13 @@ export function StudyCharts({
           vertLines: { color: chartColors.grid },
           horzLines: { color: chartColors.grid },
         },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          horzLine: {
+            visible: index === crosshairOwnerRef.current,
+            labelVisible: index === crosshairOwnerRef.current,
+          },
+        },
         rightPriceScale: { borderColor: chartColors.border, scaleMargins: overlappingPriceScaleMargins },
         timeScale: { borderColor: chartColors.border, timeVisible: false },
       });
@@ -83,6 +107,16 @@ export function StudyCharts({
         borderVisible: false,
         wickUpColor: chartColors.up,
         wickDownColor: chartColors.down,
+      });
+      createTextWatermark(chart.panes()[0], {
+        horzAlign: "center",
+        vertAlign: "center",
+        lines: [{
+          text: result.series[index].symbol,
+          color: "rgba(143, 154, 167, 0.14)",
+          fontSize: 48,
+          fontStyle: "bold",
+        }],
       });
       candleSeries.push(candles);
       const volume = chart.addSeries(HistogramSeries, {
@@ -119,7 +153,6 @@ export function StudyCharts({
       return chart;
     });
     chartsRef.current = charts;
-
     let synchronizing = false;
     const synchronize = (target: typeof charts[number], range: LogicalRange | null) => {
       if (synchronizing || range === null) return;
@@ -136,17 +169,23 @@ export function StudyCharts({
       charts[1].timeScale().subscribeVisibleLogicalRangeChange(bottomHandler);
     }
     let synchronizingCrosshair = false;
-    const crosshairHandler = (targetIndex: number) => (event: MouseEventParams<Time>) => {
-      if (!syncCrosshairRef.current || synchronizingCrosshair) return;
+    const crosshairHandler = (targetIndex: 0 | 1) => (event: MouseEventParams<Time>) => {
+      if (
+        !syncCrosshairRef.current
+        || synchronizingCrosshair
+      ) return;
       synchronizingCrosshair = true;
-      const date = event.time === undefined ? undefined : timeKey(event.time);
-      const candle = date === undefined ? undefined : candlesByDate[targetIndex].get(date);
-      if (candle === undefined || date === undefined) {
-        charts[targetIndex].clearCrosshairPosition();
-      } else {
-        charts[targetIndex].setCrosshairPosition(candle.close, date, candleSeries[targetIndex]);
+      try {
+        const date = event.time === undefined ? undefined : timeKey(event.time);
+        const candle = date === undefined ? undefined : candlesByDate[targetIndex].get(date);
+        if (candle === undefined || date === undefined) {
+          charts[targetIndex].clearCrosshairPosition();
+        } else {
+          charts[targetIndex].setCrosshairPosition(candle.close, date, candleSeries[targetIndex]);
+        }
+      } finally {
+        synchronizingCrosshair = false;
       }
-      synchronizingCrosshair = false;
     };
     const topCrosshairHandler = crosshairHandler(1);
     const bottomCrosshairHandler = crosshairHandler(0);
@@ -183,8 +222,18 @@ export function StudyCharts({
     <SplitPane
       orientation={orientation}
       secondVisible={tickerBVisible}
-      first={<ChartContainer containerRef={topRef} symbol={result.series[0]?.symbol ?? ""} />}
-      second={<ChartContainer containerRef={bottomRef} symbol={result.series[1]?.symbol ?? ""} />}
+      first={(
+        <ChartContainer
+          containerRef={topRef}
+          onPointerEnter={() => setCrosshairOwner(0)}
+        />
+      )}
+      second={(
+        <ChartContainer
+          containerRef={bottomRef}
+          onPointerEnter={() => setCrosshairOwner(1)}
+        />
+      )}
     />
   );
 }
@@ -201,11 +250,16 @@ function shiftYears(dateText: string, years: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function ChartContainer({ containerRef, symbol }: { containerRef: React.RefObject<HTMLDivElement | null>; symbol: string }) {
+function ChartContainer({
+  containerRef,
+  onPointerEnter,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  onPointerEnter: () => void;
+}) {
   return (
-    <div className="study-chart-wrap">
+    <div className="study-chart-wrap" onPointerEnter={onPointerEnter}>
       <div ref={containerRef} className="study-chart" />
-      <strong className="study-chart-symbol">{symbol}</strong>
       <div className="study-chart-legend" aria-label="Simple moving averages">
         {movingAverages.map(({ period, color }) => (
           <span key={period} style={{ color }}>SMA {period}</span>

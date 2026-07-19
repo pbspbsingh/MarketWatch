@@ -66,19 +66,6 @@
   height: 100%;
 }
 
-.study-chart-symbol {
-  position: absolute;
-  z-index: 1;
-  top: 0.35rem;
-  left: 0.5rem;
-  padding: 0.15rem 0.35rem;
-  border-radius: 0.2rem;
-  color: #f0f4f8;
-  background: rgb(17 20 24 / 75%);
-  font-size: 0.72rem;
-  pointer-events: none;
-}
-
 .study-chart-legend {
   display: flex;
   position: absolute;
