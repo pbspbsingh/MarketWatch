@@ -1,4 +1,4 @@
-use comrak::html::{ChildRendering, collect_text, dangerous_url, escape, render_sourcepos};
+use comrak::html::{ChildRendering, dangerous_url, escape, render_sourcepos};
 use comrak::nodes::{Ast, Node, NodeValue};
 use comrak::{Arena, Options, create_formatter, parse_document};
 use regex::RegexBuilder;
@@ -96,7 +96,7 @@ pub fn highlight_plain(value: &str, query: &str) -> Option<String> {
 pub fn highlight_excerpt(markdown: &str, query: &str) -> Option<String> {
     let arena = Arena::new();
     let root = parse_document(&arena, markdown, &options());
-    let text = collect_text(root);
+    let text = root.collect_text();
     let found = match_expression(query).ok()?.find(&text)?;
     let start = text[..found.start()]
         .char_indices()

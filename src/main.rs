@@ -12,6 +12,7 @@ use anyhow::Context;
 use config::Config;
 use std::path::Path;
 use tracing::info;
+use tracing_subscriber::{EnvFilter, fmt::time::ChronoLocal};
 
 #[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
@@ -44,8 +45,9 @@ async fn main() -> anyhow::Result<()> {
 
 fn init_tracing() {
     tracing_subscriber::fmt()
+        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".into()))
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
+            EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "market_watch=debug,tower_http=info".into()),
         )
         .init();
