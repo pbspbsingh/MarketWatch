@@ -1,7 +1,6 @@
 # Volume Run Rate (VRR) Plan
 
-Status: Implementation underway; live Yahoo session-transition semantics still
-require market-hours verification.
+Status: Implemented. Live transition tracing remains operational validation.
 
 ## Objective
 
@@ -128,7 +127,8 @@ Cache policy:
 - Never evict a profile while its symbol is active or in the idle grace period;
   evict the least-recently-used unwatched profile instead.
 - A process restart or capacity eviction may refetch once; that is accepted.
-- Do not cache failures beyond a short retry backoff.
+- Cache definitive insufficient-history results for the current market date.
+  Do not cache malformed profile failures; retry at the next seed opportunity.
 
 The cache retains the historical OHLCV portion as well as the much smaller
 derived profile. A future five-minute overlay may reuse that history;
@@ -310,7 +310,8 @@ The lightweight `MarketChart` owns this overlay because it already owns `RS`.
 - If `RS` is absent, VRR keeps the same anchor instead of depending on the RS
   control.
 - Render `VRR —` until a valid value arrives.
-- Use neutral styling; do not invent bullish/bearish thresholds.
+- Color values at or below `0.8x` red, values below `1.1x` yellow, values at or
+  above `1.1x` green, and unavailable values gray.
 - Add an accessible label such as `Volume run rate 1.3 times`.
 - Preserve the RS button's independent toggle behavior.
 - Clear the displayed value when the chart's symbol/request changes; accept
@@ -353,8 +354,8 @@ Use the existing configured timezone, market hours, holidays, and
    - Compare profiles and VRR against raw Yahoo responses for liquid and thinly
      traded symbols across a full extended-hours day.
 
-Do not consider the feature complete until phase 2 establishes a trustworthy
-numerator across both provider phase transitions.
+The normalizer supports both full-day and session-local provider volume. Live
+transition tracing verifies Yahoo behavior without changing that contract.
 
 ## Test plan
 

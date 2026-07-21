@@ -1,8 +1,9 @@
 use chrono::{NaiveDate, NaiveTime, Timelike};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Duration;
 use thiserror::Error;
 
-const BUCKET_SECONDS: f64 = 5.0 * 60.0;
+const VOLUME_BUCKET_DURATION: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct IntradayVolumeSample {
@@ -30,69 +31,69 @@ pub(crate) enum VolumeProfileError {
     NoSamples,
 }
 
-pub(crate) fn build_volume_profile(
-    samples: &[IntradayVolumeSample],
-    source_dates: &[NaiveDate],
-) -> Result<VolumeProfile, VolumeProfileError> {
-    if source_dates.is_empty() {
-        return Err(VolumeProfileError::NoSourceDates);
-    }
-    let source_set = source_dates.iter().copied().collect::<HashSet<_>>();
-    if source_set.len() != source_dates.len() {
-        return Err(VolumeProfileError::DuplicateSourceDate);
-    }
-
-    let mut volume_by_date = HashMap::<NaiveDate, BTreeMap<NaiveTime, u128>>::new();
-    let mut bucket_times = HashSet::new();
-    for sample in samples {
-        if !source_set.contains(&sample.market_date) {
-            continue;
-        }
-        if sample.market_time.minute() % 5 != 0
-            || sample.market_time.second() != 0
-            || sample.market_time.nanosecond() != 0
-        {
-            return Err(VolumeProfileError::MisalignedSample);
-        }
-        bucket_times.insert(sample.market_time);
-        let bucket = volume_by_date
-            .entry(sample.market_date)
-            .or_default()
-            .entry(sample.market_time);
-        if matches!(bucket, std::collections::btree_map::Entry::Occupied(_)) {
-            return Err(VolumeProfileError::DuplicateSample);
-        }
-        bucket.or_insert(u128::from(sample.volume));
-    }
-    if bucket_times.is_empty() {
-        return Err(VolumeProfileError::NoSamples);
-    }
-
-    let mut bucket_times = bucket_times.into_iter().collect::<Vec<_>>();
-    bucket_times.sort_unstable();
-    let mut cumulative_totals = vec![0_u128; bucket_times.len()];
-    for date in source_dates {
-        let buckets = volume_by_date.get(date);
-        let mut cumulative = 0_u128;
-        for (index, time) in bucket_times.iter().enumerate() {
-            cumulative += buckets
-                .and_then(|values| values.get(time))
-                .copied()
-                .unwrap_or(0);
-            cumulative_totals[index] += cumulative;
-        }
-    }
-
-    let divisor = source_dates.len() as f64;
-    let cumulative_by_time = bucket_times
-        .into_iter()
-        .zip(cumulative_totals)
-        .map(|(time, total)| (time, total as f64 / divisor))
-        .collect();
-    Ok(VolumeProfile { cumulative_by_time })
-}
-
 impl VolumeProfile {
+    pub(crate) fn build(
+        samples: &[IntradayVolumeSample],
+        source_dates: &[NaiveDate],
+    ) -> Result<Self, VolumeProfileError> {
+        if source_dates.is_empty() {
+            return Err(VolumeProfileError::NoSourceDates);
+        }
+        let source_set = source_dates.iter().copied().collect::<HashSet<_>>();
+        if source_set.len() != source_dates.len() {
+            return Err(VolumeProfileError::DuplicateSourceDate);
+        }
+
+        let mut volume_by_date = HashMap::<NaiveDate, BTreeMap<NaiveTime, u128>>::new();
+        let mut bucket_times = HashSet::new();
+        for sample in samples {
+            if !source_set.contains(&sample.market_date) {
+                continue;
+            }
+            if sample.market_time.minute() % 5 != 0
+                || sample.market_time.second() != 0
+                || sample.market_time.nanosecond() != 0
+            {
+                return Err(VolumeProfileError::MisalignedSample);
+            }
+            bucket_times.insert(sample.market_time);
+            let bucket = volume_by_date
+                .entry(sample.market_date)
+                .or_default()
+                .entry(sample.market_time);
+            if matches!(bucket, std::collections::btree_map::Entry::Occupied(_)) {
+                return Err(VolumeProfileError::DuplicateSample);
+            }
+            bucket.or_insert(u128::from(sample.volume));
+        }
+        if bucket_times.is_empty() {
+            return Err(VolumeProfileError::NoSamples);
+        }
+
+        let mut bucket_times = bucket_times.into_iter().collect::<Vec<_>>();
+        bucket_times.sort_unstable();
+        let mut cumulative_totals = vec![0_u128; bucket_times.len()];
+        for date in source_dates {
+            let buckets = volume_by_date.get(date);
+            let mut cumulative = 0_u128;
+            for (index, time) in bucket_times.iter().enumerate() {
+                cumulative += buckets
+                    .and_then(|values| values.get(time))
+                    .copied()
+                    .unwrap_or(0);
+                cumulative_totals[index] += cumulative;
+            }
+        }
+
+        let divisor = source_dates.len() as f64;
+        let cumulative_by_time = bucket_times
+            .into_iter()
+            .zip(cumulative_totals)
+            .map(|(time, total)| (time, total as f64 / divisor))
+            .collect();
+        Ok(Self { cumulative_by_time })
+    }
+
     pub(crate) fn run_rate(&self, actual: u64, time: NaiveTime) -> Option<f64> {
         let expected = self.expected_at(time)?;
         (expected > 0.0).then_some(actual as f64 / expected)
@@ -113,9 +114,15 @@ impl VolumeProfile {
                 .next_back()
                 .map(|(_, value)| *value);
         };
-        let elapsed = f64::from(time.minute() % 5 * 60 + time.second())
-            + f64::from(time.nanosecond()) / 1_000_000_000.0;
-        Some(previous + (current - previous) * (elapsed / BUCKET_SECONDS))
+        let elapsed = Duration::new(
+            u64::from(time.minute() % 5 * 60 + time.second()),
+            time.nanosecond(),
+        );
+        Some(
+            previous
+                + (current - previous)
+                    * (elapsed.as_secs_f64() / VOLUME_BUCKET_DURATION.as_secs_f64()),
+        )
     }
 }
 
@@ -148,7 +155,7 @@ mod tests {
                 volume: 300,
             },
         ];
-        let profile = build_volume_profile(&samples, &[first, second]).unwrap();
+        let profile = VolumeProfile::build(&samples, &[first, second]).unwrap();
 
         assert_eq!(profile.expected_at(time(6, 35)), Some(200.0));
         assert_eq!(profile.expected_at(time(6, 40)), Some(300.0));
@@ -157,7 +164,7 @@ mod tests {
     #[test]
     fn prorates_the_active_bucket() {
         let date = NaiveDate::from_ymd_opt(2026, 7, 17).unwrap();
-        let profile = build_volume_profile(
+        let profile = VolumeProfile::build(
             &[
                 IntradayVolumeSample {
                     market_date: date,
@@ -189,7 +196,7 @@ mod tests {
         };
 
         assert_eq!(
-            build_volume_profile(&[sample, sample], &[date]),
+            VolumeProfile::build(&[sample, sample], &[date]),
             Err(VolumeProfileError::DuplicateSample),
         );
     }

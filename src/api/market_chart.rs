@@ -195,6 +195,39 @@ async fn handle_live_chart_socket(
                 let changed = std::mem::take(&mut dirty_symbols);
                 let sessions = std::mem::take(&mut session_updates);
                 let run_rates = std::mem::take(&mut volume_run_rates);
+                for update in run_rates.into_values() {
+                    for chart in charts.iter().filter(|chart| {
+                        YahooSymbol::from(&chart.symbol) == update.symbol
+                    }) {
+                        if !send_live_event(
+                            &mut socket,
+                            LiveChartEvent::VolumeRunRate {
+                                request_id,
+                                delta: LiveVolumeRunRateDelta {
+                                    chart_id: chart.chart_id.clone(),
+                                    symbol: update.symbol.clone(),
+                                    value: update.value,
+                                },
+                            },
+                        ).await {
+                            return;
+                        }
+                    }
+                }
+                for update in sessions.into_values() {
+                    for chart in charts.iter().filter(|chart| {
+                        chart.interval == MarketChartInterval::Daily
+                            && YahooSymbol::from(&chart.symbol) == *update.symbol()
+                    }) {
+                        let delta = session_delta(chart, &update);
+                        if !send_live_event(
+                            &mut socket,
+                            LiveChartEvent::Session { request_id, delta },
+                        ).await {
+                            return;
+                        }
+                    }
+                }
                 for chart in charts.iter().filter(|chart| {
                     changed.contains(&YahooSymbol::from(&chart.symbol))
                         || chart.comparison_symbol.as_ref().is_some_and(|symbol| {
@@ -223,39 +256,6 @@ async fn handle_live_chart_socket(
                             ).await {
                                 return;
                             }
-                        }
-                    }
-                }
-                for update in sessions.into_values() {
-                    for chart in charts.iter().filter(|chart| {
-                        chart.interval == MarketChartInterval::Daily
-                            && YahooSymbol::from(&chart.symbol) == *update.symbol()
-                    }) {
-                        let delta = session_delta(chart, &update);
-                        if !send_live_event(
-                            &mut socket,
-                            LiveChartEvent::Session { request_id, delta },
-                        ).await {
-                            return;
-                        }
-                    }
-                }
-                for update in run_rates.into_values() {
-                    for chart in charts.iter().filter(|chart| {
-                        YahooSymbol::from(&chart.symbol) == update.symbol
-                    }) {
-                        if !send_live_event(
-                            &mut socket,
-                            LiveChartEvent::VolumeRunRate {
-                                request_id,
-                                delta: LiveVolumeRunRateDelta {
-                                    chart_id: chart.chart_id.clone(),
-                                    symbol: update.symbol.clone(),
-                                    value: update.value,
-                                },
-                            },
-                        ).await {
-                            return;
                         }
                     }
                 }

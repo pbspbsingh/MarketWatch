@@ -41,6 +41,7 @@ import {
   volumeSeriesOptions,
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
+import { volumeRunRateTone } from "./volumeRunRate";
 import {
   chartTimeToMarketDate,
   marketDateToChartTime,
@@ -491,13 +492,7 @@ export function MarketChart({
     : relativeStrengthTrend === "downtrend"
       ? "Downtrend"
       : "Unclear";
-  const volumeRunRateTone = volumeRunRate === null || volumeRunRate === undefined
-    ? "unavailable"
-    : volumeRunRate <= 0.8
-      ? "low"
-      : volumeRunRate < 1.1
-        ? "normal"
-        : "high";
+  const vrrTone = volumeRunRateTone(volumeRunRate);
   return (
     <>
       <ChartHost
@@ -527,7 +522,7 @@ export function MarketChart({
           </button>
         )}
         <span
-          className={`market-chart-vrr market-chart-vrr-${volumeRunRateTone}`}
+          className={`market-chart-vrr market-chart-vrr-${vrrTone}`}
           aria-label={volumeRunRate === null || volumeRunRate === undefined
             ? "Volume run rate unavailable"
             : `Volume run rate ${volumeRunRate.toFixed(1)} times`}

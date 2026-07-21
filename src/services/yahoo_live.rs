@@ -1,5 +1,5 @@
 use crate::models::{
-    DailyCandle, IntradayVolumeSample, VolumeProfile, YahooSymbol, build_volume_profile,
+    DailyCandle, IntradayVolumeSample, VolumeProfile, VolumeProfileError, YahooSymbol,
 };
 use crate::providers::{Candle, PricingData, spawn_transport};
 use crate::services::yahoo::{
@@ -131,9 +131,7 @@ struct YahooLiveActor {
     cache: HashMap<YahooSymbol, CachedCandle>,
     pre_market_cache: HashMap<YahooSymbol, CachedCandle>,
     post_market_cache: HashMap<YahooSymbol, YahooLivePrice>,
-    provider_volumes: HashMap<YahooSymbol, ProviderVolume>,
-    cumulative_volumes: HashMap<YahooSymbol, CumulativeVolume>,
-    volume_profiles: HashMap<YahooSymbol, CachedVolumeProfile>,
+    volume_run_rate: VolumeRunRateCache,
     latest_frame_at: HashMap<YahooSymbol, DateTime<Utc>>,
     volume_run_rate_sessions: usize,
     live_enabled: bool,
@@ -163,7 +161,7 @@ struct SeedOutcome {
 struct ProviderVolume {
     market_date: chrono::NaiveDate,
     session: MarketSession,
-    value: i64,
+    value: u64,
     updated_at: DateTime<Utc>,
 }
 
@@ -171,8 +169,8 @@ struct ProviderVolume {
 struct CumulativeVolume {
     market_date: chrono::NaiveDate,
     session: MarketSession,
-    session_base: i64,
-    total: i64,
+    session_base: u64,
+    total: u64,
     provider_mode: Option<ProviderVolumeMode>,
     updated_at: DateTime<Utc>,
 }
@@ -183,20 +181,54 @@ enum ProviderVolumeMode {
     SessionLocal,
 }
 
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+enum VolumeNormalizationError {
+    #[error("volume cannot be negative")]
+    Negative,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SeedScope {
+    CurrentDay,
+    HistoricalProfile,
+}
+
 enum ProfileUpdate {
     Unchanged,
+    Failed(VolumeProfileError),
     Replace {
-        profile: Option<VolumeProfile>,
+        availability: ProfileAvailability,
         historical_candles: Box<[Candle]>,
     },
 }
 
+enum ProfileAvailability {
+    Ready(VolumeProfile),
+    InsufficientHistory,
+}
+
+impl ProfileAvailability {
+    fn profile(&self) -> Option<&VolumeProfile> {
+        match self {
+            Self::Ready(profile) => Some(profile),
+            Self::InsufficientHistory => None,
+        }
+    }
+}
+
 struct CachedVolumeProfile {
     market_date: chrono::NaiveDate,
-    profile: Option<VolumeProfile>,
+    availability: ProfileAvailability,
     #[allow(dead_code)] // Retained for the planned five-minute chart overlay.
     historical_candles: Box<[Candle]>,
     touched: u64,
+}
+
+#[derive(Default)]
+struct VolumeRunRateCache {
+    provider_volumes: HashMap<YahooSymbol, ProviderVolume>,
+    cumulative_volumes: HashMap<YahooSymbol, CumulativeVolume>,
+    profiles: HashMap<YahooSymbol, CachedVolumeProfile>,
 }
 
 impl CumulativeVolume {
@@ -211,7 +243,7 @@ impl CumulativeVolume {
         }
         let mode = *self.provider_mode.get_or_insert_with(|| {
             let full_day_distance = self.total.abs_diff(provider.value);
-            let session_local = self.session_base.saturating_add(provider.value);
+            let session_local = self.session_base + provider.value;
             let session_distance = self.total.abs_diff(session_local);
             if full_day_distance <= session_distance {
                 ProviderVolumeMode::FullDay
@@ -221,10 +253,73 @@ impl CumulativeVolume {
         });
         let normalized = match mode {
             ProviderVolumeMode::FullDay => provider.value,
-            ProviderVolumeMode::SessionLocal => self.session_base.saturating_add(provider.value),
+            ProviderVolumeMode::SessionLocal => self.session_base + provider.value,
         };
         self.total = self.total.max(normalized);
         self.updated_at = provider.updated_at;
+    }
+}
+
+impl VolumeRunRateCache {
+    fn clear(&mut self) {
+        self.provider_volumes.clear();
+        self.cumulative_volumes.clear();
+        self.profiles.clear();
+    }
+
+    fn prune_live(&mut self, watched: &std::collections::HashSet<YahooSymbol>) {
+        self.provider_volumes
+            .retain(|symbol, _| watched.contains(symbol));
+        self.cumulative_volumes
+            .retain(|symbol, _| watched.contains(symbol));
+    }
+
+    fn seed_scope(
+        &mut self,
+        symbol: &YahooSymbol,
+        market_date: chrono::NaiveDate,
+        touched: u64,
+    ) -> SeedScope {
+        if self
+            .profiles
+            .get(symbol)
+            .is_some_and(|cached| cached.market_date != market_date)
+        {
+            self.profiles.remove(symbol);
+        }
+        let Some(cached) = self.profiles.get_mut(symbol) else {
+            return SeedScope::HistoricalProfile;
+        };
+        cached.touched = touched;
+        SeedScope::CurrentDay
+    }
+
+    fn insert_profile(
+        &mut self,
+        symbol: YahooSymbol,
+        profile: CachedVolumeProfile,
+        subscriptions: &HashMap<YahooSymbol, usize>,
+        idle_subscriptions: &HashMap<YahooSymbol, Instant>,
+    ) {
+        if !self.profiles.contains_key(&symbol)
+            && self.profiles.len() >= MAX_ACTIVE_SYMBOLS
+            && let Some(evict) =
+                oldest_unwatched_profile(&self.profiles, subscriptions, idle_subscriptions)
+        {
+            self.profiles.remove(&evict);
+        }
+        self.profiles.insert(symbol, profile);
+    }
+
+    fn profile(
+        &self,
+        symbol: &YahooSymbol,
+        market_date: chrono::NaiveDate,
+    ) -> Option<&VolumeProfile> {
+        self.profiles
+            .get(symbol)
+            .filter(|cached| cached.market_date == market_date)
+            .and_then(|cached| cached.availability.profile())
     }
 }
 
@@ -254,9 +349,7 @@ impl YahooLiveHandle {
                 cache: HashMap::new(),
                 pre_market_cache: HashMap::new(),
                 post_market_cache: HashMap::new(),
-                provider_volumes: HashMap::new(),
-                cumulative_volumes: HashMap::new(),
-                volume_profiles: HashMap::new(),
+                volume_run_rate: VolumeRunRateCache::default(),
                 latest_frame_at: HashMap::new(),
                 volume_run_rate_sessions,
                 live_enabled,
@@ -429,21 +522,34 @@ impl YahooLiveActor {
                             && outcome.market_date == self.schedule.market_date(Utc::now()) =>
                     {
                         let market_date = outcome.market_date;
-                        if let ProfileUpdate::Replace {
-                            profile,
-                            historical_candles,
-                        } = outcome.profile
-                        {
-                            self.insert_volume_profile(
-                                symbol.clone(),
-                                profile,
+                        match outcome.profile {
+                            ProfileUpdate::Unchanged => {}
+                            ProfileUpdate::Failed(error) => {
+                                warn!(%symbol, %error, "failed to build Yahoo volume profile");
+                            }
+                            ProfileUpdate::Replace {
+                                availability,
                                 historical_candles,
-                                market_date,
-                            );
+                            } => {
+                                let touched = self.next_touch();
+                                self.volume_run_rate.insert_profile(
+                                    symbol.clone(),
+                                    CachedVolumeProfile {
+                                        market_date,
+                                        availability,
+                                        historical_candles,
+                                        touched,
+                                    },
+                                    &self.subscriptions,
+                                    &self.idle_subscriptions,
+                                );
+                            }
                         }
                         let seed = outcome.seed;
                         let observed_at = seed.observed_at;
-                        self.merge_seed_volume(&symbol, &seed);
+                        if let Err(error) = self.merge_seed_volume(&symbol, &seed) {
+                            warn!(%symbol, %error, "failed to normalize seeded Yahoo volume");
+                        }
                         if let Some(candle) = seed.pre_market {
                             self.merge_seed(&symbol, candle, true);
                         }
@@ -511,7 +617,10 @@ impl YahooLiveActor {
         let schedule = self.schedule.clone();
         let commands = self.command_sender.clone();
         let market_date = self.schedule.market_date(Utc::now());
-        let has_profile = self.has_current_profile(symbol, market_date);
+        let touched = self.next_touch();
+        let seed_scope = self
+            .volume_run_rate
+            .seed_scope(symbol, market_date, touched);
         let sessions = self.volume_run_rate_sessions;
         let symbol = symbol.to_owned();
         let task_symbol = symbol.clone();
@@ -522,7 +631,7 @@ impl YahooLiveActor {
                 &task_symbol,
                 market_date,
                 sessions,
-                has_profile,
+                seed_scope,
             )
             .await
             .map_err(|error| error.to_string());
@@ -570,10 +679,8 @@ impl YahooLiveActor {
             self.cache.clear();
             self.pre_market_cache.clear();
             self.post_market_cache.clear();
-            self.provider_volumes.clear();
-            self.cumulative_volumes.clear();
+            self.volume_run_rate.clear();
             self.latest_frame_at.clear();
-            self.volume_profiles.clear();
             self.idle_subscriptions.clear();
             let now = Utc::now();
             let market_date = self.schedule.market_date(now);
@@ -697,7 +804,7 @@ impl YahooLiveActor {
         let pre_market = session == MarketSession::PreMarket;
         if session == MarketSession::PostMarket {
             let price = update.price.and_then(|price| valid_price(price.into()));
-            let volume = update.day_volume.filter(|volume| *volume >= 0);
+            let volume = provider_volume(update.day_volume);
             if price.is_none() && volume.is_none() {
                 return;
             }
@@ -722,6 +829,7 @@ impl YahooLiveActor {
         if !(pre_market || session == MarketSession::Regular) {
             return;
         }
+        let volume = provider_volume(update.day_volume);
         let has_candle_data = update
             .price
             .is_some_and(|value| valid_price(value.into()).is_some())
@@ -734,7 +842,7 @@ impl YahooLiveActor {
             || update
                 .day_low
                 .is_some_and(|value| valid_price(value.into()).is_some())
-            || update.day_volume.is_some_and(|volume| volume >= 0);
+            || volume.is_some();
         if !has_candle_data
             || !accept_frame_timestamp(&mut self.latest_frame_at, &symbol, timestamp)
         {
@@ -794,7 +902,7 @@ impl YahooLiveActor {
         entry.updated_at = entry.updated_at.max(timestamp);
         entry.touched = touched;
         self.publish_if_changed(&symbol, pre_market);
-        if let Some(volume) = update.day_volume.filter(|volume| *volume >= 0) {
+        if let Some(volume) = volume {
             self.merge_provider_volume(&symbol, date, session, volume, timestamp);
         }
         self.publish_volume_run_rate(&symbol, timestamp);
@@ -873,10 +981,7 @@ impl YahooLiveActor {
             .retain(|symbol, _| watched.contains(symbol));
         self.post_market_cache
             .retain(|symbol, _| watched.contains(symbol));
-        self.provider_volumes
-            .retain(|symbol, _| watched.contains(symbol));
-        self.cumulative_volumes
-            .retain(|symbol, _| watched.contains(symbol));
+        self.volume_run_rate.prune_live(&watched);
         self.latest_frame_at
             .retain(|symbol, _| watched.contains(symbol));
         self.streams.retain(|symbol, _| watched.contains(symbol));
@@ -894,84 +999,31 @@ impl YahooLiveActor {
         self.lru_clock
     }
 
-    fn has_current_profile(
+    fn merge_seed_volume(
         &mut self,
         symbol: &YahooSymbol,
-        market_date: chrono::NaiveDate,
-    ) -> bool {
-        if self
-            .volume_profiles
-            .get(symbol)
-            .is_some_and(|cached| cached.market_date != market_date)
-        {
-            self.volume_profiles.remove(symbol);
-        }
-        let touched = self.next_touch();
-        let Some(cached) = self.volume_profiles.get_mut(symbol) else {
-            return false;
-        };
-        cached.touched = touched;
-        true
-    }
-
-    fn insert_volume_profile(
-        &mut self,
-        symbol: YahooSymbol,
-        profile: Option<VolumeProfile>,
-        historical_candles: Box<[Candle]>,
-        market_date: chrono::NaiveDate,
-    ) {
-        if !self.volume_profiles.contains_key(&symbol)
-            && self.volume_profiles.len() >= MAX_ACTIVE_SYMBOLS
-            && let Some(evict) = oldest_unwatched_profile(
-                &self.volume_profiles,
-                &self.subscriptions,
-                &self.idle_subscriptions,
-            )
-        {
-            self.volume_profiles.remove(&evict);
-        }
-        let touched = self.next_touch();
-        self.volume_profiles.insert(
-            symbol,
-            CachedVolumeProfile {
-                market_date,
-                profile,
-                historical_candles,
-                touched,
-            },
-        );
-    }
-
-    fn merge_seed_volume(&mut self, symbol: &YahooSymbol, seed: &IntradaySessionSeed) {
+        seed: &IntradaySessionSeed,
+    ) -> Result<(), VolumeNormalizationError> {
         let session = self.schedule.session(seed.observed_at);
         let volume = |candle: &Option<IntradayCandle>| {
-            candle.as_ref().map_or(0, |candle| candle.candle.volume)
+            candle.as_ref().map_or(Ok(0), |candle| {
+                u64::try_from(candle.candle.volume).map_err(|_| VolumeNormalizationError::Negative)
+            })
         };
-        let pre_market = volume(&seed.pre_market);
-        let regular = volume(&seed.regular);
-        let post_market = volume(&seed.post_market);
+        let pre_market = volume(&seed.pre_market)?;
+        let regular = volume(&seed.regular)?;
+        let post_market = volume(&seed.post_market)?;
         let (session_base, total) = match session {
             MarketSession::PreMarket => (0, pre_market),
-            MarketSession::Regular => {
-                let Some(total) = pre_market.checked_add(regular) else {
-                    return;
-                };
-                (pre_market, total)
-            }
+            MarketSession::Regular => (pre_market, pre_market + regular),
             MarketSession::PostMarket => {
-                let Some(base) = pre_market.checked_add(regular) else {
-                    return;
-                };
-                let Some(total) = base.checked_add(post_market) else {
-                    return;
-                };
-                (base, total)
+                let base = pre_market + regular;
+                (base, base + post_market)
             }
-            MarketSession::Closed => return,
+            MarketSession::Closed => return Ok(()),
         };
         let market_date = self.schedule.market_date(seed.observed_at);
-        self.cumulative_volumes.insert(
+        self.volume_run_rate.cumulative_volumes.insert(
             symbol.clone(),
             CumulativeVolume {
                 market_date,
@@ -982,11 +1034,12 @@ impl YahooLiveActor {
                 updated_at: seed.observed_at,
             },
         );
-        if let Some(provider) = self.provider_volumes.get(symbol).copied()
+        if let Some(provider) = self.volume_run_rate.provider_volumes.get(symbol).copied()
             && provider.updated_at > seed.observed_at
         {
             self.apply_provider_volume(symbol, provider);
         }
+        Ok(())
     }
 
     fn merge_provider_volume(
@@ -994,7 +1047,7 @@ impl YahooLiveActor {
         symbol: &YahooSymbol,
         market_date: chrono::NaiveDate,
         session: MarketSession,
-        value: i64,
+        value: u64,
         updated_at: DateTime<Utc>,
     ) {
         let provider = ProviderVolume {
@@ -1003,12 +1056,14 @@ impl YahooLiveActor {
             value,
             updated_at,
         };
-        self.provider_volumes.insert(symbol.clone(), provider);
+        self.volume_run_rate
+            .provider_volumes
+            .insert(symbol.clone(), provider);
         self.apply_provider_volume(symbol, provider);
     }
 
     fn apply_provider_volume(&mut self, symbol: &YahooSymbol, provider: ProviderVolume) {
-        let Some(volume) = self.cumulative_volumes.get_mut(symbol) else {
+        let Some(volume) = self.volume_run_rate.cumulative_volumes.get_mut(symbol) else {
             return;
         };
         volume.merge(provider);
@@ -1020,19 +1075,15 @@ impl YahooLiveActor {
         }
         let market_date = self.schedule.market_date(updated_at);
         let volume = self
+            .volume_run_rate
             .cumulative_volumes
             .get(symbol)
             .filter(|volume| volume.market_date == market_date)
-            .and_then(|volume| u64::try_from(volume.total).ok());
+            .map(|volume| volume.total);
         let value = volume.and_then(|volume| {
-            self.volume_profiles
-                .get(symbol)
-                .filter(|cached| cached.market_date == market_date)
-                .and_then(|cached| {
-                    cached.profile.as_ref().and_then(|profile| {
-                        profile.run_rate(volume, self.schedule.market_time(updated_at))
-                    })
-                })
+            self.volume_run_rate
+                .profile(symbol, market_date)
+                .and_then(|profile| profile.run_rate(volume, self.schedule.market_time(updated_at)))
         });
         let Some(stream) = self.streams.get(symbol) else {
             return;
@@ -1075,9 +1126,9 @@ async fn load_seed(
     symbol: &YahooSymbol,
     market_date: chrono::NaiveDate,
     sessions: usize,
-    has_profile: bool,
+    scope: SeedScope,
 ) -> Result<SeedOutcome, YahooServiceError> {
-    if has_profile {
+    if scope == SeedScope::CurrentDay {
         return yahoo
             .intraday_session_seed(symbol, market_date)
             .await
@@ -1109,23 +1160,35 @@ async fn load_seed(
             volume: candle.volume,
         })
         .collect::<Vec<_>>();
-    let profile = profile_is_covered
-        .then(|| build_volume_profile(&samples, &source_dates).ok())
-        .flatten();
-    let historical_candles = range
-        .candles
-        .into_iter()
-        .filter(|candle| schedule.market_date(candle.timestamp) != market_date)
-        .collect::<Vec<_>>()
-        .into_boxed_slice();
+    let profile = match profile_availability(profile_is_covered, &samples, &source_dates) {
+        Ok(availability) => ProfileUpdate::Replace {
+            availability,
+            historical_candles: range
+                .candles
+                .into_iter()
+                .filter(|candle| schedule.market_date(candle.timestamp) != market_date)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        },
+        Err(error) => ProfileUpdate::Failed(error),
+    };
     Ok(SeedOutcome {
         market_date,
         seed,
-        profile: ProfileUpdate::Replace {
-            profile,
-            historical_candles,
-        },
+        profile,
     })
+}
+
+fn profile_availability(
+    history_is_covered: bool,
+    samples: &[IntradayVolumeSample],
+    source_dates: &[chrono::NaiveDate],
+) -> Result<ProfileAvailability, VolumeProfileError> {
+    if history_is_covered {
+        VolumeProfile::build(samples, source_dates).map(ProfileAvailability::Ready)
+    } else {
+        Ok(ProfileAvailability::InsufficientHistory)
+    }
 }
 
 fn valid_frame_session(
@@ -1214,6 +1277,10 @@ fn merge_cumulative_volume(target: &mut Option<i64>, value: Option<i64>) {
     {
         *target = Some(value);
     }
+}
+
+fn provider_volume(value: Option<i64>) -> Option<u64> {
+    value.and_then(|value| u64::try_from(value).ok())
 }
 
 fn valid_price(value: f64) -> Option<f64> {
@@ -1372,6 +1439,14 @@ mod tests {
     }
 
     #[test]
+    fn converts_provider_volume_to_unsigned_at_the_boundary() {
+        assert_eq!(provider_volume(Some(0)), Some(0));
+        assert_eq!(provider_volume(Some(10_000)), Some(10_000));
+        assert_eq!(provider_volume(Some(-1)), None);
+        assert_eq!(provider_volume(None), None);
+    }
+
+    #[test]
     fn normalizes_full_day_and_session_local_provider_volume() {
         let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
         let observed_at = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
@@ -1445,7 +1520,7 @@ mod tests {
         let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
         let profile = |touched| CachedVolumeProfile {
             market_date: date,
-            profile: None,
+            availability: ProfileAvailability::InsufficientHistory,
             historical_candles: Box::new([]),
             touched,
         };
@@ -1461,6 +1536,101 @@ mod tests {
             oldest_unwatched_profile(&profiles, &subscriptions, &idle_subscriptions),
             Some(stale),
         );
+    }
+
+    #[test]
+    fn profile_cache_selects_bootstrap_scope_and_rolls_to_the_next_day() {
+        let symbol = yahoo("AAPL");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let mut cache = VolumeRunRateCache::default();
+
+        assert_eq!(
+            cache.seed_scope(&symbol, date, 1),
+            SeedScope::HistoricalProfile,
+        );
+        cache.insert_profile(
+            symbol.clone(),
+            CachedVolumeProfile {
+                market_date: date,
+                availability: ProfileAvailability::InsufficientHistory,
+                historical_candles: Box::new([]),
+                touched: 2,
+            },
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        assert_eq!(cache.seed_scope(&symbol, date, 3), SeedScope::CurrentDay);
+        assert_eq!(
+            cache.seed_scope(&symbol, date.succ_opt().unwrap(), 4),
+            SeedScope::HistoricalProfile,
+        );
+        assert!(!cache.profiles.contains_key(&symbol));
+    }
+
+    #[test]
+    fn malformed_profile_is_not_converted_into_cached_unavailability() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let sample = IntradayVolumeSample {
+            market_date: date,
+            market_time: NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
+            volume: 100,
+        };
+
+        assert!(matches!(
+            profile_availability(true, &[sample, sample], &[date]),
+            Err(VolumeProfileError::DuplicateSample),
+        ));
+        assert!(matches!(
+            profile_availability(false, &[], &[date]),
+            Ok(ProfileAvailability::InsufficientHistory),
+        ));
+    }
+
+    #[test]
+    fn live_expiry_retains_profiles_and_market_close_clears_everything() {
+        let symbol = yahoo("AAPL");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let timestamp = Utc.with_ymd_and_hms(2026, 7, 16, 17, 0, 0).unwrap();
+        let mut cache = VolumeRunRateCache::default();
+        cache.insert_profile(
+            symbol.clone(),
+            CachedVolumeProfile {
+                market_date: date,
+                availability: ProfileAvailability::InsufficientHistory,
+                historical_candles: Box::new([]),
+                touched: 1,
+            },
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        cache.provider_volumes.insert(
+            symbol.clone(),
+            ProviderVolume {
+                market_date: date,
+                session: MarketSession::Regular,
+                value: 100,
+                updated_at: timestamp,
+            },
+        );
+        cache.cumulative_volumes.insert(
+            symbol.clone(),
+            CumulativeVolume {
+                market_date: date,
+                session: MarketSession::Regular,
+                session_base: 0,
+                total: 100,
+                provider_mode: None,
+                updated_at: timestamp,
+            },
+        );
+
+        cache.prune_live(&std::collections::HashSet::new());
+        assert!(cache.profiles.contains_key(&symbol));
+        assert!(cache.provider_volumes.is_empty());
+        assert!(cache.cumulative_volumes.is_empty());
+
+        cache.clear();
+        assert!(cache.profiles.is_empty());
     }
 
     #[tokio::test]
