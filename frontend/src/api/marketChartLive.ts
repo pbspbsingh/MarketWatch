@@ -32,9 +32,16 @@ export interface MarketChartSessionDelta {
   price: number;
 }
 
+export interface MarketChartVolumeRunRateDelta {
+  chart_id: string;
+  symbol: string;
+  value: number | null;
+}
+
 interface LiveChartClientOptions {
   onDelta: (delta: MarketChartLiveDelta) => void;
   onSession: (delta: MarketChartSessionDelta) => void;
+  onVolumeRunRate: (delta: MarketChartVolumeRunRateDelta) => void;
   onError: (message: string) => void;
 }
 
@@ -42,6 +49,7 @@ type LiveChartEvent =
   | { type: "subscribed"; request_id: number; symbols: string[] }
   | { type: "delta"; request_id: number; delta: MarketChartLiveDelta }
   | { type: "session"; request_id: number; delta: MarketChartSessionDelta }
+  | { type: "volume_run_rate"; request_id: number; delta: MarketChartVolumeRunRateDelta }
   | { type: "error"; request_id: number; message: string };
 
 const initialReconnectDelayMs = 1_000;
@@ -135,6 +143,8 @@ export class MarketChartLiveClient {
       this.options.onDelta(event.delta);
     } else if (event.type === "session" && isSessionDelta(event.delta)) {
       this.options.onSession(event.delta);
+    } else if (event.type === "volume_run_rate" && isVolumeRunRateDelta(event.delta)) {
+      this.options.onVolumeRunRate(event.delta);
     }
   }
 
@@ -143,6 +153,12 @@ export class MarketChartLiveClient {
     this.reconnectTimer = window.setTimeout(() => this.connect(), this.reconnectDelayMs);
     this.reconnectDelayMs = Math.min(maximumReconnectDelayMs, this.reconnectDelayMs * 2);
   }
+}
+
+function isVolumeRunRateDelta(delta: MarketChartVolumeRunRateDelta): boolean {
+  return typeof delta?.chart_id === "string"
+    && typeof delta.symbol === "string"
+    && (delta.value === null || (Number.isFinite(delta.value) && delta.value >= 0));
 }
 
 function isSessionDelta(delta: MarketChartSessionDelta): boolean {

@@ -37,16 +37,11 @@ pub(crate) struct IntradayCandle {
     pub updated_at: chrono::DateTime<Utc>,
 }
 
-pub(crate) struct IntradayPrice {
-    pub market_date: NaiveDate,
-    pub price: f64,
-    pub updated_at: chrono::DateTime<Utc>,
-}
-
 pub(crate) struct IntradaySessionSeed {
     pub pre_market: Option<IntradayCandle>,
     pub regular: Option<IntradayCandle>,
-    pub post_market: Option<IntradayPrice>,
+    pub post_market: Option<IntradayCandle>,
+    pub observed_at: chrono::DateTime<Utc>,
 }
 
 #[derive(Debug, Error)]
@@ -457,7 +452,7 @@ impl YahooService {
         symbol: &YahooSymbol,
         start: chrono::DateTime<Utc>,
         end: chrono::DateTime<Utc>,
-    ) -> Result<Vec<Candle>, YahooError> {
+    ) -> Result<ChartRange, YahooError> {
         let mut delay = INITIAL_RETRY_DELAY;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
             match self
@@ -465,7 +460,7 @@ impl YahooService {
                 .chart_range_with_pre_post(symbol, ChartInterval::FiveMinutes, start, end, true)
                 .await
             {
-                Ok(range) => return Ok(range.candles),
+                Ok(range) => return Ok(range),
                 Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
                     let delay = jitter(delay);
                     warn!(%symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo intraday chart request");
@@ -476,6 +471,15 @@ impl YahooService {
             delay *= 2;
         }
         unreachable!("Yahoo intraday chart retry loop always returns")
+    }
+
+    pub(crate) async fn intraday_range(
+        &self,
+        symbol: &YahooSymbol,
+        start: chrono::DateTime<Utc>,
+        end: chrono::DateTime<Utc>,
+    ) -> Result<ChartRange, YahooServiceError> {
+        Ok(self.fetch_intraday_chart(symbol, start, end).await?)
     }
 
     pub(crate) async fn intraday_regular_candle(
@@ -500,13 +504,24 @@ impl YahooService {
                 .expect("midnight is a valid time"),
         );
         let end = start + TimeDelta::days(2);
-        let candles = self.fetch_intraday_chart(symbol, start, end).await?;
+        let candles = self.fetch_intraday_chart(symbol, start, end).await?.candles;
+        self.intraday_session_seed_from_candles(symbol, market_date, &candles, Utc::now())
+    }
+
+    pub(crate) fn intraday_session_seed_from_candles(
+        &self,
+        symbol: &YahooSymbol,
+        market_date: NaiveDate,
+        candles: &[Candle],
+        observed_at: chrono::DateTime<Utc>,
+    ) -> Result<IntradaySessionSeed, YahooServiceError> {
         let mut pre_market = Vec::new();
         let mut regular = Vec::new();
         let mut post_market = Vec::new();
         for candle in candles
-            .into_iter()
+            .iter()
             .filter(|candle| self.market_schedule.market_date(candle.timestamp) == market_date)
+            .cloned()
         {
             match self.market_schedule.session(candle.timestamp) {
                 MarketSession::PreMarket => pre_market.push(candle),
@@ -515,15 +530,11 @@ impl YahooService {
                 MarketSession::Closed => {}
             }
         }
-        let post_market = post_market.last().map(|candle| IntradayPrice {
-            market_date,
-            price: candle.close,
-            updated_at: candle.timestamp,
-        });
         Ok(IntradaySessionSeed {
             pre_market: aggregate_regular_candle(symbol, market_date, pre_market)?,
             regular: aggregate_regular_candle(symbol, market_date, regular)?,
-            post_market,
+            post_market: aggregate_regular_candle(symbol, market_date, post_market)?,
+            observed_at,
         })
     }
 }

@@ -74,6 +74,21 @@ impl MarketSchedule {
         timestamp.with_timezone(&self.timezone).date_naive()
     }
 
+    pub fn market_time(&self, timestamp: DateTime<Utc>) -> NaiveTime {
+        timestamp.with_timezone(&self.timezone).time()
+    }
+
+    pub fn previous_trading_dates(&self, date: NaiveDate, count: usize) -> Vec<NaiveDate> {
+        let mut days = Vec::with_capacity(count);
+        let mut day = date;
+        for _ in 0..count {
+            day = self.previous_trading_day(day);
+            days.push(day);
+        }
+        days.reverse();
+        days
+    }
+
     pub fn session(&self, timestamp: DateTime<Utc>) -> MarketSession {
         let market_time = timestamp.with_timezone(&self.timezone);
         if market_time.is_weekend() || self.holidays.contains(&market_time.date_naive()) {
@@ -214,6 +229,7 @@ mod tests {
                 ),
                 adr_sessions: 20,
                 average_volume_sessions: 50,
+                volume_run_rate_sessions: 20,
             },
             Duration::ZERO,
             HashSet::from([holiday]),
@@ -253,6 +269,7 @@ mod tests {
                 ),
                 adr_sessions: 20,
                 average_volume_sessions: 50,
+                volume_run_rate_sessions: 20,
             },
             Duration::ZERO,
         )

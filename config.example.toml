@@ -10,6 +10,7 @@ benchmark = "QQQ"
 market_hours = ["6:30:00", "13:00:00"]
 adr_sessions = 20
 average_volume_sessions = 50
+volume_run_rate_sessions = 20
 
 [providers]
 connect_timeout_secs = 10

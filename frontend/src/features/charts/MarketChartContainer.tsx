@@ -60,6 +60,7 @@ interface MarketChartContainerProps {
   onRefreshSettled?: (version: number, succeeded: boolean) => void;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
+  volumeRunRate?: number | null;
 }
 
 const historyLoadThresholdBars = 25;
@@ -83,6 +84,7 @@ export function MarketChartContainer({
   onRefreshSettled,
   liveDelta,
   sessionDelta,
+  volumeRunRate,
 }: MarketChartContainerProps) {
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
@@ -333,6 +335,7 @@ export function MarketChartContainer({
           relativeStrength={snapshot.relative_strength}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
+          volumeRunRate={volumeRunRate}
         />
       )}
       {state?.status === "error" ? (

@@ -33,6 +33,7 @@ pub struct MarketConfig {
     pub market_hours: (NaiveTime, NaiveTime),
     pub adr_sessions: u16,
     pub average_volume_sessions: u16,
+    pub volume_run_rate_sessions: u16,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -98,6 +99,10 @@ impl Config {
         anyhow::ensure!(
             self.market.average_volume_sessions > 0,
             "market.average_volume_sessions must be positive"
+        );
+        anyhow::ensure!(
+            self.market.volume_run_rate_sessions > 0,
+            "market.volume_run_rate_sessions must be positive"
         );
         anyhow::ensure!(
             self.providers.connect_timeout_secs > 0,
