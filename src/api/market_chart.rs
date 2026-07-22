@@ -99,13 +99,6 @@ struct LiveSessionDelta {
 }
 
 #[derive(Serialize)]
-struct LiveVolumeRunRateDelta {
-    chart_id: String,
-    symbol: YahooSymbol,
-    value: Option<f64>,
-}
-
-#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum LiveChartEvent<'a> {
     Subscribed {
@@ -119,10 +112,6 @@ enum LiveChartEvent<'a> {
     Session {
         request_id: u64,
         delta: LiveSessionDelta,
-    },
-    VolumeRunRate {
-        request_id: u64,
-        delta: LiveVolumeRunRateDelta,
     },
     Error {
         request_id: u64,
@@ -159,7 +148,6 @@ async fn handle_live_chart_socket(
     let mut charts = Vec::<LiveChartRequest>::new();
     let mut dirty_symbols = HashSet::<YahooSymbol>::new();
     let mut session_updates = HashMap::<YahooSymbol, YahooLiveUpdate>::new();
-    let mut volume_run_rates = HashMap::new();
     let mut delta_deadline = None;
     let mut ping = tokio::time::interval(LIVE_HEARTBEAT_INTERVAL);
     ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -179,9 +167,6 @@ async fn handle_live_chart_socket(
                     YahooLiveUpdate::Regular(update) => {
                         dirty_symbols.insert(update.symbol);
                     }
-                    YahooLiveUpdate::VolumeRunRate(update) => {
-                        volume_run_rates.insert(update.symbol.clone(), update);
-                    }
                     update => {
                         session_updates.insert(update.symbol().to_owned(), update);
                     }
@@ -194,40 +179,6 @@ async fn handle_live_chart_socket(
                 delta_deadline = None;
                 let changed = std::mem::take(&mut dirty_symbols);
                 let sessions = std::mem::take(&mut session_updates);
-                let run_rates = std::mem::take(&mut volume_run_rates);
-                for update in run_rates.into_values() {
-                    for chart in charts.iter().filter(|chart| {
-                        YahooSymbol::from(&chart.symbol) == update.symbol
-                    }) {
-                        if !send_live_event(
-                            &mut socket,
-                            LiveChartEvent::VolumeRunRate {
-                                request_id,
-                                delta: LiveVolumeRunRateDelta {
-                                    chart_id: chart.chart_id.clone(),
-                                    symbol: update.symbol.clone(),
-                                    value: update.value,
-                                },
-                            },
-                        ).await {
-                            return;
-                        }
-                    }
-                }
-                for update in sessions.into_values() {
-                    for chart in charts.iter().filter(|chart| {
-                        chart.interval == MarketChartInterval::Daily
-                            && YahooSymbol::from(&chart.symbol) == *update.symbol()
-                    }) {
-                        let delta = session_delta(chart, &update);
-                        if !send_live_event(
-                            &mut socket,
-                            LiveChartEvent::Session { request_id, delta },
-                        ).await {
-                            return;
-                        }
-                    }
-                }
                 for chart in charts.iter().filter(|chart| {
                     changed.contains(&YahooSymbol::from(&chart.symbol))
                         || chart.comparison_symbol.as_ref().is_some_and(|symbol| {
@@ -256,6 +207,20 @@ async fn handle_live_chart_socket(
                             ).await {
                                 return;
                             }
+                        }
+                    }
+                }
+                for update in sessions.into_values() {
+                    for chart in charts.iter().filter(|chart| {
+                        chart.interval == MarketChartInterval::Daily
+                            && YahooSymbol::from(&chart.symbol) == *update.symbol()
+                    }) {
+                        let delta = session_delta(chart, &update);
+                        if !send_live_event(
+                            &mut socket,
+                            LiveChartEvent::Session { request_id, delta },
+                        ).await {
+                            return;
                         }
                     }
                 }
@@ -301,7 +266,6 @@ async fn handle_live_chart_socket(
                                     charts = requested;
                                     dirty_symbols.clear();
                                     session_updates.clear();
-                                    volume_run_rates.clear();
                                     delta_deadline = None;
                                     if !send_live_event(
                                         &mut socket,
@@ -507,9 +471,6 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
             price: update.price,
         },
         YahooLiveUpdate::Regular(_) => unreachable!("regular updates use calculated deltas"),
-        YahooLiveUpdate::VolumeRunRate(_) => {
-            unreachable!("volume run rate updates use dedicated deltas")
-        }
     }
 }
 

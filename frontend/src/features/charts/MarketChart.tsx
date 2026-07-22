@@ -41,7 +41,6 @@ import {
   volumeSeriesOptions,
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
-import { volumeRunRateTone } from "./volumeRunRate";
 import {
   chartTimeToMarketDate,
   marketDateToChartTime,
@@ -76,7 +75,6 @@ interface MarketChartProps {
   relativeStrength?: MarketChartRelativeStrength | null;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
-  volumeRunRate?: number | null;
 }
 
 function watermarkLines(symbol: string) {
@@ -99,7 +97,6 @@ export function MarketChart({
   relativeStrength,
   liveDelta,
   sessionDelta,
-  volumeRunRate,
 }: MarketChartProps) {
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -492,7 +489,6 @@ export function MarketChart({
     : relativeStrengthTrend === "downtrend"
       ? "Downtrend"
       : "Unclear";
-  const vrrTone = volumeRunRateTone(volumeRunRate);
   return (
     <>
       <ChartHost
@@ -506,32 +502,20 @@ export function MarketChart({
         onChartReady={initializeSeries}
         onChartDestroy={destroyChart}
       />
-      <div className="market-chart-indicators">
-        {relativeStrength !== null && relativeStrength !== undefined && (
-          <button
-            type="button"
-            className={showRelativeStrength
-              ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
-              : "market-chart-rs-trend market-chart-rs-hidden"}
-            aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
-            aria-pressed={showRelativeStrength}
-            title={`Relative Strength ${trendLabel}`}
-            onClick={() => setShowRelativeStrength((visible) => !visible)}
-          >
-            RS
-          </button>
-        )}
-        <span
-          className={`market-chart-vrr market-chart-vrr-${vrrTone}`}
-          aria-label={volumeRunRate === null || volumeRunRate === undefined
-            ? "Volume run rate unavailable"
-            : `Volume run rate ${volumeRunRate.toFixed(1)} times`}
+      {relativeStrength !== null && relativeStrength !== undefined && (
+        <button
+          type="button"
+          className={showRelativeStrength
+            ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
+            : "market-chart-rs-trend market-chart-rs-hidden"}
+          aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
+          aria-pressed={showRelativeStrength}
+          title={`Relative Strength ${trendLabel}`}
+          onClick={() => setShowRelativeStrength((visible) => !visible)}
         >
-          VRR: {volumeRunRate === null || volumeRunRate === undefined
-            ? "—"
-            : `${volumeRunRate.toFixed(1)}x`}
-        </span>
-      </div>
+          RS
+        </button>
+      )}
     </>
   );
 }

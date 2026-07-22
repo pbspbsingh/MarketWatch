@@ -11,7 +11,6 @@ mod ticker_relative_strength;
 pub mod ticker_symbol;
 mod top_stock_screens;
 mod tradingview_symbol;
-mod volume_run_rate;
 mod watchlists;
 mod yahoo_symbol;
 
@@ -44,6 +43,5 @@ pub(crate) use ticker_relative_strength::{
 pub use ticker_symbol::TickerSymbol;
 pub use top_stock_screens::TopStockScreen;
 pub use tradingview_symbol::TradingViewSymbol;
-pub(crate) use volume_run_rate::{IntradayVolumeSample, VolumeProfile, VolumeProfileError};
 pub use watchlists::{TickerWatchlists, Watchlist};
 pub use yahoo_symbol::YahooSymbol;

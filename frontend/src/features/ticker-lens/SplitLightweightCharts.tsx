@@ -35,7 +35,6 @@ import {
   MarketChartLiveClient,
   type MarketChartLiveDelta,
   type MarketChartSessionDelta,
-  type MarketChartVolumeRunRateDelta,
 } from "../../api/marketChartLive";
 
 interface SplitLightweightChartsProps {
@@ -72,11 +71,6 @@ interface SessionDeltaState {
   delta: MarketChartSessionDelta;
 }
 
-interface VolumeRunRateState {
-  key: string;
-  delta: MarketChartVolumeRunRateDelta;
-}
-
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -100,8 +94,6 @@ export default function SplitLightweightCharts({
   const [bottomLive, setBottomLive] = useState<LiveDeltaState>();
   const [topSession, setTopSession] = useState<SessionDeltaState>();
   const [bottomSession, setBottomSession] = useState<SessionDeltaState>();
-  const [topVolumeRunRate, setTopVolumeRunRate] = useState<VolumeRunRateState>();
-  const [bottomVolumeRunRate, setBottomVolumeRunRate] = useState<VolumeRunRateState>();
   const topRefreshPendingVersionRef = useRef<number | null>(null);
   const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
@@ -149,11 +141,6 @@ export default function SplitLightweightCharts({
         const state = { key: `${delta.symbol}\0daily`, delta };
         if (delta.chart_id === "top") setTopSession(state);
         else if (delta.chart_id === "bottom") setBottomSession(state);
-      },
-      onVolumeRunRate: (delta) => {
-        const state = { key: delta.symbol, delta };
-        if (delta.chart_id === "top") setTopVolumeRunRate(state);
-        else if (delta.chart_id === "bottom") setBottomVolumeRunRate(state);
       },
       onError: (message) => onErrorRef.current("top", message),
     });
@@ -314,9 +301,6 @@ export default function SplitLightweightCharts({
               sessionDelta={topSession?.key === `${marketDataSymbol(topSymbol)}\0daily`
                 ? topSession.delta
                 : undefined}
-              volumeRunRate={topVolumeRunRate?.key === marketDataSymbol(topSymbol)
-                ? topVolumeRunRate.delta.value
-                : null}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>
@@ -346,9 +330,6 @@ export default function SplitLightweightCharts({
               sessionDelta={bottomSession?.key === `${marketDataSymbol(bottomSymbol)}\0daily`
                 ? bottomSession.delta
                 : undefined}
-              volumeRunRate={bottomVolumeRunRate?.key === marketDataSymbol(bottomSymbol)
-                ? bottomVolumeRunRate.delta.value
-                : null}
             />
             {bottomLoading && <ChartLoadingOverlay />}
           </div>

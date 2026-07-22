@@ -70,11 +70,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.market,
         nyse_holidays,
     )?);
-    let yahoo_live = YahooLiveHandle::spawn(
-        yahoo.clone(),
-        market_schedule.clone(),
-        usize::from(config.market.volume_run_rate_sessions),
-    );
+    let yahoo_live = YahooLiveHandle::spawn(yahoo.clone(), market_schedule.clone());
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
         finviz.clone(),
