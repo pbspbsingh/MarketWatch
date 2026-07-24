@@ -1,6 +1,7 @@
 mod chart;
 mod daily_notes;
 mod details;
+mod global_search;
 mod industries;
 mod live_prices;
 mod market;
@@ -22,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .merge(chart::router())
         .merge(daily_notes::router())
         .merge(details::router())
+        .merge(global_search::router())
         .merge(industries::router())
         .merge(market::router())
         .merge(market_chart::router())

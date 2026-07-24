@@ -4,6 +4,7 @@ use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
+use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::maintenance;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub chart: Arc<ChartService>,
     pub daily_notes: Arc<DailyNotesService>,
     pub details: Arc<TickerDetailsService>,
+    pub global_search: Arc<GlobalSearchService>,
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub study: Arc<StudyService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
@@ -76,6 +78,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         yahoo.clone(),
     ));
+    let global_search = Arc::new(GlobalSearchService::new(store.clone()));
     let industry_analysis = Arc::new(IndustryAnalysisService::new(store.clone()));
     let ticker_catalog = Arc::new(TickerCatalogService::new(
         store.clone(),
@@ -120,6 +123,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         chart,
         daily_notes,
         details,
+        global_search,
         industry_analysis,
         study,
         ticker_catalog,

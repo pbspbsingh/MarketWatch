@@ -231,8 +231,22 @@ export function searchThemeNames(searchParams: URLSearchParams) {
     .filter(Boolean);
 }
 
+export function searchThemeIds(searchParams: URLSearchParams) {
+  return new Set(
+    searchParams
+      .getAll("theme_ids")
+      .map((id) => id.trim())
+      .filter((id) => /^[1-9]\d*$/.test(id)),
+  );
+}
+
 export function searchIncludesUnassigned(searchParams: URLSearchParams) {
   return searchParams.get("unassigned") === "1";
+}
+
+export function searchTickerSymbol(searchParams: URLSearchParams) {
+  const symbol = (searchParams.get("ticker") ?? "").trim().toLocaleUpperCase();
+  return symbol !== "" && /^[A-Z0-9.-]+$/.test(symbol) ? symbol : undefined;
 }
 
 export function industryMarketWatchUrl(industryKey: string) {
@@ -249,6 +263,11 @@ export function industriesMarketWatchUrl(industryKeys: string[]) {
 
 export function themeMarketWatchUrl(themeName: string) {
   return themesMarketWatchUrl([themeName]);
+}
+
+export function themeMarketWatchIdUrl(themeId: string) {
+  const params = new URLSearchParams({ mode: "theme", theme_ids: themeId });
+  return `/market-watch?${params.toString()}`;
 }
 
 export function themesMarketWatchUrl(themeNames: string[]) {
@@ -269,6 +288,10 @@ export function themeGroupsMarketWatchUrl(groups: Array<{ key: string; name: str
     }
   }
   return `/market-watch?${params.toString()}`;
+}
+
+export function tickerMarketWatchUrl(symbol: string) {
+  return `/market-watch?${new URLSearchParams({ ticker: symbol }).toString()}`;
 }
 
 export function formatVolume(volume: number) {

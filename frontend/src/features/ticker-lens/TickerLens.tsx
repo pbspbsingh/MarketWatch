@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
 import { createTickerStreamClient } from "../../api/tickerStream";
 import type { Watchlist } from "../../api/watchlists";
+import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
@@ -32,10 +33,15 @@ import type {
 } from "./types";
 import {
   readGroupMode,
+  industryMarketWatchUrl,
   searchGroupMode,
   searchIncludesUnassigned,
   searchIndustryKeys,
+  searchTickerSymbol,
+  searchThemeIds,
   searchThemeNames,
+  themeMarketWatchIdUrl,
+  tickerMarketWatchUrl,
 } from "./utils";
 import "./ticker-lens.css";
 
@@ -108,7 +114,9 @@ export function TickerLens({
       return { searchKey, mode: groupMode, keys };
     });
   }, [groupMode, parsedSearchSelection, searchKey]);
-  const [selectedTicker, setSelectedTicker] = useState<string>();
+  const [selectedTicker, setSelectedTicker] = useState<string | undefined>(() =>
+    searchTickerSymbol(searchParams)
+  );
   const [selectedTickerContext, setSelectedTickerContext] =
     useState<SelectedTickerContext>();
   const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
@@ -122,7 +130,10 @@ export function TickerLens({
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
   const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string>>();
-  const [revealTicker, setRevealTicker] = useState<RevealRequest<string>>();
+  const [revealTicker, setRevealTicker] = useState<RevealRequest<string> | undefined>(() => {
+    const symbol = searchTickerSymbol(searchParams);
+    return symbol === undefined ? undefined : { value: symbol, revision: 1 };
+  });
   const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
   const requestedUnassigned = searchIncludesUnassigned(searchParams);
   const bounded = universe.type === "bounded";
@@ -339,6 +350,7 @@ export function TickerLens({
         onSelectedTickerContext={handleSelectedTickerContext}
       />
       <TickerLensSearch
+        bounded={bounded}
         mode={groupMode}
         groups={groups}
         tickerSymbols={searchTickerSymbols}
@@ -354,6 +366,14 @@ export function TickerLens({
         onSelectTicker={(symbol) => {
           setSelectedTicker(symbol);
           setRevealTicker((current) => ({ value: symbol, revision: (current?.revision ?? 0) + 1 }));
+        }}
+        onSelectGlobal={(result: GlobalSearchResult) => {
+          const url = result.type === "industry"
+            ? industryMarketWatchUrl(result.key)
+            : result.type === "theme"
+              ? themeMarketWatchIdUrl(result.key)
+              : tickerMarketWatchUrl(result.key);
+          window.open(url, "_blank", "noopener,noreferrer");
         }}
       />
       <Toast
@@ -372,9 +392,7 @@ export function TickerLens({
 function initialGroupKeys(searchParams: URLSearchParams) {
   return readGroupMode(searchParams) === "industry"
     ? searchIndustryKeys(searchParams)
-    : searchIncludesUnassigned(searchParams)
-      ? new Set([unassignedGroupKey])
-      : new Set<string>();
+    : themeKeysFromSearch(searchParams);
 }
 
 function selectionFromSearch(
@@ -388,8 +406,12 @@ function selectionFromSearch(
     mode,
     keys: mode === "industry"
       ? searchIndustryKeys(searchParams)
-      : searchIncludesUnassigned(searchParams)
-        ? new Set([unassignedGroupKey])
-        : new Set(),
+      : themeKeysFromSearch(searchParams),
   };
+}
+
+function themeKeysFromSearch(searchParams: URLSearchParams) {
+  const keys = searchThemeIds(searchParams);
+  if (searchIncludesUnassigned(searchParams)) keys.add(unassignedGroupKey);
+  return keys;
 }

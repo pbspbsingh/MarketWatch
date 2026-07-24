@@ -240,6 +240,8 @@ export function TickerPanel({
   });
   const resolvedTickerRequestKey = `${mode}\0${groupKey}`;
   const panelRequestKey = `${metricsActive ? "ranked" : "resolved"}\0${resolvedTickerRequestKey}`;
+  const selectionContextKey = `${mode}\0${groupKey}\0${metricsActive}`;
+  const previousSelectionContextKey = useRef(selectionContextKey);
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
   }, [panelRequestKey]);
@@ -266,8 +268,10 @@ export function TickerPanel({
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
 
   useEffect(() => {
+    if (previousSelectionContextKey.current === selectionContextKey) return;
+    previousSelectionContextKey.current = selectionContextKey;
     setSelectedTicker(undefined);
-  }, [groupKey, metricsActive, mode, setSelectedTicker]);
+  }, [selectionContextKey, setSelectedTicker]);
 
   useEffect(() => {
     if (providedWatchlists !== undefined) return;
