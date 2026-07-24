@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import {
   Chip,
@@ -36,6 +37,9 @@ interface ChartHeaderProps {
   setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
   setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
+  copyChartPanel?: () => void;
+  copyChartPanelDisabled?: boolean;
+  copyingChartPanel?: boolean;
   contextLabel?: string;
 }
 
@@ -51,6 +55,9 @@ export function ChartHeader({
   setShowThemeEtfChart,
   setSelectedThemeEtf,
   setDetailsOpen,
+  copyChartPanel,
+  copyChartPanelDisabled = false,
+  copyingChartPanel = false,
   contextLabel,
 }: ChartHeaderProps) {
   return (
@@ -199,6 +206,24 @@ export function ChartHeader({
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
+        )}
+        {copyChartPanel !== undefined && (
+          <Tooltip
+            title={copyChartPanelDisabled
+              ? "Available with Lightweight Charts"
+              : "Copy chart panel as image"}
+          >
+            <span>
+              <IconButton
+                size="small"
+                aria-label="Copy chart panel as image"
+                disabled={copyChartPanelDisabled || copyingChartPanel}
+                onClick={copyChartPanel}
+              >
+                <PhotoCameraOutlinedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         )}
       </div>
     </header>

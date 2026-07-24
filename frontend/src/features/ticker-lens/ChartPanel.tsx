@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
@@ -16,6 +17,7 @@ import {
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
+import { copyElementAsPng } from "../../utils/copyElementImage";
 import {
   chartIntervalKey,
   chartSplitKey,
@@ -63,6 +65,7 @@ export function ChartPanel({
   onSelectedTickerContext,
   horizontalDetailsNavigation = true,
 }: ChartPanelProps) {
+  const panelRef = useRef<HTMLElement>(null);
   const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
   const [groupSummaryState, setGroupSummaryState] = useState<RequestState<TickerGroupSummary>>({ key: "" });
   const [interval, setInterval] = useState<"D" | "W">(() =>
@@ -74,6 +77,11 @@ export function ChartPanel({
   const [themeSelection, setThemeSelection] = useState<{ ticker: string; etf: string }>();
   const [panelError, setPanelError] = useState<{ key: string; message: string }>();
   const [warning, setWarning] = useState<string>();
+  const [captureNotice, setCaptureNotice] = useState<{
+    message: string;
+    severity: "success" | "error";
+  }>();
+  const [copyingChartPanel, setCopyingChartPanel] = useState(false);
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
   const { chartEngine } = useAppSettings();
   const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
@@ -119,6 +127,35 @@ export function ChartPanel({
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
   const chartError = chartErrors.top ?? chartErrors.bottom;
+
+  const copyChartPanel = useCallback(async () => {
+    const panel = panelRef.current;
+    if (
+      panel === null
+      || chartEngine !== "lightweight"
+      || summary === undefined
+      || copyingChartPanel
+    ) return;
+
+    setCopyingChartPanel(true);
+    setCaptureNotice(undefined);
+    try {
+      await copyElementAsPng(panel);
+      setCaptureNotice({
+        message: "Chart panel copied as an image",
+        severity: "success",
+      });
+    } catch (captureError) {
+      setCaptureNotice({
+        message: captureError instanceof Error
+          ? `Unable to copy chart panel: ${captureError.message}`
+          : "Unable to copy chart panel",
+        severity: "error",
+      });
+    } finally {
+      setCopyingChartPanel(false);
+    }
+  }, [chartEngine, copyingChartPanel, summary]);
 
   const handleChartError = useCallback((
     source: "top" | "bottom",
@@ -221,7 +258,7 @@ export function ChartPanel({
   }, [groupKeysKey, groupSummaryRequestKey, mode, symbolsKey, symbolsProvided]);
 
   return (
-    <section className="workspace-panel ticker-lens-chart-panel">
+    <section ref={panelRef} className="workspace-panel ticker-lens-chart-panel">
       <ChartHeader
         summary={activeSummary}
         summaryLoading={summaryLoading}
@@ -236,6 +273,9 @@ export function ChartPanel({
           if (selectedTicker !== undefined) setThemeSelection({ ticker: selectedTicker, etf });
         }}
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
+        copyChartPanel={copyChartPanel}
+        copyChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
+        copyingChartPanel={copyingChartPanel}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
@@ -302,6 +342,11 @@ export function ChartPanel({
         message={warning}
         severity="warning"
         onClose={() => setWarning(undefined)}
+      />
+      <Toast
+        message={captureNotice?.message}
+        severity={captureNotice?.severity}
+        onClose={() => setCaptureNotice(undefined)}
       />
       <TickerDetailsDialog
         symbol={selectedTicker}

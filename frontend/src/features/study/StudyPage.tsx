@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
+import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -8,6 +9,7 @@ import { Button, CircularProgress, IconButton, TextField, Tooltip, Typography } 
 import { fetchLastStudy, fetchStudy, type StudyResult } from "../../api/study";
 import { Toast } from "../../components/Toast";
 import type { SplitOrientation } from "../../components/SplitPane";
+import { copyElementAsPng } from "../../utils/copyElementImage";
 import { StudyCharts } from "./StudyCharts";
 import "./study.css";
 
@@ -17,6 +19,7 @@ const studyCrosshairSyncKey = "market-watch.study-crosshair-sync";
 const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 
 export function StudyPage() {
+  const pageRef = useRef<HTMLElement>(null);
   const [symbolA, setSymbolA] = useState("SPY");
   const [symbolB, setSymbolB] = useState("QQQ");
   const [date, setDate] = useState(todayText);
@@ -32,6 +35,11 @@ export function StudyPage() {
     () => localStorage.getItem(studyTickerBVisibleKey) !== "false",
   );
   const [error, setError] = useState<string>();
+  const [captureNotice, setCaptureNotice] = useState<{
+    message: string;
+    severity: "success" | "error";
+  }>();
+  const [copying, setCopying] = useState(false);
   const requestRef = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -88,8 +96,32 @@ export function StudyPage() {
     void load(false);
   };
 
+  const copyStudy = async () => {
+    const page = pageRef.current;
+    if (page === null || result === undefined || copying) return;
+
+    setCopying(true);
+    setCaptureNotice(undefined);
+    try {
+      await copyElementAsPng(page);
+      setCaptureNotice({
+        message: "Study copied as an image",
+        severity: "success",
+      });
+    } catch (captureError) {
+      setCaptureNotice({
+        message: captureError instanceof Error
+          ? `Unable to copy study: ${captureError.message}`
+          : "Unable to copy study",
+        severity: "error",
+      });
+    } finally {
+      setCopying(false);
+    }
+  };
+
   return (
-    <section className="study-page">
+    <section ref={pageRef} className="study-page">
       <form className="study-header" onSubmit={submit}>
         <Typography component="h1">Study</Typography>
         <TextField size="small" label="Ticker A" value={symbolA} onChange={(event) => setSymbolA(event.target.value)} />
@@ -145,6 +177,19 @@ export function StudyPage() {
             {tickerBVisible ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
+        <Tooltip title="Copy study as image">
+          <span>
+            <IconButton
+              size="small"
+              type="button"
+              aria-label="Copy study as image"
+              disabled={result === undefined || copying}
+              onClick={() => void copyStudy()}
+            >
+              <PhotoCameraOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
       </form>
       <div className="study-body">
         {result === undefined ? (
@@ -164,6 +209,11 @@ export function StudyPage() {
         Charts by TradingView
       </a>
       <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={captureNotice?.message}
+        severity={captureNotice?.severity}
+        onClose={() => setCaptureNotice(undefined)}
+      />
     </section>
   );
 }
