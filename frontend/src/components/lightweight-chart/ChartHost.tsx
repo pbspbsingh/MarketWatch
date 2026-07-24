@@ -11,7 +11,7 @@ import {
   type DeepPartial,
   type IChartApi,
 } from "lightweight-charts";
-import { baseChartOptions } from "./chartOptions";
+import { baseChartOptions, chartThemeOptions } from "./chartOptions";
 import { useAppSettings } from "../../app/AppSettings";
 
 export interface ChartHostHandle {
@@ -39,6 +39,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     const { theme } = useAppSettings();
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
+    const initialThemeRef = useRef(theme);
     const onChartReadyRef = useRef(onChartReady);
     const onChartDestroyRef = useRef(onChartDestroy);
     const attributionUrlRef = useRef(attributionUrl);
@@ -54,7 +55,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       const container = containerRef.current;
       if (container === null) return;
 
-      const chart = createChart(container, baseChartOptions(theme));
+      const chart = createChart(container, baseChartOptions(initialThemeRef.current));
       const observer = new MutationObserver(() => {
         updateAttributionUrl(container, attributionUrlRef.current);
       });
@@ -72,6 +73,10 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
           chart.remove();
         }
       };
+    }, []);
+
+    useEffect(() => {
+      chartRef.current?.applyOptions(chartThemeOptions(theme));
     }, [theme]);
 
     useEffect(() => {

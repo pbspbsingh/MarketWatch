@@ -57,6 +57,29 @@ export const weeklyEmaColors = {
   40: "#f60c0c",
 } as const;
 
+export function chartThemeOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
+  const colors = getChartColors(mode);
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: colors.background },
+      textColor: colors.text,
+    },
+    grid: {
+      vertLines: { color: colors.grid },
+      horzLines: { color: colors.grid },
+    },
+    leftPriceScale: {
+      borderColor: colors.border,
+    },
+    rightPriceScale: {
+      borderColor: colors.border,
+    },
+    timeScale: {
+      borderColor: colors.border,
+    },
+  };
+}
+
 export function baseChartOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
   const colors = getChartColors(mode);
   return {

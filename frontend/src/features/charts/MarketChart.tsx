@@ -282,6 +282,12 @@ export function MarketChart({
   }, [data.symbol, palette]);
 
   useEffect(() => {
+    relativeStrengthProvisionalInnerRef.current?.applyOptions({
+      color: palette.canvas,
+    });
+  }, [palette.canvas]);
+
+  useEffect(() => {
     const datasetKey = `${data.symbol}\0${data.interval}`;
     const chart = hostRef.current?.getChart();
     const visibleRange = chart !== null
