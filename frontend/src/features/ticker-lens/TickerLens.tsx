@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
 import { createTickerStreamClient } from "../../api/tickerStream";
@@ -119,6 +121,7 @@ export function TickerLens({
   );
   const [selectedTickerContext, setSelectedTickerContext] =
     useState<SelectedTickerContext>();
+  const [groupsCollapsed, setGroupsCollapsed] = useState(false);
   const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
   const [groupsState, setGroupsState] = useState<GroupsState>({
     key: "",
@@ -168,6 +171,27 @@ export function TickerLens({
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
+
+  useEffect(() => {
+    const handleGroupToggleShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key.toLocaleLowerCase() !== "g" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        isTypingTarget(event.target) ||
+        document.querySelector('[role="dialog"], [role="menu"]') !== null
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setGroupsCollapsed((collapsed) => !collapsed);
+    };
+    document.addEventListener("keydown", handleGroupToggleShortcut);
+    return () => document.removeEventListener("keydown", handleGroupToggleShortcut);
+  }, []);
 
   useEffect(() => {
     writeTickerFilterValues(tickerFilters);
@@ -296,6 +320,7 @@ export function TickerLens({
       className={[
         "ticker-lens",
         bounded ? "ticker-lens-bounded" : "",
+        groupsCollapsed ? "ticker-lens-groups-collapsed" : "",
         accent === undefined ? "" : `ticker-lens-accent-${accent}`,
       ]
         .filter(Boolean)
@@ -310,21 +335,43 @@ export function TickerLens({
         onChange={setTickerFilters}
         onPersistedChange={setTickerFiltersPersisted}
       />
-      <GroupPanel
-        mode={groupMode}
-        setMode={setMode}
-        selectedGroupKeys={selectedGroupKeys}
-        setSelectedGroupKeys={setSelectedGroupKeys}
-        selectedTickerContext={selectedTickerContext}
-        requestedThemeNames={requestedThemeNames}
-        requestedUnassigned={requestedUnassigned}
-        selectedGroupTickerCounts={selectedGroupTickerCounts}
-        countSortAvailable={bounded}
-        groups={groups}
-        loadingGroups={groupsLoading}
-        groupError={groupsError}
-        revealGroup={revealGroup}
-      />
+      <div
+        id="ticker-lens-group-panel"
+        className="ticker-lens-group-viewport"
+        aria-hidden={groupsCollapsed}
+        inert={groupsCollapsed}
+      >
+        <GroupPanel
+          mode={groupMode}
+          setMode={setMode}
+          selectedGroupKeys={selectedGroupKeys}
+          setSelectedGroupKeys={setSelectedGroupKeys}
+          selectedTickerContext={selectedTickerContext}
+          requestedThemeNames={requestedThemeNames}
+          requestedUnassigned={requestedUnassigned}
+          selectedGroupTickerCounts={selectedGroupTickerCounts}
+          countSortAvailable={bounded}
+          groups={groups}
+          loadingGroups={groupsLoading}
+          groupError={groupsError}
+          revealGroup={revealGroup}
+        />
+      </div>
+      <Tooltip
+        title={`${groupsCollapsed ? "Show groups" : "Hide groups"} (G)`}
+        placement="right"
+      >
+        <IconButton
+          className="ticker-lens-group-toggle"
+          size="small"
+          aria-label={groupsCollapsed ? "Show groups" : "Hide groups"}
+          aria-controls="ticker-lens-group-panel"
+          aria-expanded={!groupsCollapsed}
+          onClick={() => setGroupsCollapsed((collapsed) => !collapsed)}
+        >
+          <ChevronLeftIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
       <TickerPanel
         tickerStream={tickerStream}
         bounded={bounded}
@@ -414,4 +461,11 @@ function themeKeysFromSearch(searchParams: URLSearchParams) {
   const keys = searchThemeIds(searchParams);
   if (searchIncludesUnassigned(searchParams)) keys.add(unassignedGroupKey);
   return keys;
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  return target instanceof Element &&
+    target.closest(
+      "input, textarea, select, [contenteditable='true'], [role='combobox'], [role='listbox'], [role='menu'], [role='dialog']",
+    ) !== null;
 }
