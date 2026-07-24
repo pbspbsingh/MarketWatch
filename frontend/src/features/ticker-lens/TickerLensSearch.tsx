@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import SearchIcon from "@mui/icons-material/Search";
@@ -49,11 +49,14 @@ export function TickerLensSearch({
   const [activeId, setActiveId] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultRefs = useRef(new Map<string, HTMLButtonElement>());
-  const focusAndSelectQuery = useCallback(() => {
-    window.setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 0);
+  const pendingFocus = useRef<"select" | "end" | undefined>(undefined);
+  const focusQuery = useCallback((select: boolean) => {
+    const mode = select ? "select" : "end";
+    pendingFocus.current = mode;
+    const input = inputRef.current;
+    if (input === null) return;
+    focusInput(input, mode);
+    pendingFocus.current = undefined;
   }, []);
   const searchableGroups = useMemo(
     () => mode === "theme" && !groups.some((group) => group.key === unassignedGroupKey)
@@ -138,16 +141,41 @@ export function TickerLensSearch({
       ) {
         event.preventDefault();
         setOpen(true);
-        focusAndSelectQuery();
+        focusQuery(true);
       } else if (event.key === "Escape" && open) {
         event.preventDefault();
         if (query !== "") updateQuery("");
         else setOpen(false);
+      } else if (
+        !open &&
+        !event.defaultPrevented &&
+        !event.repeat &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        /^[a-z]$/i.test(event.key) &&
+        !isTypingTarget(event.target) &&
+        document.querySelector('[role="dialog"], [role="menu"]') === null
+      ) {
+        const initialQuery = event.key;
+        window.setTimeout(() => {
+          if (event.defaultPrevented) return;
+          setSearch({ mode, query: initialQuery });
+          setActiveId(undefined);
+          setOpen(true);
+          focusQuery(false);
+        }, 0);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [focusAndSelectQuery, open, query, updateQuery]);
+  }, [focusQuery, mode, open, query, updateQuery]);
+
+  useLayoutEffect(() => {
+    if (!open || pendingFocus.current === undefined || inputRef.current === null) return;
+    focusInput(inputRef.current, pendingFocus.current);
+    pendingFocus.current = undefined;
+  }, [open]);
 
   if (!open) {
     return (
@@ -158,7 +186,7 @@ export function TickerLensSearch({
           aria-label="Open search"
           onClick={() => {
             setOpen(true);
-            focusAndSelectQuery();
+            focusQuery(true);
           }}
         >
           <KeyboardArrowUpIcon fontSize="small" />
@@ -457,4 +485,20 @@ function substringRanges(label: string, query: string): Array<[number, number]> 
 
 function globalResultId(result: GlobalSearchResult) {
   return `global-${result.type}-${result.key}`;
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  return target instanceof Element &&
+    target.closest(
+      "input, textarea, select, [contenteditable='true'], [role='combobox'], [role='listbox'], [role='menu'], [role='dialog']",
+    ) !== null;
+}
+
+function focusInput(input: HTMLInputElement, mode: "select" | "end") {
+  input.focus();
+  if (mode === "select") input.select();
+  else {
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  }
 }
