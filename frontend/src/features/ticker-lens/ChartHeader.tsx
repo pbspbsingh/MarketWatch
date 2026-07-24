@@ -12,11 +12,9 @@ import {
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
 import {
-  chartEngineKey,
   chartIntervalKey,
   chartThemeEtfKey,
 } from "./constants";
-import type { ChartEngine } from "./types";
 import {
   formatVolume,
   industryMarketWatchUrl,
@@ -39,8 +37,6 @@ interface ChartHeaderProps {
   setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
   contextLabel?: string;
-  chartEngine?: ChartEngine;
-  setChartEngine?: (engine: ChartEngine) => void;
 }
 
 export function ChartHeader({
@@ -56,8 +52,6 @@ export function ChartHeader({
   setSelectedThemeEtf,
   setDetailsOpen,
   contextLabel,
-  chartEngine,
-  setChartEngine,
 }: ChartHeaderProps) {
   return (
     <header className="panel-header chart-header">
@@ -120,35 +114,6 @@ export function ChartHeader({
           >
             <AssessmentOutlinedIcon fontSize="small" />
           </IconButton>
-        )}
-        {chartEngine !== undefined && setChartEngine !== undefined && (
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={chartEngine}
-            aria-label="Chart implementation"
-            onChange={(_, value: ChartEngine | null) => {
-              if (value !== null) {
-                localStorage.setItem(chartEngineKey, value);
-                setChartEngine(value);
-              }
-            }}
-          >
-            <ToggleButton
-              value="tradingview"
-              title="TradingView chart"
-              aria-label="TradingView chart"
-            >
-              TV
-            </ToggleButton>
-            <ToggleButton
-              value="lightweight"
-              title="Lightweight Charts"
-              aria-label="Lightweight Charts"
-            >
-              LW
-            </ToggleButton>
-          </ToggleButtonGroup>
         )}
       </div>
       <div className="chart-header-controls">

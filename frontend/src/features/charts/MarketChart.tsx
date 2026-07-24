@@ -100,7 +100,7 @@ export function MarketChart({
   liveDelta,
   sessionDelta,
 }: MarketChartProps) {
-  const { theme } = useAppSettings();
+  const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -193,7 +193,10 @@ export function MarketChart({
     if (viewport !== undefined) {
       chart.timeScale().applyOptions({ barSpacing: viewport.barSpacing });
     }
-    const candleSeries = chart.addSeries(CandlestickSeries, candleSeriesOptions);
+    const candleSeries = chart.addSeries(
+      CandlestickSeries,
+      candleSeriesOptions(candlePalette),
+    );
     candleSeriesRef.current = candleSeries;
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
@@ -259,7 +262,7 @@ export function MarketChart({
     };
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, [palette]);
+  }, [candlePalette, palette]);
 
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
@@ -286,6 +289,10 @@ export function MarketChart({
       color: palette.canvas,
     });
   }, [palette.canvas]);
+
+  useEffect(() => {
+    candleSeriesRef.current?.applyOptions(candleSeriesOptions(candlePalette));
+  }, [candlePalette]);
 
   useEffect(() => {
     const datasetKey = `${data.symbol}\0${data.interval}`;

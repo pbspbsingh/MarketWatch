@@ -3,8 +3,6 @@ import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
@@ -141,7 +139,14 @@ function useVerticalTrigger(positionKey: string) {
 export function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { theme, setTheme } = useAppSettings();
+  const {
+    candlePalette,
+    chartEngine,
+    setCandlePalette,
+    setChartEngine,
+    theme,
+    setTheme,
+  } = useAppSettings();
   const [navigationMode, setNavigationMode] = useState<NavigationMode>(readNavigationMode);
   const {
     ref: navigationTriggerRef,
@@ -269,25 +274,76 @@ export function AppShell() {
         </div>
         <section className="settings-section" aria-labelledby="appearance-setting">
           <Typography id="appearance-setting" variant="overline">Appearance</Typography>
-          <ToggleButtonGroup
-            exclusive
-            fullWidth
-            size="small"
-            value={theme}
-            aria-label="Color theme"
-            onChange={(_, nextTheme) => {
-              if (nextTheme === "dark" || nextTheme === "light") setTheme(nextTheme);
-            }}
-          >
-            <ToggleButton value="light" aria-label="Light theme">
-              <LightModeOutlinedIcon fontSize="small" />
-              Light
-            </ToggleButton>
-            <ToggleButton value="dark" aria-label="Dark theme">
-              <DarkModeOutlinedIcon fontSize="small" />
-              Dark
-            </ToggleButton>
-          </ToggleButtonGroup>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              Theme
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              value={theme}
+              aria-label="Color theme"
+              onChange={(_, nextTheme) => {
+                if (nextTheme === "dark" || nextTheme === "light") setTheme(nextTheme);
+              }}
+            >
+              <ToggleButton value="light" aria-label="Light theme">Light</ToggleButton>
+              <ToggleButton value="dark" aria-label="Dark theme">Dark</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+        </section>
+        <section className="settings-section" aria-labelledby="chart-setting">
+          <Typography id="chart-setting" variant="overline">Charts</Typography>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              Engine
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              value={chartEngine}
+              aria-label="Chart engine"
+              onChange={(_, nextEngine) => {
+                if (nextEngine === "tradingview" || nextEngine === "lightweight") {
+                  setChartEngine(nextEngine);
+                }
+              }}
+            >
+              <ToggleButton value="tradingview" aria-label="TradingView chart">
+                TradingView
+              </ToggleButton>
+              <ToggleButton value="lightweight" aria-label="Lightweight Charts">
+                Lightweight
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              Candles
+            </Typography>
+            <ToggleButtonGroup
+              disabled={chartEngine !== "lightweight"}
+              exclusive
+              fullWidth
+              size="small"
+              value={candlePalette}
+              aria-label="Candle palette"
+              onChange={(_, nextPalette) => {
+                if (nextPalette === "solid" || nextPalette === "hollow") {
+                  setCandlePalette(nextPalette);
+                }
+              }}
+            >
+              <ToggleButton value="solid" aria-label="Red and green candles">
+                Solid
+              </ToggleButton>
+              <ToggleButton value="hollow" aria-label="Red and hollow green candles">
+                Hollow
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </div>
         </section>
       </Drawer>
       {import.meta.env.DEV && <span className="development-badge" aria-hidden="true">DEV</span>}

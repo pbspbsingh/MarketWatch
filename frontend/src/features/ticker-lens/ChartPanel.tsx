@@ -17,22 +17,17 @@ import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
 import {
-  chartEngineKey,
   chartIntervalKey,
   chartSplitKey,
   chartThemeEtfKey,
 } from "./constants";
 import { ChartHeader } from "./ChartHeader";
-import type {
-  ChartEngine,
-  GroupMode,
-  SelectedTickerContext,
-} from "./types";
+import type { GroupMode, SelectedTickerContext } from "./types";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
   isArrowKeyControl,
-  readChartEngine,
   readChartInterval,
   readChartSplit,
   readEnabled,
@@ -80,11 +75,9 @@ export function ChartPanel({
   const [panelError, setPanelError] = useState<{ key: string; message: string }>();
   const [warning, setWarning] = useState<string>();
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
+  const { chartEngine } = useAppSettings();
   const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
   const [detailsSelection, setDetailsSelection] = useState<typeof tickerSelection>();
-  const [chartEngine, setChartEngine] = useState<ChartEngine>(() =>
-    readChartEngine(chartEngineKey),
-  );
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join("\0");
   const industryKeysKey = [...industryKeys].sort().join("\0");
@@ -243,8 +236,6 @@ export function ChartPanel({
           if (selectedTicker !== undefined) setThemeSelection({ ticker: selectedTicker, etf });
         }}
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
-        chartEngine={chartEngine}
-        setChartEngine={setChartEngine}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel

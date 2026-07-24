@@ -6,6 +6,7 @@ import {
   type DeepPartial,
 } from "lightweight-charts";
 import { appPalettes, type AppThemeMode } from "../../app/theme";
+import type { CandlePalette } from "../../app/AppSettings";
 
 export const visualizationColors = {
   up: "#0c9981",
@@ -113,14 +114,18 @@ export function baseChartOptions(mode: AppThemeMode): DeepPartial<ChartOptions> 
   };
 }
 
-export const candleSeriesOptions = {
-  upColor: visualizationColors.up,
-  downColor: visualizationColors.down,
-  borderVisible: false,
-  wickUpColor: visualizationColors.up,
-  wickDownColor: visualizationColors.down,
-  priceLineVisible: false,
-};
+export function candleSeriesOptions(palette: CandlePalette) {
+  return {
+    upColor: palette === "hollow" ? "transparent" : visualizationColors.up,
+    downColor: visualizationColors.down,
+    borderVisible: palette === "hollow",
+    borderUpColor: visualizationColors.up,
+    borderDownColor: visualizationColors.down,
+    wickUpColor: visualizationColors.up,
+    wickDownColor: visualizationColors.down,
+    priceLineVisible: false,
+  };
+}
 
 export const volumePriceScaleId = "volume";
 

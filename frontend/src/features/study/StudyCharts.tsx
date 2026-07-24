@@ -21,6 +21,7 @@ import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 import {
   getChartColors,
+  candleSeriesOptions,
   dailySmaColors,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
@@ -56,17 +57,26 @@ export function StudyCharts({
   syncCrosshair: boolean;
   tickerBVisible: boolean;
 }) {
-  const { theme } = useAppSettings();
+  const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const chartColors = getChartColors(theme);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick">[]>([]);
+  const candlePaletteRef = useRef(candlePalette);
   const crosshairOwnerRef = useRef<0 | 1>(0);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const syncCrosshairRef = useRef(syncCrosshair);
   const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   const showRelativeStrengthRef = useRef(showRelativeStrength);
+
+  useEffect(() => {
+    candlePaletteRef.current = candlePalette;
+    candleSeriesRef.current.forEach((series) => {
+      series.applyOptions(candleSeriesOptions(candlePalette));
+    });
+  }, [candlePalette]);
 
   useEffect(() => {
     showRelativeStrengthRef.current = showRelativeStrength;
@@ -126,13 +136,10 @@ export function StudyCharts({
         rightPriceScale: { borderColor: chartColors.border, scaleMargins: overlappingPriceScaleMargins },
         timeScale: { borderColor: chartColors.border, timeVisible: false },
       });
-      const candles = chart.addSeries(CandlestickSeries, {
-        upColor: chartColors.up,
-        downColor: chartColors.down,
-        borderVisible: false,
-        wickUpColor: chartColors.up,
-        wickDownColor: chartColors.down,
-      });
+      const candles = chart.addSeries(
+        CandlestickSeries,
+        candleSeriesOptions(candlePaletteRef.current),
+      );
       createTextWatermark(chart.panes()[0], {
         horzAlign: "center",
         vertAlign: "center",
@@ -186,6 +193,7 @@ export function StudyCharts({
       return chart;
     });
     chartsRef.current = charts;
+    candleSeriesRef.current = candleSeries;
     let synchronizing = false;
     const synchronize = (target: typeof charts[number], range: LogicalRange | null) => {
       if (synchronizing || range === null) return;
@@ -248,15 +256,14 @@ export function StudyCharts({
       charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
+      candleSeriesRef.current = [];
       relativeStrengthSeriesRef.current = [];
     };
   }, [
     chartColors.background,
     chartColors.border,
-    chartColors.down,
     chartColors.grid,
     chartColors.text,
-    chartColors.up,
     palette.accent,
     palette.muted,
     result,

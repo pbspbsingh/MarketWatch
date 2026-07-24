@@ -4,7 +4,7 @@ import {
   tickerMetricScale,
 } from "../../app/visualizationColors";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { ChartEngine, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerRelativeStrengthSortKey, TickerSortKey, TickerSortSetting } from "./types";
+import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerRelativeStrengthSortKey, TickerSortKey, TickerSortSetting } from "./types";
 
 const tickerRelativeStrengthSortKeys = new Set<string>([
   "rs_1m",
@@ -17,10 +17,6 @@ export function isTickerRelativeStrengthSortKey(
   key: SortKey | TickerSortKey,
 ): key is TickerRelativeStrengthSortKey {
   return tickerRelativeStrengthSortKeys.has(key);
-}
-
-export function readChartEngine(storageKey: string): ChartEngine {
-  return localStorage.getItem(storageKey) === "lightweight" ? "lightweight" : "tradingview";
 }
 
 export function readSortSetting(storageKey: string): SortSetting {
