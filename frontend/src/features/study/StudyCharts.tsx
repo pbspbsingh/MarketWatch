@@ -37,7 +37,6 @@ import {
   getChartColors,
   chartThemeOptions,
   candleSeriesOptions,
-  dailySmaColors,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthScaleMargins,
@@ -48,6 +47,10 @@ import {
 import { appPalettes } from "../../app/theme";
 import { useAppSettings } from "../../app/AppSettings";
 import {
+  movingAverageSeriesCount,
+  movingAverageSpecs,
+} from "../charts/chartSeries";
+import {
   relativeStrengthLineData,
   rsSwingHighColor,
   rsSwingLowColor,
@@ -55,13 +58,6 @@ import {
 import { chartCompanyNameLabel } from "../charts/chartLabels";
 import { shiftYears } from "./studyDates";
 
-const movingAverages = [
-  { period: 10, color: dailySmaColors[10] },
-  { period: 20, color: dailySmaColors[20] },
-  { period: 50, color: dailySmaColors[50] },
-  { period: 100, color: dailySmaColors[100] },
-  { period: 200, color: dailySmaColors[200] },
-] as const;
 const historyLoadThresholdBars = 50;
 const chartInteractionWindowMs = 1_000;
 const wheelGestureGapMs = 250;
@@ -105,6 +101,7 @@ export function StudyCharts({
   const datesRef = useRef<string[]>([]);
   const historyAvailabilityRef = useRef({ before: false, after: false });
   const dataInitializedRef = useRef(false);
+  const intervalRef = useRef(result.interval);
   const crosshairOwnerRef = useRef<0 | 1>(0);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const relativeStrengthInnerRef = useRef<ISeriesApi<"Line"> | undefined>(undefined);
@@ -280,9 +277,9 @@ export function StudyCharts({
       volume.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
       volumeSeries.push(volume);
       const averages: ISeriesApi<"Line">[] = [];
-      for (const { color } of movingAverages) {
+      for (let averageIndex = 0; averageIndex < movingAverageSeriesCount; averageIndex += 1) {
         const line = chart.addSeries(LineSeries, {
-          color,
+          color: movingAverageSpecs("daily")[averageIndex]!.color,
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -409,6 +406,7 @@ export function StudyCharts({
       : viewportRef.current?.datasetKey === datasetKey
         ? viewportRef.current.anchor
         : undefined;
+    const intervalChanged = dataInitializedRef.current && intervalRef.current !== result.interval;
     const dates = [...new Set(
       result.series.flatMap((series) => series.candles.map((candle) => candle.date)),
     )].sort();
@@ -455,12 +453,17 @@ export function StudyCharts({
       const averagesByPeriod = new Map(
         series.moving_averages.map((average) => [average.period, average]),
       );
-      movingAverages.forEach(({ period }, averageIndex) => {
-        movingAverageSeriesRef.current[index]?.[averageIndex]?.setData(
-          averagesByPeriod.get(period)?.points.map(
+      const specs = movingAverageSpecs(result.interval);
+      movingAverageSeriesRef.current[index]?.forEach((line, averageIndex) => {
+        const spec = specs[averageIndex];
+        if (spec === undefined) {
+          line.setData([]);
+        } else {
+          line.applyOptions({ color: spec.color });
+          line.setData(averagesByPeriod.get(spec.period)?.points.map(
             (point) => ({ time: point.date, value: point.value }),
-          ) ?? [],
-        );
+          ) ?? []);
+        }
       });
     });
 
@@ -489,7 +492,7 @@ export function StudyCharts({
     ));
 
     if (anchor !== undefined) {
-      restoreAnchoredLogicalRange(charts[0], anchor);
+      restoreAnchoredLogicalRange(charts[0], anchor, intervalChanged);
     } else {
       const visibleStart = shiftYears(result.date, -1);
       const visibleEnd = shiftYears(result.date, 1);
@@ -507,6 +510,7 @@ export function StudyCharts({
     const range = charts[0].timeScale().getVisibleLogicalRange();
     if (range !== null) charts[1].timeScale().setVisibleLogicalRange(range);
     dataInitializedRef.current = true;
+    intervalRef.current = result.interval;
   }, [datasetKey, result]);
 
   return (
@@ -517,6 +521,7 @@ export function StudyCharts({
         <ChartContainer
           containerRef={topRef}
           companyName={result.series[0].company_name ?? undefined}
+          interval={result.interval}
           onPointerEnter={() => setCrosshairOwner(0)}
           showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
           onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
@@ -528,6 +533,7 @@ export function StudyCharts({
       second={(
         <ChartContainer
           containerRef={bottomRef}
+          interval={result.interval}
           onPointerEnter={() => setCrosshairOwner(1)}
           onPointerDown={markPointerInteraction}
           onPointerMove={markChartDrag}
@@ -608,6 +614,7 @@ function addRelativeStrength(
 function ChartContainer({
   containerRef,
   companyName,
+  interval,
   onPointerEnter,
   showRelativeStrength,
   onToggleRelativeStrength,
@@ -617,6 +624,7 @@ function ChartContainer({
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
+  interval: StudyResult["interval"];
   onPointerEnter: () => void;
   showRelativeStrength?: boolean;
   onToggleRelativeStrength?: () => void;
@@ -657,9 +665,14 @@ function ChartContainer({
           )}
         </div>
       )}
-      <div className="study-chart-legend" aria-label="Simple moving averages">
-        {movingAverages.map(({ period, color }) => (
-          <span key={period} style={{ color }}>SMA {period}</span>
+      <div
+        className="study-chart-legend"
+        aria-label={interval === "daily" ? "Simple moving averages" : "Exponential moving averages"}
+      >
+        {movingAverageSpecs(interval).map(({ period, color }) => (
+          <span key={period} style={{ color }}>
+            {interval === "daily" ? "SMA" : "EMA"} {period}
+          </span>
         ))}
       </div>
     </div>

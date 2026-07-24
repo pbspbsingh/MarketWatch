@@ -11,7 +11,17 @@ import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
-import { Button, CircularProgress, IconButton, TextField, Tooltip, Typography } from "@mui/material";
+import {
+  Button,
+  CircularProgress,
+  IconButton,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import type { MarketChartInterval } from "../../api/marketChart";
 import {
   fetchLastStudy,
   fetchStudy,
@@ -35,12 +45,16 @@ const todayText = localDateText(new Date());
 const studyOrientationKey = "market-watch.study-orientation";
 const studyCrosshairSyncKey = "market-watch.study-crosshair-sync";
 const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
+const studyIntervalKey = "market-watch.study-interval";
 
 export function StudyPage() {
   const pageRef = useRef<HTMLElement>(null);
   const [symbolA, setSymbolA] = useState("SPY");
   const [symbolB, setSymbolB] = useState("QQQ");
   const [date, setDate] = useState(todayText);
+  const [interval, setInterval] = useState<MarketChartInterval>(
+    () => localStorage.getItem(studyIntervalKey) === "weekly" ? "weekly" : "daily",
+  );
   const [result, setResult] = useState<StudyResult>();
   const [datasetVersion, setDatasetVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -76,6 +90,7 @@ export function StudyPage() {
         resultRef.current = last;
         setResult(last);
         setDate(last.date);
+        setInterval(last.interval);
         setSymbolA(last.series[0]?.symbol ?? "SPY");
         setSymbolB(last.series[1]?.symbol ?? "QQQ");
       })
@@ -111,6 +126,7 @@ export function StudyPage() {
       const next = await fetchStudy(
         [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
         date,
+        interval,
         { refresh, signal: controller.signal },
       );
       resultRef.current = next;
@@ -148,6 +164,7 @@ export function StudyPage() {
       const expanded = await fetchStudy(
         [current.series[0].symbol, current.series[1].symbol],
         current.date,
+        current.interval,
         { range, fetchRange, signal: controller.signal },
       );
       if (
@@ -175,6 +192,45 @@ export function StudyPage() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void load(false);
+  };
+
+  const changeInterval = async (nextInterval: MarketChartInterval) => {
+    setInterval(nextInterval);
+    localStorage.setItem(studyIntervalKey, nextInterval);
+    const current = resultRef.current;
+    if (current === undefined || current.interval === nextInterval) return;
+
+    requestRef.current?.abort();
+    historyRequestRef.current?.abort();
+    historyRequestRef.current = undefined;
+    setHistoryLoading(false);
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const next = await fetchStudy(
+        [current.series[0].symbol, current.series[1].symbol],
+        current.date,
+        nextInterval,
+        {
+          range: { start: current.range_start, end: current.range_end },
+          signal: controller.signal,
+        },
+      );
+      if (!controller.signal.aborted && requestRef.current === controller) {
+        resultRef.current = next;
+        setResult(next);
+      }
+    } catch (loadError) {
+      if (loadError instanceof Error && loadError.name !== "AbortError") {
+        setInterval(current.interval);
+        localStorage.setItem(studyIntervalKey, current.interval);
+        setError(loadError.message);
+      }
+    } finally {
+      if (!controller.signal.aborted && requestRef.current === controller) setLoading(false);
+    }
   };
 
   const changeDate = (event: ChangeEvent<HTMLInputElement>) => {
@@ -264,6 +320,20 @@ export function StudyPage() {
           onChange={changeDate}
           onKeyDown={handleDateKeyDown}
         />
+        <ToggleButtonGroup
+          className="study-interval-toggle"
+          disabled={loading}
+          exclusive
+          size="small"
+          value={interval}
+          aria-label="Study chart interval"
+          onChange={(_, nextInterval: MarketChartInterval | null) => {
+            if (nextInterval !== null) void changeInterval(nextInterval);
+          }}
+        >
+          <ToggleButton value="daily">Daily</ToggleButton>
+          <ToggleButton value="weekly">Weekly</ToggleButton>
+        </ToggleButtonGroup>
         <Button size="small" variant="contained" type="submit" disabled={loading}>Load</Button>
         <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={() => void load(true)}>Refresh</Button>
         {loading && <CircularProgress size="1rem" />}
@@ -374,7 +444,7 @@ function localDateText(date: Date) {
 }
 
 function studyResultKey(result: StudyResult) {
-  return `${result.series[0]?.symbol ?? ""}\0${result.series[1]?.symbol ?? ""}\0${result.date}`;
+  return `${result.series[0]?.symbol ?? ""}\0${result.series[1]?.symbol ?? ""}\0${result.date}\0${result.interval}`;
 }
 
 function formatDateInput(value: string) {

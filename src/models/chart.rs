@@ -5,6 +5,9 @@ use thiserror::Error;
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{DailyCandle, TickerSymbol};
 
+const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
+const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MarketChartInterval {
@@ -136,6 +139,41 @@ pub fn close_ema(
     }
 
     Ok(MarketChartSeries { period, points })
+}
+
+pub fn market_chart_candles_for_interval(
+    daily: &[MarketChartCandle],
+    interval: MarketChartInterval,
+) -> Result<Vec<MarketChartCandle>, ChartCalculationError> {
+    match interval {
+        MarketChartInterval::Daily => {
+            for candle in daily {
+                validate_market_chart_candle(candle)?;
+            }
+            Ok(daily.to_vec())
+        }
+        MarketChartInterval::Weekly => aggregate_market_weeks(daily),
+    }
+}
+
+pub const fn market_chart_moving_average_periods(
+    interval: MarketChartInterval,
+) -> &'static [usize] {
+    match interval {
+        MarketChartInterval::Daily => &DAILY_SMA_PERIODS,
+        MarketChartInterval::Weekly => &WEEKLY_EMA_PERIODS,
+    }
+}
+
+pub fn market_chart_moving_average(
+    candles: &[MarketChartCandle],
+    interval: MarketChartInterval,
+    period: usize,
+) -> Result<MarketChartSeries, ChartCalculationError> {
+    match interval {
+        MarketChartInterval::Daily => close_sma(candles, period),
+        MarketChartInterval::Weekly => close_ema(candles, period),
+    }
 }
 
 pub fn volume_sma(

@@ -28,8 +28,9 @@ export function captureAnchoredLogicalRange(
 export function restoreAnchoredLogicalRange(
   chart: IChartApi,
   anchor: AnchoredLogicalRange,
+  findNearest = false,
 ) {
-  const translatedIndex = chart.timeScale().timeToIndex(anchor.anchorTime, false);
+  const translatedIndex = chart.timeScale().timeToIndex(anchor.anchorTime, findNearest);
   if (translatedIndex === null) return;
   const offset = translatedIndex - anchor.anchorIndex;
   chart.timeScale().setVisibleLogicalRange({

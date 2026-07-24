@@ -1,4 +1,8 @@
-import type { MarketChartRelativeStrength } from "./marketChart";
+import type {
+  MarketChartInterval,
+  MarketChartRelativeStrength,
+  MarketChartSeries,
+} from "./marketChart";
 
 export interface StudyCandle {
   date: string;
@@ -11,6 +15,7 @@ export interface StudyCandle {
 
 export interface StudyResult {
   date: string;
+  interval: MarketChartInterval;
   range_start: string;
   range_end: string;
   has_more_before: boolean;
@@ -20,10 +25,7 @@ export interface StudyResult {
     symbol: string;
     company_name: string | null;
     candles: StudyCandle[];
-    moving_averages: Array<{
-      period: number;
-      points: Array<{ date: string; value: number }>;
-    }>;
+    moving_averages: MarketChartSeries[];
   }>;
 }
 
@@ -49,11 +51,13 @@ export async function fetchLastStudy(signal?: AbortSignal): Promise<StudyResult 
 export async function fetchStudy(
   symbols: [string, string],
   date: string,
+  interval: MarketChartInterval,
   options: FetchStudyOptions = {},
 ): Promise<StudyResult> {
   const body = {
     symbols,
     date,
+    interval,
     refresh: options.refresh ?? false,
     range_start: options.range?.start,
     range_end: options.range?.end,

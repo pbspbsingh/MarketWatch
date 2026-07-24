@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::models::TickerSymbol;
+use crate::models::chart::MarketChartInterval;
 use crate::services::study::StudyError;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -13,6 +14,7 @@ use tracing::error;
 struct StudyRequest {
     symbols: Vec<TickerSymbol>,
     date: NaiveDate,
+    interval: MarketChartInterval,
     range_start: Option<NaiveDate>,
     range_end: Option<NaiveDate>,
     fetch_start: Option<NaiveDate>,
@@ -42,6 +44,7 @@ async fn candles(
         .load(
             &request.symbols,
             request.date,
+            request.interval,
             (request.range_start, request.range_end),
             (request.fetch_start, request.fetch_end),
             request.refresh,

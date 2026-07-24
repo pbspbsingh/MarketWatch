@@ -1,4 +1,8 @@
-use crate::models::chart::{MarketChartInterval, MarketChartRelativeStrength};
+use crate::models::chart::{
+    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
+    market_chart_candles_for_interval, market_chart_moving_average,
+    market_chart_moving_average_periods,
+};
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
     analyze_relative_strength_structure, calculate_relative_strength_line,
@@ -46,12 +50,30 @@ pub struct StudyMovingAveragePoint {
 #[derive(Clone, Debug, Serialize)]
 pub struct StudyResult {
     pub date: NaiveDate,
+    pub interval: MarketChartInterval,
     pub range_start: NaiveDate,
     pub range_end: NaiveDate,
     pub has_more_before: bool,
     pub has_more_after: bool,
     pub series: Vec<StudySeries>,
     pub relative_strength: Option<MarketChartRelativeStrength>,
+}
+
+#[derive(Clone, Debug)]
+struct StudyDataset {
+    date: NaiveDate,
+    range_start: NaiveDate,
+    range_end: NaiveDate,
+    has_more_before: bool,
+    has_more_after: bool,
+    series: Vec<StudyDatasetSeries>,
+}
+
+#[derive(Clone, Debug)]
+struct StudyDatasetSeries {
+    symbol: TickerSymbol,
+    company_name: Option<String>,
+    candles: Vec<StudyCandle>,
 }
 
 #[derive(Debug, Error)]
@@ -61,6 +83,8 @@ pub enum StudyError {
     #[error(transparent)]
     Provider(#[from] YahooError),
     #[error(transparent)]
+    Calculation(#[from] ChartCalculationError),
+    #[error(transparent)]
     RelativeStrength(#[from] RelativeStrengthCalculationError),
 }
 
@@ -69,6 +93,7 @@ pub struct StudyService {
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
     load_lock: AsyncMutex<()>,
+    dataset: Mutex<Option<StudyDataset>>,
     last: Mutex<Option<StudyResult>>,
 }
 
@@ -83,6 +108,7 @@ impl StudyService {
             yahoo,
             market_schedule,
             load_lock: AsyncMutex::new(()),
+            dataset: Mutex::new(None),
             last: Mutex::new(None),
         }
     }
@@ -98,6 +124,7 @@ impl StudyService {
         &self,
         symbols: &[TickerSymbol],
         date: NaiveDate,
+        interval: MarketChartInterval,
         range: (Option<NaiveDate>, Option<NaiveDate>),
         fetch_range: (Option<NaiveDate>, Option<NaiveDate>),
         refresh: bool,
@@ -114,19 +141,25 @@ impl StudyService {
             resolve_fetch_range(start, end, fetch_range.0, fetch_range.1, refresh)?;
 
         let previous = self
-            .last
+            .dataset
             .lock()
-            .expect("study last-result mutex is not poisoned")
+            .expect("study dataset mutex is not poisoned")
             .clone();
         if !refresh
             && fetch_range == (None, None)
-            && previous.as_ref().is_some_and(|result| {
-                same_study(result, &symbols, date)
-                    && result.range_start == start
-                    && result.range_end == end
+            && previous.as_ref().is_some_and(|dataset| {
+                same_study(dataset, &symbols, date)
+                    && dataset.range_start == start
+                    && dataset.range_end == end
             })
         {
-            return Ok(previous.expect("checked cached Study result"));
+            let result =
+                build_study_result(&previous.expect("checked cached Study dataset"), interval)?;
+            *self
+                .last
+                .lock()
+                .expect("study last-result mutex is not poisoned") = Some(result.clone());
+            return Ok(result);
         }
         let reuse = !refresh
             && reusable_previous(previous.as_ref(), &symbols, date, start, end, fetch_range);
@@ -178,42 +211,44 @@ impl StudyService {
             } else {
                 fetched_has_more_before
             };
-            let moving_averages = [10, 20, 50, 100, 200]
-                .into_iter()
-                .map(|period| StudyMovingAverage {
-                    period,
-                    points: simple_moving_average(&candles, period),
-                })
-                .collect();
             let company_name = if index == 0 {
-                match self.yahoo.profile(&symbol).await {
-                    Ok(profile) => profile.name,
-                    Err(error) => {
-                        warn!(%symbol, %error, "failed to load Study company name");
-                        None
+                if reuse {
+                    previous
+                        .as_ref()
+                        .and_then(|dataset| dataset.series.get(index))
+                        .and_then(|series| series.company_name.clone())
+                } else {
+                    match self.yahoo.profile(&symbol).await {
+                        Ok(profile) => profile.name,
+                        Err(error) => {
+                            warn!(%symbol, %error, "failed to load Study company name");
+                            None
+                        }
                     }
                 }
             } else {
                 None
             };
-            series.push(StudySeries {
+            series.push(StudyDatasetSeries {
                 symbol,
                 company_name,
                 candles,
-                moving_averages,
             });
         }
 
-        let relative_strength = study_relative_strength(&series[0], &series[1])?;
-        let result = StudyResult {
+        let dataset = StudyDataset {
             date,
             range_start: start,
             range_end: end,
             has_more_before,
             has_more_after: end < available_end,
             series,
-            relative_strength,
         };
+        let result = build_study_result(&dataset, interval)?;
+        *self
+            .dataset
+            .lock()
+            .expect("study dataset mutex is not poisoned") = Some(dataset);
         *self
             .last
             .lock()
@@ -222,10 +257,91 @@ impl StudyService {
     }
 }
 
-fn same_study(result: &StudyResult, symbols: &[TickerSymbol], date: NaiveDate) -> bool {
-    result.date == date
-        && result.series.len() == symbols.len()
-        && result
+fn build_study_result(
+    dataset: &StudyDataset,
+    interval: MarketChartInterval,
+) -> Result<StudyResult, StudyError> {
+    let series = dataset
+        .series
+        .iter()
+        .map(|source| {
+            let daily = source
+                .candles
+                .iter()
+                .map(study_market_candle)
+                .collect::<Result<Vec<_>, _>>()?;
+            let candles = market_chart_candles_for_interval(&daily, interval)?;
+            let moving_averages = market_chart_moving_average_periods(interval)
+                .iter()
+                .map(|period| {
+                    market_chart_moving_average(&candles, interval, *period).map(|average| {
+                        StudyMovingAverage {
+                            period: average.period,
+                            points: average
+                                .points
+                                .into_iter()
+                                .map(|point| StudyMovingAveragePoint {
+                                    date: point.date,
+                                    value: point.value,
+                                })
+                                .collect(),
+                        }
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let candles = candles
+                .into_iter()
+                .map(market_study_candle)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(StudySeries {
+                symbol: source.symbol.clone(),
+                company_name: source.company_name.clone(),
+                candles,
+                moving_averages,
+            })
+        })
+        .collect::<Result<Vec<_>, StudyError>>()?;
+    let relative_strength = study_relative_strength(&series[0], &series[1], interval)?;
+    Ok(StudyResult {
+        date: dataset.date,
+        interval,
+        range_start: dataset.range_start,
+        range_end: dataset.range_end,
+        has_more_before: dataset.has_more_before,
+        has_more_after: dataset.has_more_after,
+        series,
+        relative_strength,
+    })
+}
+
+fn study_market_candle(candle: &StudyCandle) -> Result<MarketChartCandle, StudyError> {
+    Ok(MarketChartCandle {
+        date: candle.date,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: i64::try_from(candle.volume)
+            .map_err(|_| ChartCalculationError::InvalidVolume(candle.date))?,
+    })
+}
+
+fn market_study_candle(candle: MarketChartCandle) -> Result<StudyCandle, StudyError> {
+    Ok(StudyCandle {
+        date: candle.date,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: u64::try_from(candle.volume)
+            .map_err(|_| ChartCalculationError::InvalidVolume(candle.date))?,
+    })
+}
+
+fn same_study(dataset: &StudyDataset, symbols: &[TickerSymbol], date: NaiveDate) -> bool {
+    dataset.date == date
+        && dataset.series.len() == symbols.len()
+        && dataset
             .series
             .iter()
             .zip(symbols)
@@ -233,7 +349,7 @@ fn same_study(result: &StudyResult, symbols: &[TickerSymbol], date: NaiveDate) -
 }
 
 fn reusable_previous(
-    previous: Option<&StudyResult>,
+    previous: Option<&StudyDataset>,
     symbols: &[TickerSymbol],
     date: NaiveDate,
     range_start: NaiveDate,
@@ -355,6 +471,7 @@ fn resolve_fetch_range(
 fn study_relative_strength(
     ticker: &StudySeries,
     comparison: &StudySeries,
+    interval: MarketChartInterval,
 ) -> Result<Option<MarketChartRelativeStrength>, RelativeStrengthCalculationError> {
     let Some((first, last)) = ticker.candles.first().zip(ticker.candles.last()) else {
         return Ok(None);
@@ -367,7 +484,7 @@ fn study_relative_strength(
     let line = calculate_relative_strength_line(
         &ticker_candles,
         &comparison_candles,
-        MarketChartInterval::Daily,
+        interval,
         ChartDateRange {
             start: first.date,
             end,
@@ -393,24 +510,6 @@ fn daily_candles(candles: &[StudyCandle]) -> Vec<DailyCandle> {
             volume: i64::try_from(candle.volume).unwrap_or(i64::MAX),
         })
         .collect()
-}
-
-fn simple_moving_average(candles: &[StudyCandle], period: usize) -> Vec<StudyMovingAveragePoint> {
-    let mut points = Vec::with_capacity(candles.len().saturating_sub(period - 1));
-    let mut sum = 0.0;
-    for (index, candle) in candles.iter().enumerate() {
-        sum += candle.close;
-        if index >= period {
-            sum -= candles[index - period].close;
-        }
-        if index >= period - 1 {
-            points.push(StudyMovingAveragePoint {
-                date: candle.date,
-                value: sum / period as f64,
-            });
-        }
-    }
-    points
 }
 
 fn validate(symbols: &[TickerSymbol], date: NaiveDate) -> Result<Vec<TickerSymbol>, StudyError> {
@@ -500,7 +599,7 @@ mod tests {
             TickerSymbol::parse("SPY").unwrap(),
             TickerSymbol::parse("QQQ").unwrap(),
         ];
-        let previous = StudyResult {
+        let previous = StudyDataset {
             date,
             range_start: previous_start,
             range_end: previous_end,
@@ -509,14 +608,12 @@ mod tests {
             series: symbols
                 .iter()
                 .cloned()
-                .map(|symbol| StudySeries {
+                .map(|symbol| StudyDatasetSeries {
                     symbol,
                     company_name: None,
                     candles: Vec::new(),
-                    moving_averages: Vec::new(),
                 })
                 .collect(),
-            relative_strength: None,
         };
 
         assert!(reusable_previous(
@@ -572,23 +669,59 @@ mod tests {
     }
 
     #[test]
-    fn calculates_simple_moving_average() {
-        let candles = (1..=4)
-            .map(|day| StudyCandle {
-                date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),
-                open: 0.0,
-                high: 0.0,
-                low: 0.0,
-                close: f64::from(day),
-                volume: 0,
+    fn builds_daily_smas_and_weekly_emas_from_one_dataset() {
+        let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let symbols = ["SPY", "QQQ"];
+        let series = symbols
+            .into_iter()
+            .map(|symbol| StudyDatasetSeries {
+                symbol: TickerSymbol::parse(symbol).unwrap(),
+                company_name: None,
+                candles: (0..300)
+                    .map(|day| {
+                        let value = day as f64 + 1.0;
+                        StudyCandle {
+                            date: start + chrono::Days::new(day as u64),
+                            open: value,
+                            high: value,
+                            low: value,
+                            close: value,
+                            volume: 1,
+                        }
+                    })
+                    .collect(),
             })
-            .collect::<Vec<_>>();
+            .collect();
+        let dataset = StudyDataset {
+            date: start,
+            range_start: start,
+            range_end: start + chrono::Days::new(300),
+            has_more_before: true,
+            has_more_after: true,
+            series,
+        };
 
-        let points = simple_moving_average(&candles, 3);
+        let daily = build_study_result(&dataset, MarketChartInterval::Daily).unwrap();
+        let weekly = build_study_result(&dataset, MarketChartInterval::Weekly).unwrap();
 
-        assert_eq!(points.len(), 2);
-        assert_eq!(points[0].value, 2.0);
-        assert_eq!(points[1].value, 3.0);
+        assert_eq!(daily.series[0].candles.len(), 300);
+        assert_eq!(
+            daily.series[0]
+                .moving_averages
+                .iter()
+                .map(|average| average.period)
+                .collect::<Vec<_>>(),
+            [10, 20, 50, 100, 200]
+        );
+        assert!(weekly.series[0].candles.len() < daily.series[0].candles.len());
+        assert_eq!(
+            weekly.series[0]
+                .moving_averages
+                .iter()
+                .map(|average| average.period)
+                .collect::<Vec<_>>(),
+            [10, 20, 40]
+        );
     }
 
     #[test]
@@ -611,9 +744,10 @@ mod tests {
         let ticker = series("AAPL", 2.0);
         let comparison = series("QQQ", 1.0);
 
-        let relative_strength = study_relative_strength(&ticker, &comparison)
-            .unwrap()
-            .unwrap();
+        let relative_strength =
+            study_relative_strength(&ticker, &comparison, MarketChartInterval::Daily)
+                .unwrap()
+                .unwrap();
 
         assert_eq!(relative_strength.comparison_symbol, "QQQ");
         assert!(!relative_strength.line.points.is_empty());

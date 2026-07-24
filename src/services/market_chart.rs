@@ -1,7 +1,7 @@
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
-    MarketChartSeries, MarketChartSnapshot, aggregate_market_weeks, close_ema, close_sma,
-    validate_market_chart_candle, volume_sma,
+    MarketChartSnapshot, market_chart_candles_for_interval, market_chart_moving_average,
+    market_chart_moving_average_periods, validate_market_chart_candle, volume_sma,
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
@@ -15,8 +15,6 @@ use std::sync::Arc;
 use thiserror::Error;
 
 const MAX_HISTORY_RANGE_DAYS: i64 = 10_000;
-const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
-const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
 const DAILY_VOLUME_PERIOD: usize = 50;
 const WEEKLY_VOLUME_PERIOD: usize = 10;
 
@@ -29,16 +27,6 @@ struct RelativeStrengthSource {
     comparison_symbol: TickerSymbol,
     persisted: Vec<DailyCandle>,
     ephemeral: Vec<DailyCandle>,
-}
-
-type MovingAverageCalculation =
-    fn(&[MarketChartCandle], usize) -> Result<MarketChartSeries, ChartCalculationError>;
-
-struct IntervalCalculationPlan {
-    candles: Vec<MarketChartCandle>,
-    moving_average_periods: &'static [usize],
-    moving_average: MovingAverageCalculation,
-    volume_average_period: usize,
 }
 
 #[derive(Debug, Error)]
@@ -273,33 +261,23 @@ fn build_snapshot(
         .iter()
         .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
-    let plan = match interval {
-        MarketChartInterval::Daily => IntervalCalculationPlan {
-            candles: daily,
-            moving_average_periods: &DAILY_SMA_PERIODS,
-            moving_average: close_sma,
-            volume_average_period: DAILY_VOLUME_PERIOD,
-        },
-        MarketChartInterval::Weekly => IntervalCalculationPlan {
-            candles: aggregate_market_weeks(&daily)?,
-            moving_average_periods: &WEEKLY_EMA_PERIODS,
-            moving_average: close_ema,
-            volume_average_period: WEEKLY_VOLUME_PERIOD,
-        },
+    let candles = market_chart_candles_for_interval(&daily, interval)?;
+    let volume_average_period = match interval {
+        MarketChartInterval::Daily => DAILY_VOLUME_PERIOD,
+        MarketChartInterval::Weekly => WEEKLY_VOLUME_PERIOD,
     };
-    let moving_averages = plan
-        .moving_average_periods
+    let moving_averages = market_chart_moving_average_periods(interval)
         .iter()
-        .map(|period| (plan.moving_average)(&plan.candles, *period))
+        .map(|period| market_chart_moving_average(&candles, interval, *period))
         .collect::<Result<Vec<_>, _>>()?;
-    let volume_average = volume_sma(&plan.candles, plan.volume_average_period)?;
-    let earliest_date = plan.candles.first().map(|candle| candle.date);
-    let latest_date = plan.candles.last().map(|candle| candle.date);
+    let volume_average = volume_sma(&candles, volume_average_period)?;
+    let earliest_date = candles.first().map(|candle| candle.date);
+    let latest_date = candles.last().map(|candle| candle.date);
 
     Ok(MarketChartSnapshot {
         symbol,
         interval,
-        candles: plan.candles,
+        candles,
         moving_averages,
         volume_average,
         relative_strength: None,
@@ -584,7 +562,7 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            DAILY_SMA_PERIODS
+            market_chart_moving_average_periods(MarketChartInterval::Daily)
         );
         assert_eq!(snapshot.moving_averages[4].points.len(), 21);
         assert_eq!(snapshot.volume_average.period, DAILY_VOLUME_PERIOD);
@@ -607,7 +585,7 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            WEEKLY_EMA_PERIODS
+            market_chart_moving_average_periods(MarketChartInterval::Weekly)
         );
         assert_eq!(snapshot.moving_averages[2].points.len(), 11);
         assert_eq!(snapshot.volume_average.period, WEEKLY_VOLUME_PERIOD);

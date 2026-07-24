@@ -46,6 +46,10 @@
   & .study-layout-toggle {
     margin-left: auto;
   }
+
+  & .study-interval-toggle {
+    height: 1.875rem;
+  }
 }
 
 .study-body {
