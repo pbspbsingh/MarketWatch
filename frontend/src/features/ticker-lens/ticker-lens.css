@@ -319,12 +319,19 @@
 
 .ticker-lens-search-region {
   & > h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
     margin: 0;
     padding: 0.15rem 0.4rem;
     color: var(--color-muted);
     font-size: 0.58rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+
+    & svg {
+      font-size: 0.7rem;
+    }
   }
 }
 

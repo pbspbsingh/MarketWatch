@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import SearchIcon from "@mui/icons-material/Search";
 import { IconButton, InputAdornment, TextField, Tooltip } from "@mui/material";
 import type { GlobalSearchResult } from "../../api/globalSearch";
@@ -380,7 +381,10 @@ function SearchRegion({
 }) {
   return (
     <section className={`ticker-lens-search-region${global ? " ticker-lens-search-region-global" : ""}`}>
-      <h2>{title}</h2>
+      <h2>
+        {title}
+        {global && <OpenInNewIcon aria-label="Results open in a new tab" />}
+      </h2>
       <div className="ticker-lens-search-grid">{children}</div>
     </section>
   );
