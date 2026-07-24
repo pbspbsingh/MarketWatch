@@ -65,9 +65,11 @@ import {
   rsSwingHighColor,
   rsSwingLowColor,
 } from "./relativeStrengthSeries";
+import { chartCompanyNameLabel } from "./chartLabels";
 
 interface MarketChartProps {
   data: MarketChartData;
+  companyName?: string;
   tradingViewSymbol?: string;
   className?: string;
   ariaLabel?: string;
@@ -90,6 +92,7 @@ function watermarkLines(symbol: string, color: string) {
 
 export function MarketChart({
   data,
+  companyName,
   tradingViewSymbol,
   className,
   ariaLabel,
@@ -506,6 +509,9 @@ export function MarketChart({
     : relativeStrengthTrend === "downtrend"
       ? "Downtrend"
       : "Unclear";
+  const companyLabel = companyName === undefined
+    ? undefined
+    : chartCompanyNameLabel(companyName);
   return (
     <>
       <ChartHost
@@ -519,19 +525,28 @@ export function MarketChart({
         onChartReady={initializeSeries}
         onChartDestroy={destroyChart}
       />
-      {relativeStrength !== null && relativeStrength !== undefined && (
-        <button
-          type="button"
-          className={showRelativeStrength
-            ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
-            : "market-chart-rs-trend market-chart-rs-hidden"}
-          aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
-          aria-pressed={showRelativeStrength}
-          title={`Relative Strength ${trendLabel}`}
-          onClick={() => setShowRelativeStrength((visible) => !visible)}
-        >
-          RS
-        </button>
+      {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined) && (
+        <div className="market-chart-labels">
+          {companyLabel !== undefined && (
+            <div className="market-chart-company-name" title={companyName}>
+              {companyLabel}
+            </div>
+          )}
+          {relativeStrength !== null && relativeStrength !== undefined && (
+            <button
+              type="button"
+              className={showRelativeStrength
+                ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
+                : "market-chart-rs-trend market-chart-rs-hidden"}
+              aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
+              aria-pressed={showRelativeStrength}
+              title={`Relative Strength ${trendLabel}`}
+              onClick={() => setShowRelativeStrength((visible) => !visible)}
+            >
+              RS
+            </button>
+          )}
+        </div>
       )}
     </>
   );

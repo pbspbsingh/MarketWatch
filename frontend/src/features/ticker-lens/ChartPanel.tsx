@@ -313,6 +313,7 @@ export function ChartPanel({
               <SplitLightweightCharts
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
+                topCompanyName={summary.company_name ?? undefined}
                 topTradingViewSymbol={summary.tradingview_symbol}
                 bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}

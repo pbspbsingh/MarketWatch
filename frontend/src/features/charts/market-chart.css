@@ -14,11 +14,36 @@
   background: var(--color-canvas);
 }
 
-.market-chart-rs-trend {
+.market-chart-labels {
   position: absolute;
   z-index: 2;
   top: 0.4rem;
   left: 0.5rem;
+  display: flex;
+  max-width: calc(100% - 5rem);
+  align-items: center;
+  gap: 0.25rem;
+  pointer-events: none;
+}
+
+.market-chart-company-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-canvas) 82%, transparent);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-chart-rs-trend {
+  flex-shrink: 0;
   padding: 0.1rem 0.3rem;
   border: 1px solid currentColor;
   border-radius: 0.25rem;
@@ -28,6 +53,7 @@
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .market-chart-rs-trend:focus-visible {

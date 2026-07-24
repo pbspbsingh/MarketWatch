@@ -40,6 +40,7 @@ import {
 interface SplitLightweightChartsProps {
   topSymbol: string;
   bottomSymbol: string;
+  topCompanyName?: string;
   topTradingViewSymbol: string;
   bottomTradingViewSymbol: string;
   interval: "D" | "W";
@@ -74,6 +75,7 @@ interface SessionDeltaState {
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
+  topCompanyName,
   topTradingViewSymbol,
   bottomTradingViewSymbol,
   interval,
@@ -284,6 +286,7 @@ export default function SplitLightweightCharts({
           >
             <MarketChartContainer
               symbol={topSymbol}
+              companyName={topCompanyName}
               tradingViewSymbol={topTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}

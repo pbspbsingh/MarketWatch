@@ -81,11 +81,36 @@
   pointer-events: none;
 }
 
-.study-chart-rs-toggle {
+.study-chart-labels {
   position: absolute;
   z-index: 2;
   top: 0.35rem;
   left: 0.5rem;
+  display: flex;
+  max-width: calc(100% - 5rem);
+  align-items: center;
+  gap: 0.25rem;
+  pointer-events: none;
+}
+
+.study-chart-company-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.15rem 0.35rem;
+  border: 0.0625rem solid transparent;
+  border-radius: 0.2rem;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-canvas) 75%, transparent);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.study-chart-rs-toggle {
+  flex-shrink: 0;
   padding: 0.15rem 0.35rem;
   border: 0.0625rem solid var(--color-border);
   border-radius: 0.2rem;
@@ -94,6 +119,7 @@
   font: inherit;
   font-size: 0.65rem;
   cursor: pointer;
+  pointer-events: auto;
 
   &[aria-pressed="false"] {
     color: var(--color-muted);

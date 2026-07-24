@@ -14,6 +14,7 @@ export interface StudyResult {
   relative_strength: MarketChartRelativeStrength | null;
   series: Array<{
     symbol: string;
+    company_name: string | null;
     candles: StudyCandle[];
     moving_averages: Array<{
       period: number;

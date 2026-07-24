@@ -4,11 +4,13 @@ use crate::models::{
     analyze_relative_strength_structure, calculate_relative_strength_line,
 };
 use crate::providers::{ChartInterval, YahooClient, YahooError};
+use crate::services::yahoo::YahooService;
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
+use tracing::warn;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct StudyCandle {
@@ -23,6 +25,7 @@ pub struct StudyCandle {
 #[derive(Clone, Debug, Serialize)]
 pub struct StudySeries {
     pub symbol: TickerSymbol,
+    pub company_name: Option<String>,
     pub candles: Vec<StudyCandle>,
     pub moving_averages: Vec<StudyMovingAverage>,
 }
@@ -76,15 +79,21 @@ pub enum StudyError {
 }
 
 pub struct StudyService {
-    yahoo: Arc<YahooClient>,
+    yahoo_client: Arc<YahooClient>,
+    yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
     cache: Mutex<StudyCache>,
     last: Mutex<Option<StudyResult>>,
 }
 
 impl StudyService {
-    pub fn new(yahoo: Arc<YahooClient>, market_schedule: MarketSchedule) -> Self {
+    pub fn new(
+        yahoo_client: Arc<YahooClient>,
+        yahoo: Arc<YahooService>,
+        market_schedule: MarketSchedule,
+    ) -> Self {
         Self {
+            yahoo_client,
             yahoo,
             market_schedule,
             cache: Mutex::new(StudyCache::default()),
@@ -149,7 +158,7 @@ impl StudyService {
                 None => {
                     let fetch_start = Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap());
                     let fetch_end = Utc.from_utc_datetime(&end.and_hms_opt(0, 0, 0).unwrap());
-                    self.yahoo
+                    self.yahoo_client
                         .chart(
                             &YahooSymbol::from(&symbol),
                             ChartInterval::OneDay,
@@ -180,8 +189,20 @@ impl StudyService {
                     points: simple_moving_average(&candles, period),
                 })
                 .collect();
+            let company_name = if index == 0 {
+                match self.yahoo.profile(&symbol).await {
+                    Ok(profile) => profile.name,
+                    Err(error) => {
+                        warn!(%symbol, %error, "failed to load Study company name");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             series.push(StudySeries {
                 symbol,
+                company_name,
                 candles,
                 moving_averages,
             });
@@ -340,6 +361,7 @@ mod tests {
     fn calculates_relative_strength_against_second_series() {
         let series = |symbol: &str, daily_gain: f64| StudySeries {
             symbol: TickerSymbol::parse(symbol).unwrap(),
+            company_name: None,
             candles: (1..=20)
                 .map(|day| StudyCandle {
                     date: NaiveDate::from_ymd_opt(2026, 1, day).unwrap(),

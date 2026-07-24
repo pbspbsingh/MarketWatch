@@ -37,6 +37,7 @@ import {
   rsSwingHighColor,
   rsSwingLowColor,
 } from "../charts/relativeStrengthSeries";
+import { chartCompanyNameLabel } from "../charts/chartLabels";
 
 const movingAverages = [
   { period: 10, color: dailySmaColors[10] },
@@ -276,6 +277,7 @@ export function StudyCharts({
       first={(
         <ChartContainer
           containerRef={topRef}
+          companyName={result.series[0].company_name ?? undefined}
           onPointerEnter={() => setCrosshairOwner(0)}
           showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
           onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
@@ -361,29 +363,43 @@ function addRelativeStrength(
 
 function ChartContainer({
   containerRef,
+  companyName,
   onPointerEnter,
   showRelativeStrength,
   onToggleRelativeStrength,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
+  companyName?: string;
   onPointerEnter: () => void;
   showRelativeStrength?: boolean;
   onToggleRelativeStrength?: () => void;
 }) {
+  const companyLabel = companyName === undefined
+    ? undefined
+    : chartCompanyNameLabel(companyName);
   return (
     <div className="study-chart-wrap" onPointerEnter={onPointerEnter}>
       <div ref={containerRef} className="study-chart" />
-      {showRelativeStrength !== undefined && (
-        <button
-          type="button"
-          className="study-chart-rs-toggle"
-          aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
-          aria-pressed={showRelativeStrength}
-          title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
-          onClick={onToggleRelativeStrength}
-        >
-          RS
-        </button>
+      {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
+        <div className="study-chart-labels">
+          {companyLabel !== undefined && (
+            <div className="study-chart-company-name" title={companyName}>
+              {companyLabel}
+            </div>
+          )}
+          {showRelativeStrength !== undefined && (
+            <button
+              type="button"
+              className="study-chart-rs-toggle"
+              aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
+              aria-pressed={showRelativeStrength}
+              title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
+              onClick={onToggleRelativeStrength}
+            >
+              RS
+            </button>
+          )}
+        </div>
       )}
       <div className="study-chart-legend" aria-label="Simple moving averages">
         {movingAverages.map(({ period, color }) => (
