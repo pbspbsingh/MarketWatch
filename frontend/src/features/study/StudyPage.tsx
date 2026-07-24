@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
-import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import { Button, CircularProgress, IconButton, TextField, Tooltip, Typography } from "@mui/material";
 import { fetchLastStudy, fetchStudy, type StudyResult } from "../../api/study";
+import {
+  ImageExportMenu,
+  type ImageExportAction,
+} from "../../components/ImageExportMenu";
 import { Toast } from "../../components/Toast";
 import type { SplitOrientation } from "../../components/SplitPane";
-import { copyElementAsPng } from "../../utils/copyElementImage";
+import {
+  copyElementAsPng,
+  downloadElementAsPng,
+} from "../../utils/exportElementImage";
 import { StudyCharts } from "./StudyCharts";
 import "./study.css";
 
@@ -39,7 +45,7 @@ export function StudyPage() {
     message: string;
     severity: "success" | "error";
   }>();
-  const [copying, setCopying] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const requestRef = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -96,27 +102,36 @@ export function StudyPage() {
     void load(false);
   };
 
-  const copyStudy = async () => {
+  const exportStudy = async (action: ImageExportAction) => {
     const page = pageRef.current;
-    if (page === null || result === undefined || copying) return;
+    if (page === null || result === undefined || exporting) return;
 
-    setCopying(true);
+    setExporting(true);
     setCaptureNotice(undefined);
     try {
-      await copyElementAsPng(page);
+      if (action === "copy") {
+        await copyElementAsPng(page);
+      } else {
+        const firstTicker = result.series[0]?.symbol ?? symbolA.trim().toUpperCase();
+        const secondTicker = result.series[1]?.symbol ?? symbolB.trim().toUpperCase();
+        const filename = tickerBVisible
+          ? `${firstTicker}-${secondTicker}.png`
+          : `${firstTicker}.png`;
+        await downloadElementAsPng(page, filename);
+      }
       setCaptureNotice({
-        message: "Study copied as an image",
+        message: action === "copy" ? "Study copied as an image" : "Study downloaded",
         severity: "success",
       });
     } catch (captureError) {
       setCaptureNotice({
         message: captureError instanceof Error
-          ? `Unable to copy study: ${captureError.message}`
-          : "Unable to copy study",
+          ? `Unable to ${action} study: ${captureError.message}`
+          : `Unable to ${action} study`,
         severity: "error",
       });
     } finally {
-      setCopying(false);
+      setExporting(false);
     }
   };
 
@@ -177,19 +192,11 @@ export function StudyPage() {
             {tickerBVisible ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
-        <Tooltip title="Copy study as image">
-          <span>
-            <IconButton
-              size="small"
-              type="button"
-              aria-label="Copy study as image"
-              disabled={result === undefined || copying}
-              onClick={() => void copyStudy()}
-            >
-              <PhotoCameraOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <ImageExportMenu
+          disabled={result === undefined}
+          busy={exporting}
+          onSelect={(action) => void exportStudy(action)}
+        />
       </form>
       <div className="study-body">
         {result === undefined ? (

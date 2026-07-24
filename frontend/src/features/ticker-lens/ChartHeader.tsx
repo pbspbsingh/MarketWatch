@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
-import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import {
   Chip,
@@ -12,6 +11,10 @@ import {
   Typography,
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
+import {
+  ImageExportMenu,
+  type ImageExportAction,
+} from "../../components/ImageExportMenu";
 import {
   chartIntervalKey,
   chartThemeEtfKey,
@@ -37,9 +40,9 @@ interface ChartHeaderProps {
   setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
   setSelectedThemeEtf?: (symbol: string) => void;
   setDetailsOpen?: (open: boolean) => void;
-  copyChartPanel?: () => void;
-  copyChartPanelDisabled?: boolean;
-  copyingChartPanel?: boolean;
+  exportChartPanel?: (action: ImageExportAction) => void;
+  exportChartPanelDisabled?: boolean;
+  exportingChartPanel?: boolean;
   contextLabel?: string;
 }
 
@@ -55,9 +58,9 @@ export function ChartHeader({
   setShowThemeEtfChart,
   setSelectedThemeEtf,
   setDetailsOpen,
-  copyChartPanel,
-  copyChartPanelDisabled = false,
-  copyingChartPanel = false,
+  exportChartPanel,
+  exportChartPanelDisabled = false,
+  exportingChartPanel = false,
   contextLabel,
 }: ChartHeaderProps) {
   return (
@@ -207,23 +210,13 @@ export function ChartHeader({
             ))}
           </ToggleButtonGroup>
         )}
-        {copyChartPanel !== undefined && (
-          <Tooltip
-            title={copyChartPanelDisabled
-              ? "Available with Lightweight Charts"
-              : "Copy chart panel as image"}
-          >
-            <span>
-              <IconButton
-                size="small"
-                aria-label="Copy chart panel as image"
-                disabled={copyChartPanelDisabled || copyingChartPanel}
-                onClick={copyChartPanel}
-              >
-                <PhotoCameraOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+        {exportChartPanel !== undefined && (
+          <ImageExportMenu
+            disabled={exportChartPanelDisabled}
+            busy={exportingChartPanel}
+            disabledReason="Available with Lightweight Charts"
+            onSelect={exportChartPanel}
+          />
         )}
       </div>
     </header>

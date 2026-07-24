@@ -17,7 +17,11 @@ import {
 import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
-import { copyElementAsPng } from "../../utils/copyElementImage";
+import type { ImageExportAction } from "../../components/ImageExportMenu";
+import {
+  copyElementAsPng,
+  downloadElementAsPng,
+} from "../../utils/exportElementImage";
 import {
   chartIntervalKey,
   chartSplitKey,
@@ -81,7 +85,7 @@ export function ChartPanel({
     message: string;
     severity: "success" | "error";
   }>();
-  const [copyingChartPanel, setCopyingChartPanel] = useState(false);
+  const [exportingChartPanel, setExportingChartPanel] = useState(false);
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
   const { chartEngine } = useAppSettings();
   const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
@@ -128,34 +132,42 @@ export function ChartPanel({
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
   const chartError = chartErrors.top ?? chartErrors.bottom;
 
-  const copyChartPanel = useCallback(async () => {
+  const exportChartPanel = useCallback(async (action: ImageExportAction) => {
     const panel = panelRef.current;
     if (
       panel === null
       || chartEngine !== "lightweight"
       || summary === undefined
-      || copyingChartPanel
+      || exportingChartPanel
     ) return;
 
-    setCopyingChartPanel(true);
+    setExportingChartPanel(true);
     setCaptureNotice(undefined);
     try {
-      await copyElementAsPng(panel);
+      if (action === "copy") {
+        await copyElementAsPng(panel);
+      } else {
+        const secondTicker = (bottomChartSymbol ?? summary.benchmark_symbol)
+          .slice((bottomChartSymbol ?? summary.benchmark_symbol).lastIndexOf(":") + 1);
+        await downloadElementAsPng(panel, `${summary.symbol}-${secondTicker}.png`);
+      }
       setCaptureNotice({
-        message: "Chart panel copied as an image",
+        message: action === "copy"
+          ? "Chart panel copied as an image"
+          : "Chart panel downloaded",
         severity: "success",
       });
     } catch (captureError) {
       setCaptureNotice({
         message: captureError instanceof Error
-          ? `Unable to copy chart panel: ${captureError.message}`
-          : "Unable to copy chart panel",
+          ? `Unable to ${action} chart panel: ${captureError.message}`
+          : `Unable to ${action} chart panel`,
         severity: "error",
       });
     } finally {
-      setCopyingChartPanel(false);
+      setExportingChartPanel(false);
     }
-  }, [chartEngine, copyingChartPanel, summary]);
+  }, [bottomChartSymbol, chartEngine, exportingChartPanel, summary]);
 
   const handleChartError = useCallback((
     source: "top" | "bottom",
@@ -273,9 +285,9 @@ export function ChartPanel({
           if (selectedTicker !== undefined) setThemeSelection({ ticker: selectedTicker, etf });
         }}
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
-        copyChartPanel={copyChartPanel}
-        copyChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
-        copyingChartPanel={copyingChartPanel}
+        exportChartPanel={exportChartPanel}
+        exportChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
+        exportingChartPanel={exportingChartPanel}
       />
       {selectedTicker === undefined && (
         <GroupSummaryPanel
