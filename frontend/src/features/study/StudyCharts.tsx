@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import {
   CandlestickSeries,
   CrosshairMode,
@@ -13,14 +20,22 @@ import {
   type LogicalRange,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type ITextWatermarkPluginApi,
   type MouseEventParams,
   type Time,
   type WhitespaceData,
 } from "lightweight-charts";
-import type { StudyResult } from "../../api/study";
+import type { StudyCandle, StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 import {
+  captureAnchoredLogicalRange,
+  restoreAnchoredLogicalRange,
+  type AnchoredLogicalRange,
+} from "../../components/lightweight-chart/chartRange";
+import {
   getChartColors,
+  chartThemeOptions,
   candleSeriesOptions,
   dailySmaColors,
   indicatorSeriesOptions,
@@ -38,6 +53,7 @@ import {
   rsSwingLowColor,
 } from "../charts/relativeStrengthSeries";
 import { chartCompanyNameLabel } from "../charts/chartLabels";
+import { shiftYears } from "./studyDates";
 
 const movingAverages = [
   { period: 10, color: dailySmaColors[10] },
@@ -46,31 +62,94 @@ const movingAverages = [
   { period: 100, color: dailySmaColors[100] },
   { period: 200, color: dailySmaColors[200] },
 ] as const;
+const historyLoadThresholdBars = 50;
+const chartInteractionWindowMs = 1_000;
+const wheelGestureGapMs = 250;
+
+interface PreservedViewport {
+  datasetKey: string;
+  anchor: AnchoredLogicalRange;
+}
 
 export function StudyCharts({
   result,
+  datasetVersion,
   orientation,
   syncCrosshair,
   tickerBVisible,
+  historyLoading,
+  onRequestHistory,
 }: {
   result: StudyResult;
+  datasetVersion: number;
   orientation: SplitOrientation;
   syncCrosshair: boolean;
   tickerBVisible: boolean;
+  historyLoading: boolean;
+  onRequestHistory: (direction: "before" | "after") => void;
 }) {
   const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const chartColors = getChartColors(theme);
+  const chartColors = useMemo(() => getChartColors(theme), [theme]);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">[]>([]);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram">[]>([]);
+  const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[][]>([]);
+  const markerSeriesRef = useRef<ISeriesMarkersPluginApi<Time>[]>([]);
+  const watermarkRef = useRef<ITextWatermarkPluginApi<Time>[]>([]);
   const candlePaletteRef = useRef(candlePalette);
+  const appearanceRef = useRef({ chartColors, palette });
+  const candlesByDateRef = useRef<Array<Map<string, StudyCandle>>>([]);
+  const datesRef = useRef<string[]>([]);
+  const historyAvailabilityRef = useRef({ before: false, after: false });
+  const dataInitializedRef = useRef(false);
   const crosshairOwnerRef = useRef<0 | 1>(0);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const relativeStrengthInnerRef = useRef<ISeriesApi<"Line"> | undefined>(undefined);
   const syncCrosshairRef = useRef(syncCrosshair);
+  const historyLoadingRef = useRef(historyLoading);
+  const onRequestHistoryRef = useRef(onRequestHistory);
+  const viewportRef = useRef<PreservedViewport | undefined>(undefined);
+  const interactionRef = useRef<{
+    sequence: number;
+    occurredAt: number;
+    kind?: "pointer" | "wheel";
+  }>({ sequence: 0, occurredAt: 0 });
+  const handledInteractionSequenceRef = useRef(0);
   const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   const showRelativeStrengthRef = useRef(showRelativeStrength);
+  const firstSymbol = result.series[0]?.symbol ?? "";
+  const secondSymbol = result.series[1]?.symbol ?? "";
+  const hasTwoSeries = result.series.length === 2;
+  const datasetKey = `${firstSymbol}\0${secondSymbol}\0${result.date}\0${datasetVersion}`;
+
+  useEffect(() => {
+    historyLoadingRef.current = historyLoading;
+    onRequestHistoryRef.current = onRequestHistory;
+  }, [historyLoading, onRequestHistory]);
+
+  const markPointerInteraction = () => {
+    const interaction = interactionRef.current;
+    interaction.sequence += 1;
+    interaction.occurredAt = performance.now();
+    interaction.kind = "pointer";
+  };
+
+  const markChartDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.buttons !== 0) interactionRef.current.occurredAt = performance.now();
+  };
+
+  const markWheelInteraction = () => {
+    const interaction = interactionRef.current;
+    const now = performance.now();
+    if (interaction.kind !== "wheel" || now - interaction.occurredAt > wheelGestureGapMs) {
+      interaction.sequence += 1;
+    }
+    interaction.occurredAt = now;
+    interaction.kind = "wheel";
+  };
 
   useEffect(() => {
     candlePaletteRef.current = candlePalette;
@@ -78,6 +157,43 @@ export function StudyCharts({
       series.applyOptions(candleSeriesOptions(candlePalette));
     });
   }, [candlePalette]);
+
+  useEffect(() => {
+    appearanceRef.current = { chartColors, palette };
+    chartsRef.current.forEach((chart) => chart.applyOptions(chartThemeOptions(theme)));
+    watermarkRef.current.forEach((watermark, index) => {
+      watermark.applyOptions({
+        lines: [{
+          text: index === 0 ? firstSymbol : secondSymbol,
+          color: `${palette.muted}24`,
+          fontSize: 48,
+          fontStyle: "bold",
+        }],
+      });
+    });
+    relativeStrengthInnerRef.current?.applyOptions({ color: chartColors.background });
+
+    const markerDate = datesRef.current.find((date) => date >= result.date)
+      ?? datesRef.current.at(-1);
+    markerSeriesRef.current.forEach((markers) => markers.setMarkers(
+      markerDate === undefined
+        ? []
+        : [{
+          time: markerDate,
+          position: "aboveBar",
+          shape: "arrowDown",
+          color: palette.accent,
+          text: result.date,
+        }],
+    ));
+  }, [
+    chartColors,
+    firstSymbol,
+    palette,
+    result.date,
+    secondSymbol,
+    theme,
+  ]);
 
   useEffect(() => {
     showRelativeStrengthRef.current = showRelativeStrength;
@@ -108,24 +224,26 @@ export function StudyCharts({
   useEffect(() => {
     const top = topRef.current;
     const bottom = bottomRef.current;
-    if (top === null || bottom === null || result.series.length !== 2) return;
-    const dates = [...new Set(result.series.flatMap((series) => series.candles.map((candle) => candle.date)))].sort();
+    if (top === null || bottom === null || !hasTwoSeries) return;
     const candleSeries: ISeriesApi<"Candlestick">[] = [];
-    const candlesByDate = result.series.map(
-      (series) => new Map(series.candles.map((candle) => [candle.date, candle])),
-    );
+    const volumeSeries: ISeriesApi<"Histogram">[] = [];
+    const movingAverageSeries: ISeriesApi<"Line">[][] = [];
+    const markerSeries: ISeriesMarkersPluginApi<Time>[] = [];
+    const watermarks: ITextWatermarkPluginApi<Time>[] = [];
     const containers = [top, bottom];
+    const symbols = [firstSymbol, secondSymbol];
+    const appearance = appearanceRef.current;
     const charts = containers.map((container, index) => {
       const chart = createChart(container, {
         autoSize: true,
         layout: {
-          background: { type: ColorType.Solid, color: chartColors.background },
-          textColor: chartColors.text,
+          background: { type: ColorType.Solid, color: appearance.chartColors.background },
+          textColor: appearance.chartColors.text,
           attributionLogo: true,
         },
         grid: {
-          vertLines: { color: chartColors.grid },
-          horzLines: { color: chartColors.grid },
+          vertLines: { color: appearance.chartColors.grid },
+          horzLines: { color: appearance.chartColors.grid },
         },
         crosshair: {
           mode: CrosshairMode.Normal,
@@ -134,35 +252,35 @@ export function StudyCharts({
             labelVisible: index === crosshairOwnerRef.current,
           },
         },
-        rightPriceScale: { borderColor: chartColors.border, scaleMargins: overlappingPriceScaleMargins },
-        timeScale: { borderColor: chartColors.border, timeVisible: false },
+        rightPriceScale: {
+          borderColor: appearance.chartColors.border,
+          scaleMargins: overlappingPriceScaleMargins,
+        },
+        timeScale: { borderColor: appearance.chartColors.border, timeVisible: false },
       });
       const candles = chart.addSeries(
         CandlestickSeries,
         candleSeriesOptions(candlePaletteRef.current),
       );
-      createTextWatermark(chart.panes()[0], {
+      watermarks.push(createTextWatermark(chart.panes()[0], {
         horzAlign: "center",
         vertAlign: "center",
         lines: [{
-          text: result.series[index].symbol,
-          color: `${palette.muted}24`,
+          text: symbols[index],
+          color: `${appearance.palette.muted}24`,
           fontSize: 48,
           fontStyle: "bold",
         }],
-      });
+      }));
       candleSeries.push(candles);
       const volume = chart.addSeries(HistogramSeries, {
         priceFormat: { type: "volume" },
         priceScaleId: "",
       });
       volume.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
-      const byDate = new Map(result.series[index].candles.map((candle) => [candle.date, candle]));
-      candles.setData(dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
-        const candle = byDate.get(date);
-        return candle === undefined ? { time: date } : { time: date, open: candle.open, high: candle.high, low: candle.low, close: candle.close };
-      }));
-      for (const { period, color } of movingAverages) {
+      volumeSeries.push(volume);
+      const averages: ISeriesApi<"Line">[] = [];
+      for (const { color } of movingAverages) {
         const line = chart.addSeries(LineSeries, {
           color,
           lineWidth: 1,
@@ -170,31 +288,19 @@ export function StudyCharts({
           lastValueVisible: false,
           crosshairMarkerVisible: false,
         });
-        const movingAverage = result.series[index].moving_averages.find(
-          (candidate) => candidate.period === period,
-        );
-        line.setData(movingAverage?.points.map((point) => ({ time: point.date, value: point.value })) ?? []);
+        averages.push(line);
       }
-      volume.setData(dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
-        const candle = byDate.get(date);
-        return candle === undefined ? { time: date } : { time: date, value: candle.volume, color: candle.close >= candle.open ? visualizationColors.upVolume : visualizationColors.downVolume };
-      }));
-      if (index === 0 && result.relative_strength !== null) {
-        relativeStrengthSeriesRef.current = addRelativeStrength(
-          chart,
-          result.relative_strength,
-          showRelativeStrengthRef.current,
-          chartColors.background,
-        );
-      }
-      const markerDate = dates.find((date) => date >= result.date) ?? dates.at(-1);
-      if (markerDate !== undefined) {
-        createSeriesMarkers(candles, [{ time: markerDate, position: "aboveBar", shape: "arrowDown", color: palette.accent, text: result.date }]);
-      }
+      movingAverageSeries.push(averages);
+      markerSeries.push(createSeriesMarkers(candles, []));
       return chart;
     });
     chartsRef.current = charts;
     candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+    movingAverageSeriesRef.current = movingAverageSeries;
+    markerSeriesRef.current = markerSeries;
+    watermarkRef.current = watermarks;
+
     let synchronizing = false;
     const synchronize = (target: typeof charts[number], range: LogicalRange | null) => {
       if (synchronizing || range === null) return;
@@ -210,6 +316,32 @@ export function StudyCharts({
       charts[0].timeScale().subscribeVisibleLogicalRangeChange(topHandler);
       charts[1].timeScale().subscribeVisibleLogicalRangeChange(bottomHandler);
     }
+    const historyHandler = (range: LogicalRange | null) => {
+      const interaction = interactionRef.current;
+      const dates = datesRef.current;
+      const availability = historyAvailabilityRef.current;
+      if (
+        range === null
+        || dates.length === 0
+        || historyLoadingRef.current
+        || handledInteractionSequenceRef.current === interaction.sequence
+        || performance.now() - interaction.occurredAt > chartInteractionWindowMs
+      ) return;
+
+      const barsBefore = range.from;
+      const barsAfter = dates.length - 1 - range.to;
+      const nearBefore = availability.before && barsBefore <= historyLoadThresholdBars;
+      const nearAfter = availability.after && barsAfter <= historyLoadThresholdBars;
+      if (!nearBefore && !nearAfter) return;
+
+      const direction = nearBefore && nearAfter
+        ? barsBefore <= barsAfter ? "before" : "after"
+        : nearBefore ? "before" : "after";
+      handledInteractionSequenceRef.current = interaction.sequence;
+      onRequestHistoryRef.current(direction);
+    };
+    charts[0].timeScale().subscribeVisibleLogicalRangeChange(historyHandler);
+    charts[1].timeScale().subscribeVisibleLogicalRangeChange(historyHandler);
     let synchronizingCrosshair = false;
     const crosshairHandler = (targetIndex: 0 | 1) => (event: MouseEventParams<Time>) => {
       if (
@@ -219,7 +351,9 @@ export function StudyCharts({
       synchronizingCrosshair = true;
       try {
         const date = event.time === undefined ? undefined : timeKey(event.time);
-        const candle = date === undefined ? undefined : candlesByDate[targetIndex].get(date);
+        const candle = date === undefined
+          ? undefined
+          : candlesByDateRef.current[targetIndex]?.get(date);
         if (candle === undefined || date === undefined) {
           charts[targetIndex].clearCrosshairPosition();
         } else {
@@ -235,40 +369,145 @@ export function StudyCharts({
       charts[0].subscribeCrosshairMove(topCrosshairHandler);
       charts[1].subscribeCrosshairMove(bottomCrosshairHandler);
     }
-    const visibleStart = shiftYears(result.date, -1);
-    const visibleEnd = shiftYears(result.date, 1);
-    const firstVisible = dates.findIndex((date) => date >= visibleStart);
-    const lastVisible = dates.findLastIndex((date) => date <= visibleEnd);
-    if (firstVisible >= 0 && lastVisible >= firstVisible) {
-      charts[0].timeScale().setVisibleLogicalRange({
-        from: firstVisible - 0.5,
-        to: lastVisible + 0.5,
-      });
-    } else {
-      charts[0].timeScale().fitContent();
-    }
-    const initialRange = charts[0].timeScale().getVisibleLogicalRange();
-    if (initialRange !== null && charts[1]) charts[1].timeScale().setVisibleLogicalRange(initialRange);
-
     return () => {
       charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
       charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
+      charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(historyHandler);
+      charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(historyHandler);
       charts[0].unsubscribeCrosshairMove(topCrosshairHandler);
       charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
+      const anchor = captureAnchoredLogicalRange(charts[0], candleSeries[0]);
+      if (anchor !== undefined) viewportRef.current = { datasetKey, anchor };
+      watermarks.forEach((watermark) => watermark.detach());
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
       candleSeriesRef.current = [];
+      volumeSeriesRef.current = [];
+      movingAverageSeriesRef.current = [];
+      markerSeriesRef.current = [];
+      watermarkRef.current = [];
       relativeStrengthSeriesRef.current = [];
+      relativeStrengthInnerRef.current = undefined;
+      candlesByDateRef.current = [];
+      datesRef.current = [];
+      dataInitializedRef.current = false;
     };
   }, [
-    chartColors.background,
-    chartColors.border,
-    chartColors.grid,
-    chartColors.text,
-    palette.accent,
-    palette.muted,
-    result,
+    datasetKey,
+    firstSymbol,
+    hasTwoSeries,
+    secondSymbol,
   ]);
+
+  useEffect(() => {
+    const charts = chartsRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (charts.length !== 2 || candleSeries.length !== 2 || result.series.length !== 2) return;
+
+    const anchor = dataInitializedRef.current
+      ? captureAnchoredLogicalRange(charts[0], candleSeries[0])
+      : viewportRef.current?.datasetKey === datasetKey
+        ? viewportRef.current.anchor
+        : undefined;
+    const dates = [...new Set(
+      result.series.flatMap((series) => series.candles.map((candle) => candle.date)),
+    )].sort();
+    const candlesByDate = result.series.map(
+      (series) => new Map(series.candles.map((candle) => [candle.date, candle])),
+    );
+    datesRef.current = dates;
+    candlesByDateRef.current = candlesByDate;
+    historyAvailabilityRef.current = {
+      before: result.has_more_before,
+      after: result.has_more_after,
+    };
+
+    result.series.forEach((series, index) => {
+      const byDate = candlesByDate[index];
+      candleSeries[index].setData(
+        dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
+          const candle = byDate.get(date);
+          return candle === undefined
+            ? { time: date }
+            : {
+              time: date,
+              open: candle.open,
+              high: candle.high,
+              low: candle.low,
+              close: candle.close,
+            };
+        }),
+      );
+      volumeSeriesRef.current[index]?.setData(
+        dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
+          const candle = byDate.get(date);
+          return candle === undefined
+            ? { time: date }
+            : {
+              time: date,
+              value: candle.volume,
+              color: candle.close >= candle.open
+                ? visualizationColors.upVolume
+                : visualizationColors.downVolume,
+            };
+        }),
+      );
+      const averagesByPeriod = new Map(
+        series.moving_averages.map((average) => [average.period, average]),
+      );
+      movingAverages.forEach(({ period }, averageIndex) => {
+        movingAverageSeriesRef.current[index]?.[averageIndex]?.setData(
+          averagesByPeriod.get(period)?.points.map(
+            (point) => ({ time: point.date, value: point.value }),
+          ) ?? [],
+        );
+      });
+    });
+
+    relativeStrengthSeriesRef.current.forEach((series) => charts[0].removeSeries(series));
+    const relativeStrength = result.relative_strength === null
+      ? { series: [], provisionalInner: undefined }
+      : addRelativeStrength(
+        charts[0],
+        result.relative_strength,
+        showRelativeStrengthRef.current,
+        appearanceRef.current.chartColors.background,
+      );
+    relativeStrengthSeriesRef.current = relativeStrength.series;
+    relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
+    const markerDate = dates.find((date) => date >= result.date) ?? dates.at(-1);
+    markerSeriesRef.current.forEach((markers) => markers.setMarkers(
+      markerDate === undefined
+        ? []
+        : [{
+          time: markerDate,
+          position: "aboveBar",
+          shape: "arrowDown",
+          color: appearanceRef.current.palette.accent,
+          text: result.date,
+        }],
+    ));
+
+    if (anchor !== undefined) {
+      restoreAnchoredLogicalRange(charts[0], anchor);
+    } else {
+      const visibleStart = shiftYears(result.date, -1);
+      const visibleEnd = shiftYears(result.date, 1);
+      const firstVisible = dates.findIndex((date) => date >= visibleStart);
+      const lastVisible = dates.findLastIndex((date) => date <= visibleEnd);
+      if (firstVisible >= 0 && lastVisible >= firstVisible) {
+        charts[0].timeScale().setVisibleLogicalRange({
+          from: firstVisible - 0.5,
+          to: lastVisible + 0.5,
+        });
+      } else {
+        charts[0].timeScale().fitContent();
+      }
+    }
+    const range = charts[0].timeScale().getVisibleLogicalRange();
+    if (range !== null) charts[1].timeScale().setVisibleLogicalRange(range);
+    dataInitializedRef.current = true;
+  }, [datasetKey, result]);
 
   return (
     <SplitPane
@@ -281,12 +520,18 @@ export function StudyCharts({
           onPointerEnter={() => setCrosshairOwner(0)}
           showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
           onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
+          onPointerDown={markPointerInteraction}
+          onPointerMove={markChartDrag}
+          onWheel={markWheelInteraction}
         />
       )}
       second={(
         <ChartContainer
           containerRef={bottomRef}
           onPointerEnter={() => setCrosshairOwner(1)}
+          onPointerDown={markPointerInteraction}
+          onPointerMove={markChartDrag}
+          onWheel={markWheelInteraction}
         />
       )}
     />
@@ -299,19 +544,17 @@ function timeKey(time: Time) {
   return `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
 }
 
-function shiftYears(dateText: string, years: number) {
-  const date = new Date(`${dateText}T00:00:00Z`);
-  date.setUTCFullYear(date.getUTCFullYear() + years);
-  return date.toISOString().slice(0, 10);
-}
-
 function addRelativeStrength(
   chart: IChartApi,
   relativeStrength: NonNullable<StudyResult["relative_strength"]>,
   visible: boolean,
   background: string,
-): ISeriesApi<"Line">[] {
+): {
+  series: ISeriesApi<"Line">[];
+  provisionalInner: ISeriesApi<"Line"> | undefined;
+} {
   const series: ISeriesApi<"Line">[] = [];
+  let provisionalInner: ISeriesApi<"Line"> | undefined;
   const line = chart.addSeries(LineSeries, relativeStrengthSeriesOptions);
   line.priceScale().applyOptions({ scaleMargins: relativeStrengthScaleMargins });
   line.setData(relativeStrengthLineData(relativeStrength));
@@ -356,9 +599,10 @@ function addRelativeStrength(
     });
     inner.setData(data);
     series.push(inner);
+    provisionalInner = inner;
   }
   series.forEach((item) => item.applyOptions({ visible }));
-  return series;
+  return { series, provisionalInner };
 }
 
 function ChartContainer({
@@ -367,18 +611,30 @@ function ChartContainer({
   onPointerEnter,
   showRelativeStrength,
   onToggleRelativeStrength,
+  onPointerDown,
+  onPointerMove,
+  onWheel,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
   onPointerEnter: () => void;
   showRelativeStrength?: boolean;
   onToggleRelativeStrength?: () => void;
+  onPointerDown: () => void;
+  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+  onWheel: () => void;
 }) {
   const companyLabel = companyName === undefined
     ? undefined
     : chartCompanyNameLabel(companyName);
   return (
-    <div className="study-chart-wrap" onPointerEnter={onPointerEnter}>
+    <div
+      className="study-chart-wrap"
+      onPointerEnter={onPointerEnter}
+      onPointerDownCapture={onPointerDown}
+      onPointerMoveCapture={onPointerMove}
+      onWheelCapture={onWheel}
+    >
       <div ref={containerRef} className="study-chart" />
       {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
         <div className="study-chart-labels">

@@ -171,6 +171,53 @@ impl YahooService {
         })
     }
 
+    /// Refreshes an exact completed-history slice and persists it for later range assembly.
+    pub async fn refresh_historical_daily_candles(
+        &self,
+        symbol: &TickerSymbol,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<HistoricalDailyCandles, YahooServiceError> {
+        if start >= end {
+            return Err(YahooServiceError::InvalidRange);
+        }
+        let completed_end = self
+            .market_schedule
+            .recent_trading_day(Utc::now())
+            .succ_opt()
+            .ok_or(YahooServiceError::InvalidRange)?;
+        let end = end.min(completed_end);
+        if start >= end {
+            return Err(YahooServiceError::InvalidRange);
+        }
+
+        let _guard = self.daily_candle_locks.lock(symbol).await;
+        self.profile(symbol).await?;
+        let repair_latest = (end == completed_end)
+            .then(|| self.market_schedule.previous_trading_day(completed_end));
+        let (fetched, first_trade_at) = self
+            .fetch_daily_candles_from_provider(symbol, start, end, repair_latest)
+            .await?;
+        self.store
+            .upsert_daily_candles(symbol, &fetched)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        self.cache_first_trade_date(symbol, first_trade_at);
+
+        let candles = self
+            .store
+            .daily_candles(symbol, start, end)
+            .await
+            .map_err(YahooServiceError::Persistence)?;
+        let has_more_before = first_trade_at
+            .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
+            .unwrap_or(!fetched.is_empty());
+        Ok(HistoricalDailyCandles {
+            candles,
+            has_more_before,
+        })
+    }
+
     pub async fn daily_candles(
         &self,
         symbol: &TickerSymbol,

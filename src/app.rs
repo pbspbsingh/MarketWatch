@@ -110,11 +110,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         &config.finviz,
     ));
-    let study = Arc::new(StudyService::new(
-        yahoo_client,
-        yahoo.clone(),
-        market_schedule.clone(),
-    ));
+    let study = Arc::new(StudyService::new(yahoo.clone(), market_schedule.clone()));
     let industry_refresh = IndustryRefreshService::new(
         store.clone(),
         finviz.clone(),

@@ -12,7 +12,11 @@ import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import { Button, CircularProgress, IconButton, TextField, Tooltip, Typography } from "@mui/material";
-import { fetchLastStudy, fetchStudy, type StudyResult } from "../../api/study";
+import {
+  fetchLastStudy,
+  fetchStudy,
+  type StudyResult,
+} from "../../api/study";
 import {
   ImageExportMenu,
   type ImageExportAction,
@@ -24,6 +28,7 @@ import {
   downloadElementAsPng,
 } from "../../utils/exportElementImage";
 import { StudyCharts } from "./StudyCharts";
+import { shiftYears } from "./studyDates";
 import "./study.css";
 
 const todayText = localDateText(new Date());
@@ -37,6 +42,7 @@ export function StudyPage() {
   const [symbolB, setSymbolB] = useState("QQQ");
   const [date, setDate] = useState(todayText);
   const [result, setResult] = useState<StudyResult>();
+  const [datasetVersion, setDatasetVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [orientation, setOrientation] = useState<SplitOrientation>(() =>
     localStorage.getItem(studyOrientationKey) === "horizontal" ? "horizontal" : "vertical",
@@ -53,13 +59,21 @@ export function StudyPage() {
     severity: "success" | "error";
   }>();
   const [exporting, setExporting] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const requestRef = useRef<AbortController | undefined>(undefined);
+  const historyRequestRef = useRef<AbortController | undefined>(undefined);
+  const resultRef = useRef(result);
+
+  useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchLastStudy(controller.signal)
       .then((last) => {
         if (last === null) return;
+        resultRef.current = last;
         setResult(last);
         setDate(last.date);
         setSymbolA(last.series[0]?.symbol ?? "SPY");
@@ -74,7 +88,10 @@ export function StudyPage() {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => () => {
+    requestRef.current?.abort();
+    historyRequestRef.current?.abort();
+  }, []);
 
   const load = async (refresh: boolean) => {
     const validationError = validateInputs(symbolA, symbolB, date);
@@ -83,6 +100,9 @@ export function StudyPage() {
       return;
     }
     requestRef.current?.abort();
+    historyRequestRef.current?.abort();
+    historyRequestRef.current = undefined;
+    setHistoryLoading(false);
     const controller = new AbortController();
     requestRef.current = controller;
     setLoading(true);
@@ -91,16 +111,64 @@ export function StudyPage() {
       const next = await fetchStudy(
         [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
         date,
-        refresh,
-        controller.signal,
+        { refresh, signal: controller.signal },
       );
+      resultRef.current = next;
       setResult(next);
+      setDatasetVersion((version) => version + 1);
       setSymbolA(next.series[0]?.symbol ?? symbolA);
       setSymbolB(next.series[1]?.symbol ?? symbolB);
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
+    }
+  };
+
+  const loadHistory = async (direction: "before" | "after") => {
+    const current = resultRef.current;
+    if (
+      current === undefined
+      || historyRequestRef.current !== undefined
+      || direction === "before" && !current.has_more_before
+      || direction === "after" && !current.has_more_after
+    ) return;
+
+    const range = direction === "before"
+      ? { start: shiftYears(current.range_start, -1), end: current.range_end }
+      : { start: current.range_start, end: shiftYears(current.range_end, 1) };
+    const fetchRange = direction === "before"
+      ? { start: range.start, end: current.range_start }
+      : { start: current.range_end, end: range.end };
+    const requestKey = studyResultKey(current);
+    const controller = new AbortController();
+    historyRequestRef.current = controller;
+    setHistoryLoading(true);
+    try {
+      const expanded = await fetchStudy(
+        [current.series[0].symbol, current.series[1].symbol],
+        current.date,
+        { range, fetchRange, signal: controller.signal },
+      );
+      if (
+        !controller.signal.aborted
+        && resultRef.current !== undefined
+        && studyResultKey(resultRef.current) === requestKey
+      ) {
+        resultRef.current = expanded;
+        setResult(expanded);
+      }
+    } catch (historyError) {
+      if (!(historyError instanceof Error && historyError.name === "AbortError")) {
+        setError(historyError instanceof Error
+          ? `Unable to load ${direction === "before" ? "earlier" : "later"} history: ${historyError.message}`
+          : `Unable to load ${direction === "before" ? "earlier" : "later"} history`);
+      }
+    } finally {
+      if (historyRequestRef.current === controller) {
+        historyRequestRef.current = undefined;
+        setHistoryLoading(false);
+      }
     }
   };
 
@@ -260,9 +328,12 @@ export function StudyPage() {
         ) : (
           <StudyCharts
             result={result}
+            datasetVersion={datasetVersion}
             orientation={orientation}
             syncCrosshair={crosshairSync}
             tickerBVisible={tickerBVisible}
+            historyLoading={historyLoading}
+            onRequestHistory={(direction) => void loadHistory(direction)}
           />
         )}
       </div>
@@ -300,6 +371,10 @@ function localDateText(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function studyResultKey(result: StudyResult) {
+  return `${result.series[0]?.symbol ?? ""}\0${result.series[1]?.symbol ?? ""}\0${result.date}`;
 }
 
 function formatDateInput(value: string) {

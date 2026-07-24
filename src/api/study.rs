@@ -13,6 +13,10 @@ use tracing::error;
 struct StudyRequest {
     symbols: Vec<TickerSymbol>,
     date: NaiveDate,
+    range_start: Option<NaiveDate>,
+    range_end: Option<NaiveDate>,
+    fetch_start: Option<NaiveDate>,
+    fetch_end: Option<NaiveDate>,
     #[serde(default)]
     refresh: bool,
 }
@@ -35,7 +39,13 @@ async fn candles(
 ) -> Result<Json<crate::services::study::StudyResult>, (StatusCode, String)> {
     state
         .study
-        .load(&request.symbols, request.date, request.refresh)
+        .load(
+            &request.symbols,
+            request.date,
+            (request.range_start, request.range_end),
+            (request.fetch_start, request.fetch_end),
+            request.refresh,
+        )
         .await
         .map(Json)
         .map_err(|error| match &error {
