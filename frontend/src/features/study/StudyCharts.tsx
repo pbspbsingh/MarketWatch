@@ -20,13 +20,17 @@ import {
 import type { StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
 import {
-  chartColors,
+  getChartColors,
+  dailySmaColors,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
   volumeScaleMargins,
+  visualizationColors,
 } from "../../components/lightweight-chart/chartOptions";
+import { appPalettes } from "../../app/theme";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   relativeStrengthLineData,
   rsSwingHighColor,
@@ -34,11 +38,11 @@ import {
 } from "../charts/relativeStrengthSeries";
 
 const movingAverages = [
-  { period: 10, color: "#3179f5" },
-  { period: 20, color: "#f6c309" },
-  { period: 50, color: "#fb9800" },
-  { period: 100, color: "#fb6500" },
-  { period: 200, color: "#f60c0c" },
+  { period: 10, color: dailySmaColors[10] },
+  { period: 20, color: dailySmaColors[20] },
+  { period: 50, color: dailySmaColors[50] },
+  { period: 100, color: dailySmaColors[100] },
+  { period: 200, color: dailySmaColors[200] },
 ] as const;
 
 export function StudyCharts({
@@ -52,6 +56,9 @@ export function StudyCharts({
   syncCrosshair: boolean;
   tickerBVisible: boolean;
 }) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
+  const chartColors = getChartColors(theme);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
@@ -131,7 +138,7 @@ export function StudyCharts({
         vertAlign: "center",
         lines: [{
           text: result.series[index].symbol,
-          color: "rgba(143, 154, 167, 0.14)",
+          color: `${palette.muted}24`,
           fontSize: 48,
           fontStyle: "bold",
         }],
@@ -162,18 +169,19 @@ export function StudyCharts({
       }
       volume.setData(dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
         const candle = byDate.get(date);
-        return candle === undefined ? { time: date } : { time: date, value: candle.volume, color: candle.close >= candle.open ? "#26a69a66" : "#ef535066" };
+        return candle === undefined ? { time: date } : { time: date, value: candle.volume, color: candle.close >= candle.open ? visualizationColors.upVolume : visualizationColors.downVolume };
       }));
       if (index === 0 && result.relative_strength !== null) {
         relativeStrengthSeriesRef.current = addRelativeStrength(
           chart,
           result.relative_strength,
           showRelativeStrengthRef.current,
+          chartColors.background,
         );
       }
       const markerDate = dates.find((date) => date >= result.date) ?? dates.at(-1);
       if (markerDate !== undefined) {
-        createSeriesMarkers(candles, [{ time: markerDate, position: "aboveBar", shape: "arrowDown", color: "#58a6ff", text: result.date }]);
+        createSeriesMarkers(candles, [{ time: markerDate, position: "aboveBar", shape: "arrowDown", color: palette.accent, text: result.date }]);
       }
       return chart;
     });
@@ -242,7 +250,17 @@ export function StudyCharts({
       chartsRef.current = [];
       relativeStrengthSeriesRef.current = [];
     };
-  }, [result]);
+  }, [
+    chartColors.background,
+    chartColors.border,
+    chartColors.down,
+    chartColors.grid,
+    chartColors.text,
+    chartColors.up,
+    palette.accent,
+    palette.muted,
+    result,
+  ]);
 
   return (
     <SplitPane
@@ -282,6 +300,7 @@ function addRelativeStrength(
   chart: IChartApi,
   relativeStrength: NonNullable<StudyResult["relative_strength"]>,
   visible: boolean,
+  background: string,
 ): ISeriesApi<"Line">[] {
   const series: ISeriesApi<"Line">[] = [];
   const line = chart.addSeries(LineSeries, relativeStrengthSeriesOptions);
@@ -320,7 +339,7 @@ function addRelativeStrength(
     series.push(outer);
     const inner = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: chartColors.background,
+      color: background,
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 1.25,

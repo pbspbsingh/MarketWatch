@@ -12,6 +12,7 @@ import {
   type IChartApi,
 } from "lightweight-charts";
 import { baseChartOptions } from "./chartOptions";
+import { useAppSettings } from "../../app/AppSettings";
 
 export interface ChartHostHandle {
   getChart: () => IChartApi | null;
@@ -35,6 +36,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     onChartReady,
     onChartDestroy,
   }, ref) {
+    const { theme } = useAppSettings();
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
     const onChartReadyRef = useRef(onChartReady);
@@ -52,7 +54,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       const container = containerRef.current;
       if (container === null) return;
 
-      const chart = createChart(container, baseChartOptions);
+      const chart = createChart(container, baseChartOptions(theme));
       const observer = new MutationObserver(() => {
         updateAttributionUrl(container, attributionUrlRef.current);
       });
@@ -70,7 +72,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
           chart.remove();
         }
       };
-    }, []);
+    }, [theme]);
 
     useEffect(() => {
       if (options !== undefined) chartRef.current?.applyOptions(options);

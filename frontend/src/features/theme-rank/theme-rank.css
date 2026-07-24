@@ -5,18 +5,18 @@
   min-width: 0;
   min-height: 0;
   grid-template-columns: 18rem minmax(0, 1fr);
-  border-top: 0.125rem solid #f59e0b;
+  border-top: 0.125rem solid var(--accent-lime);
 }
 
 .theme-rank-sidebar {
-  background: #151a20;
+  background: var(--color-canvas);
 }
 
 .theme-rank-sidebar-header {
   display: grid;
   padding: 0.35rem;
   gap: 0.25rem;
-  border-bottom: 0.0625rem solid #2a3038;
+  border-bottom: 0.0625rem solid var(--color-border);
 }
 
 .theme-rank-selection-actions {
@@ -62,12 +62,12 @@
   grid-template-columns: auto 0.55rem minmax(0, 1fr);
   align-items: center;
   gap: 0.25rem;
-  border-bottom: 0.0625rem solid #20262e;
+  border-bottom: 0.0625rem solid var(--color-raised);
   cursor: pointer;
 }
 
 .theme-rank-theme-row:hover {
-  background: #202832;
+  background: var(--color-raised);
 }
 
 .theme-rank-theme-row .MuiCheckbox-root {
@@ -88,7 +88,7 @@
 }
 
 .theme-rank-theme-name small {
-  color: #7f8a98;
+  color: var(--color-muted);
   font-size: 0.62rem;
 }
 
@@ -97,7 +97,7 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  background: #11161c;
+  background: var(--color-canvas);
   flex-direction: column;
   overflow: hidden;
 }
@@ -108,9 +108,9 @@
   flex: 0 0 1.35rem;
   grid-template-columns: repeat(4, 1fr);
   align-items: center;
-  border-bottom: 0.0625rem solid #303944;
-  background: #1a2027;
-  color: #b7c0cb;
+  border-bottom: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -131,7 +131,7 @@
 }
 
 .theme-rank-column {
-  stroke: #303944;
+  stroke: var(--color-border);
   stroke-width: 0.5;
 }
 
@@ -151,18 +151,18 @@
 }
 
 .theme-rank-ticker-box {
-  fill: #151a20;
+  fill: var(--color-canvas);
 }
 
 .theme-rank-ticker-label {
-  fill: #e1e6ec;
+  fill: var(--color-text);
   font-size: 7px;
   font-weight: 500;
   pointer-events: none;
 }
 
 .theme-rank-ticker-rank {
-  fill: #8d99a7;
+  fill: var(--color-muted);
   font-size: 6px;
   pointer-events: none;
 }

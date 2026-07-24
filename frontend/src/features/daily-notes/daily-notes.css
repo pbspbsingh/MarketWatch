@@ -4,8 +4,9 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  border-top: 0.125rem solid var(--accent-amber);
   grid-template-columns: 18rem minmax(0, 1fr);
-  background: #111418;
+  background: var(--color-canvas);
 }
 
 .daily-notes-page-sidebar-collapsed {
@@ -24,16 +25,16 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  border-right: 0.0625rem solid #2a3038;
-  background: #191e24;
+  border-right: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
   flex-direction: column;
 }
 
 .daily-note-contents {
   min-width: 0;
   min-height: 0;
-  border-right: 0.0625rem solid #2a3038;
-  background: #151a20;
+  border-right: 0.0625rem solid var(--color-border);
+  background: var(--color-canvas);
   overflow: auto;
 
   & header {
@@ -41,9 +42,9 @@
     top: 0;
     z-index: 1;
     padding: 0.75rem;
-    border-bottom: 0.0625rem solid #2a3038;
-    color: #aeb7c2;
-    background: #191e24;
+    border-bottom: 0.0625rem solid var(--color-border);
+    color: var(--color-muted);
+    background: var(--color-surface);
     font-size: 0.72rem;
     font-weight: 650;
     letter-spacing: 0.06em;
@@ -60,7 +61,7 @@
     width: 100%;
     padding: 0.35rem 0.75rem;
     border: 0;
-    color: #aeb7c2;
+    color: var(--color-muted);
     background: transparent;
     overflow: hidden;
     font-size: 0.76rem;
@@ -76,21 +77,21 @@
 
   & button[data-level="3"] {
     padding-left: 1.75rem;
-    color: #8f9aa7;
+    color: var(--color-muted);
     font-size: 0.71rem;
   }
 
   & button:hover,
   & button:focus-visible {
-    color: #f0f4f8;
-    background: #252c35;
+    color: var(--color-text);
+    background: var(--color-hover);
   }
 }
 
 .daily-note-contents-empty {
   display: block;
   padding: 0.75rem;
-  color: #65758a;
+  color: var(--color-muted);
   font-size: 0.72rem;
 }
 
@@ -120,7 +121,7 @@
 
 .daily-note-new-row {
   padding: 0.25rem 0.5rem 0.5rem;
-  border-bottom: 0.0625rem solid #2a3038;
+  border-bottom: 0.0625rem solid var(--color-border);
 }
 
 .daily-notes-list {
@@ -145,12 +146,12 @@
 .daily-note-list-row {
   display: flex;
   min-width: 0;
-  border-bottom: 0.0625rem solid #252b33;
+  border-bottom: 0.0625rem solid var(--color-border);
   align-items: center;
 
   &:hover,
   &[data-selected="true"] {
-    background: #253140;
+    background: var(--color-hover);
   }
 
   & > .MuiIconButton-root {
@@ -191,19 +192,19 @@
   }
 
   & small {
-    color: #8f9aa7;
+    color: var(--color-muted);
     font-size: 0.63rem;
   }
 
   & mark {
-    color: #111418;
-    background: #ffd54f;
+    color: var(--color-canvas);
+    background: var(--color-warning);
   }
 }
 
 .daily-note-search-snippet {
   margin-top: 0.2rem;
-  color: #aeb7c2;
+  color: var(--color-muted);
   font-size: 0.64rem;
 }
 
@@ -220,8 +221,8 @@
   display: flex;
   min-height: 2.25rem;
   padding: 0 0.5rem;
-  border-bottom: 0.0625rem solid #2a3038;
-  background: #191e24;
+  border-bottom: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
   align-items: center;
   gap: 0.5rem;
 }
@@ -243,7 +244,7 @@
   }
 
   & small {
-    color: #8f9aa7;
+    color: var(--color-muted);
     font-size: 0.58rem;
   }
 }
@@ -252,7 +253,7 @@
   display: flex;
   width: 11rem;
   margin-left: auto;
-  color: #8f9aa7;
+  color: var(--color-muted);
   align-items: center;
   gap: 0.5rem;
 
@@ -264,7 +265,7 @@
 
   & .MuiTypography-root {
     width: 2rem;
-    color: #8f9aa7;
+    color: var(--color-muted);
     font-size: 0.6rem;
     text-align: right;
   }
@@ -278,16 +279,16 @@
 }
 
 .daily-note-save-status {
-  color: #8f9aa7;
+  color: var(--color-muted);
   font-size: 0.63rem !important;
 }
 
 .daily-note-save-status-unsaved {
-  color: #f2c94c;
+  color: var(--color-warning);
 }
 
 .daily-note-save-status-failed {
-  color: #ef5350;
+  color: var(--color-negative);
 }
 
 .daily-note-content {
@@ -323,11 +324,11 @@
   top: 0.75rem;
   right: 0.75rem;
   padding: 0.35rem 0.55rem;
-  border: 0.0625rem solid #35404c;
+  border: 0.0625rem solid var(--color-border);
   border-radius: 0.25rem;
-  color: #d7dde5;
-  background: #191e24;
-  box-shadow: 0 0.2rem 0.6rem #0008;
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: 0 0.2rem 0.6rem var(--color-overlay);
   align-items: center;
   gap: 0.4rem;
   font-size: 0.7rem;
@@ -346,7 +347,7 @@
   min-height: 100%;
   margin: 0 auto;
   padding: 2rem;
-  color: #d7dde5;
+  color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 1rem;
   line-height: 1.5;
@@ -367,20 +368,20 @@
   & h5,
   & h6 {
     margin: 1.5em 0 0.55em;
-    color: #f0f4f8;
+    color: var(--color-text);
     font-weight: 650;
     line-height: 1.25;
   }
 
   & h1 {
     padding-bottom: 0.3em;
-    border-bottom: 0.0625rem solid #343b45;
+    border-bottom: 0.0625rem solid var(--color-border);
     font-size: 2em;
   }
 
   & h2 {
     padding-bottom: 0.3em;
-    border-bottom: 0.0625rem solid #2a3038;
+    border-bottom: 0.0625rem solid var(--color-border);
     font-size: 1.5em;
   }
 
@@ -397,7 +398,7 @@
   }
 
   & h6 {
-    color: #aeb7c2;
+    color: var(--color-muted);
     font-size: 0.85em;
   }
 
@@ -447,8 +448,8 @@
 
   & blockquote {
     padding: 0 1rem;
-    border-left: 0.25rem solid #596779;
-    color: #aeb7c2;
+    border-left: 0.25rem solid var(--color-border);
+    color: var(--color-muted);
   }
 
   & blockquote > :last-child {
@@ -459,7 +460,7 @@
     height: 0.0625rem;
     margin: 1.5rem 0;
     border: 0;
-    background: #343b45;
+    background: var(--color-border);
   }
 
   & img {
@@ -470,7 +471,7 @@
   }
 
   & a {
-    color: #58a6ff;
+    color: var(--color-accent);
     text-decoration: none;
   }
 
@@ -485,16 +486,16 @@
   & code {
     padding: 0.12rem 0.3rem;
     border-radius: 0.2rem;
-    background: #191e24;
+    background: var(--color-surface);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: 0.85em;
   }
 
   & pre {
     padding: 0.75rem;
-    border: 0.0625rem solid #2a3038;
+    border: 0.0625rem solid var(--color-border);
     border-radius: 0.3rem;
-    background: #151a20;
+    background: var(--color-canvas);
     overflow: auto;
   }
 
@@ -516,33 +517,33 @@
   & th,
   & td {
     padding: 0.4rem 0.55rem;
-    border: 0.0625rem solid #343b45;
+    border: 0.0625rem solid var(--color-border);
     text-align: left;
   }
 
   & th {
-    color: #f0f4f8;
-    background: #20262e;
+    color: var(--color-text);
+    background: var(--color-raised);
     font-weight: 650;
   }
 
   & tbody tr:nth-child(even) {
-    background: #151a20;
+    background: var(--color-canvas);
   }
 
   & input[type="checkbox"] {
     margin: 0 0.4rem 0 0;
-    accent-color: #58a6ff;
+    accent-color: var(--color-accent);
   }
 
   & mark {
     color: inherit;
-    background: #6b5d16;
+    background: color-mix(in srgb, var(--color-warning) 24%, var(--color-surface));
   }
 
   & mark.daily-note-active-match {
-    color: #111418;
-    background: #ffd54f;
+    color: var(--color-canvas);
+    background: var(--color-warning);
   }
 }
 
@@ -565,7 +566,7 @@
 }
 
 .daily-note-resizable-image-selected {
-  outline: 0.125rem solid #4fc1ff;
+  outline: 0.125rem solid var(--color-accent);
 }
 
 .daily-note-image-resize-handle {
@@ -576,9 +577,9 @@
   right: -0.375rem;
   top: calc(50% - 0.75rem);
   padding: 0;
-  border: 0.125rem solid #111418;
+  border: 0.125rem solid var(--color-canvas);
   border-radius: 0.2rem;
-  background: #4fc1ff;
+  background: var(--color-accent);
   cursor: ew-resize;
   touch-action: none;
 }
@@ -596,10 +597,10 @@
 .daily-note-image-crop-cancel {
   display: none;
   padding: 0.2rem 0.4rem;
-  border: 0.0625rem solid #65758a;
+  border: 0.0625rem solid var(--color-muted);
   border-radius: 0.2rem;
-  color: #f0f4f8;
-  background: #252c35;
+  color: var(--color-text);
+  background: var(--color-hover);
   font-size: 0.62rem;
   line-height: 1.2;
   cursor: pointer;
@@ -607,12 +608,12 @@
 
 .daily-note-image-crop-button:disabled,
 .daily-note-image-crop-cancel:disabled {
-  color: #8f9aa7;
+  color: var(--color-muted);
   cursor: default;
 }
 
 .daily-note-image-crop-cancel {
-  color: #d7dde5;
+  color: var(--color-text);
 }
 
 .daily-note-resizable-image-selected .daily-note-image-resize-handle,
@@ -640,9 +641,9 @@
 .daily-note-image-crop-region {
   position: absolute;
   z-index: 2;
-  border: 0.125rem solid #4fc1ff;
-  background: rgb(79 193 255 / 18%);
-  box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%);
+  border: 0.125rem solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: 0 0 0 9999px var(--color-overlay);
   cursor: move;
 }
 
@@ -650,9 +651,9 @@
   width: 0.65rem;
   height: 0.65rem;
   position: absolute;
-  border: 0.125rem solid #111418;
+  border: 0.125rem solid var(--color-canvas);
   border-radius: 50%;
-  background: #4fc1ff;
+  background: var(--color-accent);
 }
 
 .daily-note-image-crop-handle-nw {
@@ -685,7 +686,7 @@
   inset: 0;
   display: flex;
   padding: 1rem;
-  background: rgb(0 0 0 / 72%);
+  background: var(--color-overlay);
   align-items: center;
   justify-content: center;
 }
@@ -696,10 +697,10 @@
   height: min(36rem, calc(100vh - 2rem));
   max-width: calc(100vw - 2rem);
   max-height: calc(100vh - 2rem);
-  border: 1px solid #35404c;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
-  background: #111418;
-  box-shadow: 0 1rem 3rem rgb(0 0 0 / 55%);
+  background: var(--color-canvas);
+  box-shadow: 0 1rem 3rem var(--color-overlay);
   flex-direction: column;
   overflow: hidden;
 }
@@ -721,17 +722,17 @@
 
 .daily-note-image-editor-actions button {
   padding: 0.125rem 0.5rem;
-  border: 1px solid #4b5563;
+  border: 1px solid var(--color-border);
   border-radius: 0.35rem;
-  background: #20262e;
-  color: #d7dde5;
+  background: var(--color-raised);
+  color: var(--color-text);
   font-size: 0.75rem;
   line-height: 1.25;
   cursor: pointer;
 }
 
 .daily-note-image-editor-actions button:last-child {
-  border-color: #4fc1ff;
+  border-color: var(--color-accent);
 }
 
 .daily-note-image-editor-actions button:disabled {
@@ -752,7 +753,7 @@
 }
 
 .daily-note-mark-my-image {
-  background: #111418 !important;
+  background: var(--color-canvas) !important;
 }
 
 body.daily-note-image-editor-open [data-radix-popper-content-wrapper] {
@@ -767,7 +768,7 @@ body.daily-note-image-editor-open [data-radix-popper-content-wrapper] {
 
   & .MuiTypography-root {
     margin-right: 0.25rem;
-    color: #8f9aa7;
+    color: var(--color-muted);
     font-size: 0.65rem;
   }
 }

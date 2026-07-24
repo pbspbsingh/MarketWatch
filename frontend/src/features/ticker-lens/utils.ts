@@ -1,4 +1,8 @@
 import type { TickerRanking, TickerRelativeStrengthRating } from "../../api/tickers";
+import {
+  interpolateRgbColor,
+  tickerMetricScale,
+} from "../../app/visualizationColors";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
 import type { ChartEngine, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerRelativeStrengthSortKey, TickerSortKey, TickerSortSetting } from "./types";
 
@@ -142,17 +146,25 @@ export function formatMetric(value: number, key: SortKey | TickerSortKey) {
 
 export function metricColor(value: number, key: SortKey | TickerSortKey) {
   if (isTickerRelativeStrengthSortKey(key)) return relativeStrengthRatingColor(value);
-  if (key === "count") return "#c8d0da";
+  if (key === "count") return "var(--color-text)";
   if (key === "adr_percent") return adrColor(value);
-  if (key === "dollar_volume") return "#c8d0da";
+  if (key === "dollar_volume") return "var(--color-text)";
   return performanceColor(value, key);
 }
 
 function relativeStrengthRatingColor(rating: number) {
   const value = Math.max(1, Math.min(99, rating));
   return value <= 50
-    ? interpolateColor([180, 30, 30], [230, 200, 79], (value - 1) / 49)
-    : interpolateColor([230, 200, 79], [0, 184, 63], (value - 50) / 49);
+    ? interpolateRgbColor(
+      tickerMetricScale.negativeStrong,
+      tickerMetricScale.neutral,
+      (value - 1) / 49,
+    )
+    : interpolateRgbColor(
+      tickerMetricScale.neutral,
+      tickerMetricScale.positiveStrong,
+      (value - 50) / 49,
+    );
 }
 
 function dollarVolume(ticker: TickerRanking) {
@@ -161,10 +173,9 @@ function dollarVolume(ticker: TickerRanking) {
 }
 
 function adrColor(adr: number) {
-  if (adr >= 5) return "rgb(40,210,80)";
-  if (adr >= 4) return "rgb(230,200,79)";
-  if (adr >= 3) return "rgb(245,165,36)";
-  return "rgb(180,30,30)";
+  if (adr >= 5) return "var(--color-positive)";
+  if (adr >= 3) return "var(--color-warning)";
+  return "var(--color-negative)";
 }
 
 const performanceCaps: Record<Exclude<SortKey, "count">, number> = {
@@ -179,17 +190,26 @@ const performanceCaps: Record<Exclude<SortKey, "count">, number> = {
 
 function performanceColor(value: number, key: Exclude<SortKey, "count">) {
   const cap = performanceCaps[key];
-  if (value < 0) return interpolateColor([255, 126, 126], [180, 30, 30], -value / cap);
+  if (value < 0) {
+    return interpolateRgbColor(
+      tickerMetricScale.negativeLight,
+      tickerMetricScale.negativeStrong,
+      -value / cap,
+    );
+  }
 
   const intensity = Math.min(value / cap, 1);
   return intensity <= 0.5
-    ? interpolateColor([230, 200, 79], [139, 220, 50], intensity * 2)
-    : interpolateColor([139, 220, 50], [0, 184, 63], (intensity - 0.5) * 2);
-}
-
-function interpolateColor(start: number[], end: number[], amount: number) {
-  const t = Math.min(amount, 1);
-  return `rgb(${start.map((component, index) => Math.round(component + t * (end[index] - component))).join(",")})`;
+    ? interpolateRgbColor(
+      tickerMetricScale.neutral,
+      tickerMetricScale.positiveLight,
+      intensity * 2,
+    )
+    : interpolateRgbColor(
+      tickerMetricScale.positiveLight,
+      tickerMetricScale.positiveStrong,
+      (intensity - 0.5) * 2,
+    );
 }
 
 export function isArrowKeyControl(target: EventTarget | null) {

@@ -5,18 +5,19 @@
   min-width: 0;
   min-height: 0;
   position: relative;
+  border-top: 0.125rem solid var(--accent-blue);
   flex-direction: column;
-  background: #111418;
+  background: var(--color-canvas);
 }
 
 .study-header {
   display: flex;
   min-height: 3rem;
   padding: 0.35rem 0.75rem;
-  border-bottom: 0.0625rem solid #2a3038;
+  border-bottom: 0.0625rem solid var(--color-border);
   align-items: center;
   gap: 0.5rem;
-  background: #191e24;
+  background: var(--color-surface);
 
   & h1 {
     margin: 0 0.5rem 0 0;
@@ -75,7 +76,7 @@
   gap: 0.5rem;
   padding: 0.15rem 0.35rem;
   border-radius: 0.2rem;
-  background: rgb(17 20 24 / 75%);
+  background: color-mix(in srgb, var(--color-canvas) 75%, transparent);
   font-size: 0.65rem;
   pointer-events: none;
 }
@@ -86,16 +87,16 @@
   top: 0.35rem;
   left: 0.5rem;
   padding: 0.15rem 0.35rem;
-  border: 0.0625rem solid #343b45;
+  border: 0.0625rem solid var(--color-border);
   border-radius: 0.2rem;
-  color: #e6c84f;
-  background: rgb(17 20 24 / 75%);
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-canvas) 75%, transparent);
   font: inherit;
   font-size: 0.65rem;
   cursor: pointer;
 
   &[aria-pressed="false"] {
-    color: #8f9aa7;
+    color: var(--color-muted);
     opacity: 0.7;
   }
 }
@@ -105,7 +106,7 @@
   z-index: 3;
   right: 0.4rem;
   bottom: 0.15rem;
-  color: #65758a;
+  color: var(--color-muted);
   font-size: 0.55rem;
   text-decoration: none;
 }

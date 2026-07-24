@@ -30,7 +30,6 @@ import {
 } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
-  chartColors,
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
   indicatorSeriesOptions,
@@ -40,7 +39,10 @@ import {
   volumeScaleMargins,
   volumeSeriesOptions,
   volumeColor,
+  visualizationColors,
 } from "../../components/lightweight-chart/chartOptions";
+import { useAppSettings } from "../../app/AppSettings";
+import { appPalettes } from "../../app/theme";
 import {
   chartTimeToMarketDate,
   marketDateToChartTime,
@@ -77,10 +79,10 @@ interface MarketChartProps {
   sessionDelta?: MarketChartSessionDelta;
 }
 
-function watermarkLines(symbol: string) {
+function watermarkLines(symbol: string, color: string) {
   return [{
     text: symbol,
-    color: "rgba(143, 154, 167, 0.14)",
+    color: `${color}24`,
     fontSize: 48,
     fontStyle: "bold",
   }];
@@ -98,6 +100,8 @@ export function MarketChart({
   liveDelta,
   sessionDelta,
 }: MarketChartProps) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
@@ -236,7 +240,7 @@ export function MarketChart({
     });
     relativeStrengthProvisionalInnerRef.current = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: chartColors.background,
+      color: palette.canvas,
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 1.25,
@@ -245,7 +249,7 @@ export function MarketChart({
     watermarkRef.current = createTextWatermark(chart.panes()[0], {
       horzAlign: "center",
       vertAlign: "center",
-      lines: watermarkLines(symbolRef.current),
+      lines: watermarkLines(symbolRef.current, palette.muted),
     });
     chartContextRef.current = {
       chart,
@@ -255,7 +259,7 @@ export function MarketChart({
     };
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, []);
+  }, [palette]);
 
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
@@ -273,9 +277,9 @@ export function MarketChart({
 
   useEffect(() => {
     watermarkRef.current?.applyOptions({
-      lines: watermarkLines(data.symbol),
+      lines: watermarkLines(data.symbol, palette.muted),
     });
-  }, [data.symbol]);
+  }, [data.symbol, palette]);
 
   useEffect(() => {
     const datasetKey = `${data.symbol}\0${data.interval}`;
@@ -445,7 +449,7 @@ export function MarketChart({
       axisLabelVisible: true,
       title: "P",
       axisLabelColor: color,
-      axisLabelTextColor: "#ffffff",
+      axisLabelTextColor: visualizationColors.axisText,
     };
     if (postMarketLineRef.current === null) {
       postMarketLineRef.current = candleSeries.createPriceLine(options);
@@ -520,8 +524,8 @@ export function MarketChart({
   );
 }
 
-const preMarketUpColor = "#2962ff";
-const preMarketDownColor = "#9c27b0";
+const preMarketUpColor = visualizationColors.preMarketUp;
+const preMarketDownColor = visualizationColors.preMarketDown;
 
 function shouldReplaceCurrentWeek(
   series: ISeriesApi<"Candlestick"> | ISeriesApi<"Histogram"> | ISeriesApi<"Line">,

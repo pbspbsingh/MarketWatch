@@ -5,25 +5,25 @@ import { markdown } from "@codemirror/lang-markdown";
 import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { useAppSettings } from "../../app/AppSettings";
+import { appPalettes, type AppPalette } from "../../app/theme";
 
-const vscodeDarkHighlightStyle = HighlightStyle.define([
-  { tag: tags.heading, color: "#569cd6", fontWeight: "bold" },
-  { tag: tags.strong, color: "#d7ba7d", fontWeight: "bold" },
-  { tag: tags.emphasis, color: "#d7ba7d", fontStyle: "italic" },
-  { tag: tags.strikethrough, color: "#808080", textDecoration: "line-through" },
-  { tag: tags.link, color: "#dcdcaa" },
-  { tag: tags.url, color: "#4fc1ff", textDecoration: "underline" },
-  { tag: tags.monospace, color: "#ce9178" },
-  { tag: tags.quote, color: "#6a9955" },
-  { tag: [tags.keyword, tags.operatorKeyword], color: "#c586c0" },
-  { tag: [tags.string, tags.special(tags.string)], color: "#ce9178" },
-  { tag: [tags.number, tags.bool, tags.null], color: "#b5cea8" },
-  { tag: [tags.typeName, tags.className], color: "#4ec9b0" },
-  { tag: [tags.function(tags.variableName), tags.labelName], color: "#dcdcaa" },
-  { tag: [tags.variableName, tags.propertyName], color: "#9cdcfe" },
-  { tag: [tags.comment, tags.meta], color: "#6a9955" },
-  { tag: tags.invalid, color: "#f44747" },
-]);
+function editorHighlightStyle(palette: AppPalette) {
+  return HighlightStyle.define([
+    { tag: tags.heading, color: palette.accent, fontWeight: "bold" },
+    { tag: tags.strong, color: palette.warning, fontWeight: "bold" },
+    { tag: tags.emphasis, color: palette.warning, fontStyle: "italic" },
+    { tag: tags.strikethrough, color: palette.muted, textDecoration: "line-through" },
+    { tag: [tags.link, tags.url], color: palette.accent, textDecoration: "underline" },
+    { tag: [tags.monospace, tags.string, tags.special(tags.string)], color: palette.warning },
+    { tag: [tags.quote, tags.comment, tags.meta], color: palette.positive },
+    { tag: [tags.keyword, tags.operatorKeyword, tags.typeName, tags.className], color: palette.accent },
+    { tag: [tags.number, tags.bool, tags.null], color: palette.positive },
+    { tag: [tags.function(tags.variableName), tags.labelName], color: palette.warning },
+    { tag: [tags.variableName, tags.propertyName], color: palette.text },
+    { tag: tags.invalid, color: palette.negative },
+  ]);
+}
 
 export interface DailyNoteEditorHandle {
   focus: () => void;
@@ -36,6 +36,8 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
   onCursorLineChange: (line: number) => void;
   onPasteImage: (image: Blob) => void;
 }>(function DailyNoteEditor({ value, onChange, onCursorLineChange, onPasteImage }, ref) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
   const onChangeRef = useRef(onChange);
@@ -74,7 +76,7 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           markdown(),
-          syntaxHighlighting(vscodeDarkHighlightStyle),
+          syntaxHighlighting(editorHighlightStyle(palette)),
           EditorView.lineWrapping,
           EditorView.domEventHandlers({
             paste: (event) => {
@@ -103,12 +105,14 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
             },
           }),
           EditorView.theme({
-            "&": { height: "100%", backgroundColor: "#111418", color: "#d7dde5" },
+            "&": { height: "100%", backgroundColor: palette.canvas, color: palette.text },
             ".cm-scroller": { overflow: "auto", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
-            ".cm-content": { padding: "1rem", caretColor: "#f0f4f8" },
-            ".cm-gutters": { backgroundColor: "#191e24", color: "#65758a", border: "none" },
-            ".cm-cursor": { borderLeftColor: "#f0f4f8" },
-            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "#264f78 !important" },
+            ".cm-content": { padding: "1rem", caretColor: palette.text },
+            ".cm-gutters": { backgroundColor: palette.surface, color: palette.muted, border: "none" },
+            ".cm-cursor": { borderLeftColor: palette.text },
+            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
+              backgroundColor: `color-mix(in srgb, ${palette.accent} 28%, transparent) !important`,
+            },
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !synchronizingRef.current) {
@@ -126,7 +130,7 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
       view.destroy();
       viewRef.current = null;
     };
-  }, []);
+  }, [palette]);
 
   useEffect(() => {
     const view = viewRef.current;

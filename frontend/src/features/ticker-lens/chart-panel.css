@@ -26,7 +26,7 @@
   padding: 0.5rem;
   overflow: auto;
   align-content: start;
-  background: #111418;
+  background: var(--color-canvas);
 }
 
 .group-summary-section {
@@ -37,7 +37,7 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 0.25rem;
-  background: #151a20;
+  background: var(--color-canvas);
 
   & header {
     display: flex;
@@ -46,7 +46,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    background: #20262e;
+    background: var(--color-raised);
 
     & p {
       font-size: 0.62rem;
@@ -84,7 +84,7 @@
 
     &:hover,
     &:focus-within {
-      background: #1d2530;
+      background: var(--color-raised);
     }
   }
 
@@ -94,17 +94,17 @@
 
   & .MuiCheckbox-root {
     padding: 0.125rem;
-    color: #8f9aa7;
+    color: var(--color-muted);
   }
 
   & .MuiCheckbox-root.Mui-checked {
-    color: #58a6ff;
+    color: var(--color-accent);
   }
 
   & span,
   & a {
     overflow: hidden;
-    color: #d6dde6;
+    color: var(--color-text);
     font-size: 0.78rem;
     text-decoration: none;
     text-overflow: ellipsis;
@@ -113,7 +113,7 @@
 
   & a:hover,
   & a:focus-visible {
-    color: #58a6ff;
+    color: var(--color-accent);
     text-decoration: underline;
   }
 
@@ -121,8 +121,8 @@
     min-width: 1.8rem;
     padding: 0.075rem 0.3rem;
     border-radius: 999rem;
-    color: #f0f4f8;
-    background: #2f3b4a;
+    color: var(--color-text);
+    background: var(--color-hover);
     font-size: 0.62rem;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -138,9 +138,9 @@
   display: flex;
   flex-shrink: 0;
   padding: 0.4rem 0.6rem;
-  border-top: 0.0625rem solid #252d36;
-  color: #58a6ff;
-  background: #151a20;
+  border-top: 0.0625rem solid var(--color-border);
+  color: var(--color-accent);
+  background: var(--color-canvas);
   font-size: 0.68rem;
   font-weight: 650;
   justify-content: flex-end;
@@ -148,13 +148,13 @@
 
   &:hover,
   &:focus-visible {
-    color: #79c0ff;
-    background: #1d2530;
+    color: var(--color-accent);
+    background: var(--color-raised);
     text-decoration: underline;
   }
 }
 
 .group-summary-all-link.Mui-disabled {
-  color: #65758a;
+  color: var(--color-muted);
   opacity: 0.55;
 }

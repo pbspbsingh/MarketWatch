@@ -3,6 +3,7 @@ import { Button, Checkbox, CircularProgress, MenuItem, Select, TextField, Typogr
 import { fetchThemeRankings, type ThemeRanking } from "../../api/industries";
 import { fetchThemes } from "../../api/themes";
 import { Toast } from "../../components/Toast";
+import { categoricalColor } from "../../app/visualizationColors";
 import "./theme-rank.css";
 
 const horizons = ["half_year", "quarter", "month", "week"] as const;
@@ -156,7 +157,7 @@ export function ThemeRankPage() {
                     />
                     <span
                       className="theme-rank-color"
-                      style={{ backgroundColor: eligible ? themeColor(theme.id) : "transparent" }}
+                      style={{ backgroundColor: eligible ? categoricalColor(theme.id) : "transparent" }}
                     />
                     <span className="theme-rank-theme-name" title={`${theme.name} (${theme.etf_symbol})`}>
                       {theme.name} <small>{theme.etf_symbol}</small>
@@ -240,7 +241,7 @@ function RankChart({
       <defs>
         {themes.map((theme) => (
           <marker key={theme.id} id={`theme-rank-arrow-${theme.id}`} markerWidth="3" markerHeight="3" refX="2.7" refY="1.5" orient="auto" markerUnits="userSpaceOnUse">
-            <path d="M0,0 L3,1.5 L0,3 Z" fill={themeColor(theme.id)} />
+            <path d="M0,0 L3,1.5 L0,3 Z" fill={categoricalColor(theme.id)} />
           </marker>
         ))}
       </defs>
@@ -249,7 +250,7 @@ function RankChart({
       )}
       {orderedThemes.map((theme) => {
         if (theme.ranks === undefined) return null;
-        const color = themeColor(theme.id);
+        const color = categoricalColor(theme.id);
         const hovered = hoveredId === theme.id;
         const selected = highlightedIds.has(theme.id);
         const active = hovered || selected;
@@ -361,10 +362,6 @@ function toggleId(current: Set<number>, id: number) {
   if (next.has(id)) next.delete(id);
   else next.add(id);
   return next;
-}
-
-function themeColor(id: number) {
-  return `hsl(${(id * 137.508) % 360} 72% 60%)`;
 }
 
 function formatRank(rank: number) {

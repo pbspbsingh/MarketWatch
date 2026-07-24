@@ -10,7 +10,7 @@
   }
 
   &.csv-analyzer-dragging {
-    outline: 0.125rem solid #58a6ff;
+    outline: 0.125rem solid var(--color-accent);
     outline-offset: -0.25rem;
   }
 }

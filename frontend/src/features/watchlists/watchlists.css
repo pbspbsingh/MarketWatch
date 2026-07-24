@@ -28,4 +28,4 @@
 .watchlist-icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.2rem; }
 .watchlist-icon-grid > span { display: flex; justify-content: center; }
 .watchlist-icon-grid .MuiIconButton-root { border: 0.0625rem solid transparent; border-radius: 0.25rem; }
-.watchlist-icon-grid .watchlist-icon-selected { border-color: #f2c94c; color: #f2c94c; background: rgb(242 201 76 / 10%); }
+.watchlist-icon-grid .watchlist-icon-selected { border-color: var(--color-warning); color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }

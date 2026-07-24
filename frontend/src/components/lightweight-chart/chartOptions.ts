@@ -5,18 +5,34 @@ import {
   type ChartOptions,
   type DeepPartial,
 } from "lightweight-charts";
+import { appPalettes, type AppThemeMode } from "../../app/theme";
 
-export const chartColors = {
-  background: "#111418",
-  text: "#8f9aa7",
-  grid: "#292d32",
-  border: "#343b45",
+export const visualizationColors = {
   up: "#0c9981",
   down: "#f23645",
   upVolume: "#26a69a66",
   downVolume: "#ef535066",
   volumeAverage: "#c2ad4f",
+  relativeStrengthPositive: "#2fbf71",
+  relativeStrengthNegative: "#ef5350",
+  relativeStrengthNeutral: "#e6c84f",
+  relativeStrengthHigh: "#58a6ff",
+  relativeStrengthLow: "#a371f7",
+  preMarketUp: "#2962ff",
+  preMarketDown: "#9c27b0",
+  axisText: "#ffffff",
 } as const;
+
+export function getChartColors(mode: AppThemeMode) {
+  const palette = appPalettes[mode];
+  return {
+    ...visualizationColors,
+    background: palette.canvas,
+    text: palette.muted,
+    grid: palette.border,
+    border: palette.border,
+  };
+}
 
 export const defaultChartBarSpacing = 6;
 export const chartRightOffsetPixels = 40;
@@ -41,42 +57,45 @@ export const weeklyEmaColors = {
   40: "#f60c0c",
 } as const;
 
-export const baseChartOptions = {
-  autoSize: true,
-  layout: {
-    background: { type: ColorType.Solid, color: chartColors.background },
-    textColor: chartColors.text,
-    attributionLogo: true,
-  },
-  grid: {
-    vertLines: { color: chartColors.grid },
-    horzLines: { color: chartColors.grid },
-  },
-  crosshair: { mode: CrosshairMode.Normal },
-  leftPriceScale: {
-    visible: false,
-    borderColor: chartColors.border,
-  },
-  rightPriceScale: {
-    borderColor: chartColors.border,
-    minimumWidth: synchronizedPriceScaleMinimumWidth,
-    scaleMargins: defaultPriceScaleMargins,
-  },
-  timeScale: {
-    barSpacing: defaultChartBarSpacing,
-    rightOffsetPixels: chartRightOffsetPixels,
-    shiftVisibleRangeOnNewBar: false,
-    borderColor: chartColors.border,
-    timeVisible: false,
-  },
-} satisfies DeepPartial<ChartOptions>;
+export function baseChartOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
+  const colors = getChartColors(mode);
+  return {
+    autoSize: true,
+    layout: {
+      background: { type: ColorType.Solid, color: colors.background },
+      textColor: colors.text,
+      attributionLogo: true,
+    },
+    grid: {
+      vertLines: { color: colors.grid },
+      horzLines: { color: colors.grid },
+    },
+    crosshair: { mode: CrosshairMode.Normal },
+    leftPriceScale: {
+      visible: false,
+      borderColor: colors.border,
+    },
+    rightPriceScale: {
+      borderColor: colors.border,
+      minimumWidth: synchronizedPriceScaleMinimumWidth,
+      scaleMargins: defaultPriceScaleMargins,
+    },
+    timeScale: {
+      barSpacing: defaultChartBarSpacing,
+      rightOffsetPixels: chartRightOffsetPixels,
+      shiftVisibleRangeOnNewBar: false,
+      borderColor: colors.border,
+      timeVisible: false,
+    },
+  };
+}
 
 export const candleSeriesOptions = {
-  upColor: chartColors.up,
-  downColor: chartColors.down,
+  upColor: visualizationColors.up,
+  downColor: visualizationColors.down,
   borderVisible: false,
-  wickUpColor: chartColors.up,
-  wickDownColor: chartColors.down,
+  wickUpColor: visualizationColors.up,
+  wickDownColor: visualizationColors.down,
   priceLineVisible: false,
 };
 
@@ -101,7 +120,7 @@ export const indicatorSeriesOptions = {
 
 export const volumeAverageSeriesOptions = {
   ...indicatorSeriesOptions,
-  color: chartColors.volumeAverage,
+  color: visualizationColors.volumeAverage,
   lineStyle: LineStyle.LargeDashed,
   priceFormat: { type: "volume" as const },
   priceScaleId: volumePriceScaleId,
@@ -109,7 +128,7 @@ export const volumeAverageSeriesOptions = {
 
 export const relativeStrengthSeriesOptions = {
   ...indicatorSeriesOptions,
-  color: "#e6c84f",
+  color: visualizationColors.relativeStrengthNeutral,
   lineStyle: LineStyle.LargeDashed,
   lineWidth: 1 as const,
   lastValueVisible: true,
@@ -118,5 +137,5 @@ export const relativeStrengthSeriesOptions = {
 };
 
 export function volumeColor(open: number, close: number) {
-  return close >= open ? chartColors.upVolume : chartColors.downVolume;
+  return close >= open ? visualizationColors.upVolume : visualizationColors.downVolume;
 }

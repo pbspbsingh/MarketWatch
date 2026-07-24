@@ -9,7 +9,7 @@
 .split-pane-divider {
   position: relative;
   z-index: 2;
-  background: #343b45;
+  background: var(--color-border);
   touch-action: none;
 
   &::before {
@@ -19,7 +19,7 @@
 
   &:hover,
   &:focus-visible {
-    background: #65758a;
+    background: var(--color-muted);
     outline: none;
   }
 }

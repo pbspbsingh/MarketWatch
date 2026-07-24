@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef } from "react";
+import { useAppSettings } from "../app/AppSettings";
+import { appPalettes } from "../app/theme";
 
 interface TradingViewWindow extends Window {
   TradingView?: {
@@ -44,6 +46,8 @@ function loadTradingView() {
 }
 
 export function TradingViewChart({ symbol, interval, onError }: TradingViewChartProps) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const containerId = `tradingview-${useId().replaceAll(":", "")}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TradingViewWidget | undefined>(undefined);
@@ -67,18 +71,18 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
           symbol: requested.symbol,
           interval: requested.interval,
           timezone: "America/Los_Angeles",
-          theme: "dark",
+          theme,
           style: "1",
           locale: "en",
-          toolbar_bg: "#1e1e1e",
+          toolbar_bg: palette.surface,
           enable_publishing: false,
           container_id: containerId,
           studies: ["MASimple@tv-basicstudies", "STD;MA%Ribbon"],
           studies_overrides: {
             "moving average.length": 10,
-            "moving average.ma.color": "#5693e7",
+            "moving average.ma.color": palette.accent,
           },
-          loading_screen: { backgroundColor: "#1e1e1e" },
+          loading_screen: { backgroundColor: palette.canvas },
         });
       })
       .catch((error: unknown) => {
@@ -95,7 +99,7 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
       widgetRef.current = undefined;
       container?.replaceChildren();
     };
-  }, [containerId, onError]);
+  }, [containerId, onError, palette, theme]);
 
   useEffect(() => {
     const widget = widgetRef.current;

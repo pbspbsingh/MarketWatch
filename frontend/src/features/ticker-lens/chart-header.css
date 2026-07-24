@@ -28,11 +28,11 @@
 
   & span,
   & a {
-    color: #f0f4f8;
+    color: var(--color-text);
   }
 
   & a:hover {
-    color: #58a6ff;
+    color: var(--color-accent);
   }
 }
 
@@ -62,7 +62,7 @@
 
   &:hover,
   &:focus-visible {
-    color: #f5a524 !important;
+    color: var(--color-warning) !important;
     text-decoration: underline;
   }
 }
@@ -80,16 +80,16 @@
 
   & .ticker-description-title {
     margin-bottom: 0.375rem;
-    color: #f0f4f8;
+    color: var(--color-text);
     font-weight: 600;
   }
 }
 
 .chart-indicators {
   padding: 0.15rem;
-  border: 0.0625rem solid #343b45;
+  border: 0.0625rem solid var(--color-border);
   border-radius: 0.25rem;
-  background: #151a20;
+  background: var(--color-canvas);
 
   & p {
     padding: 0 0.25rem;
@@ -99,7 +99,7 @@
   }
 
   & p + p {
-    border-left: 0.0625rem solid #4a5563;
+    border-left: 0.0625rem solid var(--color-border);
   }
 }
 
@@ -116,10 +116,10 @@
 .chart-theme-link {
   width: 1.15rem;
   height: 1.15rem;
-  color: #9ba5b0 !important;
+  color: var(--color-muted) !important;
   font-size: 0.72rem !important;
 
   &:hover {
-    color: #f5a524 !important;
+    color: var(--color-warning) !important;
   }
 }

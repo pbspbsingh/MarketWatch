@@ -5,6 +5,9 @@
 /frontend/dist/
 /frontend/dist_gzipped/
 /frontend/*.tsbuildinfo
+/artifacts/
+/frontend/scripts/check-colors.mjs
+/frontend/scripts/theme-screenshots.mjs
 *.log
 *.db
 config.toml

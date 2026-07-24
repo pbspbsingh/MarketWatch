@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
@@ -19,9 +23,12 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { NavLink, Outlet } from "react-router-dom";
+import { useAppSettings } from "./AppSettings";
 
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
@@ -35,8 +42,9 @@ const destinations = [
   ["Daily Notes", "/daily-notes", NoteAltOutlinedIcon, "amber"],
 ] as const;
 
-const navigationTriggerInset = 4;
+const triggerInset = 4;
 const navigationTriggerPositionKey = "navigation-trigger-y";
+const settingsTriggerPositionKey = "settings-trigger-y";
 const navigationModeKey = "navigation-mode";
 
 type NavigationMode = "tray" | "rail";
@@ -45,88 +53,115 @@ function readNavigationMode(): NavigationMode {
   return localStorage.getItem(navigationModeKey) === "rail" ? "rail" : "tray";
 }
 
-function readNavigationTriggerPosition() {
-  const storedValue = localStorage.getItem(navigationTriggerPositionKey);
-  if (storedValue === null) return navigationTriggerInset;
+function readTriggerPosition(key: string) {
+  const storedValue = localStorage.getItem(key);
+  if (storedValue === null) return triggerInset;
 
   const storedPosition = Number(storedValue);
-  return Number.isFinite(storedPosition) ? storedPosition : navigationTriggerInset;
+  return Number.isFinite(storedPosition) ? storedPosition : triggerInset;
 }
 
-export function AppShell() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [navigationMode, setNavigationMode] = useState<NavigationMode>(readNavigationMode);
-  const [triggerPosition, setTriggerPosition] = useState(readNavigationTriggerPosition);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const dragState = useRef({
+function useVerticalTrigger(positionKey: string) {
+  const [position, setPosition] = useState(() => readTriggerPosition(positionKey));
+  const ref = useRef<HTMLButtonElement>(null);
+  const drag = useRef({
     pointerId: 0,
     startY: 0,
     startPosition: 0,
     currentPosition: 0,
     moved: false,
   });
-
-  const clampTriggerPosition = (position: number) => {
-    const triggerHeight = triggerRef.current?.offsetHeight ?? 28;
+  const clampPosition = useCallback((value: number) => {
+    const triggerHeight = ref.current?.offsetHeight ?? 28;
     const maximumPosition = Math.max(
-      navigationTriggerInset,
-      window.innerHeight - triggerHeight - navigationTriggerInset,
+      triggerInset,
+      window.innerHeight - triggerHeight - triggerInset,
     );
-    return Math.min(
-      Math.max(position, navigationTriggerInset),
-      maximumPosition,
-    );
-  };
+    return Math.min(Math.max(value, triggerInset), maximumPosition);
+  }, []);
 
   useEffect(() => {
-    const clampPosition = () => setTriggerPosition((position) => clampTriggerPosition(position));
-    clampPosition();
-    window.addEventListener("resize", clampPosition);
-    return () => window.removeEventListener("resize", clampPosition);
-  }, []);
+    const handleResize = () => setPosition((current) => clampPosition(current));
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [clampPosition]);
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
-
-    dragState.current = {
+    drag.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      startPosition: triggerPosition,
-      currentPosition: triggerPosition,
+      startPosition: position,
+      currentPosition: position,
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const drag = dragState.current;
-    if (event.pointerId !== drag.pointerId || !event.currentTarget.hasPointerCapture(event.pointerId)) {
-      return;
-    }
+    const state = drag.current;
+    if (
+      event.pointerId !== state.pointerId
+      || !event.currentTarget.hasPointerCapture(event.pointerId)
+    ) return;
 
-    const deltaY = event.clientY - drag.startY;
-    if (Math.abs(deltaY) >= 4) drag.moved = true;
-    if (drag.moved) {
-      drag.currentPosition = clampTriggerPosition(drag.startPosition + deltaY);
-      setTriggerPosition(drag.currentPosition);
-    }
+    const deltaY = event.clientY - state.startY;
+    if (Math.abs(deltaY) >= 4) state.moved = true;
+    if (!state.moved) return;
+    state.currentPosition = clampPosition(state.startPosition + deltaY);
+    setPosition(state.currentPosition);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
-    const drag = dragState.current;
-    if (event.pointerId !== drag.pointerId) return;
-
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    if (drag.moved) {
-      localStorage.setItem(navigationTriggerPositionKey, String(drag.currentPosition));
+    const state = drag.current;
+    if (event.pointerId !== state.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    if (state.moved) localStorage.setItem(positionKey, String(state.currentPosition));
   };
 
+  const consumeDrag = () => {
+    if (!drag.current.moved) return false;
+    drag.current.moved = false;
+    return true;
+  };
+
+  return {
+    ref,
+    position,
+    consumeDrag,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+  };
+}
+
+export function AppShell() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { theme, setTheme } = useAppSettings();
+  const [navigationMode, setNavigationMode] = useState<NavigationMode>(readNavigationMode);
+  const {
+    ref: navigationTriggerRef,
+    position: navigationTriggerPosition,
+    consumeDrag: consumeNavigationDrag,
+    handlePointerDown: handleNavigationPointerDown,
+    handlePointerMove: handleNavigationPointerMove,
+    handlePointerUp: handleNavigationPointerUp,
+  } = useVerticalTrigger(navigationTriggerPositionKey);
+  const {
+    ref: settingsTriggerRef,
+    position: settingsTriggerPosition,
+    consumeDrag: consumeSettingsDrag,
+    handlePointerDown: handleSettingsPointerDown,
+    handlePointerMove: handleSettingsPointerMove,
+    handlePointerUp: handleSettingsPointerUp,
+  } = useVerticalTrigger(settingsTriggerPositionKey);
+
   const handleTriggerClick = () => {
-    if (dragState.current.moved) {
-      dragState.current.moved = false;
-      return;
-    }
+    if (consumeNavigationDrag()) return;
     setDrawerOpen(true);
   };
 
@@ -142,16 +177,16 @@ export function AppShell() {
         <>
           <Tooltip title="Open navigation">
             <IconButton
-              ref={triggerRef}
+              ref={navigationTriggerRef}
               className="navigation-trigger"
               size="small"
               aria-label="Open navigation"
-              style={{ top: triggerPosition }}
+              style={{ top: navigationTriggerPosition }}
               onClick={handleTriggerClick}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
+              onPointerDown={handleNavigationPointerDown}
+              onPointerMove={handleNavigationPointerMove}
+              onPointerUp={handleNavigationPointerUp}
+              onPointerCancel={handleNavigationPointerUp}
             >
               <MenuIcon fontSize="small" />
             </IconButton>
@@ -201,6 +236,60 @@ export function AppShell() {
       <main className="workspace">
         <Outlet />
       </main>
+      <Tooltip title={settingsOpen ? "Close settings" : "Open settings"} placement="left">
+        <IconButton
+          ref={settingsTriggerRef}
+          className="settings-trigger"
+          size="small"
+          aria-label={settingsOpen ? "Close settings" : "Open settings"}
+          aria-expanded={settingsOpen}
+          style={{ top: settingsTriggerPosition }}
+          onClick={() => {
+            if (!consumeSettingsDrag()) setSettingsOpen((open) => !open);
+          }}
+          onPointerDown={handleSettingsPointerDown}
+          onPointerMove={handleSettingsPointerMove}
+          onPointerUp={handleSettingsPointerUp}
+          onPointerCancel={handleSettingsPointerUp}
+        >
+          {settingsOpen ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+        </IconButton>
+      </Tooltip>
+      <Drawer
+        anchor="right"
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        slotProps={{ paper: { className: "settings-drawer" } }}
+      >
+        <div className="settings-drawer-header">
+          <Typography variant="subtitle2">Settings</Typography>
+          <IconButton size="small" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+            <ChevronRightIcon fontSize="small" />
+          </IconButton>
+        </div>
+        <section className="settings-section" aria-labelledby="appearance-setting">
+          <Typography id="appearance-setting" variant="overline">Appearance</Typography>
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            size="small"
+            value={theme}
+            aria-label="Color theme"
+            onChange={(_, nextTheme) => {
+              if (nextTheme === "dark" || nextTheme === "light") setTheme(nextTheme);
+            }}
+          >
+            <ToggleButton value="light" aria-label="Light theme">
+              <LightModeOutlinedIcon fontSize="small" />
+              Light
+            </ToggleButton>
+            <ToggleButton value="dark" aria-label="Dark theme">
+              <DarkModeOutlinedIcon fontSize="small" />
+              Dark
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </section>
+      </Drawer>
       {import.meta.env.DEV && <span className="development-badge" aria-hidden="true">DEV</span>}
     </div>
   );

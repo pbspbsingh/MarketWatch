@@ -2,12 +2,16 @@ import { useEffect, useRef } from "react";
 import { Typography } from "@mui/material";
 import type { ChartConfiguration, TooltipItem } from "chart.js";
 import type { QuarterFundamentals, TickerDetails } from "../api/details";
+import { useAppSettings } from "../app/AppSettings";
+import { appPalettes, type AppPalette } from "../app/theme";
 
 interface TickerFundamentalsTabProps {
   details: TickerDetails;
 }
 
 export function TickerFundamentalsTab({ details }: TickerFundamentalsTabProps) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
 
   return (
@@ -17,14 +21,14 @@ export function TickerFundamentalsTab({ details }: TickerFundamentalsTabProps) {
         quarters={quarters}
         field="earnings_per_share"
         forecast={details.fundamentals.next_quarter.earnings_per_share}
-        color="#58a6ff"
+        color={palette.accent}
       />
       <GrowthChart
         title="Revenue YoY Growth"
         quarters={quarters}
         field="revenue"
         forecast={details.fundamentals.next_quarter.revenue}
-        color="#f39c12"
+        color={palette.warning}
       />
       <EstimateChart
         title="EPS Actual / Estimate / Forecast"
@@ -59,6 +63,8 @@ function GrowthChart({
   forecast: number | null;
   color: string;
 }) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const historicalQuarters = quarters.slice(4);
   const historical = historicalQuarters.map((quarter, index) =>
     growthPercent(quarter[field], quarters[index]?.[field]),
@@ -67,7 +73,7 @@ function GrowthChart({
   const forecastValues = Array<number | null>(historical.length + 1).fill(null);
   if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
   forecastValues[historical.length] = forecastGrowth;
-  const options = chartOptions((value) => formatPercent(Number(value)));
+  const options = chartOptions((value) => formatPercent(Number(value)), palette);
   if (options.plugins?.tooltip !== undefined) {
     options.plugins.tooltip.filter = (item) =>
       item.dataset.label !== "Forecast" || item.dataIndex === historical.length;
@@ -96,7 +102,7 @@ function GrowthChart({
               label: "Forecast",
               data: forecastValues,
               borderColor: color,
-              backgroundColor: "#151a20",
+              backgroundColor: palette.canvas,
               borderDash: [5, 5],
               pointBorderColor: color,
               pointBorderWidth: 2,
@@ -125,13 +131,15 @@ function EstimateChart({
   forecast: number | null;
   format: (value: number) => string;
 }) {
+  const { theme } = useAppSettings();
+  const palette = appPalettes[theme];
   const actual = quarters.map((quarter) => quarter[actualField]);
   const estimates = quarters.map((quarter) => quarter[estimateField]);
   const forecastValues = Array<number | null>(quarters.length + 1).fill(null);
   if (quarters.length > 0) forecastValues[quarters.length - 1] = estimates.at(-1) ?? null;
   forecastValues[quarters.length] = forecast;
   const surprises = actual.map((value, index) => surprisePercent(value, estimates[index]));
-  const options = chartOptions((value) => format(Number(value)));
+  const options = chartOptions((value) => format(Number(value)), palette);
   if (options.plugins?.tooltip?.callbacks !== undefined) {
     options.plugins.tooltip.callbacks.footer = (items) => {
       const index = items[0]?.dataIndex;
@@ -155,8 +163,8 @@ function EstimateChart({
               type: "line",
               label: "Estimate",
               data: [...estimates, null],
-              borderColor: "#aaa",
-              backgroundColor: "#aaa",
+              borderColor: palette.muted,
+              backgroundColor: palette.muted,
               borderWidth: 2,
               pointRadius: 2,
               tension: 0.2,
@@ -165,10 +173,10 @@ function EstimateChart({
               type: "line",
               label: "Forecast",
               data: forecastValues,
-              borderColor: "#aaa",
-              backgroundColor: "#151a20",
+              borderColor: palette.muted,
+              backgroundColor: palette.canvas,
               borderDash: [5, 5],
-              pointBorderColor: "#aaa",
+              pointBorderColor: palette.muted,
               pointBorderWidth: 2,
               pointRadius: 2,
               tension: 0.2,
@@ -179,10 +187,10 @@ function EstimateChart({
               data: [...actual, null],
               backgroundColor: actual.map((value, index) =>
                 value === null || estimates[index] === null
-                  ? "#777"
+                  ? palette.muted
                   : value >= estimates[index]!
-                    ? "#27ae60"
-                    : "#e74c3c",
+                    ? palette.positive
+                    : palette.negative,
               ),
             },
           ],
@@ -238,6 +246,7 @@ function FundamentalChart({
 
 function chartOptions(
   format: (value: string | number) => string,
+  palette: AppPalette,
 ): NonNullable<ChartConfiguration["options"]> {
   return {
     responsive: true,
@@ -245,7 +254,7 @@ function chartOptions(
     animation: false,
     interaction: { mode: "index", intersect: false },
     plugins: {
-      legend: { labels: { color: "#aaa", boxWidth: 10, font: { size: 10 } } },
+      legend: { labels: { color: palette.muted, boxWidth: 10, font: { size: 10 } } },
       tooltip: {
         callbacks: {
           label: (context: TooltipItem<"line" | "bar">) =>
@@ -254,10 +263,10 @@ function chartOptions(
       },
     },
     scales: {
-      x: { ticks: { color: "#888", font: { size: 10 } }, grid: { color: "#292929" } },
+      x: { ticks: { color: palette.muted, font: { size: 10 } }, grid: { color: palette.border } },
       y: {
-        ticks: { color: "#888", callback: (value) => format(value), font: { size: 10 } },
-        grid: { color: "#333" },
+        ticks: { color: palette.muted, callback: (value) => format(value), font: { size: 10 } },
+        grid: { color: palette.border },
       },
     },
   };

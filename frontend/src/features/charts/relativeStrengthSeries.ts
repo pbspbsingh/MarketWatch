@@ -1,11 +1,12 @@
 import type { LineData, Time } from "lightweight-charts";
 import type { MarketChartRelativeStrength } from "../../api/marketChart";
+import { visualizationColors } from "../../components/lightweight-chart/chartOptions";
 
-export const positiveRsColor = "#2fbf71";
-export const negativeRsColor = "#ef5350";
-export const neutralRsColor = "#e6c84f";
-export const rsSwingHighColor = "#58a6ff";
-export const rsSwingLowColor = "#a371f7";
+export const positiveRsColor = visualizationColors.relativeStrengthPositive;
+export const negativeRsColor = visualizationColors.relativeStrengthNegative;
+export const neutralRsColor = visualizationColors.relativeStrengthNeutral;
+export const rsSwingHighColor = visualizationColors.relativeStrengthHigh;
+export const rsSwingLowColor = visualizationColors.relativeStrengthLow;
 
 export function relativeRsColor(value: number) {
   if (value > 0.5) return positiveRsColor;
