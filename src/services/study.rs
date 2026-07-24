@@ -1,15 +1,16 @@
 use crate::models::chart::{MarketChartInterval, MarketChartRelativeStrength};
 use crate::models::{
-    ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol,
+    ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
     analyze_relative_strength_structure, calculate_relative_strength_line,
 };
+use crate::providers::{ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::services::yahoo::YahooService;
-use crate::services::yahoo::YahooServiceError;
 use crate::utils::MarketSchedule;
-use chrono::{Months, NaiveDate, Utc};
+use chrono::{Months, NaiveDate, TimeZone, Utc};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::warn;
 
 #[derive(Clone, Debug, Serialize)]
@@ -58,24 +59,30 @@ pub enum StudyError {
     #[error("invalid study request: {0}")]
     InvalidInput(String),
     #[error(transparent)]
-    Data(#[from] YahooServiceError),
+    Provider(#[from] YahooError),
     #[error(transparent)]
     RelativeStrength(#[from] RelativeStrengthCalculationError),
-    #[error("stored Study candle has invalid volume on {0}")]
-    InvalidVolume(NaiveDate),
 }
 
 pub struct StudyService {
+    yahoo_client: Arc<YahooClient>,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
+    load_lock: AsyncMutex<()>,
     last: Mutex<Option<StudyResult>>,
 }
 
 impl StudyService {
-    pub fn new(yahoo: Arc<YahooService>, market_schedule: MarketSchedule) -> Self {
+    pub fn new(
+        yahoo_client: Arc<YahooClient>,
+        yahoo: Arc<YahooService>,
+        market_schedule: MarketSchedule,
+    ) -> Self {
         Self {
+            yahoo_client,
             yahoo,
             market_schedule,
+            load_lock: AsyncMutex::new(()),
             last: Mutex::new(None),
         }
     }
@@ -95,6 +102,7 @@ impl StudyService {
         fetch_range: (Option<NaiveDate>, Option<NaiveDate>),
         refresh: bool,
     ) -> Result<StudyResult, StudyError> {
+        let _load_guard = self.load_lock.lock().await;
         let symbols = validate(symbols, date)?;
         let available_end = self
             .market_schedule
@@ -105,22 +113,71 @@ impl StudyService {
         let (fetch_start, fetch_end) =
             resolve_fetch_range(start, end, fetch_range.0, fetch_range.1, refresh)?;
 
+        let previous = self
+            .last
+            .lock()
+            .expect("study last-result mutex is not poisoned")
+            .clone();
+        if !refresh
+            && fetch_range == (None, None)
+            && previous.as_ref().is_some_and(|result| {
+                same_study(result, &symbols, date)
+                    && result.range_start == start
+                    && result.range_end == end
+            })
+        {
+            return Ok(previous.expect("checked cached Study result"));
+        }
+        let reuse = !refresh
+            && reusable_previous(previous.as_ref(), &symbols, date, start, end, fetch_range);
+        let request_start = if reuse { fetch_start } else { start };
+        let request_end = if reuse { fetch_end } else { end };
         let mut series = Vec::with_capacity(2);
         let mut has_more_before = false;
         for (index, symbol) in symbols.into_iter().enumerate() {
-            self.yahoo
-                .refresh_historical_daily_candles(&symbol, fetch_start, fetch_end)
+            let fetched = self
+                .yahoo_client
+                .chart_range(
+                    &YahooSymbol::from(&symbol),
+                    ChartInterval::OneDay,
+                    Utc.from_utc_datetime(
+                        &request_start
+                            .and_hms_opt(0, 0, 0)
+                            .expect("valid Study start time"),
+                    ),
+                    Utc.from_utc_datetime(
+                        &request_end
+                            .and_hms_opt(0, 0, 0)
+                            .expect("valid Study end time"),
+                    ),
+                )
                 .await?;
-            let history = self
-                .yahoo
-                .historical_daily_candles(&symbol, start, end)
-                .await?;
-            has_more_before |= history.has_more_before;
-            let candles = history
+            let fetched_has_more_before = provider_has_more_before(&fetched, request_start);
+            let fetched = fetched
                 .candles
                 .into_iter()
-                .map(stored_study_candle)
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(provider_study_candle)
+                .collect::<Vec<_>>();
+            let candles = merge_study_candles(
+                if reuse {
+                    previous
+                        .as_ref()
+                        .and_then(|result| result.series.get(index))
+                        .map_or(&[], |series| series.candles.as_slice())
+                } else {
+                    &[]
+                },
+                &fetched,
+                start,
+                end,
+            );
+            has_more_before |= if reuse && request_start > start {
+                previous
+                    .as_ref()
+                    .is_some_and(|result| result.has_more_before)
+            } else {
+                fetched_has_more_before
+            };
             let moving_averages = [10, 20, 50, 100, 200]
                 .into_iter()
                 .map(|period| StudyMovingAverage {
@@ -163,6 +220,78 @@ impl StudyService {
             .expect("study last-result mutex is not poisoned") = Some(result.clone());
         Ok(result)
     }
+}
+
+fn same_study(result: &StudyResult, symbols: &[TickerSymbol], date: NaiveDate) -> bool {
+    result.date == date
+        && result.series.len() == symbols.len()
+        && result
+            .series
+            .iter()
+            .zip(symbols)
+            .all(|(series, symbol)| series.symbol == *symbol)
+}
+
+fn reusable_previous(
+    previous: Option<&StudyResult>,
+    symbols: &[TickerSymbol],
+    date: NaiveDate,
+    range_start: NaiveDate,
+    range_end: NaiveDate,
+    fetch_range: (Option<NaiveDate>, Option<NaiveDate>),
+) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    if !same_study(previous, symbols, date) {
+        return false;
+    }
+    match fetch_range {
+        (Some(fetch_start), Some(fetch_end)) => {
+            (range_start == fetch_start
+                && fetch_end == previous.range_start
+                && range_end == previous.range_end)
+                || (range_start == previous.range_start
+                    && fetch_start == previous.range_end
+                    && fetch_end == range_end)
+        }
+        _ => false,
+    }
+}
+
+fn provider_has_more_before(range: &ChartRange, start: NaiveDate) -> bool {
+    range
+        .first_trade_at
+        .map(|timestamp| timestamp.date_naive() < start)
+        .unwrap_or(!range.candles.is_empty())
+}
+
+fn provider_study_candle(candle: crate::providers::Candle) -> StudyCandle {
+    StudyCandle {
+        date: candle.timestamp.date_naive(),
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+    }
+}
+
+fn merge_study_candles(
+    existing: &[StudyCandle],
+    fetched: &[StudyCandle],
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<StudyCandle> {
+    let mut candles = existing
+        .iter()
+        .chain(fetched)
+        .filter(|candle| start <= candle.date && candle.date < end)
+        .cloned()
+        .collect::<Vec<_>>();
+    candles.sort_unstable_by_key(|candle| candle.date);
+    candles.dedup_by_key(|candle| candle.date);
+    candles
 }
 
 fn resolve_range(
@@ -221,19 +350,6 @@ fn resolve_fetch_range(
             "Study fetch range must be increasing and inside the result range".to_owned(),
         )),
     }
-}
-
-fn stored_study_candle(candle: DailyCandle) -> Result<StudyCandle, StudyError> {
-    let volume =
-        u64::try_from(candle.volume).map_err(|_| StudyError::InvalidVolume(candle.market_date))?;
-    Ok(StudyCandle {
-        date: candle.market_date,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        volume,
-    })
 }
 
 fn study_relative_strength(
@@ -321,6 +437,7 @@ fn validate(symbols: &[TickerSymbol], date: NaiveDate) -> Result<Vec<TickerSymbo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
 
     #[test]
     fn validates_symbols_and_date() {
@@ -370,6 +487,88 @@ mod tests {
             (range_start, range_end)
         );
         assert!(resolve_fetch_range(range_start, range_end, Some(date), None, false).is_err());
+    }
+
+    #[test]
+    fn reuses_only_an_adjacent_range_from_the_same_study() {
+        let date = NaiveDate::from_ymd_opt(2020, 7, 24).unwrap();
+        let previous_start = NaiveDate::from_ymd_opt(2018, 7, 24).unwrap();
+        let previous_end = NaiveDate::from_ymd_opt(2022, 7, 25).unwrap();
+        let earlier_start = NaiveDate::from_ymd_opt(2017, 7, 24).unwrap();
+        let later_end = NaiveDate::from_ymd_opt(2023, 7, 25).unwrap();
+        let symbols = [
+            TickerSymbol::parse("SPY").unwrap(),
+            TickerSymbol::parse("QQQ").unwrap(),
+        ];
+        let previous = StudyResult {
+            date,
+            range_start: previous_start,
+            range_end: previous_end,
+            has_more_before: true,
+            has_more_after: true,
+            series: symbols
+                .iter()
+                .cloned()
+                .map(|symbol| StudySeries {
+                    symbol,
+                    company_name: None,
+                    candles: Vec::new(),
+                    moving_averages: Vec::new(),
+                })
+                .collect(),
+            relative_strength: None,
+        };
+
+        assert!(reusable_previous(
+            Some(&previous),
+            &symbols,
+            date,
+            earlier_start,
+            previous_end,
+            (Some(earlier_start), Some(previous_start)),
+        ));
+        assert!(reusable_previous(
+            Some(&previous),
+            &symbols,
+            date,
+            previous_start,
+            later_end,
+            (Some(previous_end), Some(later_end)),
+        ));
+        assert!(!reusable_previous(
+            Some(&previous),
+            &symbols,
+            date,
+            earlier_start,
+            later_end,
+            (Some(earlier_start), Some(previous_start)),
+        ));
+    }
+
+    #[test]
+    fn merges_study_candles_in_memory_without_duplicates() {
+        let candle = |day, close| StudyCandle {
+            date: NaiveDate::from_ymd_opt(2020, 1, day).unwrap(),
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 1,
+        };
+        let merged = merge_study_candles(
+            &[candle(2, 2.0), candle(3, 3.0)],
+            &[candle(1, 1.0), candle(2, 20.0)],
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 1, 4).unwrap(),
+        );
+
+        assert_eq!(
+            merged
+                .iter()
+                .map(|candle| (candle.date.day(), candle.close))
+                .collect::<Vec<_>>(),
+            [(1, 1.0), (2, 2.0), (3, 3.0)]
+        );
     }
 
     #[test]
