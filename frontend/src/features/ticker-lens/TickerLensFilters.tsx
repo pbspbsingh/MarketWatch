@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
@@ -126,6 +125,9 @@ interface TickerLensFiltersProps {
 export function TickerLensFilters({ filters, enabled, persisted, counts, onChange, onPersistedChange }: TickerLensFiltersProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const restoreToggleFocus = useRef(false);
   const activeCount = Number(filters.adr.enabled) + Number(filters.dollarVolume.enabled)
     + Number(filters.above200Sma.enabled) + Number(filters.rsTrend.enabled);
   const active = activeCount > 0;
@@ -143,20 +145,29 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
     if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && panelRef.current?.contains(event.target)) return;
+      restoreToggleFocus.current = false;
       setOpen(false);
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  if (!open) {
-    return (
+  useEffect(() => {
+    if (!open && wasOpen.current && restoreToggleFocus.current) toggleRef.current?.focus();
+    if (!open) restoreToggleFocus.current = false;
+    wasOpen.current = open;
+  }, [open]);
+
+  return (
+    <>
+      {!open && (
       <Tooltip title={effective
         ? `${activeCount} active ticker filter${activeCount === 1 ? "" : "s"}`
         : pending
           ? "Select a group to apply ticker filters"
           : "Ticker filters"}>
         <IconButton
+          ref={toggleRef}
           className={[
             "ticker-lens-filter-toggle",
             effective ? "ticker-lens-filter-toggle-active" : "",
@@ -164,21 +175,30 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
           ].filter(Boolean).join(" ")}
           size="small"
           aria-label="Open ticker filters"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            restoreToggleFocus.current = false;
+            setOpen(true);
+          }}
         >
-          {active ? <FilterListIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
-          <span className="ticker-lens-filter-toggle-count">{counts.total}</span>
+          <KeyboardArrowDownIcon fontSize="small" />
+          {active && (
+            <span className="ticker-lens-filter-toggle-count">{counts.total}</span>
+          )}
         </IconButton>
       </Tooltip>
-    );
-  }
-
-  return (
-    <section ref={panelRef} className={[
-      "ticker-lens-filters",
-      effective ? "ticker-lens-filters-active" : "",
-      pending ? "ticker-lens-filters-pending" : "",
-    ].filter(Boolean).join(" ")} aria-label="Ticker filters">
+      )}
+      <section
+        ref={panelRef}
+        className={[
+          "ticker-lens-filters",
+          open ? "ticker-lens-filters-open" : "",
+          effective ? "ticker-lens-filters-active" : "",
+          pending ? "ticker-lens-filters-pending" : "",
+        ].filter(Boolean).join(" ")}
+        aria-label="Ticker filters"
+        aria-hidden={!open}
+        inert={!open}
+      >
       <div className="ticker-lens-filters-header">
         <Typography component="h3">Filters{active ? ` ${activeCount}` : ""}</Typography>
         <Typography className="ticker-lens-filter-count" component="span">
@@ -212,7 +232,14 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
             </span>
           </Tooltip>
           <Tooltip title="Collapse filters">
-            <IconButton size="small" aria-label="Collapse ticker filters" onClick={() => setOpen(false)}>
+            <IconButton
+              size="small"
+              aria-label="Collapse ticker filters"
+              onClick={() => {
+                restoreToggleFocus.current = true;
+                setOpen(false);
+              }}
+            >
               <KeyboardArrowUpIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -290,7 +317,8 @@ export function TickerLensFilters({ filters, enabled, persisted, counts, onChang
           ))}
         </div>
       </div>
-    </section>
+      </section>
+    </>
   );
 }
 
