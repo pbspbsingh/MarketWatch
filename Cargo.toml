@@ -4,7 +4,7 @@ version = "2.0.0"
 edition = "2024"
 
 [profile.release]
-opt-level = "z"
+opt-level = "s"
 panic = "abort"
 lto = true
 strip = true
