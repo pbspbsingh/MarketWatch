@@ -304,12 +304,9 @@ fn validate(symbols: &[TickerSymbol], date: NaiveDate) -> Result<Vec<TickerSymbo
         ));
     }
     let today = Utc::now().date_naive();
-    let earliest = today
-        .checked_sub_months(Months::new(120))
-        .unwrap_or(NaiveDate::MIN);
-    if date < earliest || date > today {
+    if date > today {
         return Err(StudyError::InvalidInput(
-            "date must be within the previous ten years".to_owned(),
+            "date cannot be in the future".to_owned(),
         ));
     }
     Ok(symbols)
@@ -322,17 +319,15 @@ mod tests {
     #[test]
     fn validates_symbols_and_date() {
         let today = Utc::now().date_naive();
-        assert_eq!(
-            validate(
-                &[
-                    TickerSymbol::parse("spy").unwrap(),
-                    TickerSymbol::parse("qqq").unwrap(),
-                ],
-                today,
-            )
-            .unwrap(),
-            ["SPY", "QQQ"]
-        );
+        let symbols = || {
+            [
+                TickerSymbol::parse("spy").unwrap(),
+                TickerSymbol::parse("qqq").unwrap(),
+            ]
+        };
+        assert_eq!(validate(&symbols(), today).unwrap(), ["SPY", "QQQ"]);
+        assert!(validate(&symbols(), NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()).is_ok());
+        assert!(validate(&symbols(), today.succ_opt().unwrap()).is_err());
         let spy = TickerSymbol::parse("SPY").unwrap();
         assert!(validate(&[spy.clone(), spy], today).is_err());
     }

@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
@@ -102,6 +109,33 @@ export function StudyPage() {
     void load(false);
   };
 
+  const changeDate = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const rawValue = input.value;
+    const rawCaret = input.selectionStart ?? rawValue.length;
+    const nextDate = formatDateInput(rawValue);
+    const nextCaret = dateCaretPosition(rawValue, rawCaret, nextDate);
+    setDate(nextDate);
+    window.requestAnimationFrame(() => {
+      if (document.activeElement === input) input.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const handleDateKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!(event.target instanceof HTMLInputElement)) return;
+    const input = event.target;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    if (start === null || end === null || start !== end) return;
+    if (event.key === "Backspace" && input.value[start - 1] === "-") {
+      event.preventDefault();
+      input.setSelectionRange(start - 1, start - 1);
+    } else if (event.key === "Delete" && input.value[start] === "-") {
+      event.preventDefault();
+      input.setSelectionRange(start + 1, start + 1);
+    }
+  };
+
   const exportStudy = async (action: ImageExportAction) => {
     const page = pageRef.current;
     if (page === null || result === undefined || exporting) return;
@@ -139,9 +173,29 @@ export function StudyPage() {
     <section ref={pageRef} className="study-page">
       <form className="study-header" onSubmit={submit}>
         <Typography component="h1">Study</Typography>
-        <TextField size="small" label="Ticker A" value={symbolA} onChange={(event) => setSymbolA(event.target.value)} />
-        <TextField size="small" label="Ticker B" value={symbolB} onChange={(event) => setSymbolB(event.target.value)} />
-        <TextField size="small" label="Date" placeholder="YYYY-MM-DD" value={date} onChange={(event) => setDate(event.target.value)} />
+        <TextField
+          size="small"
+          label="Ticker A"
+          value={symbolA}
+          onChange={(event) => setSymbolA(event.target.value)}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <TextField
+          size="small"
+          label="Ticker B"
+          value={symbolB}
+          onChange={(event) => setSymbolB(event.target.value)}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <TextField
+          size="small"
+          label="Date"
+          placeholder="YYYY-MM-DD"
+          value={date}
+          slotProps={{ htmlInput: { inputMode: "numeric" } }}
+          onChange={changeDate}
+          onKeyDown={handleDateKeyDown}
+        />
         <Button size="small" variant="contained" type="submit" disabled={loading}>Load</Button>
         <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={() => void load(true)}>Refresh</Button>
         {loading && <CircularProgress size="1rem" />}
@@ -237,9 +291,7 @@ function validateInputs(symbolA: string, symbolB: string, dateText: string) {
   if (localDateText(selected) !== dateText) return "Enter a valid calendar date";
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const earliest = new Date(today);
-  earliest.setFullYear(earliest.getFullYear() - 10);
-  if (selected < earliest || selected > today) return "Date must be within the previous ten years";
+  if (selected > today) return "Date cannot be in the future";
   return undefined;
 }
 
@@ -248,4 +300,70 @@ function localDateText(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatDateInput(value: string) {
+  const parts = value.split("-");
+  if (parts.length === 1) return formatDateDigits(digitsOnly(value));
+
+  const yearDigits = digitsOnly(parts[0]);
+  const year = yearDigits.slice(0, 4);
+  let overflow = yearDigits.slice(4);
+
+  const monthDigits = overflow + digitsOnly(parts[1] ?? "");
+  const month = monthDigits.slice(0, 2);
+  overflow = monthDigits.slice(2);
+
+  const day = (overflow + digitsOnly(parts.slice(2).join(""))).slice(0, 2);
+  const firstSeparator = parts.length > 1 || year.length === 4 ? "-" : "";
+  const secondSeparator = parts.length > 2 || month.length === 2 ? "-" : "";
+  return `${year}${firstSeparator}${month}${secondSeparator}${day}`;
+}
+
+function formatDateDigits(digits: string) {
+  const value = digits.slice(0, 8);
+  const year = value.slice(0, 4);
+  const month = value.slice(4, 6);
+  const day = value.slice(6, 8);
+  return `${year}${value.length >= 4 ? "-" : ""}${month}${value.length >= 6 ? "-" : ""}${day}`;
+}
+
+function dateCaretPosition(rawValue: string, rawCaret: number, formattedValue: string) {
+  const prefix = rawValue.slice(0, rawCaret);
+  const separatorCount = prefix.length - prefix.replaceAll("-", "").length;
+  if (separatorCount === 0) {
+    const digitCount = digitsOnly(prefix).length;
+    const rawSeparator = rawValue.indexOf("-");
+    if (rawSeparator !== -1 && rawCaret <= rawSeparator) return digitCount;
+    return caretAfterDigits(formattedValue, digitCount);
+  }
+
+  const digitsInSegment = digitsOnly(prefix.slice(prefix.lastIndexOf("-") + 1)).length;
+  const firstSeparator = formattedValue.indexOf("-");
+  if (separatorCount === 1) {
+    const secondSeparator = formattedValue.indexOf("-", firstSeparator + 1);
+    if (digitsInSegment >= 2 && secondSeparator !== -1) return secondSeparator + 1;
+    const monthEnd = secondSeparator === -1 ? formattedValue.length : secondSeparator;
+    return Math.min(firstSeparator + 1 + digitsInSegment, monthEnd);
+  }
+
+  const secondSeparator = formattedValue.indexOf("-", firstSeparator + 1);
+  return Math.min(secondSeparator + 1 + digitsInSegment, formattedValue.length);
+}
+
+function caretAfterDigits(value: string, digitCount: number) {
+  if (digitCount === 0) return 0;
+  let seen = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (/\d/.test(value[index])) seen += 1;
+    if (seen !== digitCount) continue;
+    let caret = index + 1;
+    while (value[caret] === "-") caret += 1;
+    return caret;
+  }
+  return value.length;
+}
+
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
 }
