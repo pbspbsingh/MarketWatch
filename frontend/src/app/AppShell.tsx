@@ -48,7 +48,7 @@ const navigationModeKey = "navigation-mode";
 type NavigationMode = "tray" | "rail";
 
 function readNavigationMode(): NavigationMode {
-  return localStorage.getItem(navigationModeKey) === "rail" ? "rail" : "tray";
+  return localStorage.getItem(navigationModeKey) === "tray" ? "tray" : "rail";
 }
 
 function readTriggerPosition(key: string) {
