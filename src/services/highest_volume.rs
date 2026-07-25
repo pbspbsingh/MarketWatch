@@ -292,28 +292,24 @@ fn measure_candles(
         })
         .collect::<Vec<_>>();
 
-    candles
-        .iter()
-        .enumerate()
-        .map(|(index, candle)| {
-            if index < VOLUME_AVERAGE_SESSIONS || index < ATR_SESSIONS {
-                return MeasuredCandle {
-                    market_date: candle.market_date,
-                    volume: candle.volume,
-                    average_volume: 0.0,
-                    rvol: 0.0,
-                    range_atr: 0.0,
-                    event: false,
-                    excluded_from_volume_high: false,
-                };
-            }
-            let average_volume = candles[index - VOLUME_AVERAGE_SESSIONS..index]
-                .iter()
-                .map(|prior| prior.volume as f64)
-                .sum::<f64>()
-                / VOLUME_AVERAGE_SESSIONS as f64;
-            let atr =
-                true_ranges[index - ATR_SESSIONS..index].iter().sum::<f64>() / ATR_SESSIONS as f64;
+    let mut measured = Vec::with_capacity(candles.len());
+    let mut volume_sum = 0.0;
+    let mut true_range_sum = 0.0;
+
+    for (index, candle) in candles.iter().enumerate() {
+        if index < VOLUME_AVERAGE_SESSIONS || index < ATR_SESSIONS {
+            measured.push(MeasuredCandle {
+                market_date: candle.market_date,
+                volume: candle.volume,
+                average_volume: 0.0,
+                rvol: 0.0,
+                range_atr: 0.0,
+                event: false,
+                excluded_from_volume_high: false,
+            });
+        } else {
+            let average_volume = volume_sum / VOLUME_AVERAGE_SESSIONS as f64;
+            let atr = true_range_sum / ATR_SESSIONS as f64;
             let rvol = if average_volume > 0.0 {
                 candle.volume as f64 / average_volume
             } else {
@@ -325,7 +321,7 @@ fn measure_candles(
                 0.0
             };
             let has_baseline = candle.volume > 0 && average_volume > 0.0 && atr > 0.0;
-            MeasuredCandle {
+            measured.push(MeasuredCandle {
                 market_date: candle.market_date,
                 volume: candle.volume,
                 average_volume,
@@ -335,9 +331,20 @@ fn measure_candles(
                 excluded_from_volume_high: has_baseline
                     && rvol >= minimum_rvol
                     && range_atr < minimum_range_atr,
-            }
-        })
-        .collect()
+            });
+        }
+
+        volume_sum += candle.volume as f64;
+        if index >= VOLUME_AVERAGE_SESSIONS {
+            volume_sum -= candles[index - VOLUME_AVERAGE_SESSIONS].volume as f64;
+        }
+        true_range_sum += true_ranges[index];
+        if index >= ATR_SESSIONS {
+            true_range_sum -= true_ranges[index - ATR_SESSIONS];
+        }
+    }
+
+    measured
 }
 
 fn compare_events(left: &HighestVolumeEvent, right: &HighestVolumeEvent) -> Ordering {
@@ -382,6 +389,23 @@ mod tests {
         assert!((event.rvol - 3.0).abs() < f64::EPSILON);
         assert!((event.range_atr - 5.5).abs() < f64::EPSILON);
         assert!(event.event);
+    }
+
+    #[test]
+    fn rolls_volume_and_true_range_windows_forward() {
+        let mut values = candles(52);
+        for (index, candle) in values.iter_mut().enumerate() {
+            candle.volume = index as i64 + 1;
+        }
+        values[30].high = 103.0;
+        values[30].low = 97.0;
+
+        let measured = measure_candles(&values, 0.0, 0.0);
+
+        assert!((measured[50].average_volume - 25.5).abs() < f64::EPSILON);
+        assert!((measured[51].average_volume - 26.5).abs() < f64::EPSILON);
+        assert!((measured[50].range_atr - (2.0 / 2.2)).abs() < f64::EPSILON);
+        assert!((measured[51].range_atr - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
