@@ -43,6 +43,7 @@ import "./study.css";
 
 const todayText = localDateText(new Date());
 const studyOrientationKey = "market-watch.study-orientation";
+const studySplitKey = "market-watch.study-split";
 const studyCrosshairSyncKey = "market-watch.study-crosshair-sync";
 const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
@@ -400,6 +401,8 @@ export function StudyPage() {
             result={result}
             datasetVersion={datasetVersion}
             orientation={orientation}
+            initialSplit={readStudySplit()}
+            onSplitChange={(split) => localStorage.setItem(studySplitKey, String(split))}
             syncCrosshair={crosshairSync}
             tickerBVisible={tickerBVisible}
             historyLoading={historyLoading}
@@ -418,6 +421,13 @@ export function StudyPage() {
       />
     </section>
   );
+}
+
+function readStudySplit() {
+  const storedValue = localStorage.getItem(studySplitKey);
+  if (storedValue === null) return 50;
+  const value = Number(storedValue);
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 50;
 }
 
 function validateInputs(symbolA: string, symbolB: string, dateText: string) {

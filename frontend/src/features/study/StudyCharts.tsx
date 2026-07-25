@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type PointerEvent,
 } from "react";
 import {
@@ -34,9 +35,15 @@ import {
   type AnchoredLogicalRange,
 } from "../../components/lightweight-chart/chartRange";
 import {
+  ChartContextMenu,
+  type ChartMenuPosition,
+} from "../../components/lightweight-chart/ChartContextMenu";
+import {
   getChartColors,
   chartThemeOptions,
+  chartRightOffsetPixels,
   candleSeriesOptions,
+  defaultChartBarSpacing,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthScaleMargins,
@@ -71,6 +78,8 @@ export function StudyCharts({
   result,
   datasetVersion,
   orientation,
+  initialSplit,
+  onSplitChange,
   syncCrosshair,
   tickerBVisible,
   historyLoading,
@@ -79,6 +88,8 @@ export function StudyCharts({
   result: StudyResult;
   datasetVersion: number;
   orientation: SplitOrientation;
+  initialSplit: number;
+  onSplitChange: (split: number) => void;
   syncCrosshair: boolean;
   tickerBVisible: boolean;
   historyLoading: boolean;
@@ -109,6 +120,7 @@ export function StudyCharts({
   const historyLoadingRef = useRef(historyLoading);
   const onRequestHistoryRef = useRef(onRequestHistory);
   const viewportRef = useRef<PreservedViewport | undefined>(undefined);
+  const rangeSynchronizationPausedRef = useRef(false);
   const interactionRef = useRef<{
     sequence: number;
     occurredAt: number;
@@ -116,6 +128,7 @@ export function StudyCharts({
   }>({ sequence: 0, occurredAt: 0 });
   const handledInteractionSequenceRef = useRef(0);
   const [showRelativeStrength, setShowRelativeStrength] = useState(true);
+  const [chartMenuPosition, setChartMenuPosition] = useState<ChartMenuPosition | null>(null);
   const showRelativeStrengthRef = useRef(showRelativeStrength);
   const firstSymbol = result.series[0]?.symbol ?? "";
   const secondSymbol = result.series[1]?.symbol ?? "";
@@ -218,6 +231,24 @@ export function StudyCharts({
     if (!syncCrosshair) chartsRef.current.forEach((chart) => chart.clearCrosshairPosition());
   }, [syncCrosshair]);
 
+  const openChartMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setChartMenuPosition({ left: event.clientX, top: event.clientY });
+  }, []);
+
+  const resetChartView = useCallback(() => {
+    setChartMenuPosition(null);
+    const chart = chartsRef.current[0];
+    if (chart === undefined) return;
+    handledInteractionSequenceRef.current = interactionRef.current.sequence;
+    const timeScale = chart.timeScale();
+    timeScale.applyOptions({ barSpacing: defaultChartBarSpacing });
+    timeScale.scrollToPosition(
+      chartRightOffsetPixels / defaultChartBarSpacing,
+      false,
+    );
+  }, []);
+
   useEffect(() => {
     const top = topRef.current;
     const bottom = bottomRef.current;
@@ -300,7 +331,7 @@ export function StudyCharts({
 
     let synchronizing = false;
     const synchronize = (target: typeof charts[number], range: LogicalRange | null) => {
-      if (synchronizing || range === null) return;
+      if (rangeSynchronizationPausedRef.current || synchronizing || range === null) return;
       const current = target.timeScale().getVisibleLogicalRange();
       if (current !== null && Math.abs(current.from - range.from) < 0.001 && Math.abs(current.to - range.to) < 0.001) return;
       synchronizing = true;
@@ -420,52 +451,57 @@ export function StudyCharts({
       after: result.has_more_after,
     };
 
-    result.series.forEach((series, index) => {
-      const byDate = candlesByDate[index];
-      candleSeries[index].setData(
-        dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
-          const candle = byDate.get(date);
-          return candle === undefined
-            ? { time: date }
-            : {
-              time: date,
-              open: candle.open,
-              high: candle.high,
-              low: candle.low,
-              close: candle.close,
-            };
-        }),
-      );
-      volumeSeriesRef.current[index]?.setData(
-        dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
-          const candle = byDate.get(date);
-          return candle === undefined
-            ? { time: date }
-            : {
-              time: date,
-              value: candle.volume,
-              color: candle.close >= candle.open
-                ? visualizationColors.upVolume
-                : visualizationColors.downVolume,
-            };
-        }),
-      );
-      const averagesByPeriod = new Map(
-        series.moving_averages.map((average) => [average.period, average]),
-      );
-      const specs = movingAverageSpecs(result.interval);
-      movingAverageSeriesRef.current[index]?.forEach((line, averageIndex) => {
-        const spec = specs[averageIndex];
-        if (spec === undefined) {
-          line.setData([]);
-        } else {
-          line.applyOptions({ color: spec.color });
-          line.setData(averagesByPeriod.get(spec.period)?.points.map(
-            (point) => ({ time: point.date, value: point.value }),
-          ) ?? []);
-        }
+    rangeSynchronizationPausedRef.current = true;
+    try {
+      result.series.forEach((series, index) => {
+        const byDate = candlesByDate[index];
+        candleSeries[index].setData(
+          dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
+            const candle = byDate.get(date);
+            return candle === undefined
+              ? { time: date }
+              : {
+                time: date,
+                open: candle.open,
+                high: candle.high,
+                low: candle.low,
+                close: candle.close,
+              };
+          }),
+        );
+        volumeSeriesRef.current[index]?.setData(
+          dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
+            const candle = byDate.get(date);
+            return candle === undefined
+              ? { time: date }
+              : {
+                time: date,
+                value: candle.volume,
+                color: candle.close >= candle.open
+                  ? visualizationColors.upVolume
+                  : visualizationColors.downVolume,
+              };
+          }),
+        );
+        const averagesByPeriod = new Map(
+          series.moving_averages.map((average) => [average.period, average]),
+        );
+        const specs = movingAverageSpecs(result.interval);
+        movingAverageSeriesRef.current[index]?.forEach((line, averageIndex) => {
+          const spec = specs[averageIndex];
+          if (spec === undefined) {
+            line.setData([]);
+          } else {
+            line.applyOptions({ color: spec.color });
+            line.setData(averagesByPeriod.get(spec.period)?.points.map(
+              (point) => ({ time: point.date, value: point.value }),
+            ) ?? []);
+          }
+        });
       });
-    });
+    } finally {
+      rangeSynchronizationPausedRef.current = false;
+    }
 
     relativeStrengthSeriesRef.current.forEach((series) => charts[0].removeSeries(series));
     const relativeStrength = result.relative_strength === null
@@ -514,33 +550,44 @@ export function StudyCharts({
   }, [datasetKey, result]);
 
   return (
-    <SplitPane
-      orientation={orientation}
-      secondVisible={tickerBVisible}
-      first={(
-        <ChartContainer
-          containerRef={topRef}
-          companyName={result.series[0].company_name ?? undefined}
-          interval={result.interval}
-          onPointerEnter={() => setCrosshairOwner(0)}
-          showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
-          onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
-          onPointerDown={markPointerInteraction}
-          onPointerMove={markChartDrag}
-          onWheel={markWheelInteraction}
-        />
-      )}
-      second={(
-        <ChartContainer
-          containerRef={bottomRef}
-          interval={result.interval}
-          onPointerEnter={() => setCrosshairOwner(1)}
-          onPointerDown={markPointerInteraction}
-          onPointerMove={markChartDrag}
-          onWheel={markWheelInteraction}
-        />
-      )}
-    />
+    <>
+      <SplitPane
+        orientation={orientation}
+        initialSplit={initialSplit}
+        secondVisible={tickerBVisible}
+        onSplitChange={onSplitChange}
+        first={(
+          <ChartContainer
+            containerRef={topRef}
+            companyName={result.series[0].company_name ?? undefined}
+            interval={result.interval}
+            onPointerEnter={() => setCrosshairOwner(0)}
+            showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
+            onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
+            onPointerDown={markPointerInteraction}
+            onPointerMove={markChartDrag}
+            onWheel={markWheelInteraction}
+            onContextMenu={openChartMenu}
+          />
+        )}
+        second={(
+          <ChartContainer
+            containerRef={bottomRef}
+            interval={result.interval}
+            onPointerEnter={() => setCrosshairOwner(1)}
+            onPointerDown={markPointerInteraction}
+            onPointerMove={markChartDrag}
+            onWheel={markWheelInteraction}
+            onContextMenu={openChartMenu}
+          />
+        )}
+      />
+      <ChartContextMenu
+        position={chartMenuPosition}
+        onClose={() => setChartMenuPosition(null)}
+        onResetView={resetChartView}
+      />
+    </>
   );
 }
 
@@ -621,6 +668,7 @@ function ChartContainer({
   onPointerDown,
   onPointerMove,
   onWheel,
+  onContextMenu,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
@@ -631,6 +679,7 @@ function ChartContainer({
   onPointerDown: () => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
   onWheel: () => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const companyLabel = companyName === undefined
     ? undefined
@@ -642,6 +691,7 @@ function ChartContainer({
       onPointerDownCapture={onPointerDown}
       onPointerMoveCapture={onPointerMove}
       onWheelCapture={onWheel}
+      onContextMenu={onContextMenu}
     >
       <div ref={containerRef} className="study-chart" />
       {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
