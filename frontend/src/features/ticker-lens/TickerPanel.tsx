@@ -197,6 +197,7 @@ export function TickerPanel({
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const watchlists = providedWatchlists ?? loadedWatchlists;
   const tickerListRef = useListRef(null);
+  const handledRevealTickerRevision = useRef<number | undefined>(undefined);
   const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState<TickerSortSetting>(() => {
     const defaultMetric = defaultBoundedMetricSort === undefined
@@ -391,9 +392,14 @@ export function TickerPanel({
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
   useEffect(() => {
-    if (revealTicker === undefined) return;
+    if (
+      revealTicker === undefined ||
+      handledRevealTickerRevision.current === revealTicker.revision
+    ) return;
     const index = sortedTickers.findIndex((ticker) => ticker.symbol === revealTicker.value);
-    if (index >= 0) tickerListRef.current?.scrollToRow({ align: "center", index });
+    if (index < 0 || tickerListRef.current === null) return;
+    tickerListRef.current.scrollToRow({ align: "center", index });
+    handledRevealTickerRevision.current = revealTicker.revision;
   }, [revealTicker, sortedTickers, tickerListRef]);
 
   useEffect(() => {
