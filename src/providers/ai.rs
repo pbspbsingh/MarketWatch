@@ -1,5 +1,5 @@
 use crate::config::AiConfig;
-use reqwest::Client;
+use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -23,6 +23,9 @@ enum Provider {
 pub enum AiError {
     #[error("AI request failed: {0}")]
     Transport(#[from] reqwest::Error),
+
+    #[error("AI provider returned {status}: {body}")]
+    ProviderResponse { status: StatusCode, body: String },
 
     #[error("AI request queue was closed")]
     QueueClosed,
@@ -147,7 +150,8 @@ impl AiClient {
                     .json(&request)
                     .send()
                     .await?
-                    .error_for_status()?
+                    .require_success()
+                    .await?
                     .json::<OllamaResponse>()
                     .await?
                     .message
@@ -160,7 +164,8 @@ impl AiClient {
                     .json(&request)
                     .send()
                     .await?
-                    .error_for_status()?
+                    .require_success()
+                    .await?
                     .json::<DeepSeekResponse>()
                     .await?
                     .choices
@@ -174,5 +179,35 @@ impl AiClient {
         (!content.trim().is_empty())
             .then_some(content)
             .ok_or(AiError::EmptyResponse)
+    }
+}
+
+trait ResponseExt {
+    async fn require_success(self) -> Result<Response, AiError>;
+}
+
+impl ResponseExt for Response {
+    async fn require_success(self) -> Result<Response, AiError> {
+        let status = self.status();
+        if status.is_success() {
+            return Ok(self);
+        }
+        let body = bounded_error_body(&self.text().await?);
+        Err(AiError::ProviderResponse { status, body })
+    }
+}
+
+fn bounded_error_body(body: &str) -> String {
+    const MAX_CHARS: usize = 2_000;
+    let body = body.trim();
+    if body.is_empty() {
+        return "<empty response body>".to_owned();
+    }
+    let mut chars = body.chars();
+    let bounded = chars.by_ref().take(MAX_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{bounded}…")
+    } else {
+        bounded
     }
 }
