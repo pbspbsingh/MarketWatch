@@ -26,6 +26,8 @@ import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
   GroupRanking,
+  BoundedTickerMetric,
+  DefaultBoundedMetricSort,
   RevealRequest,
   ResolveTickersRequest,
   SelectedTickerContext,
@@ -53,6 +55,8 @@ interface TickerLensProps {
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onBoundedResolution?: (failedCount: number) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral";
+  boundedMetrics?: readonly BoundedTickerMetric[];
+  defaultBoundedMetricSort?: DefaultBoundedMetricSort;
 }
 
 interface GroupSelectionState {
@@ -86,6 +90,8 @@ export function TickerLens({
   onWatchlistsChange,
   onBoundedResolution,
   accent,
+  boundedMetrics = [],
+  defaultBoundedMetricSort,
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
@@ -375,7 +381,8 @@ export function TickerLens({
       <TickerPanel
         tickerStream={tickerStream}
         bounded={bounded}
-        boundedSymbols={bounded ? activeGroupsState?.resolvedBoundedSymbols : undefined}
+        boundedMetrics={bounded ? boundedMetrics : []}
+        defaultBoundedMetricSort={bounded ? defaultBoundedMetricSort : undefined}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}

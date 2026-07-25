@@ -12,18 +12,6 @@ export interface TickerRanking {
   rs_trend: "uptrend" | "downtrend" | "unclear" | null;
 }
 
-export interface TickerRelativeStrengthRating {
-  symbol: string;
-  rs_1m: number | null;
-  rs_3m: number | null;
-  rs_6m: number | null;
-  rs_1y: number | null;
-}
-
-interface TickerRelativeStrengthResponse {
-  ratings: TickerRelativeStrengthRating[];
-}
-
 export interface TickerGroupSummaryItem {
   key: string;
   name: string;
@@ -69,22 +57,6 @@ export async function fetchTickerRanking(
     throw new Error(`Failed to load ticker ranking: HTTP ${response.status}`);
   }
   return response.json() as Promise<TickerRanking>;
-}
-
-export async function fetchTickerRelativeStrengthRatings(
-  symbols: string[],
-  signal?: AbortSignal,
-): Promise<TickerRelativeStrengthRating[]> {
-  const response = await fetch("/api/ticker-relative-strength-ratings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbols }),
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to load ticker RS ratings: HTTP ${response.status}`);
-  }
-  return (await response.json() as TickerRelativeStrengthResponse).ratings;
 }
 
 export async function fetchTickerGroupSummary(

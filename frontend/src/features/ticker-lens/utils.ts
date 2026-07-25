@@ -1,22 +1,28 @@
-import type { TickerRanking, TickerRelativeStrengthRating } from "../../api/tickers";
+import type { TickerRanking } from "../../api/tickers";
 import {
   interpolateRgbColor,
   tickerMetricScale,
 } from "../../app/visualizationColors";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerRelativeStrengthSortKey, TickerSortKey, TickerSortSetting } from "./types";
+import type { BoundedMetricSortKey, BoundedTickerMetric, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
 
-const tickerRelativeStrengthSortKeys = new Set<string>([
-  "rs_1m",
-  "rs_3m",
-  "rs_6m",
-  "rs_1y",
-]);
+const boundedMetricPrefix = "bounded:";
 
-export function isTickerRelativeStrengthSortKey(
+export function boundedMetricSortKey(id: string): BoundedMetricSortKey {
+  return `${boundedMetricPrefix}${id}`;
+}
+
+export function isBoundedMetricSortKey(key: SortKey | TickerSortKey): key is BoundedMetricSortKey {
+  return key.startsWith(boundedMetricPrefix);
+}
+
+export function boundedMetricForKey(
+  metrics: readonly BoundedTickerMetric[],
   key: SortKey | TickerSortKey,
-): key is TickerRelativeStrengthSortKey {
-  return tickerRelativeStrengthSortKeys.has(key);
+) {
+  if (!isBoundedMetricSortKey(key)) return undefined;
+  const id = key.slice(boundedMetricPrefix.length);
+  return metrics.find((metric) => metric.id === id);
 }
 
 export function readSortSetting(storageKey: string): SortSetting {
@@ -60,11 +66,9 @@ export function sortValue(group: GroupRanking, key: SortKey) {
 export function tickerSortValue(
   ticker: TickerRanking,
   key: TickerSortKey,
-  relativeStrengthRatings?: Map<string, TickerRelativeStrengthRating>,
+  boundedMetric?: BoundedTickerMetric,
 ) {
-  if (isTickerRelativeStrengthSortKey(key)) {
-    return relativeStrengthRatings?.get(ticker.symbol)?.[key] ?? undefined;
-  }
+  if (isBoundedMetricSortKey(key)) return boundedMetric?.values.get(ticker.symbol);
   if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
@@ -112,12 +116,12 @@ export function sortTickers(
   tickers: TickerRanking[],
   sortSetting: TickerSortSetting,
   sortActive: boolean,
-  relativeStrengthRatings?: Map<string, TickerRelativeStrengthRating>,
+  boundedMetric?: BoundedTickerMetric,
 ) {
   return [...tickers].sort((left, right) => {
     if (!sortActive) return left.symbol.localeCompare(right.symbol);
-    const leftValue = tickerSortValue(left, sortSetting.key, relativeStrengthRatings);
-    const rightValue = tickerSortValue(right, sortSetting.key, relativeStrengthRatings);
+    const leftValue = tickerSortValue(left, sortSetting.key, boundedMetric);
+    const rightValue = tickerSortValue(right, sortSetting.key, boundedMetric);
     if (leftValue === undefined && rightValue === undefined) {
       return left.symbol.localeCompare(right.symbol);
     }
@@ -132,35 +136,30 @@ export function sortTickers(
   });
 }
 
-export function formatMetric(value: number, key: SortKey | TickerSortKey) {
-  if (isTickerRelativeStrengthSortKey(key)) return Math.round(value).toString();
+export function formatMetric(
+  value: number,
+  key: SortKey | TickerSortKey,
+  boundedMetric?: BoundedTickerMetric,
+) {
+  if (isBoundedMetricSortKey(key)) return boundedMetric?.formatValue(value) ?? value.toString();
   if (key === "count") return value.toLocaleString();
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
 
-export function metricColor(value: number, key: SortKey | TickerSortKey) {
-  if (isTickerRelativeStrengthSortKey(key)) return relativeStrengthRatingColor(value);
+export function metricColor(
+  value: number,
+  key: SortKey | TickerSortKey,
+  boundedMetric?: BoundedTickerMetric,
+) {
+  if (isBoundedMetricSortKey(key)) {
+    return boundedMetric?.colorValue?.(value) ?? "var(--color-text)";
+  }
   if (key === "count") return "var(--color-text)";
   if (key === "adr_percent") return adrColor(value);
   if (key === "dollar_volume") return "var(--color-text)";
   return performanceColor(value, key);
-}
-
-function relativeStrengthRatingColor(rating: number) {
-  const value = Math.max(1, Math.min(99, rating));
-  return value <= 50
-    ? interpolateRgbColor(
-      tickerMetricScale.negativeStrong,
-      tickerMetricScale.neutral,
-      (value - 1) / 49,
-    )
-    : interpolateRgbColor(
-      tickerMetricScale.neutral,
-      tickerMetricScale.positiveStrong,
-      (value - 50) / 49,
-    );
 }
 
 function dollarVolume(ticker: TickerRanking) {

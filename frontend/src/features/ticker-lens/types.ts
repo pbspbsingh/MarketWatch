@@ -2,14 +2,28 @@ import type { PerformancePeriods } from "../../api/industries";
 
 export type GroupSortKey = "count";
 export type SortKey = GroupSortKey | "absolute_strength" | keyof PerformancePeriods;
-export type TickerRelativeStrengthSortKey = "rs_1m" | "rs_3m" | "rs_6m" | "rs_1y";
-export type TickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume" | TickerRelativeStrengthSortKey;
+export type BuiltInTickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume";
+export type BoundedMetricSortKey = `bounded:${string}`;
+export type TickerSortKey = BuiltInTickerSortKey | BoundedMetricSortKey;
 export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };
 export type GroupMode = "industry" | "theme";
 
 export type RevealRequest<T> = { value: T; revision: number };
+
+export type BoundedTickerMetric = {
+  id: string;
+  label: string;
+  values: ReadonlyMap<string, number>;
+  formatValue: (value: number) => string;
+  colorValue?: (value: number) => string;
+};
+
+export type DefaultBoundedMetricSort = {
+  metricId: string;
+  direction: SortDirection;
+};
 
 export type TickerFilters = {
   adr: {

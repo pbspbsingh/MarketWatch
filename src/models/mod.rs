@@ -7,7 +7,6 @@ mod market_data;
 mod performance;
 mod themes;
 mod ticker_collection;
-mod ticker_relative_strength;
 pub mod ticker_symbol;
 mod top_stock_screens;
 mod tradingview_symbol;
@@ -34,11 +33,6 @@ pub use themes::{
 pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
-};
-pub use ticker_relative_strength::TickerRelativeStrengthRatings;
-pub(crate) use ticker_relative_strength::{
-    TickerRelativeStrengthAnchors, TickerRelativeStrengthScores,
-    calculate_ticker_relative_strength_scores, rank_ticker_relative_strength_scores,
 };
 pub use ticker_symbol::TickerSymbol;
 pub use top_stock_screens::TopStockScreen;

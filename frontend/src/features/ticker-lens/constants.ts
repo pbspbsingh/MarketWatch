@@ -1,4 +1,4 @@
-import type { SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+import type { BuiltInTickerSortKey, SortKey, SortSetting, TickerSortSetting } from "./types";
 
 export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: "absolute_strength", label: "AS" },
@@ -9,7 +9,7 @@ export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: "half_year", label: "6M" },
   { key: "year", label: "1Y" },
 ];
-export const tickerSortOptions: ReadonlyArray<{ key: TickerSortKey; label: string }> = [
+export const tickerSortOptions: ReadonlyArray<{ key: BuiltInTickerSortKey; label: string }> = [
   { key: "absolute_strength", label: "AS" },
   { key: "adr_percent", label: "ADR" },
   { key: "dollar_volume", label: "DV" },
@@ -18,12 +18,6 @@ export const tickerSortOptions: ReadonlyArray<{ key: TickerSortKey; label: strin
   { key: "quarter", label: "3M" },
   { key: "half_year", label: "6M" },
   { key: "year", label: "1Y" },
-];
-export const tickerRelativeStrengthSortOptions: ReadonlyArray<{ key: TickerSortKey; label: string }> = [
-  { key: "rs_1m", label: "RS-1M" },
-  { key: "rs_3m", label: "RS-3M" },
-  { key: "rs_6m", label: "RS-6M" },
-  { key: "rs_1y", label: "RS-1Y" },
 ];
 
 export const sortSettingKey = "market-watch.industry-sort";
