@@ -48,7 +48,7 @@ export function TopStocksPage() {
           || nextScreens.some((screen) => screen.id === source.screen_id) ? nextSnapshot : null;
         setSnapshot(validSnapshot);
         const rememberedSelections = nextSnapshot?.period_selections ?? [];
-        if (source?.kind === "periods") setApplyAdditionalFilters(source.apply_additional_filters);
+        setApplyAdditionalFilters(nextSnapshot?.period_apply_additional_filters ?? false);
         setPeriodSelections(rememberedSelections);
         if (rememberedSelections.length > 0) {
           setDraftCount(String(rememberedSelections[0].count));
@@ -70,7 +70,7 @@ export function TopStocksPage() {
       const next = await replaceTopStocks(source);
       setSnapshot(next);
       setPeriodSelections(next.period_selections);
-      if (next.source.kind === "periods") setApplyAdditionalFilters(next.source.apply_additional_filters);
+      setApplyAdditionalFilters(next.period_apply_additional_filters);
     }
     catch (requestError) { setError(message(requestError)); }
     finally { setLoading(false); }
@@ -164,7 +164,10 @@ export function TopStocksPage() {
             <Tooltip title="Refresh top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {
               setLoading(true); void refreshTopStocks().then((next) => {
                 setSnapshot(next);
-                if (next !== null) setPeriodSelections(next.period_selections);
+                if (next !== null) {
+                  setPeriodSelections(next.period_selections);
+                  setApplyAdditionalFilters(next.period_apply_additional_filters);
+                }
               }).catch((requestError: unknown) => setError(message(requestError))).finally(() => setLoading(false));
             }}><RefreshIcon fontSize="small" /></IconButton></span></Tooltip>
             <Tooltip title="Clear top stocks"><span><IconButton size="small" disabled={loading || snapshot === null} onClick={() => {

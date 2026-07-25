@@ -60,6 +60,7 @@ pub struct TopStocksSnapshot {
     pub source: TopStocksSource,
     pub symbols: Vec<TickerSymbol>,
     pub period_selections: Vec<TopStocksSelection>,
+    pub period_apply_additional_filters: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,8 +94,14 @@ pub struct TopStocksService {
     finviz: Arc<FinvizClient>,
     additional_filters: Vec<String>,
     snapshot: Mutex<Option<TopStocksSnapshot>>,
-    period_selections: Mutex<Vec<TopStocksSelection>>,
+    period_settings: Mutex<PeriodSettings>,
     cache: Mutex<Cache>,
+}
+
+#[derive(Clone, Default)]
+struct PeriodSettings {
+    selections: Vec<TopStocksSelection>,
+    apply_additional_filters: bool,
 }
 
 #[derive(Default)]
@@ -128,7 +135,7 @@ impl TopStocksService {
             finviz,
             additional_filters: finviz_config.top_stocks_additional_filters.clone(),
             snapshot: Mutex::new(None),
-            period_selections: Mutex::new(Vec::new()),
+            period_settings: Mutex::new(PeriodSettings::default()),
             cache: Mutex::new(Cache::default()),
         }
     }
@@ -143,17 +150,25 @@ impl TopStocksService {
     ) -> Result<TopStocksSnapshot, TopStocksError> {
         validate_source(&source)?;
         let symbols = self.fetch(&source).await?;
-        let period_selections = match &source {
-            TopStocksSource::Periods { selections, .. } => {
-                *self.period_selections.lock().await = selections.clone();
-                selections.clone()
+        let period_settings = match &source {
+            TopStocksSource::Periods {
+                selections,
+                apply_additional_filters,
+            } => {
+                let settings = PeriodSettings {
+                    selections: selections.clone(),
+                    apply_additional_filters: *apply_additional_filters,
+                };
+                *self.period_settings.lock().await = settings.clone();
+                settings
             }
-            TopStocksSource::CustomScreen { .. } => self.period_selections.lock().await.clone(),
+            TopStocksSource::CustomScreen { .. } => self.period_settings.lock().await.clone(),
         };
         let snapshot = TopStocksSnapshot {
             source,
             symbols,
-            period_selections,
+            period_selections: period_settings.selections,
+            period_apply_additional_filters: period_settings.apply_additional_filters,
         };
         *self.snapshot.lock().await = Some(snapshot.clone());
         Ok(snapshot)

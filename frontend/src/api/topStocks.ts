@@ -13,6 +13,7 @@ export interface TopStocksSnapshot {
   source: TopStocksSource;
   symbols: string[];
   period_selections: TopStocksSelection[];
+  period_apply_additional_filters: boolean;
 }
 
 export interface TopStockScreen {
