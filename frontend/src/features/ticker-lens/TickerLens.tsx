@@ -13,6 +13,7 @@ import {
   unassignedGroupKey,
 } from "./constants";
 import { ChartPanel } from "./ChartPanel";
+import { fetchGlobalGroupRankings } from "./groupRankings";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
 import {
@@ -79,6 +80,12 @@ interface GroupCountsState {
   counts: Map<string, number>;
 }
 
+interface GlobalRankingGroupsState {
+  key: GroupMode | "";
+  groups: GroupRanking[];
+  error?: string;
+}
+
 const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
@@ -129,6 +136,8 @@ export function TickerLens({
     useState<SelectedTickerContext>();
   const [groupsCollapsed, setGroupsCollapsed] = useState(false);
   const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
+  const [globalRankingGroupsState, setGlobalRankingGroupsState] =
+    useState<GlobalRankingGroupsState>({ key: "", groups: [] });
   const [groupsState, setGroupsState] = useState<GroupsState>({
     key: "",
     groups: [],
@@ -160,6 +169,14 @@ export function TickerLens({
   const groupsLoading = activeGroupsState === undefined;
   const groupsError = activeGroupsState?.error;
   const groupsWarning = activeGroupsState?.warning;
+  const globalRankingGroups = bounded
+    ? globalRankingGroupsState.key === groupMode
+      ? globalRankingGroupsState.groups
+      : emptyGroups
+    : groups;
+  const globalRankingError = bounded && globalRankingGroupsState.key === groupMode
+    ? globalRankingGroupsState.error
+    : undefined;
   const boundedSymbolsByGroup = activeGroupsState?.boundedSymbolsByGroup ?? emptySymbolsByGroup;
   const boundedSymbols = bounded
     ? activeGroupsState?.resolvedBoundedSymbols ?? sourceBoundedSymbols
@@ -283,6 +300,27 @@ export function TickerLens({
     return () => controller.abort();
   }, [bounded, groupMode, groupsRequestKey, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
 
+  useEffect(() => {
+    if (!bounded) return;
+    const controller = new AbortController();
+    fetchGlobalGroupRankings(groupMode, controller.signal)
+      .then((rankingGroups) => {
+        if (!controller.signal.aborted) {
+          setGlobalRankingGroupsState({ key: groupMode, groups: rankingGroups });
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setGlobalRankingGroupsState({
+            key: groupMode,
+            groups: [],
+            error: `Global ranks unavailable: ${requestError.message}`,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [bounded, groupMode]);
+
   const resolveTickers = useCallback(
     (request: ResolveTickersRequest) => {
       if (!bounded) {
@@ -358,6 +396,7 @@ export function TickerLens({
           selectedGroupTickerCounts={selectedGroupTickerCounts}
           countSortAvailable={bounded}
           groups={groups}
+          globalRankingGroups={globalRankingGroups}
           loadingGroups={groupsLoading}
           groupError={groupsError}
           revealGroup={revealGroup}
@@ -438,6 +477,13 @@ export function TickerLens({
       <Toast
         message={groupsError}
         onClose={() => setGroupsState((current) => ({ ...current, error: undefined }))}
+      />
+      <Toast
+        message={globalRankingError}
+        severity="warning"
+        onClose={() =>
+          setGlobalRankingGroupsState((current) => ({ ...current, error: undefined }))
+        }
       />
     </section>
   );

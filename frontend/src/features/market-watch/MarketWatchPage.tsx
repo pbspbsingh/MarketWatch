@@ -1,9 +1,6 @@
 import { useCallback } from "react";
-import {
-  fetchIndustries,
-  fetchThemeRankings,
-} from "../../api/industries";
 import { resolveTickerMembership } from "../../api/tickers";
+import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import { unassignedGroupKey } from "../ticker-lens/constants";
 import type { ResolveGroupsRequest, ResolveTickersRequest } from "../ticker-lens/types";
@@ -21,26 +18,7 @@ const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<str
 
 export function MarketWatchPage() {
   const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
-    if (mode === "industry") {
-      return fetchIndustries(signal).then((industries) =>
-        industries.map(({ key, name, sector_key, sector_name, performance, absolute_strength }) => ({
-          key,
-          name,
-          sector_key,
-          sector_name,
-          performance,
-          absolute_strength,
-        })),
-      );
-    }
-    return fetchThemeRankings(signal).then((themes) =>
-      themes.map(({ id, name, performance, absolute_strength }) => ({
-        key: String(id),
-        name,
-        performance,
-        absolute_strength,
-      })),
-    );
+    return fetchGlobalGroupRankings(mode, signal);
   }, []);
   const resolveTickers = useCallback(
     ({ mode, groupKeys, signal }: ResolveTickersRequest) =>

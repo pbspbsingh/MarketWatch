@@ -24,6 +24,7 @@ import {
   Select,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -67,6 +68,7 @@ interface GroupPanelProps {
   selectedGroupTickerCounts: Map<string, number>;
   countSortAvailable: boolean;
   groups: GroupRanking[];
+  globalRankingGroups: GroupRanking[];
   loadingGroups: boolean;
   groupError?: string;
   revealGroup?: RevealRequest<string>;
@@ -83,6 +85,7 @@ export function GroupPanel({
   selectedGroupTickerCounts,
   countSortAvailable,
   groups,
+  globalRankingGroups,
   loadingGroups,
   groupError,
   revealGroup,
@@ -158,6 +161,15 @@ export function GroupPanel({
     [countSortAvailable, sortSetting],
   );
   const sortedGroups = useMemo(() => sortGroups(groupsWithCounts, activeSortSetting), [groupsWithCounts, activeSortSetting]);
+  const rankByGroupKey = useMemo(
+    () => activeSortSetting.key === "count"
+      ? new Map<string, number>()
+      : new Map(
+          sortGroups(globalRankingGroups, { ...activeSortSetting, direction: "desc" })
+            .map((group, index) => [group.key, index + 1]),
+        ),
+    [activeSortSetting, globalRankingGroups],
+  );
   const availableSortOptions = useMemo(
     () => sortOptions.filter((option) =>
       countSortAvailable || option.key !== "count"
@@ -517,6 +529,10 @@ export function GroupPanel({
 
   function renderGroup(group: GroupRanking) {
             const metric = sortValue(group, activeSortSetting.key);
+            const rank = rankByGroupKey.get(group.key);
+            const nameColor = rank === undefined
+              ? undefined
+              : rankColor(rank, globalRankingGroups.length);
             const highlighted = highlightedGroupKeys.has(group.key);
             const explored = exploredGroupKeys.has(group.key);
             return (
@@ -550,13 +566,19 @@ export function GroupPanel({
                     markExplored(group.key);
                   }}
                 >
-                  <span
-                    className="ranked-name"
-                    title={`${group.name}${countLabel(group, selectedGroupTickerCounts)}`}
-                  >
-                    {group.name}
-                    {countLabel(group, selectedGroupTickerCounts)}
-                  </span>
+                  {rank === undefined ? (
+                    <span className="ranked-name" style={{ color: nameColor }}>
+                      {group.name}
+                      {countLabel(group, selectedGroupTickerCounts)}
+                    </span>
+                  ) : (
+                    <Tooltip title={`Global rank #${rank}`} arrow>
+                      <span className="ranked-name" style={{ color: nameColor }}>
+                        {group.name}
+                        {countLabel(group, selectedGroupTickerCounts)}
+                      </span>
+                    </Tooltip>
+                  )}
                   {metric !== undefined && (
                     <span
                       className="ranked-metric"
@@ -571,6 +593,54 @@ export function GroupPanel({
               </li>
             );
   }
+}
+
+function rankColor(rank: number, totalRanks: number) {
+  const percentile = totalRanks <= 1 ? 0 : (rank - 1) / (totalRanks - 1);
+  const greenBandEnd = 0.18;
+  const yellowBandEnd = 0.3;
+  const yellowPeak = (greenBandEnd + yellowBandEnd) / 2;
+  const greenYellow = mixRankColors(
+    "var(--color-positive)",
+    "var(--color-warning)",
+    0.5,
+  );
+  const yellowRed = mixRankColors(
+    "var(--color-warning)",
+    "var(--color-negative)",
+    0.7,
+  );
+
+  if (percentile <= greenBandEnd) {
+    return mixRankColors(
+      "var(--color-positive)",
+      greenYellow,
+      percentile / greenBandEnd,
+    );
+  }
+  if (percentile <= yellowPeak) {
+    return mixRankColors(
+      greenYellow,
+      "var(--color-warning)",
+      (percentile - greenBandEnd) / (yellowPeak - greenBandEnd),
+    );
+  }
+  if (percentile <= yellowBandEnd) {
+    return mixRankColors(
+      "var(--color-warning)",
+      yellowRed,
+      (percentile - yellowPeak) / (yellowBandEnd - yellowPeak),
+    );
+  }
+  return mixRankColors(
+    yellowRed,
+    "var(--color-negative)",
+    (percentile - yellowBandEnd) / (1 - yellowBandEnd),
+  );
+}
+
+function mixRankColors(from: string, to: string, progress: number) {
+  return `color-mix(in oklab, ${to} ${(100 * progress).toFixed(1)}%, ${from})`;
 }
 
 function readExpandedSectors() {
