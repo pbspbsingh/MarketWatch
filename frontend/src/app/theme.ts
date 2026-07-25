@@ -9,7 +9,8 @@ export type FeatureAccent =
   | "magenta"
   | "amber"
   | "lime"
-  | "blue";
+  | "blue"
+  | "indigo";
 
 export type AppPalette = {
   canvas: string;
@@ -67,6 +68,7 @@ export const featureAccents: Record<AppThemeMode, Record<FeatureAccent, string>>
     amber: "#f59e0b",
     lime: "#84cc16",
     blue: "#58a6ff",
+    indigo: "#818cf8",
   },
   light: {
     purple: "#6d3fd1",
@@ -77,6 +79,7 @@ export const featureAccents: Record<AppThemeMode, Record<FeatureAccent, string>>
     amber: "#9a5b00",
     lime: "#527d0b",
     blue: "#1769aa",
+    indigo: "#4338ca",
   },
 };
 

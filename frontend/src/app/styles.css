@@ -288,6 +288,7 @@ body,
 .navigation-icon-amber { color: var(--accent-amber) !important; }
 .navigation-icon-lime { color: var(--accent-lime) !important; }
 .navigation-icon-blue { color: var(--accent-blue) !important; }
+.navigation-icon-indigo { color: var(--accent-indigo) !important; }
 
 .theme-management-page {
   border-top: 0.125rem solid var(--accent-magenta);

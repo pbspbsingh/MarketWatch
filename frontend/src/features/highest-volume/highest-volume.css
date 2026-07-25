@@ -1,0 +1,114 @@
+.highest-volume-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+
+  & > .ticker-lens {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.highest-volume-header,
+.highest-volume-controls,
+.highest-volume-slider,
+.highest-volume-number {
+  display: flex;
+  align-items: center;
+}
+
+.highest-volume-header {
+  min-height: 1.55rem;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  gap: 0.5rem;
+
+  & h1 {
+    flex-shrink: 0;
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+}
+
+.highest-volume-controls {
+  min-width: 0;
+  margin-left: auto;
+  gap: 1rem;
+}
+
+.highest-volume-slider {
+  width: 9rem;
+  flex-shrink: 0;
+  gap: 0.4rem;
+
+  & .MuiTypography-root {
+    min-width: 2.4rem;
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  & .MuiTypography-root:last-child {
+    min-width: 1.5rem;
+    color: var(--color-text);
+    text-align: right;
+  }
+
+  & .MuiSlider-root {
+    min-width: 0;
+    padding-block: 0.65rem;
+    flex: 1;
+  }
+
+  & .MuiSlider-valueLabel {
+    top: calc(100% + 0.4rem);
+    transform: scale(0);
+    transform-origin: top center;
+
+    &::before {
+      top: 0;
+      bottom: auto;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    &.MuiSlider-valueLabelOpen {
+      transform: scale(1);
+    }
+  }
+}
+
+.highest-volume-number {
+  flex-shrink: 0;
+  gap: 0.3rem;
+
+  & .MuiTypography-root {
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  & .MuiTextField-root {
+    width: 3.5rem;
+  }
+
+  & .MuiInputBase-input {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.68rem;
+  }
+}
+
+.panel-header .MuiTypography-root.highest-volume-summary {
+  font-size: 0.6rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .highest-volume-header,
+  .highest-volume-controls {
+    flex-wrap: wrap;
+  }
+
+  .highest-volume-controls {
+    justify-content: flex-end;
+  }
+}

@@ -2,6 +2,7 @@ pub mod chart;
 pub mod daily_notes;
 pub mod details;
 pub mod global_search;
+pub mod highest_volume;
 pub mod industries;
 pub mod industry_analysis;
 pub mod maintenance;

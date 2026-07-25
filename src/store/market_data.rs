@@ -2,6 +2,7 @@ use super::Store;
 use crate::models::{CompanyProfile, DailyCandle, Exchange, TickerSymbol};
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
+use futures_util::TryStreamExt;
 
 struct StoredProfile {
     symbol: String,
@@ -9,6 +10,16 @@ struct StoredProfile {
     exchange: String,
     description: Option<String>,
     profile_fetched_at: NaiveDateTime,
+}
+
+struct StoredSymbolCandle {
+    symbol: String,
+    market_date: NaiveDate,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    volume: i64,
 }
 
 impl Store {
@@ -167,6 +178,53 @@ impl Store {
         .fetch_all(&self.pool)
         .await
         .context("failed to load daily candles")
+    }
+
+    pub async fn daily_candle_histories(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> anyhow::Result<Vec<(TickerSymbol, Vec<DailyCandle>)>> {
+        let mut rows = sqlx::query_as!(
+            StoredSymbolCandle,
+            r#"SELECT symbol, market_date AS "market_date: NaiveDate", open, high, low,
+                    close, volume
+             FROM daily_candles
+             WHERE market_date >= ? AND market_date <= ?
+             ORDER BY symbol, market_date"#,
+            start,
+            end,
+        )
+        .fetch(&self.pool);
+
+        let mut histories = Vec::<(TickerSymbol, Vec<DailyCandle>)>::new();
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .context("failed to load daily candle histories")?
+        {
+            let symbol = TickerSymbol::try_from(row.symbol)
+                .context("stored daily candle has an invalid ticker symbol")?;
+            if histories
+                .last()
+                .is_none_or(|(current, _)| current != &symbol)
+            {
+                histories.push((symbol.clone(), Vec::new()));
+            }
+            histories
+                .last_mut()
+                .expect("daily candle history was initialized")
+                .1
+                .push(DailyCandle {
+                    market_date: row.market_date,
+                    open: row.open,
+                    high: row.high,
+                    low: row.low,
+                    close: row.close,
+                    volume: row.volume,
+                });
+        }
+        Ok(histories)
     }
 
     pub async fn upsert_daily_candles(

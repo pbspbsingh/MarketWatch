@@ -13,6 +13,7 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
+import BarChartIcon from "@mui/icons-material/BarChart";
 import {
   Drawer,
   IconButton,
@@ -34,6 +35,7 @@ const destinations = [
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
+  ["Highest Volume", "/highest-volume", BarChartIcon, "indigo"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Theme Management", "/theme-management", TuneIcon, "magenta"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],

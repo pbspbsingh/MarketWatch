@@ -54,7 +54,7 @@ interface TickerLensProps {
   watchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onBoundedResolution?: (failedCount: number) => void;
-  accent?: "purple" | "yellow" | "blue" | "green" | "coral";
+  accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
   boundedMetrics?: readonly BoundedTickerMetric[];
   defaultBoundedMetricSort?: DefaultBoundedMetricSort;
 }

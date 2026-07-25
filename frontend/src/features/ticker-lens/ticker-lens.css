@@ -441,6 +441,10 @@
   border-top-color: var(--accent-coral);
 }
 
+.ticker-lens-accent-indigo {
+  border-top-color: var(--accent-indigo);
+}
+
 .panel-list-header {
   display: flex;
   align-items: center;

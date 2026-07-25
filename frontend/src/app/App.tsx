@@ -37,6 +37,11 @@ const TopStocksPage = lazy(() =>
     default: TopStocksPage,
   })),
 );
+const HighestVolumePage = lazy(() =>
+  import("../features/highest-volume/HighestVolumePage").then(({ HighestVolumePage }) => ({
+    default: HighestVolumePage,
+  })),
+);
 const StudyPage = lazy(() =>
   import("../features/study/StudyPage").then(({ StudyPage }) => ({ default: StudyPage })),
 );
@@ -54,6 +59,7 @@ export function App() {
         <Route path="/watchlists" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
         <Route path="/watchlists/:id" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
         <Route path="/top-stocks" element={<Page title="Top Stocks"><TopStocksPage /></Page>} />
+        <Route path="/highest-volume" element={<Page title="Highest Volume"><HighestVolumePage /></Page>} />
         <Route path="/csv-analyzer" element={<Page title="CSV Analyzer"><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page title="Theme Management"><ThemeManagementPage /></Page>} />
         <Route path="/theme-tracker" element={<Page title="Theme Tracker"><ThemeTrackerPage /></Page>} />
