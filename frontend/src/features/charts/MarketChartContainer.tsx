@@ -65,6 +65,7 @@ interface MarketChartContainerProps {
 
 const historyLoadThresholdBars = 25;
 const chartInteractionWindowMs = 1_000;
+const automaticHistoryCheckDelayMs = 500;
 
 export function MarketChartContainer({
   symbol,
@@ -250,6 +251,30 @@ export function MarketChartContainer({
   }, [chartContext, interactionTrackerRef]);
 
   const state = loadState?.key === datasetKey ? loadState : undefined;
+  useEffect(() => {
+    if (
+      chartContext === null
+      || state?.status !== "ready"
+      || snapshot === undefined
+      || snapshot.interval !== interval
+      || !snapshot.has_more_before
+      || snapshot.earliest_date === null
+      || snapshot.latest_date === null
+    ) return;
+
+    const timeout = window.setTimeout(() => {
+      if (chartContext.isDisposed() || historyControllerRef.current !== null) return;
+      const range = chartContext.chart.timeScale().getVisibleLogicalRange();
+      if (range === null) return;
+      const bars = chartContext.candleSeries.barsInLogicalRange(range);
+      if (bars !== null && bars.barsBefore < 0) {
+        setHistoryTrigger((current) => current + 1);
+      }
+    }, automaticHistoryCheckDelayMs);
+
+    return () => window.clearTimeout(timeout);
+  }, [chartContext, interval, snapshot, state?.status]);
+
   useEffect(() => {
     if (handledHistoryTriggerRef.current === historyTrigger) return;
     handledHistoryTriggerRef.current = historyTrigger;
