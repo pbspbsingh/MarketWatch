@@ -572,7 +572,7 @@ export function GroupPanel({
                       {countLabel(group, selectedGroupTickerCounts)}
                     </span>
                   ) : (
-                    <Tooltip title={`Global rank #${rank}`} arrow>
+                    <Tooltip title={`Global rank #${rank}`} placement="right" arrow>
                       <span className="ranked-name" style={{ color: nameColor }}>
                         {group.name}
                         {countLabel(group, selectedGroupTickerCounts)}
