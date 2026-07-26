@@ -107,4 +107,7 @@ VALUES
     ('Electric Utilities', 'XLU', 'Regulated electric utilities; broad utility coverage'),
     ('Water', 'PHO', 'Water utilities and treatment; excludes electric'),
     ('Infrastructure', 'PAVE', 'Roads bridges and airports; excludes REITs and utilities'),
-    ('Critical Minerals', 'REMX', 'Rare earth and strategic mineral producers');
+    ('Critical Minerals', 'REMX', 'Rare earth and strategic mineral producers'),
+    ('Computer Hardware', 'XLK', 'Generic computer hardware, fallback for all tech related tickers'),
+    ('Photonics', 'EUV', 'Companies significantly involved in semiconductor photonics and light-based technologies.'),
+    ('Memory', 'DRAM', 'Memory semiconductor designers and manufacturers; excludes broad semiconductor exposure');
