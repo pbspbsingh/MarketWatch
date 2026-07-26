@@ -1,3 +1,9 @@
+#[cfg(all(feature = "sqlite-bundled", feature = "sqlite-unbundled"))]
+compile_error!("features `sqlite-bundled` and `sqlite-unbundled` are mutually exclusive");
+
+#[cfg(not(any(feature = "sqlite-bundled", feature = "sqlite-unbundled")))]
+compile_error!("enable either feature `sqlite-bundled` or `sqlite-unbundled`");
+
 mod api;
 mod app;
 mod config;
