@@ -3,7 +3,8 @@ CREATE TABLE watchlists (
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
     kind TEXT NOT NULL CHECK (kind IN ('favourites', 'custom')),
     created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    icon_key TEXT NOT NULL DEFAULT 'bookmark'
 );
 
 CREATE TABLE watchlist_tickers (
@@ -16,5 +17,12 @@ CREATE TABLE watchlist_tickers (
 CREATE INDEX watchlist_tickers_symbol
     ON watchlist_tickers (symbol);
 
-INSERT INTO watchlists (name, kind, created_at, updated_at)
-VALUES ('Favourites', 'favourites', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX watchlists_icon_key
+    ON watchlists (icon_key);
+
+CREATE UNIQUE INDEX watchlists_single_favourites
+    ON watchlists (kind)
+    WHERE kind = 'favourites';
+
+INSERT INTO watchlists (name, kind, icon_key, created_at, updated_at)
+VALUES ('Favourites', 'favourites', 'bookmark', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);

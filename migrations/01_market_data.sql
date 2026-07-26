@@ -17,5 +17,13 @@ CREATE TABLE daily_candles (
     PRIMARY KEY (symbol, market_date)
 );
 
-CREATE INDEX daily_candles_symbol_market_date_desc
-    ON daily_candles (symbol, market_date DESC);
+CREATE TABLE fundamentals (
+    symbol TEXT PRIMARY KEY NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    payload JSON NOT NULL,
+    fetched_at DATETIME NOT NULL
+);
+
+CREATE TABLE nyse_holidays (
+    market_date DATE PRIMARY KEY,
+    fetched_at DATETIME NOT NULL
+);
