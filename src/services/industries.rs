@@ -1,6 +1,6 @@
 use crate::config::{FinvizConfig, MarketConfig};
 use crate::providers::FinvizClient;
-use crate::store::{IndustryClassification, IndustrySnapshotRow, NewIndustrySnapshot, Store};
+use crate::store::{IndustryClassification, IndustryRankingRow, IndustryRankings, Store};
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, TimeDelta, Utc};
 use std::sync::Arc;
@@ -20,8 +20,8 @@ pub struct IndustryRefreshService {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IndustryRefreshOutcome {
     Fresh,
-    Inserted,
-    AlreadyInserted,
+    Updated,
+    AlreadyCurrent,
 }
 
 impl IndustryRefreshService {
@@ -89,19 +89,19 @@ impl IndustryRefreshService {
 
     async fn refresh_if_stale(&self) -> anyhow::Result<IndustryRefreshOutcome> {
         let now = Utc::now();
-        let latest_date = self.store.latest_industry_snapshot_date().await?;
+        let latest_date = self.store.industry_rankings_date().await?;
 
         if !self.is_stale(latest_date, now) {
             return Ok(IndustryRefreshOutcome::Fresh);
         }
 
         let industries = self.finviz.industries().await?;
-        let snapshot = NewIndustrySnapshot {
+        let rankings = IndustryRankings {
             market_date: self.market_schedule.recent_trading_day(now),
             fetched_at: now,
             rows: industries
                 .into_iter()
-                .map(|industry| IndustrySnapshotRow {
+                .map(|industry| IndustryRankingRow {
                     key: industry.industry.key,
                     name: industry.industry.name,
                     performance_day: industry.day,
@@ -117,17 +117,17 @@ impl IndustryRefreshService {
 
         if self
             .store
-            .insert_industry_snapshot_if_absent(&snapshot)
+            .replace_industry_rankings_if_newer(&rankings)
             .await?
         {
             info!(
-                market_date = %snapshot.market_date,
-                industry_count = snapshot.rows.len(),
-                "stored Finviz industry snapshot"
+                market_date = %rankings.market_date,
+                industry_count = rankings.rows.len(),
+                "stored current Finviz industry rankings"
             );
-            Ok(IndustryRefreshOutcome::Inserted)
+            Ok(IndustryRefreshOutcome::Updated)
         } else {
-            Ok(IndustryRefreshOutcome::AlreadyInserted)
+            Ok(IndustryRefreshOutcome::AlreadyCurrent)
         }
     }
 

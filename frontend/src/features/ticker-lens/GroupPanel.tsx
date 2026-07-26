@@ -393,7 +393,7 @@ export function GroupPanel({
       )}
       {!loadingGroups && !groupError && groups.length === 0 && mode === "industry" && (
         <Typography className="panel-empty" color="text.secondary">
-          No {mode === "industry" ? "industry snapshot" : "theme rankings"} available
+          No {mode === "industry" ? "industry rankings" : "theme rankings"} available
         </Typography>
       )}
       {!loadingGroups && !groupError && (groups.length > 0 || mode === "theme") && (

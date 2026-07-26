@@ -77,16 +77,16 @@ impl GlobalSearchService {
             return Err(GlobalSearchError::Validation);
         }
 
-        let (industry_snapshot, themes, tickers) = tokio::try_join!(
-            self.store.latest_industry_snapshot(),
+        let (industry_rankings, themes, tickers) = tokio::try_join!(
+            self.store.current_industry_rankings(),
             self.store.themes_with_assignments(),
             self.store.known_tickers(),
         )
         .map_err(GlobalSearchError::Persistence)?;
 
-        let mut groups = industry_snapshot
+        let mut groups = industry_rankings
             .into_iter()
-            .flat_map(|snapshot| snapshot.rows)
+            .flat_map(|rankings| rankings.rows)
             .map(|industry| Candidate {
                 kind: GlobalSearchResultKind::Industry,
                 key: industry.key,

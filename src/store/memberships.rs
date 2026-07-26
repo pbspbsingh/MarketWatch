@@ -185,12 +185,11 @@ impl Store {
         industry_keys: &[String],
     ) -> anyhow::Result<Option<(String, String)>> {
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT industry_membership_tickers.industry_key, industry_name
+            "SELECT industry_membership_tickers.industry_key,
+                    industry_rankings.industry_name
              FROM industry_membership_tickers
-             JOIN industry_snapshot_rows
-               ON industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
-             JOIN industry_snapshots
-               ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
+             JOIN industry_rankings
+               ON industry_rankings.industry_key = industry_membership_tickers.industry_key
              WHERE symbol = ",
         );
         query.push_bind(symbol.as_str());
@@ -202,7 +201,7 @@ impl Store {
             }
             query.push(")");
         }
-        query.push(" ORDER BY industry_snapshots.market_date DESC LIMIT 1");
+        query.push(" LIMIT 1");
         query
             .build_query_as::<(String, String)>()
             .fetch_optional(&self.pool)
@@ -220,17 +219,12 @@ impl Store {
 
         let mut query = QueryBuilder::<Sqlite>::new(
             "SELECT industry_membership_tickers.industry_key,
-                    industry_snapshot_rows.industry_name,
+                    industry_rankings.industry_name,
                     industry_membership_tickers.symbol
              FROM industry_membership_tickers
-             JOIN industry_snapshot_rows
-               ON industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
-             JOIN industry_snapshots
-               ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
-             WHERE industry_snapshots.market_date = (
-                   SELECT MAX(market_date) FROM industry_snapshots
-             )
-               AND industry_membership_tickers.symbol IN (",
+             JOIN industry_rankings
+               ON industry_rankings.industry_key = industry_membership_tickers.industry_key
+             WHERE industry_membership_tickers.symbol IN (",
         );
         {
             let mut separated = query.separated(", ");
@@ -238,9 +232,8 @@ impl Store {
                 separated.push_bind(symbol.as_str());
             }
         }
-        query.push(
-            ") ORDER BY industry_snapshot_rows.industry_name, industry_membership_tickers.symbol",
-        );
+        query
+            .push(") ORDER BY industry_rankings.industry_name, industry_membership_tickers.symbol");
         let rows = query
             .build_query_as::<(String, String, String)>()
             .fetch_all(&self.pool)
@@ -269,15 +262,7 @@ impl Store {
         let mut query = QueryBuilder::<Sqlite>::new(
             "SELECT industry_membership_tickers.industry_key,
                     COALESCE(
-                        (
-                            SELECT industry_snapshot_rows.industry_name
-                            FROM industry_snapshot_rows
-                            JOIN industry_snapshots
-                              ON industry_snapshots.id = industry_snapshot_rows.snapshot_id
-                            WHERE industry_snapshot_rows.industry_key = industry_membership_tickers.industry_key
-                            ORDER BY industry_snapshots.market_date DESC
-                            LIMIT 1
-                        ),
+                        industry_rankings.industry_name,
                         industry_memberships.industry_name,
                         industry_membership_tickers.industry_key
                     ) AS industry_name,
@@ -285,6 +270,8 @@ impl Store {
              FROM industry_membership_tickers
              JOIN industry_memberships
                ON industry_memberships.industry_key = industry_membership_tickers.industry_key
+             LEFT JOIN industry_rankings
+               ON industry_rankings.industry_key = industry_membership_tickers.industry_key
              WHERE industry_membership_tickers.symbol IN (",
         );
         {
@@ -314,7 +301,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{IndustrySnapshotRow, NewIndustrySnapshot};
+    use crate::store::{IndustryRankingRow, IndustryRankings};
     use chrono::NaiveDate;
 
     #[tokio::test]
@@ -365,10 +352,10 @@ mod tests {
             ["AMD", "NVDA", "SMCI"]
         );
         store
-            .insert_industry_snapshot_if_absent(&NewIndustrySnapshot {
+            .replace_industry_rankings_if_newer(&IndustryRankings {
                 market_date: NaiveDate::from_ymd_opt(2026, 6, 17).unwrap(),
                 fetched_at: Utc::now(),
-                rows: vec![IndustrySnapshotRow {
+                rows: vec![IndustryRankingRow {
                     key: "semiconductors".to_owned(),
                     name: "Semiconductors".to_owned(),
                     performance_day: 0.0,
@@ -402,7 +389,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stores_ticker_industry_without_snapshot_row() {
+    async fn stores_ticker_industry_without_current_ranking() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
 
         store

@@ -19,9 +19,9 @@ impl IndustryAnalysisService {
     }
 
     pub async fn latest_rankings(&self) -> Result<Vec<IndustryRanking>, IndustryAnalysisError> {
-        let Some(snapshot) = self
+        let Some(rankings) = self
             .store
-            .latest_industry_snapshot()
+            .current_industry_rankings()
             .await
             .map_err(IndustryAnalysisError::Persistence)?
         else {
@@ -36,7 +36,7 @@ impl IndustryAnalysisService {
             .map(|classification| (classification.industry_key.clone(), classification))
             .collect::<HashMap<_, _>>();
 
-        Ok(snapshot
+        Ok(rankings
             .rows
             .into_iter()
             .map(|industry| {

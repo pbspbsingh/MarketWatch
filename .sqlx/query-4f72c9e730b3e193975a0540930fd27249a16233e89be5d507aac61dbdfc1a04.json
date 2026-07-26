@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO industry_rankings (\n                    industry_key, industry_name, market_date, fetched_at, performance_day,\n                    performance_week, performance_month, performance_quarter,\n                    performance_half_year, performance_year, performance_year_to_date\n                )\n                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "4f72c9e730b3e193975a0540930fd27249a16233e89be5d507aac61dbdfc1a04"
+}

@@ -23,7 +23,7 @@ mod themes;
 mod top_stock_screens;
 mod watchlists;
 
-pub use industries::{IndustryClassification, IndustrySnapshotRow, NewIndustrySnapshot};
+pub use industries::{IndustryClassification, IndustryRankingRow, IndustryRankings};
 pub use memberships::TickerIndustryMembership;
 pub use themes::TickerThemeMembership;
 

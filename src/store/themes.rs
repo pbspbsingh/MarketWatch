@@ -374,28 +374,24 @@ impl Store {
 
     pub async fn theme_filter_industries(&self) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
         sqlx::query!(
-            r#"WITH latest_snapshot AS (
-                   SELECT id FROM industry_snapshots ORDER BY market_date DESC LIMIT 1
-               ),
-               latest_snapshot_industries AS (
+            r#"WITH current_rankings AS (
                    SELECT industry_key, industry_name
-                   FROM industry_snapshot_rows
-                   WHERE snapshot_id = (SELECT id FROM latest_snapshot)
+                   FROM industry_rankings
                ),
                membership_industries AS (
                    SELECT industry_memberships.industry_key,
                           COALESCE(
-                              latest_snapshot_industries.industry_name,
+                              current_rankings.industry_name,
                               industry_memberships.industry_name,
                               industry_memberships.industry_key
                           ) AS industry_name
                    FROM industry_memberships
-                   LEFT JOIN latest_snapshot_industries
-                     ON latest_snapshot_industries.industry_key = industry_memberships.industry_key
+                   LEFT JOIN current_rankings
+                     ON current_rankings.industry_key = industry_memberships.industry_key
                ),
                all_industries AS (
                    SELECT industry_key, industry_name
-                   FROM latest_snapshot_industries
+                   FROM current_rankings
                    UNION
                    SELECT industry_key, industry_name
                    FROM membership_industries

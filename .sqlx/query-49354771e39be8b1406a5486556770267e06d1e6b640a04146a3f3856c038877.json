@@ -1,0 +1,33 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH current_rankings AS (\n                   SELECT industry_key, industry_name\n                   FROM industry_rankings\n               ),\n               membership_industries AS (\n                   SELECT industry_memberships.industry_key,\n                          COALESCE(\n                              current_rankings.industry_name,\n                              industry_memberships.industry_name,\n                              industry_memberships.industry_key\n                          ) AS industry_name\n                   FROM industry_memberships\n                   LEFT JOIN current_rankings\n                     ON current_rankings.industry_key = industry_memberships.industry_key\n               ),\n               all_industries AS (\n                   SELECT industry_key, industry_name\n                   FROM current_rankings\n                   UNION\n                   SELECT industry_key, industry_name\n                   FROM membership_industries\n               )\n               SELECT industry_key AS \"key!: String\", industry_name AS \"name!: String\"\n               FROM all_industries\n               ORDER BY industry_name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "key!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_memberships",
+            "name": "industry_key"
+          }
+        }
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "49354771e39be8b1406a5486556770267e06d1e6b640a04146a3f3856c038877"
+}
