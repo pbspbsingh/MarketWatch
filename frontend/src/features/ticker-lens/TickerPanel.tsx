@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type SetStateAction,
 } from "react";
-import { List, type RowComponentProps, useListRef } from "react-window";
+import { List, type RowComponentProps, useListCallbackRef } from "react-window";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
@@ -196,8 +196,10 @@ export function TickerPanel({
   const [loadedWatchlists, setLoadedWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const watchlists = providedWatchlists ?? loadedWatchlists;
-  const tickerListRef = useListRef(null);
+  const [tickerList, setTickerList] = useListCallbackRef(null);
   const handledRevealTickerRevision = useRef<number | undefined>(undefined);
+  const scheduledRevealTickerRevision = useRef<number | undefined>(undefined);
+  const revealTickerFrame = useRef<number | undefined>(undefined);
   const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState<TickerSortSetting>(() => {
     const defaultMetric = defaultBoundedMetricSort === undefined
@@ -391,16 +393,33 @@ export function TickerPanel({
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
-  useEffect(() => {
+  const revealTickerInList = useCallback(() => {
     if (
       revealTicker === undefined ||
-      handledRevealTickerRevision.current === revealTicker.revision
+      handledRevealTickerRevision.current === revealTicker.revision ||
+      scheduledRevealTickerRevision.current === revealTicker.revision
     ) return;
     const index = sortedTickers.findIndex((ticker) => ticker.symbol === revealTicker.value);
-    if (index < 0 || tickerListRef.current === null) return;
-    tickerListRef.current.scrollToRow({ align: "center", index });
-    handledRevealTickerRevision.current = revealTicker.revision;
-  }, [revealTicker, sortedTickers, tickerListRef]);
+    const element = tickerList?.element;
+    if (index < 0 || element === null || element === undefined) return;
+    scheduledRevealTickerRevision.current = revealTicker.revision;
+    revealTickerFrame.current = window.requestAnimationFrame(() => {
+      element.scrollTop = index * tickerRowHeight
+        - (element.clientHeight - tickerRowHeight) / 2;
+      handledRevealTickerRevision.current = revealTicker.revision;
+      scheduledRevealTickerRevision.current = undefined;
+      revealTickerFrame.current = undefined;
+    });
+  }, [revealTicker, sortedTickers, tickerList]);
+
+  useEffect(revealTickerInList, [revealTickerInList]);
+  useEffect(() => () => {
+    if (revealTickerFrame.current !== undefined) {
+      window.cancelAnimationFrame(revealTickerFrame.current);
+      revealTickerFrame.current = undefined;
+      scheduledRevealTickerRevision.current = undefined;
+    }
+  }, []);
 
   useEffect(() => {
     if (selectedTicker === undefined) return;
@@ -467,12 +486,12 @@ export function TickerPanel({
 
       event.preventDefault();
       setSelectedTicker(nextTicker.symbol);
-      tickerListRef.current?.scrollToRow({ align: "auto", index: nextIndex });
+      tickerList?.scrollToRow({ align: "auto", index: nextIndex });
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedTicker, setSelectedTicker, sortedTickers, tickerListRef]);
+  }, [selectedTicker, setSelectedTicker, sortedTickers, tickerList]);
 
   const setTickerWatchlists = useCallback((symbol: string, watchlistIds: number[]) => {
     if (metricsActive) {
@@ -628,12 +647,13 @@ export function TickerPanel({
           tagName="ol"
           className="ticker-ranked-list"
           aria-label="Tickers"
-          listRef={tickerListRef}
+          listRef={setTickerList}
           rowComponent={TickerRow}
           rowCount={sortedTickers.length}
           rowHeight={tickerRowHeight}
           rowProps={tickerRowProps}
           overscanCount={8}
+          onRowsRendered={revealTickerInList}
         />
       )}
       <Menu

@@ -147,7 +147,11 @@ export function TickerLens({
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
   const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
-  const [revealGroup, setRevealGroup] = useState<RevealRequest<string>>();
+  const [revealGroup, setRevealGroup] = useState<RevealRequest<string> | undefined>(() => {
+    const keys = initialGroupKeys(searchParams);
+    const key = keys.size === 1 ? keys.values().next().value : undefined;
+    return key === undefined ? undefined : { value: key, revision: 1 };
+  });
   const [revealTicker, setRevealTicker] = useState<RevealRequest<string> | undefined>(() => {
     const symbol = searchTickerSymbol(searchParams);
     return symbol === undefined ? undefined : { value: symbol, revision: 1 };

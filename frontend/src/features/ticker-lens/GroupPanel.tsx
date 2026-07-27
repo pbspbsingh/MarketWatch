@@ -91,6 +91,7 @@ export function GroupPanel({
   revealGroup,
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
+  const handledRevealGroupRevision = useRef<number | undefined>(undefined);
   const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
   const [exploredGroups, setExploredGroups] = useState<Record<GroupMode, Set<string>>>(() => ({
     industry: new Set(),
@@ -256,14 +257,20 @@ export function GroupPanel({
         .filter((key) => !collapsed.has(key)),
     );
   }, [collapsedRequiredSectors, expandedSectors, requiredExpandedSectors, requiredExpansionKey]);
-  const scrollGroupKey = highlightedGroupKey ?? revealGroup?.value;
-
   useLayoutEffect(() => {
+    const pendingRevealGroupKey = revealGroup !== undefined
+      && handledRevealGroupRevision.current !== revealGroup.revision
+      ? revealGroup.value
+      : undefined;
+    const scrollGroupKey = pendingRevealGroupKey ?? highlightedGroupKey;
     if (scrollGroupKey === undefined) return;
     const element = groupElements.current.get(scrollGroupKey);
     if (element === undefined) return;
     element.scrollIntoView({ block: "nearest" });
-  }, [scrollGroupKey, visibleExpandedSectors]);
+    if (pendingRevealGroupKey !== undefined && revealGroup !== undefined) {
+      handledRevealGroupRevision.current = revealGroup.revision;
+    }
+  }, [highlightedGroupKey, revealGroup, visibleExpandedSectors]);
 
   const markExplored = (groupKey: string) => {
     const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
