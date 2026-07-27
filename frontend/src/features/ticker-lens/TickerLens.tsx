@@ -443,7 +443,6 @@ export function TickerLens({
         onSelectedTickerContext={handleSelectedTickerContext}
       />
       <TickerLensSearch
-        bounded={bounded}
         mode={groupMode}
         groups={groups}
         tickerSymbols={searchTickerSymbols}

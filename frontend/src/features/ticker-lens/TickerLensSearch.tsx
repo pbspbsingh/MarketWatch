@@ -13,7 +13,6 @@ const localResultLimit = 12;
 const emptyGlobalResults: GlobalSearchResult[] = [];
 
 interface TickerLensSearchProps {
-  bounded: boolean;
   mode: GroupMode;
   groups: GroupRanking[];
   tickerSymbols: string[];
@@ -37,7 +36,6 @@ interface SearchResultButtonProps {
 }
 
 export function TickerLensSearch({
-  bounded,
   mode,
   groups,
   tickerSymbols,
@@ -84,7 +82,7 @@ export function TickerLensSearch({
       .slice(0, localResultLimit),
     [normalizedQuery, tickerSymbols],
   );
-  const globalSearch = useGlobalSearch(query, bounded && open);
+  const globalSearch = useGlobalSearch(query, open);
   const globalGroups = globalSearch.results?.groups ?? emptyGlobalResults;
   const globalTickers = globalSearch.results?.tickers ?? emptyGlobalResults;
   const actions = useMemo<SearchAction[]>(
@@ -203,92 +201,8 @@ export function TickerLensSearch({
     <section className="ticker-lens-search" aria-label="Search groups and tickers">
       {normalizedQuery !== "" && (
         <div className="ticker-lens-search-results">
-          {bounded ? (
-            <>
-              {hasLocalResults && (
-                <SearchRegion title="Local">
-                  {matchingGroups.length > 0 && (
-                    <SearchColumn title={mode === "industry" ? "Industries" : "Themes"}>
-                      {matchingGroups.map((group) => {
-                        const id = `local-group-${group.key}`;
-                        return (
-                          <SearchResultButton
-                            id={id}
-                            active={effectiveActiveId === id}
-                            key={id}
-                            resultRefs={resultRefs}
-                            onActivate={setActiveId}
-                            onSelect={selectResult}
-                          >
-                            <HighlightedLabel label={group.name} ranges={localRanges(group.name)} />
-                          </SearchResultButton>
-                        );
-                      })}
-                    </SearchColumn>
-                  )}
-                  {matchingTickers.length > 0 && (
-                    <SearchColumn title="Tickers">
-                      {matchingTickers.map((symbol) => {
-                        const id = `local-ticker-${symbol}`;
-                        return (
-                          <SearchResultButton
-                            id={id}
-                            active={effectiveActiveId === id}
-                            key={id}
-                            resultRefs={resultRefs}
-                            onActivate={setActiveId}
-                            onSelect={selectResult}
-                          >
-                            <HighlightedLabel label={symbol} ranges={localRanges(symbol)} />
-                          </SearchResultButton>
-                        );
-                      })}
-                    </SearchColumn>
-                  )}
-                </SearchRegion>
-              )}
-              <SearchRegion title="Global" global>
-                {globalSearch.loading && <SearchStatus>Searching global market…</SearchStatus>}
-                {globalSearch.error !== undefined && (
-                  <SearchStatus>Global search unavailable</SearchStatus>
-                )}
-                {!globalSearch.loading &&
-                  globalSearch.error === undefined &&
-                  !hasGlobalResults &&
-                  <SearchStatus>No global matches</SearchStatus>}
-                {globalGroups.length > 0 && (
-                  <SearchColumn title="Industries & Themes">
-                    {globalGroups.map((result) => (
-                      <GlobalResultButton
-                        activeId={effectiveActiveId}
-                        key={globalResultId(result)}
-                        result={result}
-                        resultRefs={resultRefs}
-                        onActivate={setActiveId}
-                        onSelect={selectResult}
-                      />
-                    ))}
-                  </SearchColumn>
-                )}
-                {globalTickers.length > 0 && (
-                  <SearchColumn title="Tickers">
-                    {globalTickers.map((result) => (
-                      <GlobalResultButton
-                        activeId={effectiveActiveId}
-                        key={globalResultId(result)}
-                        result={result}
-                        resultRefs={resultRefs}
-                        onActivate={setActiveId}
-                        onSelect={selectResult}
-                      />
-                    ))}
-                  </SearchColumn>
-                )}
-              </SearchRegion>
-            </>
-          ) : (
-            <div className="ticker-lens-search-grid">
-              {!hasLocalResults && <SearchStatus>No matches</SearchStatus>}
+          {hasLocalResults && (
+            <SearchRegion title="Local">
               {matchingGroups.length > 0 && (
                 <SearchColumn title={mode === "industry" ? "Industries" : "Themes"}>
                   {matchingGroups.map((group) => {
@@ -327,8 +241,46 @@ export function TickerLensSearch({
                   })}
                 </SearchColumn>
               )}
-            </div>
+            </SearchRegion>
           )}
+          <SearchRegion title="Global" global>
+            {globalSearch.loading && <SearchStatus>Searching global market…</SearchStatus>}
+            {globalSearch.error !== undefined && (
+              <SearchStatus>Global search unavailable</SearchStatus>
+            )}
+            {!globalSearch.loading &&
+              globalSearch.error === undefined &&
+              !hasGlobalResults &&
+              <SearchStatus>No global matches</SearchStatus>}
+            {globalGroups.length > 0 && (
+              <SearchColumn title="Industries & Themes">
+                {globalGroups.map((result) => (
+                  <GlobalResultButton
+                    activeId={effectiveActiveId}
+                    key={globalResultId(result)}
+                    result={result}
+                    resultRefs={resultRefs}
+                    onActivate={setActiveId}
+                    onSelect={selectResult}
+                  />
+                ))}
+              </SearchColumn>
+            )}
+            {globalTickers.length > 0 && (
+              <SearchColumn title="Tickers">
+                {globalTickers.map((result) => (
+                  <GlobalResultButton
+                    activeId={effectiveActiveId}
+                    key={globalResultId(result)}
+                    result={result}
+                    resultRefs={resultRefs}
+                    onActivate={setActiveId}
+                    onSelect={selectResult}
+                  />
+                ))}
+              </SearchColumn>
+            )}
+          </SearchRegion>
         </div>
       )}
       <div className="ticker-lens-search-input">
@@ -336,7 +288,7 @@ export function TickerLensSearch({
           inputRef={inputRef}
           value={query}
           size="small"
-          placeholder={`Search ${mode === "industry" ? "industries" : "themes"} and resolved tickers`}
+          placeholder={`Search ${mode === "industry" ? "industries" : "themes"} and tickers`}
           onChange={(event) => updateQuery(event.target.value)}
           onKeyDown={(event) => {
             if (actions.length === 0) return;
