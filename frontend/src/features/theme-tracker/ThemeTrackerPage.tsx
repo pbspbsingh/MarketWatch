@@ -504,6 +504,7 @@ export function ThemeTrackerPage() {
         selectedTicker={selectedTicker}
         onSelectedTickerContext={ignoreTickerContext}
         horizontalDetailsNavigation={stockMode && selectedStock !== undefined ? "right" : false}
+        forceSystemBenchmark={!stockMode}
       />
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast message={stockStream.error} onClose={stockStream.clearError} />

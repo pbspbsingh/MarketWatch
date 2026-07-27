@@ -52,6 +52,7 @@ interface ChartPanelProps {
   symbols?: string[];
   onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
   horizontalDetailsNavigation?: boolean | "right";
+  forceSystemBenchmark?: boolean;
 }
 
 interface RequestState<T> {
@@ -68,6 +69,7 @@ export function ChartPanel({
   symbols,
   onSelectedTickerContext,
   horizontalDetailsNavigation = true,
+  forceSystemBenchmark = false,
 }: ChartPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
@@ -124,7 +126,9 @@ export function ChartPanel({
   const chartThemeBenchmark = summary?.theme_benchmarks.find(
     (theme) => theme.etf_symbol === selectedThemeEtf,
   ) ?? summary?.theme_benchmarks[0];
-  const bottomChartSymbol = showThemeEtfChart && chartThemeBenchmark !== undefined
+  const bottomChartSymbol = !forceSystemBenchmark
+    && showThemeEtfChart
+    && chartThemeBenchmark !== undefined
     ? chartThemeBenchmark.tradingview_symbol
     : summary?.benchmark_symbol;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
@@ -277,7 +281,8 @@ export function ChartPanel({
         selectedTicker={selectedTicker}
         selectedIndustry={selectedIndustry}
         interval={interval}
-        showThemeEtfChart={themeEtfChartEnabled}
+        showThemeEtfChart={!forceSystemBenchmark && themeEtfChartEnabled}
+        benchmarkSelectionDisabled={forceSystemBenchmark}
         selectedThemeEtf={selectedThemeBenchmark?.etf_symbol}
         setInterval={setInterval}
         setShowThemeEtfChart={setShowThemeEtfChart}

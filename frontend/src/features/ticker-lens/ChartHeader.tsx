@@ -35,6 +35,7 @@ interface ChartHeaderProps {
   selectedIndustry: string;
   interval: "D" | "W";
   showThemeEtfChart: boolean;
+  benchmarkSelectionDisabled?: boolean;
   selectedThemeEtf?: string;
   setInterval: (interval: "D" | "W") => void;
   setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
@@ -53,6 +54,7 @@ export function ChartHeader({
   selectedIndustry,
   interval,
   showThemeEtfChart,
+  benchmarkSelectionDisabled = false,
   selectedThemeEtf,
   setInterval,
   setShowThemeEtfChart,
@@ -188,6 +190,7 @@ export function ChartHeader({
             size="small"
             value={showThemeEtfChart ? selectedThemeEtf : "market"}
             aria-label="Bottom chart benchmark"
+            disabled={benchmarkSelectionDisabled}
             onChange={(_, value: string | null) => {
               if (value === null) return;
               const enabled = value !== "market";
