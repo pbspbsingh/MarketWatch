@@ -15,10 +15,8 @@ import {
   ImageExportMenu,
   type ImageExportAction,
 } from "../../components/ImageExportMenu";
-import {
-  chartIntervalKey,
-  chartThemeEtfKey,
-} from "./constants";
+import { chartIntervalKey } from "./constants";
+import type { ChartBenchmarkSelection } from "./types";
 import {
   formatVolume,
   industryMarketWatchUrl,
@@ -34,12 +32,10 @@ interface ChartHeaderProps {
   selectedTicker: string | undefined;
   selectedIndustry: string;
   interval: "D" | "W";
-  showThemeEtfChart: boolean;
+  benchmarkSelection: ChartBenchmarkSelection;
   benchmarkSelectionDisabled?: boolean;
-  selectedThemeEtf?: string;
   setInterval: (interval: "D" | "W") => void;
-  setShowThemeEtfChart?: (updater: (enabled: boolean) => boolean) => void;
-  setSelectedThemeEtf?: (symbol: string) => void;
+  setBenchmarkSelection?: (selection: ChartBenchmarkSelection) => void;
   setDetailsOpen?: (open: boolean) => void;
   exportChartPanel?: (action: ImageExportAction) => void;
   exportChartPanelDisabled?: boolean;
@@ -53,12 +49,10 @@ export function ChartHeader({
   selectedTicker,
   selectedIndustry,
   interval,
-  showThemeEtfChart,
+  benchmarkSelection,
   benchmarkSelectionDisabled = false,
-  selectedThemeEtf,
   setInterval,
-  setShowThemeEtfChart,
-  setSelectedThemeEtf,
+  setBenchmarkSelection,
   setDetailsOpen,
   exportChartPanel,
   exportChartPanelDisabled = false,
@@ -186,28 +180,32 @@ export function ChartHeader({
             <ToggleButton value="W">Weekly</ToggleButton>
           </ToggleButtonGroup>
         )}
-        {setShowThemeEtfChart !== undefined && summary !== undefined && (
+        {setBenchmarkSelection !== undefined && summary !== undefined && (
           <ToggleButtonGroup
             exclusive
             size="small"
-            value={showThemeEtfChart ? selectedThemeEtf : "market"}
+            value={benchmarkSelection}
             aria-label="Bottom chart benchmark"
             disabled={benchmarkSelectionDisabled}
-            onChange={(_, value: string | null) => {
-              if (value === null) return;
-              const enabled = value !== "market";
-              localStorage.setItem(chartThemeEtfKey, enabled ? "1" : "0");
-              setShowThemeEtfChart(() => enabled);
-              if (enabled) setSelectedThemeEtf?.(value);
+            onChange={(_, value: ChartBenchmarkSelection | null) => {
+              if (value !== null) setBenchmarkSelection(value);
             }}
           >
-            <ToggleButton value="market">
+            <ToggleButton value="market" title="Market benchmark">
               {summary.benchmark_symbol.slice(summary.benchmark_symbol.lastIndexOf(":") + 1)}
             </ToggleButton>
+            {summary.sector_benchmark !== null && (
+              <ToggleButton
+                value="sector"
+                title={`${summary.sector_benchmark.sector_name} sector benchmark`}
+              >
+                {summary.sector_benchmark.etf_symbol}
+              </ToggleButton>
+            )}
             {summary.theme_benchmarks.map((theme) => (
               <ToggleButton
                 key={theme.etf_symbol}
-                value={theme.etf_symbol}
+                value={`theme:${theme.etf_symbol}`}
                 title={theme.theme_name}
               >
                 {theme.etf_symbol}

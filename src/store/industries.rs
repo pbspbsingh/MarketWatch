@@ -110,6 +110,22 @@ impl Store {
         .context("failed to load industry classifications")
     }
 
+    pub async fn industry_classification(
+        &self,
+        industry_key: &str,
+    ) -> anyhow::Result<Option<IndustryClassification>> {
+        sqlx::query_as!(
+            IndustryClassification,
+            "SELECT industry_key, industry_name, sector_key, sector_name
+             FROM industry_classifications
+             WHERE industry_key = ?",
+            industry_key,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load industry classification")
+    }
+
     pub async fn has_industry_ranking(&self, industry_key: &str) -> anyhow::Result<bool> {
         sqlx::query_scalar!(
             r#"SELECT EXISTS(
@@ -273,6 +289,33 @@ mod tests {
 
     async fn store() -> Store {
         Store::connect("sqlite::memory:").await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn loads_one_industry_classification_by_key() {
+        let store = store().await;
+        let expected = IndustryClassification {
+            industry_key: "semiconductors".to_owned(),
+            industry_name: "Semiconductors".to_owned(),
+            sector_key: "technology".to_owned(),
+            sector_name: "Technology".to_owned(),
+        };
+        store
+            .replace_industry_classifications(std::slice::from_ref(&expected), Utc::now())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store
+                .industry_classification("semiconductors")
+                .await
+                .unwrap(),
+            Some(expected),
+        );
+        assert_eq!(
+            store.industry_classification("missing").await.unwrap(),
+            None,
+        );
     }
 
     #[tokio::test]

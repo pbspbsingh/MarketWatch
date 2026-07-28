@@ -2,8 +2,23 @@ use anyhow::Context;
 use chrono::NaiveTime;
 use chrono_tz::Tz;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::Path;
+
+const SECTOR_KEYS: [&str; 11] = [
+    "basicmaterials",
+    "communicationservices",
+    "consumercyclical",
+    "consumerdefensive",
+    "energy",
+    "financial",
+    "healthcare",
+    "industrials",
+    "realestate",
+    "technology",
+    "utilities",
+];
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -30,6 +45,7 @@ pub struct DatabaseConfig {
 pub struct MarketConfig {
     pub timezone: String,
     pub benchmark: String,
+    pub sector_benchmarks: BTreeMap<String, String>,
     pub market_hours: (NaiveTime, NaiveTime),
     pub adr_sessions: u16,
     pub average_volume_sessions: u16,
@@ -90,6 +106,20 @@ impl Config {
         anyhow::ensure!(
             !self.market.benchmark.trim().is_empty(),
             "market.benchmark is required"
+        );
+        anyhow::ensure!(
+            self.market.sector_benchmarks.len() == SECTOR_KEYS.len()
+                && SECTOR_KEYS
+                    .iter()
+                    .all(|key| self.market.sector_benchmarks.contains_key(*key)),
+            "market.sector_benchmarks must define every supported sector"
+        );
+        anyhow::ensure!(
+            self.market
+                .sector_benchmarks
+                .values()
+                .all(|symbol| !symbol.trim().is_empty()),
+            "market.sector_benchmarks symbols must not be empty"
         );
         anyhow::ensure!(
             self.market.adr_sessions > 0,
@@ -184,9 +214,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_default_config() {
-        let config = Config::load("config.toml").unwrap();
+    fn loads_example_config() {
+        let config = Config::load("config.example.toml").unwrap();
 
         assert!(!config.market.benchmark.is_empty());
+        assert_eq!(config.market.sector_benchmarks.len(), SECTOR_KEYS.len());
     }
 }

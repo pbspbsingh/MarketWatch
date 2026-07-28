@@ -4,7 +4,7 @@ import {
   tickerMetricScale,
 } from "../../app/visualizationColors";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { BoundedMetricSortKey, BoundedTickerMetric, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+import type { BoundedMetricSortKey, BoundedTickerMetric, ChartBenchmarkMode, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
 
 const boundedMetricPrefix = "bounded:";
 
@@ -338,6 +338,11 @@ export function readChartInterval(storageKey: string): "D" | "W" {
   return localStorage.getItem(storageKey) === "W" ? "W" : "D";
 }
 
-export function readEnabled(storageKey: string) {
-  return localStorage.getItem(storageKey) === "1";
+export function readChartBenchmarkMode(
+  storageKey: string,
+  legacyThemeStorageKey: string,
+): ChartBenchmarkMode {
+  const stored = localStorage.getItem(storageKey);
+  if (stored === "market" || stored === "sector" || stored === "theme") return stored;
+  return localStorage.getItem(legacyThemeStorageKey) === "1" ? "theme" : "market";
 }

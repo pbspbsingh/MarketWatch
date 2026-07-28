@@ -27,6 +27,7 @@ export const expandedSectorsKey = "market-watch.expanded-sectors";
 export const tickerSortSettingKey = "market-watch.ticker-sort";
 export const chartSplitKey = "market-watch.chart-split";
 export const chartIntervalKey = "market-watch.chart-interval";
+export const chartBenchmarkKey = "market-watch.chart-benchmark";
 export const chartThemeEtfKey = "market-watch.theme-etf-chart";
 export const defaultSortSetting: SortSetting = {
   key: "absolute_strength",

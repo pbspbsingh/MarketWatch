@@ -9,6 +9,8 @@ export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };
 export type GroupMode = "industry" | "theme";
+export type ChartBenchmarkMode = "market" | "sector" | "theme";
+export type ChartBenchmarkSelection = "market" | "sector" | `theme:${string}`;
 
 export type RevealRequest<T> = { value: T; revision: number };
 

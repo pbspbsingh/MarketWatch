@@ -4,6 +4,13 @@ export interface ChartSummary {
   description: string | null;
   industry: { key: string; name: string } | null;
   themes: string[];
+  sector_benchmark: {
+    sector_key: string;
+    sector_name: string;
+    etf_symbol: string;
+    tradingview_symbol: string;
+    company_name: string | null;
+  } | null;
   theme_benchmarks: Array<{
     theme_name: string;
     etf_symbol: string;

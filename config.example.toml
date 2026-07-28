@@ -6,10 +6,23 @@ url = "sqlite://market_watch.db?mode=rwc"
 
 [market]
 timezone = "America/Los_Angeles"
-benchmark = "QQQ"
+benchmark = "VTI"
 market_hours = ["6:30:00", "13:00:00"]
 adr_sessions = 20
 average_volume_sessions = 50
+
+[market.sector_benchmarks]
+basicmaterials = "XLB"
+communicationservices = "XLC"
+consumercyclical = "XLY"
+consumerdefensive = "XLP"
+energy = "XLE"
+financial = "XLF"
+healthcare = "XLV"
+industrials = "XLI"
+realestate = "XLRE"
+technology = "XLK"
+utilities = "XLU"
 
 [providers]
 connect_timeout_secs = 10

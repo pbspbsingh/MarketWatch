@@ -23,20 +23,26 @@ import {
   downloadElementAsPng,
 } from "../../utils/exportElementImage";
 import {
+  chartBenchmarkKey,
   chartIntervalKey,
   chartSplitKey,
   chartThemeEtfKey,
 } from "./constants";
 import { ChartHeader } from "./ChartHeader";
-import type { GroupMode, SelectedTickerContext } from "./types";
+import type {
+  ChartBenchmarkMode,
+  ChartBenchmarkSelection,
+  GroupMode,
+  SelectedTickerContext,
+} from "./types";
 import { useAppSettings } from "../../app/AppSettings";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
   isArrowKeyControl,
+  readChartBenchmarkMode,
   readChartInterval,
   readChartSplit,
-  readEnabled,
   themeGroupsMarketWatchUrl,
   themeMarketWatchUrl,
 } from "./utils";
@@ -77,8 +83,8 @@ export function ChartPanel({
   const [interval, setInterval] = useState<"D" | "W">(() =>
     readChartInterval(chartIntervalKey),
   );
-  const [showThemeEtfChart, setShowThemeEtfChart] = useState(() =>
-    readEnabled(chartThemeEtfKey),
+  const [benchmarkMode, setBenchmarkMode] = useState<ChartBenchmarkMode>(() =>
+    readChartBenchmarkMode(chartBenchmarkKey, chartThemeEtfKey),
   );
   const [themeSelection, setThemeSelection] = useState<{ ticker: string; etf: string }>();
   const [panelError, setPanelError] = useState<{ key: string; message: string }>();
@@ -122,20 +128,29 @@ export function ChartPanel({
   const selectedThemeBenchmark = activeSummary?.theme_benchmarks.find(
     (theme) => theme.etf_symbol === selectedThemeEtf,
   ) ?? activeSummary?.theme_benchmarks[0];
-  const themeEtfChartEnabled = showThemeEtfChart && selectedThemeBenchmark !== undefined;
-  const chartThemeBenchmark = summary?.theme_benchmarks.find(
-    (theme) => theme.etf_symbol === selectedThemeEtf,
-  ) ?? summary?.theme_benchmarks[0];
-  const bottomChartSymbol = !forceSystemBenchmark
-    && showThemeEtfChart
-    && chartThemeBenchmark !== undefined
-    ? chartThemeBenchmark.tradingview_symbol
-    : summary?.benchmark_symbol;
-  const bottomCompanyName = !forceSystemBenchmark
-    && showThemeEtfChart
-    && chartThemeBenchmark !== undefined
-    ? chartThemeBenchmark.company_name
-    : summary?.benchmark_company_name;
+  const activeBenchmarkMode = forceSystemBenchmark
+    ? "market"
+    : benchmarkMode === "sector" && summary?.sector_benchmark !== null
+      && summary?.sector_benchmark !== undefined
+      ? "sector"
+      : benchmarkMode === "theme" && selectedThemeBenchmark !== undefined
+        ? "theme"
+        : "market";
+  const benchmarkSelection: ChartBenchmarkSelection = activeBenchmarkMode === "theme"
+    ? selectedThemeBenchmark === undefined
+      ? "market"
+      : `theme:${selectedThemeBenchmark.etf_symbol}`
+    : activeBenchmarkMode;
+  const bottomChartSymbol = activeBenchmarkMode === "sector"
+    ? summary?.sector_benchmark?.tradingview_symbol
+    : activeBenchmarkMode === "theme"
+      ? selectedThemeBenchmark?.tradingview_symbol
+      : summary?.benchmark_symbol;
+  const bottomCompanyName = activeBenchmarkMode === "sector"
+    ? summary?.sector_benchmark?.company_name
+    : activeBenchmarkMode === "theme"
+      ? selectedThemeBenchmark?.company_name
+      : summary?.benchmark_company_name;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
@@ -286,13 +301,23 @@ export function ChartPanel({
         selectedTicker={selectedTicker}
         selectedIndustry={selectedIndustry}
         interval={interval}
-        showThemeEtfChart={!forceSystemBenchmark && themeEtfChartEnabled}
+        benchmarkSelection={benchmarkSelection}
         benchmarkSelectionDisabled={forceSystemBenchmark}
-        selectedThemeEtf={selectedThemeBenchmark?.etf_symbol}
         setInterval={setInterval}
-        setShowThemeEtfChart={setShowThemeEtfChart}
-        setSelectedThemeEtf={(etf) => {
-          if (selectedTicker !== undefined) setThemeSelection({ ticker: selectedTicker, etf });
+        setBenchmarkSelection={(selection) => {
+          const nextMode: ChartBenchmarkMode = selection.startsWith("theme:")
+            ? "theme"
+            : selection === "sector"
+              ? "sector"
+              : "market";
+          setBenchmarkMode(nextMode);
+          localStorage.setItem(chartBenchmarkKey, nextMode);
+          if (nextMode === "theme" && selectedTicker !== undefined) {
+            setThemeSelection({
+              ticker: selectedTicker,
+              etf: selection.slice("theme:".length),
+            });
+          }
         }}
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
         exportChartPanel={exportChartPanel}

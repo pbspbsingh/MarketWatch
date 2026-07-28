@@ -4,7 +4,9 @@ use crate::models::{
 };
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
+use anyhow::Context;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::warn;
 
@@ -14,6 +16,7 @@ pub struct ChartService {
     store: Store,
     yahoo: Arc<YahooService>,
     benchmark: TickerSymbol,
+    sector_benchmarks: BTreeMap<String, TickerSymbol>,
     adr_sessions: usize,
     average_volume_sessions: usize,
 }
@@ -26,6 +29,7 @@ pub struct ChartSummary {
     industry: Option<ChartIndustry>,
     themes: Vec<String>,
     theme_benchmarks: Vec<ChartThemeBenchmark>,
+    sector_benchmark: Option<ChartSectorBenchmark>,
     tradingview_symbol: TradingViewSymbol,
     benchmark_symbol: TradingViewSymbol,
     benchmark_company_name: Option<String>,
@@ -48,16 +52,37 @@ pub struct ChartThemeBenchmark {
     company_name: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct ChartSectorBenchmark {
+    sector_key: String,
+    sector_name: String,
+    etf_symbol: TickerSymbol,
+    tradingview_symbol: TradingViewSymbol,
+    company_name: Option<String>,
+}
+
 impl ChartService {
     pub fn new(
         store: Store,
         yahoo: Arc<YahooService>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
+        let sector_benchmarks = market
+            .sector_benchmarks
+            .iter()
+            .map(|(sector_key, symbol)| {
+                Ok((
+                    sector_key.clone(),
+                    TickerSymbol::parse(symbol)
+                        .with_context(|| format!("invalid benchmark for sector {sector_key}"))?,
+                ))
+            })
+            .collect::<anyhow::Result<_>>()?;
         Ok(Self {
             store,
             yahoo,
             benchmark: TickerSymbol::parse(&market.benchmark)?,
+            sector_benchmarks,
             adr_sessions: usize::from(market.adr_sessions),
             average_volume_sessions: usize::from(market.average_volume_sessions),
         })
@@ -79,6 +104,37 @@ impl ChartService {
             self.store.industry_for_ticker(symbol, &[]).await?
         } else {
             industry
+        };
+        let sector_benchmark = match industry.as_ref() {
+            Some((industry_key, _)) => {
+                match self.store.industry_classification(industry_key).await? {
+                    Some(classification) => {
+                        let etf_symbol = self
+                            .sector_benchmarks
+                            .get(&classification.sector_key)
+                            .with_context(|| {
+                                format!(
+                                    "no benchmark configured for sector {}",
+                                    classification.sector_key
+                                )
+                            })?
+                            .clone();
+                        let profile = self.yahoo.profile(&etf_symbol).await?;
+                        Some(ChartSectorBenchmark {
+                            sector_key: classification.sector_key,
+                            sector_name: classification.sector_name,
+                            company_name: profile.name.clone(),
+                            tradingview_symbol: TradingViewSymbol::new(
+                                profile.exchange,
+                                etf_symbol.clone(),
+                            ),
+                            etf_symbol,
+                        })
+                    }
+                    None => None,
+                }
+            }
+            None => None,
         };
         let themes = self.store.theme_names_for_ticker(symbol).await?;
         let mut theme_benchmarks = Vec::new();
@@ -112,6 +168,7 @@ impl ChartService {
             industry: industry.map(|(key, name)| ChartIndustry { key, name }),
             themes,
             theme_benchmarks,
+            sector_benchmark,
             tradingview_symbol: TradingViewSymbol::new(profile.exchange, symbol.clone()),
             benchmark_symbol: TradingViewSymbol::new(
                 benchmark_profile.exchange,

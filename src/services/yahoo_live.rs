@@ -886,6 +886,7 @@ mod tests {
             &MarketConfig {
                 timezone: "America/Los_Angeles".to_owned(),
                 benchmark: "QQQ".to_owned(),
+                sector_benchmarks: Default::default(),
                 market_hours: (
                     NaiveTime::from_hms_opt(6, 30, 0).unwrap(),
                     NaiveTime::from_hms_opt(13, 0, 0).unwrap(),
