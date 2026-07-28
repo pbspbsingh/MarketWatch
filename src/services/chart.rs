@@ -28,6 +28,7 @@ pub struct ChartSummary {
     theme_benchmarks: Vec<ChartThemeBenchmark>,
     tradingview_symbol: TradingViewSymbol,
     benchmark_symbol: TradingViewSymbol,
+    benchmark_company_name: Option<String>,
     adr_percent: f64,
     extension_from_50_sma: Option<f64>,
     average_volume: i64,
@@ -44,6 +45,7 @@ pub struct ChartThemeBenchmark {
     theme_name: String,
     etf_symbol: TickerSymbol,
     tradingview_symbol: TradingViewSymbol,
+    company_name: Option<String>,
 }
 
 impl ChartService {
@@ -85,6 +87,7 @@ impl ChartService {
                 Ok(profile) => theme_benchmarks.push(ChartThemeBenchmark {
                     theme_name: theme.name,
                     etf_symbol: theme.etf_symbol.clone(),
+                    company_name: profile.name.clone(),
                     tradingview_symbol: TradingViewSymbol::new(
                         profile.exchange,
                         theme.etf_symbol.clone(),
@@ -114,6 +117,7 @@ impl ChartService {
                 benchmark_profile.exchange,
                 self.benchmark.clone(),
             ),
+            benchmark_company_name: benchmark_profile.name.clone(),
             adr_percent: average_daily_range_percent(latest_sessions(&candles, self.adr_sessions)),
             extension_from_50_sma: extension_from_50_sma(&candles, self.adr_sessions),
             average_volume: average_volume(latest_sessions(&candles, self.average_volume_sessions)),

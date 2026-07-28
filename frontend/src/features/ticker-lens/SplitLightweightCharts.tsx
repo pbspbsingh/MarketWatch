@@ -41,6 +41,7 @@ interface SplitLightweightChartsProps {
   topSymbol: string;
   bottomSymbol: string;
   topCompanyName?: string;
+  bottomCompanyName?: string;
   topTradingViewSymbol: string;
   bottomTradingViewSymbol: string;
   interval: "D" | "W";
@@ -76,6 +77,7 @@ export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
   topCompanyName,
+  bottomCompanyName,
   topTradingViewSymbol,
   bottomTradingViewSymbol,
   interval,
@@ -318,6 +320,7 @@ export default function SplitLightweightCharts({
           >
             <MarketChartContainer
               symbol={bottomSymbol}
+              companyName={bottomCompanyName}
               tradingViewSymbol={bottomTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}

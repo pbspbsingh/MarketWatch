@@ -211,23 +211,19 @@ impl StudyService {
             } else {
                 fetched_has_more_before
             };
-            let company_name = if index == 0 {
-                if reuse {
-                    previous
-                        .as_ref()
-                        .and_then(|dataset| dataset.series.get(index))
-                        .and_then(|series| series.company_name.clone())
-                } else {
-                    match self.yahoo.profile(&symbol).await {
-                        Ok(profile) => profile.name,
-                        Err(error) => {
-                            warn!(%symbol, %error, "failed to load Study company name");
-                            None
-                        }
+            let company_name = if reuse {
+                previous
+                    .as_ref()
+                    .and_then(|dataset| dataset.series.get(index))
+                    .and_then(|series| series.company_name.clone())
+            } else {
+                match self.yahoo.profile(&symbol).await {
+                    Ok(profile) => profile.name,
+                    Err(error) => {
+                        warn!(%symbol, %error, "failed to load Study company name");
+                        None
                     }
                 }
-            } else {
-                None
             };
             series.push(StudyDatasetSeries {
                 symbol,

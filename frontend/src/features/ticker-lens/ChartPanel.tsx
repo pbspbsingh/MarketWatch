@@ -131,6 +131,11 @@ export function ChartPanel({
     && chartThemeBenchmark !== undefined
     ? chartThemeBenchmark.tradingview_symbol
     : summary?.benchmark_symbol;
+  const bottomCompanyName = !forceSystemBenchmark
+    && showThemeEtfChart
+    && chartThemeBenchmark !== undefined
+    ? chartThemeBenchmark.company_name
+    : summary?.benchmark_company_name;
   const relatedGroupMode = mode === "industry" ? "theme" : "industry";
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
@@ -331,6 +336,7 @@ export function ChartPanel({
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 topCompanyName={summary.company_name ?? undefined}
+                bottomCompanyName={bottomCompanyName ?? undefined}
                 topTradingViewSymbol={summary.tradingview_symbol}
                 bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}

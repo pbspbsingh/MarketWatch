@@ -8,9 +8,11 @@ export interface ChartSummary {
     theme_name: string;
     etf_symbol: string;
     tradingview_symbol: string;
+    company_name: string | null;
   }>;
   tradingview_symbol: string;
   benchmark_symbol: string;
+  benchmark_company_name: string | null;
   adr_percent: number;
   extension_from_50_sma: number | null;
   average_volume: number;

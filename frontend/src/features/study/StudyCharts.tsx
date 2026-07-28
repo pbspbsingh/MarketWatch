@@ -573,6 +573,7 @@ export function StudyCharts({
         second={(
           <ChartContainer
             containerRef={bottomRef}
+            companyName={result.series[1]?.company_name ?? undefined}
             interval={result.interval}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}

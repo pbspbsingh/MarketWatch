@@ -1,4 +1,4 @@
-const maximumCompanyNameLength = 28;
+const maximumCompanyNameLength = 50;
 
 export function chartCompanyNameLabel(companyName: string) {
   const characters = Array.from(companyName.trim());
