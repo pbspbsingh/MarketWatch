@@ -33,6 +33,16 @@ pub struct ThemeRanking {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SectorRanking {
+    pub key: String,
+    pub name: String,
+    pub etf_symbol: TickerSymbol,
+    pub performance: Option<PerformancePeriods>,
+    pub absolute_strength: Option<f64>,
+    pub previous_close: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerRanking {
     pub symbol: TickerSymbol,
     pub watchlist_ids: Vec<i64>,

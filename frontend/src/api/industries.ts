@@ -25,6 +25,15 @@ export interface ThemeRanking {
   previous_close: number | null;
 }
 
+export interface SectorRanking {
+  key: string;
+  name: string;
+  etf_symbol: string;
+  performance: PerformancePeriods | null;
+  absolute_strength: number | null;
+  previous_close: number | null;
+}
+
 export async function fetchIndustries(signal?: AbortSignal): Promise<IndustryRanking[]> {
   const response = await fetch("/api/industries", { signal });
   if (!response.ok) {
@@ -39,4 +48,12 @@ export async function fetchThemeRankings(signal?: AbortSignal): Promise<ThemeRan
     throw new Error(`Failed to load themes: HTTP ${response.status}`);
   }
   return response.json() as Promise<ThemeRanking[]>;
+}
+
+export async function fetchSectorRankings(signal?: AbortSignal): Promise<SectorRanking[]> {
+  const response = await fetch("/api/sector-rankings", { signal });
+  if (!response.ok) {
+    throw new Error(`Failed to load sectors: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<SectorRanking[]>;
 }

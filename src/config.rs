@@ -6,19 +6,25 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::Path;
 
-const SECTOR_KEYS: [&str; 11] = [
-    "basicmaterials",
-    "communicationservices",
-    "consumercyclical",
-    "consumerdefensive",
-    "energy",
-    "financial",
-    "healthcare",
-    "industrials",
-    "realestate",
-    "technology",
-    "utilities",
+const SECTORS: [(&str, &str); 11] = [
+    ("basicmaterials", "Basic Materials"),
+    ("communicationservices", "Communication Services"),
+    ("consumercyclical", "Consumer Cyclical"),
+    ("consumerdefensive", "Consumer Defensive"),
+    ("energy", "Energy"),
+    ("financial", "Financial"),
+    ("healthcare", "Healthcare"),
+    ("industrials", "Industrials"),
+    ("realestate", "Real Estate"),
+    ("technology", "Technology"),
+    ("utilities", "Utilities"),
 ];
+
+pub(crate) fn sector_name(key: &str) -> Option<&'static str> {
+    SECTORS
+        .iter()
+        .find_map(|(sector_key, name)| (*sector_key == key).then_some(*name))
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -108,10 +114,10 @@ impl Config {
             "market.benchmark is required"
         );
         anyhow::ensure!(
-            self.market.sector_benchmarks.len() == SECTOR_KEYS.len()
-                && SECTOR_KEYS
+            self.market.sector_benchmarks.len() == SECTORS.len()
+                && SECTORS
                     .iter()
-                    .all(|key| self.market.sector_benchmarks.contains_key(*key)),
+                    .all(|(key, _)| self.market.sector_benchmarks.contains_key(*key)),
             "market.sector_benchmarks must define every supported sector"
         );
         anyhow::ensure!(
@@ -218,6 +224,16 @@ mod tests {
         let config = Config::load("config.example.toml").unwrap();
 
         assert!(!config.market.benchmark.is_empty());
-        assert_eq!(config.market.sector_benchmarks.len(), SECTOR_KEYS.len());
+        assert_eq!(config.market.sector_benchmarks.len(), SECTORS.len());
+    }
+
+    #[test]
+    fn exposes_stable_sector_display_names() {
+        assert_eq!(
+            sector_name("communicationservices"),
+            Some("Communication Services")
+        );
+        assert_eq!(sector_name("realestate"), Some("Real Estate"));
+        assert_eq!(sector_name("unknown"), None);
     }
 }

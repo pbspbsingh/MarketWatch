@@ -5,7 +5,15 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import { Checkbox, CircularProgress, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { List, type RowComponentProps, useListRef } from "react-window";
-import { fetchIndustries, fetchThemeRankings, type IndustryRanking, type PerformancePeriods, type ThemeRanking } from "../../api/industries";
+import {
+  fetchIndustries,
+  fetchSectorRankings,
+  fetchThemeRankings,
+  type IndustryRanking,
+  type PerformancePeriods,
+  type SectorRanking,
+  type ThemeRanking,
+} from "../../api/industries";
 import { resolveTickerMembership } from "../../api/tickers";
 import { createTickerStreamClient } from "../../api/tickerStream";
 import { fetchThemes } from "../../api/themes";
@@ -22,7 +30,7 @@ import "./theme-tracker.css";
 
 type HistoricalRange = "day" | "week" | "month" | "quarter" | "half_year" | "year";
 type Range = HistoricalRange | "trading_day";
-type TrackerMode = "theme" | "industry";
+type TrackerMode = "theme" | "sector" | "industry";
 type RankedItem = {
   key: string;
   label: string;
@@ -50,7 +58,9 @@ const ranges: { key: HistoricalRange; label: string }[] = [
   { key: "half_year", label: "6M" },
   { key: "year", label: "1Y" },
 ];
-const topRangeStorageKey = "market-watch.theme-tracker-range";
+const themeRangeStorageKey = "market-watch.theme-tracker-range";
+const sectorRangeStorageKey = "market-watch.theme-tracker-sector-range";
+const industryRangeStorageKey = "market-watch.theme-tracker-industry-range";
 const drillDownRangeStorageKey = "market-watch.theme-tracker-stock-range";
 
 function initialRange(storageKey: string, fallback: HistoricalRange): HistoricalRange {
@@ -62,24 +72,42 @@ export function ThemeTrackerPage() {
   const focusRevision = useFocusRefresh();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const stockListRef = useListRef(null);
-  const [topRange, setTopRange] = useState<Range>(() => initialRange(topRangeStorageKey, "week"));
+  const [themeRange, setThemeRange] = useState<Range>(() =>
+    initialRange(themeRangeStorageKey, "week"),
+  );
+  const [sectorRange, setSectorRange] = useState<Range>(() =>
+    initialRange(sectorRangeStorageKey, "week"),
+  );
+  const [industryRange, setIndustryRange] = useState<HistoricalRange>(() =>
+    initialRange(industryRangeStorageKey, "week"),
+  );
   const [drillDownRange, setDrillDownRange] = useState<HistoricalRange>(() => initialRange(drillDownRangeStorageKey, "month"));
   const [mode, setMode] = useState<TrackerMode>("theme");
   const [themes, setThemes] = useState<ThemeRanking[]>([]);
+  const [sectors, setSectors] = useState<SectorRanking[]>([]);
   const [industries, setIndustries] = useState<IndustryRanking[]>([]);
   const [activeTheme, setActiveTheme] = useState<ThemeRanking>();
+  const [activeSector, setActiveSector] = useState<SectorRanking>();
   const [activeIndustry, setActiveIndustry] = useState<IndustryRanking>();
   const [stockMode, setStockMode] = useState(false);
   const [selectedTicker, setSelectedTicker] = useState<string>();
   const [selectedStock, setSelectedStock] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [industriesLoading, setIndustriesLoading] = useState(true);
+  const [sectorsLoading, setSectorsLoading] = useState(false);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
   const [error, setError] = useState<string>();
-  const topRangeRef = useRef(topRange);
-  const historicalTopRangeRef = useRef<HistoricalRange>(
-    topRange === "trading_day" ? "week" : topRange,
+  const themeRangeRef = useRef(themeRange);
+  const sectorRangeRef = useRef(sectorRange);
+  const industryRangeRef = useRef(industryRange);
+  const modeRef = useRef(mode);
+  const sectorRequestRef = useRef<AbortController | null>(null);
+  const historicalThemeRangeRef = useRef<HistoricalRange>(
+    themeRange === "trading_day" ? "week" : themeRange,
+  );
+  const historicalSectorRangeRef = useRef<HistoricalRange>(
+    sectorRange === "trading_day" ? "week" : sectorRange,
   );
   const userSelected = useRef(false);
   const refreshedMembershipRevision = useRef(0);
@@ -89,12 +117,22 @@ export function ThemeTrackerPage() {
     [activeTheme, mode],
   );
   const activeIndustryKeys = useMemo(
-    () => mode === "industry" && activeIndustry !== undefined ? new Set([activeIndustry.key]) : new Set<string>(),
-    [activeIndustry, mode],
+    () => mode === "industry" && activeIndustry !== undefined
+      ? new Set([activeIndustry.key])
+      : mode === "sector" && activeSector !== undefined
+        ? new Set(
+            industries
+              .filter((industry) => industry.sector_key === activeSector.key)
+              .map((industry) => industry.key),
+          )
+        : new Set<string>(),
+    [activeIndustry, activeSector, industries, mode],
   );
   const activeGroupKey = mode === "theme"
     ? activeTheme === undefined ? undefined : String(activeTheme.id)
-    : activeIndustry?.key;
+    : mode === "sector"
+      ? activeSector?.key
+      : activeIndustry?.key;
   const resolveGroupStocks = useCallback(
     (signal: AbortSignal) => {
       if (mode === "theme") {
@@ -105,14 +143,14 @@ export function ThemeTrackerPage() {
               signal,
             );
       }
-      return activeIndustry === undefined
+      return activeIndustryKeys.size === 0
         ? Promise.resolve([])
         : resolveTickerMembership(
-            { group_type: "industry", keys: [activeIndustry.key] },
+            { group_type: "industry", keys: [...activeIndustryKeys] },
             signal,
           );
     },
-    [activeIndustry, activeTheme, mode],
+    [activeIndustryKeys, activeTheme, mode],
   );
   const stockStream = useTickerRankingStream({
     client: tickerStream,
@@ -145,7 +183,7 @@ export function ThemeTrackerPage() {
         setThemes(allThemes);
         const first = rankings === undefined
           ? allThemes[0]
-          : [...allThemes].sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0];
+          : [...allThemes].sort((a, b) => metric(b, themeRangeRef.current) - metric(a, themeRangeRef.current))[0];
         if (first !== undefined && !userSelected.current) {
           setActiveTheme(first);
           setSelectedTicker(first.etf_symbol);
@@ -163,7 +201,7 @@ export function ThemeTrackerPage() {
         const rankingsById = new Map(next.map((theme) => [theme.id, theme]));
         setThemes((current) => current.map((theme) => rankingsById.get(theme.id) ?? theme));
         if (!userSelected.current) {
-          const first = [...next].sort((a, b) => metric(b, topRangeRef.current) - metric(a, topRangeRef.current))[0];
+          const first = [...next].sort((a, b) => metric(b, themeRangeRef.current) - metric(a, themeRangeRef.current))[0];
           setActiveTheme(first);
           setSelectedTicker(first?.etf_symbol);
         } else {
@@ -176,23 +214,65 @@ export function ThemeTrackerPage() {
     return () => controller.abort();
   }, []);
 
-  const themeEtfSymbols = useMemo(
-    () => themes.map((theme) => theme.etf_symbol).filter((symbol) => symbol !== ""),
-    [themes],
+  const loadSectorRankings = useCallback(() => {
+    sectorRequestRef.current?.abort();
+    const controller = new AbortController();
+    sectorRequestRef.current = controller;
+    setSectorsLoading(true);
+    fetchSectorRankings(controller.signal)
+      .then((next) => {
+        if (controller.signal.aborted || modeRef.current !== "sector") return;
+        setSectors(next);
+        const first = [...next].sort(
+          (a, b) => metric(b, sectorRangeRef.current) - metric(a, sectorRangeRef.current),
+        )[0];
+        setActiveSector(first);
+        setSelectedTicker(first?.etf_symbol);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setError(requestError.message);
+        }
+      })
+      .finally(() => {
+        if (sectorRequestRef.current === controller) {
+          sectorRequestRef.current = null;
+          if (!controller.signal.aborted) setSectorsLoading(false);
+        }
+      });
+  }, []);
+  useEffect(() => () => {
+    const controller = sectorRequestRef.current;
+    sectorRequestRef.current = null;
+    controller?.abort();
+  }, []);
+
+  const trackerEtfSymbols = useMemo(
+    () => (mode === "sector" ? sectors : themes)
+      .map((item) => item.etf_symbol)
+      .filter((symbol) => symbol !== ""),
+    [mode, sectors, themes],
   );
-  const restoreHistoricalTopRange = useCallback(() => {
-    if (topRangeRef.current !== "trading_day") return;
-    topRangeRef.current = historicalTopRangeRef.current;
-    setTopRange(historicalTopRangeRef.current);
+  const restoreHistoricalOverviewRange = useCallback(() => {
+    if (modeRef.current === "sector") {
+      if (sectorRangeRef.current !== "trading_day") return;
+      sectorRangeRef.current = historicalSectorRangeRef.current;
+      setSectorRange(historicalSectorRangeRef.current);
+    } else if (modeRef.current === "theme") {
+      if (themeRangeRef.current !== "trading_day") return;
+      themeRangeRef.current = historicalThemeRangeRef.current;
+      setThemeRange(historicalThemeRangeRef.current);
+    }
   }, []);
   const handleTradingDayAvailability = useCallback((available: boolean) => {
-    if (!available) restoreHistoricalTopRange();
-  }, [restoreHistoricalTopRange]);
+    if (!available) restoreHistoricalOverviewRange();
+  }, [restoreHistoricalOverviewRange]);
   const livePriceStream = useLivePrices({
-    enabled: mode === "theme" && !stockMode && topRange === "trading_day",
-    symbols: themeEtfSymbols,
+    enabled: mode !== "industry" && !stockMode
+      && (mode === "sector" ? sectorRange : themeRange) === "trading_day",
+    symbols: trackerEtfSymbols,
     onAvailability: handleTradingDayAvailability,
-    onError: restoreHistoricalTopRange,
+    onError: restoreHistoricalOverviewRange,
   });
   const tradingDayAvailable = livePriceStream.available;
   const livePrices = livePriceStream.prices;
@@ -235,7 +315,13 @@ export function ThemeTrackerPage() {
     return () => controller.abort();
   }, [focusRevision, setStockTickerWatchlists, stockMode, stockSymbolsKey]);
 
-  const range = stockMode ? drillDownRange : topRange;
+  const range = stockMode
+    ? drillDownRange
+    : mode === "sector"
+      ? sectorRange
+      : mode === "industry"
+        ? industryRange
+        : themeRange;
   const sortedItems = useMemo(() => {
     const items: RankedItem[] = stockMode
       ? stockStream.tickers.map((stock) => ({ key: stock.symbol, label: stock.symbol, symbol: stock.symbol, performance: stock.performance, watchlistIds: stock.watchlist_ids }))
@@ -247,9 +333,24 @@ export function ThemeTrackerPage() {
             performance: theme.performance,
             tradingDayPerformance: tradingDayReturn(livePrices.get(theme.etf_symbol.toUpperCase())?.price, theme.previous_close),
           }))
-        : industries.map((industry) => ({ key: industry.key, label: industry.name, performance: industry.performance }));
+        : mode === "sector"
+          ? sectors.map((sector) => ({
+              key: sector.key,
+              label: `${sector.name} (${sector.etf_symbol})`,
+              symbol: sector.etf_symbol,
+              performance: sector.performance,
+              tradingDayPerformance: tradingDayReturn(
+                livePrices.get(sector.etf_symbol.toUpperCase())?.price,
+                sector.previous_close,
+              ),
+            }))
+          : industries.map((industry) => ({
+              key: industry.key,
+              label: industry.name,
+              performance: industry.performance,
+            }));
     return items.sort((a, b) => metric(b, range) - metric(a, range));
-  }, [industries, livePrices, mode, range, stockMode, stockStream.tickers, themes]);
+  }, [industries, livePrices, mode, range, sectors, stockMode, stockStream.tickers, themes]);
   const scale = useMemo(() => Math.max(0.01, ...sortedItems.flatMap((item) => {
     const value = itemMetric(item, range);
     return value == null ? [] : [Math.abs(value)];
@@ -258,8 +359,16 @@ export function ThemeTrackerPage() {
     (latest, update) => latest === undefined || update.updatedAt > latest ? update.updatedAt : latest,
     undefined,
   ), [livePrices]);
-  const activeGroupName = mode === "theme" ? activeTheme?.name : activeIndustry?.name;
-  const activeGroupSymbol = mode === "theme" ? activeTheme?.etf_symbol : undefined;
+  const activeGroupName = mode === "theme"
+    ? activeTheme?.name
+    : mode === "sector"
+      ? activeSector?.name
+      : activeIndustry?.name;
+  const activeGroupSymbol = mode === "theme"
+    ? activeTheme?.etf_symbol
+    : mode === "sector"
+      ? activeSector?.etf_symbol
+      : undefined;
 
   const selectRange = (_: React.MouseEvent<HTMLElement>, value: Range | null) => {
     if (value === null) return;
@@ -267,13 +376,25 @@ export function ThemeTrackerPage() {
       if (value === "trading_day") return;
       localStorage.setItem(drillDownRangeStorageKey, value);
       setDrillDownRange(value);
+    } else if (mode === "sector") {
+      if (value !== "trading_day") {
+        localStorage.setItem(sectorRangeStorageKey, value);
+        historicalSectorRangeRef.current = value;
+      }
+      sectorRangeRef.current = value;
+      setSectorRange(value);
+    } else if (mode === "industry") {
+      if (value === "trading_day") return;
+      localStorage.setItem(industryRangeStorageKey, value);
+      industryRangeRef.current = value;
+      setIndustryRange(value);
     } else {
       if (value !== "trading_day") {
-        localStorage.setItem(topRangeStorageKey, value);
-        historicalTopRangeRef.current = value;
+        localStorage.setItem(themeRangeStorageKey, value);
+        historicalThemeRangeRef.current = value;
       }
-      topRangeRef.current = value;
-      setTopRange(value);
+      themeRangeRef.current = value;
+      setThemeRange(value);
     }
   };
   const selectItem = useCallback((item: RankedItem) => {
@@ -283,14 +404,17 @@ export function ThemeTrackerPage() {
     else if (mode === "theme") {
       setSelectedStock(undefined);
       setActiveTheme(themes.find((theme) => String(theme.id) === item.key));
+    } else if (mode === "sector") {
+      setSelectedStock(undefined);
+      setActiveSector(sectors.find((sector) => sector.key === item.key));
     } else {
       setSelectedStock(undefined);
       setActiveIndustry(industries.find((industry) => industry.key === item.key));
     }
-  }, [industries, mode, stockMode, themes]);
+  }, [industries, mode, sectors, stockMode, themes]);
   const enterStockMode = (item: RankedItem) => {
     selectItem(item);
-    restoreHistoricalTopRange();
+    restoreHistoricalOverviewRange();
     setStockMode(true);
   };
   const handleFavouriteClick = (item: RankedItem) => {
@@ -347,15 +471,39 @@ export function ThemeTrackerPage() {
   const selectMode = (_: React.MouseEvent<HTMLElement>, value: TrackerMode | null) => {
     if (value === null || value === mode) return;
     userSelected.current = true;
+    if (value === "industry") restoreHistoricalOverviewRange();
+    modeRef.current = value;
     setMode(value);
     setStockMode(false);
     setSelectedStock(undefined);
-    if (value === "industry") restoreHistoricalTopRange();
-    const selectionRange = range === "trading_day" ? historicalTopRangeRef.current : range;
+    if (value === "sector") {
+      setSectors([]);
+      setActiveSector(undefined);
+      setSelectedTicker(undefined);
+      loadSectorRankings();
+    } else {
+      sectorRequestRef.current?.abort();
+      sectorRequestRef.current = null;
+      setSectors([]);
+      setActiveSector(undefined);
+      setSectorsLoading(false);
+    }
+    const targetRange = value === "sector"
+      ? sectorRangeRef.current
+      : value === "industry"
+        ? industryRangeRef.current
+        : themeRangeRef.current;
+    const selectionRange = targetRange === "trading_day"
+      ? value === "sector"
+        ? historicalSectorRangeRef.current
+        : historicalThemeRangeRef.current
+      : targetRange;
     if (value === "theme") {
       const next = activeTheme ?? [...themes].sort((a, b) => metric(b, selectionRange) - metric(a, selectionRange))[0];
       setActiveTheme(next);
       setSelectedTicker(next?.etf_symbol);
+    } else if (value === "sector") {
+      // The fresh sector request selects its leading ETF when it completes.
     } else {
       const next = activeIndustry ?? [...industries].sort((a, b) => metric(b, selectionRange) - metric(a, selectionRange))[0];
       setActiveIndustry(next);
@@ -366,11 +514,22 @@ export function ThemeTrackerPage() {
     setStockMode(false);
     setSelectedStock(undefined);
     setContextMenu(undefined);
-    setSelectedTicker(mode === "theme" ? activeTheme?.etf_symbol : undefined);
+    setSelectedTicker(
+      mode === "theme"
+        ? activeTheme?.etf_symbol
+        : mode === "sector"
+          ? activeSector?.etf_symbol
+          : undefined,
+    );
     if (activeGroupKey !== undefined) {
       requestAnimationFrame(() => scrollTrackerItemIntoView(activeGroupKey));
     }
-  }, [activeGroupKey, activeTheme?.etf_symbol, mode]);
+  }, [
+    activeGroupKey,
+    activeSector?.etf_symbol,
+    activeTheme?.etf_symbol,
+    mode,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -381,7 +540,7 @@ export function ThemeTrackerPage() {
         if (activeGroupKey === undefined) return;
         event.preventDefault();
         userSelected.current = true;
-        restoreHistoricalTopRange();
+        restoreHistoricalOverviewRange();
         setSelectedStock(undefined);
         setStockMode(true);
         return;
@@ -406,7 +565,7 @@ export function ThemeTrackerPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activeGroupKey, leaveStockMode, restoreHistoricalTopRange, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
+  }, [activeGroupKey, leaveStockMode, restoreHistoricalOverviewRange, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
 
   return (
     <section className="theme-tracker">
@@ -414,18 +573,19 @@ export function ThemeTrackerPage() {
         <header className="theme-tracker-header">
           {stockMode && (
             <div className="theme-tracker-title">
-              <IconButton size="small" aria-label={`Back to ${mode === "theme" ? "themes" : "industries"}`} onClick={leaveStockMode}><ArrowBackIcon fontSize="small" /></IconButton>
+              <IconButton size="small" aria-label={`Back to ${mode === "industry" ? "industries" : `${mode}s`}`} onClick={leaveStockMode}><ArrowBackIcon fontSize="small" /></IconButton>
               <Typography component="h1">{`${activeGroupName ?? ""}${activeGroupSymbol === undefined ? "" : ` (${activeGroupSymbol})`}`}</Typography>
             </div>
           )}
           {!stockMode && (
             <ToggleButtonGroup className="theme-tracker-mode" exclusive size="small" value={mode} onChange={selectMode} aria-label="Tracker mode">
               <ToggleButton value="theme">Theme</ToggleButton>
+              <ToggleButton value="sector">Sector</ToggleButton>
               <ToggleButton value="industry">Industry</ToggleButton>
             </ToggleButtonGroup>
           )}
           <ToggleButtonGroup exclusive size="small" value={range} onChange={selectRange} aria-label="Performance range">
-            {!stockMode && mode === "theme" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
+            {!stockMode && mode !== "industry" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
             {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
           </ToggleButtonGroup>
         </header>
@@ -434,11 +594,17 @@ export function ThemeTrackerPage() {
             Updated {new Date(latestLiveUpdate).toLocaleTimeString()}
           </div>
         )}
-        {(stockMode ? stockStream.loading : mode === "theme" ? loading : industriesLoading) && sortedItems.length === 0 ? <div className="panel-status"><CircularProgress size="1rem" /></div> : stockMode ? (
+        {(stockMode
+          ? stockStream.loading
+          : mode === "theme"
+            ? loading
+            : mode === "sector"
+              ? sectorsLoading
+              : industriesLoading) && sortedItems.length === 0 ? <div className="panel-status"><CircularProgress size="1rem" /></div> : stockMode ? (
           <List
             tagName="ol"
             className="theme-tracker-list"
-            aria-label="Theme stocks"
+            aria-label={`${activeGroupName ?? mode} stocks`}
             listRef={stockListRef}
             rowComponent={StockRow}
             rowCount={sortedItems.length}
@@ -498,7 +664,7 @@ export function ThemeTrackerPage() {
         </Menu>
       </aside>
       <ChartPanel
-        mode={mode}
+        mode={mode === "theme" ? "theme" : "industry"}
         groupKeys={mode === "theme" ? activeThemeKeys : activeIndustryKeys}
         industryKeys={activeIndustryKeys}
         selectedTicker={selectedTicker}
