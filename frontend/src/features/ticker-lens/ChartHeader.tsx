@@ -169,21 +169,23 @@ export function ChartHeader({
             <ChartIndicators summary={summary} />
           </>
         )}
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={interval}
-          aria-label="Chart interval"
-          onChange={(_, value: "D" | "W" | null) => {
-            if (value !== null) {
-              setInterval(value);
-              localStorage.setItem(chartIntervalKey, value);
-            }
-          }}
-        >
-          <ToggleButton value="D">Daily</ToggleButton>
-          <ToggleButton value="W">Weekly</ToggleButton>
-        </ToggleButtonGroup>
+        {!summaryLoading && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={interval}
+            aria-label="Chart interval"
+            onChange={(_, value: "D" | "W" | null) => {
+              if (value !== null) {
+                setInterval(value);
+                localStorage.setItem(chartIntervalKey, value);
+              }
+            }}
+          >
+            <ToggleButton value="D">Daily</ToggleButton>
+            <ToggleButton value="W">Weekly</ToggleButton>
+          </ToggleButtonGroup>
+        )}
         {setShowThemeEtfChart !== undefined && summary !== undefined && (
           <ToggleButtonGroup
             exclusive
