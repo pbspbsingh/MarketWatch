@@ -225,12 +225,12 @@ export function TickerLens({
   useEffect(() => {
     const handleGroupToggleShortcut = (event: KeyboardEvent) => {
       if (
-        event.key.toLocaleLowerCase() !== "g" ||
+        event.code !== "KeyG" ||
         event.defaultPrevented ||
         event.repeat ||
         event.ctrlKey ||
         event.metaKey ||
-        event.altKey ||
+        !event.altKey ||
         isTypingTarget(event.target) ||
         document.querySelector('[role="dialog"], [role="menu"]') !== null
       ) {
@@ -458,7 +458,7 @@ export function TickerLens({
         />
       </div>
       <Tooltip
-        title={`${groupsCollapsed ? "Show groups" : "Hide groups"} (G)`}
+        title={`${groupsCollapsed ? "Show groups" : "Hide groups"} (Alt/Option+G)`}
         placement="right"
       >
         <IconButton

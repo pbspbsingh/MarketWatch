@@ -119,17 +119,28 @@ impl ChartService {
                                 )
                             })?
                             .clone();
-                        let profile = self.yahoo.profile(&etf_symbol).await?;
-                        Some(ChartSectorBenchmark {
-                            sector_key: classification.sector_key,
-                            sector_name: classification.sector_name,
-                            company_name: profile.name.clone(),
-                            tradingview_symbol: TradingViewSymbol::new(
-                                profile.exchange,
-                                etf_symbol.clone(),
-                            ),
-                            etf_symbol,
-                        })
+                        match self.yahoo.profile(&etf_symbol).await {
+                            Ok(profile) => Some(ChartSectorBenchmark {
+                                sector_key: classification.sector_key,
+                                sector_name: classification.sector_name,
+                                company_name: profile.name.clone(),
+                                tradingview_symbol: TradingViewSymbol::new(
+                                    profile.exchange,
+                                    etf_symbol.clone(),
+                                ),
+                                etf_symbol,
+                            }),
+                            Err(error) => {
+                                warn!(
+                                    %symbol,
+                                    sector_key = classification.sector_key,
+                                    %etf_symbol,
+                                    %error,
+                                    "failed to load sector ETF profile"
+                                );
+                                None
+                            }
+                        }
                     }
                     None => None,
                 }

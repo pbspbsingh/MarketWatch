@@ -155,6 +155,86 @@ export function ChartPanel({
   const selectedGroupLabel = mode === "industry" ? "Industries" : "Themes";
   const relatedGroupLabel = relatedGroupMode === "industry" ? "Industries" : "Themes";
   const chartError = chartErrors.top ?? chartErrors.bottom;
+  const selectBenchmark = useCallback((selection: ChartBenchmarkSelection) => {
+    const nextMode: ChartBenchmarkMode = selection.startsWith("theme:")
+      ? "theme"
+      : selection === "sector"
+        ? "sector"
+        : "market";
+    setBenchmarkMode(nextMode);
+    localStorage.setItem(chartBenchmarkKey, nextMode);
+    if (nextMode === "theme" && selectedTicker !== undefined) {
+      setThemeSelection({
+        ticker: selectedTicker,
+        etf: selection.slice("theme:".length),
+      });
+    }
+  }, [selectedTicker]);
+
+  useEffect(() => {
+    const handleIntervalShortcut = (event: KeyboardEvent) => {
+      if (
+        event.code !== "KeyD" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !event.altKey ||
+        isArrowKeyControl(event.target) ||
+        document.querySelector('[role="dialog"], [role="menu"]') !== null
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setInterval((current) => {
+        const next = current === "D" ? "W" : "D";
+        localStorage.setItem(chartIntervalKey, next);
+        return next;
+      });
+    };
+    document.addEventListener("keydown", handleIntervalShortcut);
+    return () => document.removeEventListener("keydown", handleIntervalShortcut);
+  }, []);
+
+  useEffect(() => {
+    const handleBenchmarkShortcut = (event: KeyboardEvent) => {
+      if (
+        event.code !== "KeyB" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !event.altKey ||
+        isArrowKeyControl(event.target) ||
+        document.querySelector('[role="dialog"], [role="menu"]') !== null ||
+        forceSystemBenchmark ||
+        summary === undefined
+      ) {
+        return;
+      }
+      const selections: ChartBenchmarkSelection[] = [
+        "market",
+        ...(summary.sector_benchmark === null
+          ? []
+          : ["sector" as const]),
+        ...summary.theme_benchmarks.map(
+          ({ etf_symbol }) => `theme:${etf_symbol}` as const,
+        ),
+      ];
+      const currentIndex = selections.indexOf(benchmarkSelection);
+      const next = selections[(currentIndex + 1) % selections.length];
+      if (next === undefined) return;
+      event.preventDefault();
+      selectBenchmark(next);
+    };
+    document.addEventListener("keydown", handleBenchmarkShortcut);
+    return () => document.removeEventListener("keydown", handleBenchmarkShortcut);
+  }, [
+    benchmarkSelection,
+    forceSystemBenchmark,
+    selectBenchmark,
+    summary,
+  ]);
 
   const exportChartPanel = useCallback(async (action: ImageExportAction) => {
     const panel = panelRef.current;
@@ -304,21 +384,7 @@ export function ChartPanel({
         benchmarkSelection={benchmarkSelection}
         benchmarkSelectionDisabled={forceSystemBenchmark}
         setInterval={setInterval}
-        setBenchmarkSelection={(selection) => {
-          const nextMode: ChartBenchmarkMode = selection.startsWith("theme:")
-            ? "theme"
-            : selection === "sector"
-              ? "sector"
-              : "market";
-          setBenchmarkMode(nextMode);
-          localStorage.setItem(chartBenchmarkKey, nextMode);
-          if (nextMode === "theme" && selectedTicker !== undefined) {
-            setThemeSelection({
-              ticker: selectedTicker,
-              etf: selection.slice("theme:".length),
-            });
-          }
-        }}
+        setBenchmarkSelection={selectBenchmark}
         setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
         exportChartPanel={exportChartPanel}
         exportChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
