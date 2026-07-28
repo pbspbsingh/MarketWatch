@@ -22,14 +22,15 @@ const periods: { period: TopStocksPeriod; label: string }[] = [
   { period: "months3", label: "3 Months" }, { period: "months6", label: "6 Months" },
   { period: "year1", label: "1 Year" },
 ];
-const defaultCount = 200;
+const defaultPeriodCount = 100;
+const defaultScreenCount = 200;
 const periodMode = "periods";
 
 export function TopStocksPage() {
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
   const [screens, setScreens] = useState<TopStockScreen[]>([]);
   const [periodSelections, setPeriodSelections] = useState<TopStocksSelection[]>([]);
-  const [draftCount, setDraftCount] = useState(String(defaultCount));
+  const [draftCount, setDraftCount] = useState(String(defaultPeriodCount));
   const [applyAdditionalFilters, setApplyAdditionalFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
@@ -77,7 +78,7 @@ export function TopStocksPage() {
   };
   const countForPeriods = () => {
     const value = Number(draftCount);
-    return Number.isInteger(value) && value > 0 ? value : defaultCount;
+    return Number.isInteger(value) && value > 0 ? value : defaultPeriodCount;
   };
   const selectionsWithCount = (items: TopStocksSelection[], count = countForPeriods()) =>
     items.map((item) => ({ ...item, count }));
@@ -192,7 +193,7 @@ export function TopStocksPage() {
 function ScreenEditor({ screen, onClose, onSave }: { screen: TopStockScreen | null; onClose: () => void; onSave: (input: TopStockScreenInput) => Promise<void> }) {
   const [name, setName] = useState(screen?.name ?? "");
   const [url, setUrl] = useState(screen?.url ?? "");
-  const [count, setCount] = useState(String(screen?.max_stock_count ?? defaultCount));
+  const [count, setCount] = useState(String(screen?.max_stock_count ?? defaultScreenCount));
   const parsedCount = Number(count);
   const valid = name.trim() !== "" && url.trim() !== "" && Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 500;
   return <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
