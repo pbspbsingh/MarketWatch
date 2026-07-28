@@ -432,12 +432,17 @@ export function StudyCharts({
     const candleSeries = candleSeriesRef.current;
     if (charts.length !== 2 || candleSeries.length !== 2 || result.series.length !== 2) return;
 
-    const anchor = dataInitializedRef.current
-      ? captureAnchoredLogicalRange(charts[0], candleSeries[0])
-      : viewportRef.current?.datasetKey === datasetKey
-        ? viewportRef.current.anchor
-        : undefined;
     const intervalChanged = dataInitializedRef.current && intervalRef.current !== result.interval;
+    const visibleTimeRange = dataInitializedRef.current && !intervalChanged
+      ? charts[0].timeScale().getVisibleRange()
+      : null;
+    const anchor = visibleTimeRange === null
+      ? dataInitializedRef.current
+        ? captureAnchoredLogicalRange(charts[0], candleSeries[0])
+        : viewportRef.current?.datasetKey === datasetKey
+          ? viewportRef.current.anchor
+          : undefined
+      : undefined;
     const dates = [...new Set(
       result.series.flatMap((series) => series.candles.map((candle) => candle.date)),
     )].sort();
@@ -527,7 +532,9 @@ export function StudyCharts({
         }],
     ));
 
-    if (anchor !== undefined) {
+    if (visibleTimeRange !== null) {
+      charts[0].timeScale().setVisibleRange(visibleTimeRange);
+    } else if (anchor !== undefined) {
       restoreAnchoredLogicalRange(charts[0], anchor, intervalChanged);
     } else {
       const visibleStart = shiftYears(result.date, -1);
