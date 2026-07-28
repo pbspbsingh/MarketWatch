@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
+import { fetchSectorRankings, type SectorRanking } from "../../api/industries";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
 import { createTickerStreamClient } from "../../api/tickerStream";
 import type { Watchlist } from "../../api/watchlists";
@@ -10,6 +11,7 @@ import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
   groupModeKey,
+  sectorGroupingKey,
   unassignedGroupKey,
 } from "./constants";
 import { ChartPanel } from "./ChartPanel";
@@ -86,6 +88,12 @@ interface GlobalRankingGroupsState {
   error?: string;
 }
 
+interface SectorRankingsState {
+  request?: { mode: "industry" };
+  rankings: SectorRanking[];
+  error?: string;
+}
+
 const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
@@ -119,6 +127,13 @@ export function TickerLens({
     ? parsedSearchSelection
     : groupSelection;
   const groupMode = activeGroupSelection.mode;
+  const [groupBySector, setGroupBySector] = useState(
+    () => localStorage.getItem(sectorGroupingKey) === "true",
+  );
+  const sectorRankingsRequest = useMemo(
+    () => groupMode === "industry" && groupBySector ? { mode: groupMode } as const : undefined,
+    [groupBySector, groupMode],
+  );
   const selectedGroupKeys = activeGroupSelection.keys;
   const setSelectedGroupKeys = useCallback<Dispatch<SetStateAction<Set<string>>>>((action) => {
     setGroupSelection((current) => {
@@ -138,6 +153,8 @@ export function TickerLens({
   const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
   const [globalRankingGroupsState, setGlobalRankingGroupsState] =
     useState<GlobalRankingGroupsState>({ key: "", groups: [] });
+  const [sectorRankingsState, setSectorRankingsState] =
+    useState<SectorRankingsState>({ rankings: [] });
   const [groupsState, setGroupsState] = useState<GroupsState>({
     key: "",
     groups: [],
@@ -180,6 +197,12 @@ export function TickerLens({
     : groups;
   const globalRankingError = bounded && globalRankingGroupsState.key === groupMode
     ? globalRankingGroupsState.error
+    : undefined;
+  const sectorRankings = sectorRankingsState.request === sectorRankingsRequest
+    ? sectorRankingsState.rankings
+    : [];
+  const sectorRankingsError = sectorRankingsState.request === sectorRankingsRequest
+    ? sectorRankingsState.error
     : undefined;
   const boundedSymbolsByGroup = activeGroupsState?.boundedSymbolsByGroup ?? emptySymbolsByGroup;
   const boundedSymbols = bounded
@@ -227,6 +250,10 @@ export function TickerLens({
   useEffect(() => {
     writeTickerFilterState(tickerFilters, tickerFiltersPersisted);
   }, [tickerFilters, tickerFiltersPersisted]);
+
+  useEffect(() => {
+    localStorage.setItem(sectorGroupingKey, String(groupBySector));
+  }, [groupBySector]);
 
   useEffect(() => {
     const mode = searchGroupMode(searchParams);
@@ -325,6 +352,27 @@ export function TickerLens({
     return () => controller.abort();
   }, [bounded, groupMode]);
 
+  useEffect(() => {
+    if (sectorRankingsRequest === undefined) return;
+    const controller = new AbortController();
+    fetchSectorRankings(controller.signal)
+      .then((rankings) => {
+        if (!controller.signal.aborted) {
+          setSectorRankingsState({ request: sectorRankingsRequest, rankings });
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setSectorRankingsState({
+            request: sectorRankingsRequest,
+            rankings: [],
+            error: `Sector ETF rankings unavailable: ${requestError.message}`,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [sectorRankingsRequest]);
+
   const resolveTickers = useCallback(
     (request: ResolveTickersRequest) => {
       if (!bounded) {
@@ -392,6 +440,8 @@ export function TickerLens({
         <GroupPanel
           mode={groupMode}
           setMode={setMode}
+          groupBySector={groupBySector}
+          setGroupBySector={setGroupBySector}
           selectedGroupKeys={selectedGroupKeys}
           setSelectedGroupKeys={setSelectedGroupKeys}
           selectedTickerContext={selectedTickerContext}
@@ -401,6 +451,7 @@ export function TickerLens({
           countSortAvailable={bounded}
           groups={groups}
           globalRankingGroups={globalRankingGroups}
+          sectorRankings={sectorRankings}
           loadingGroups={groupsLoading}
           groupError={groupsError}
           revealGroup={revealGroup}
@@ -486,6 +537,13 @@ export function TickerLens({
         severity="warning"
         onClose={() =>
           setGlobalRankingGroupsState((current) => ({ ...current, error: undefined }))
+        }
+      />
+      <Toast
+        message={sectorRankingsError}
+        severity="warning"
+        onClose={() =>
+          setSectorRankingsState((current) => ({ ...current, error: undefined }))
         }
       />
     </section>

@@ -27,10 +27,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import type { SectorRanking } from "../../api/industries";
 import {
   sortOptions,
   sortSettingKey,
-  sectorGroupingKey,
   expandedSectorsKey,
   unassignedGroupKey,
 } from "./constants";
@@ -60,6 +60,8 @@ const unassignedGroup: GroupRanking = {
 interface GroupPanelProps {
   mode: GroupMode;
   setMode: (mode: GroupMode) => void;
+  groupBySector: boolean;
+  setGroupBySector: Dispatch<SetStateAction<boolean>>;
   selectedGroupKeys: Set<string>;
   setSelectedGroupKeys: Dispatch<SetStateAction<Set<string>>>;
   selectedTickerContext: SelectedTickerContext | undefined;
@@ -69,6 +71,7 @@ interface GroupPanelProps {
   countSortAvailable: boolean;
   groups: GroupRanking[];
   globalRankingGroups: GroupRanking[];
+  sectorRankings: SectorRanking[];
   loadingGroups: boolean;
   groupError?: string;
   revealGroup?: RevealRequest<string>;
@@ -77,6 +80,8 @@ interface GroupPanelProps {
 export function GroupPanel({
   mode,
   setMode,
+  groupBySector,
+  setGroupBySector,
   selectedGroupKeys,
   setSelectedGroupKeys,
   selectedTickerContext,
@@ -86,6 +91,7 @@ export function GroupPanel({
   countSortAvailable,
   groups,
   globalRankingGroups,
+  sectorRankings,
   loadingGroups,
   groupError,
   revealGroup,
@@ -97,9 +103,6 @@ export function GroupPanel({
     industry: new Set(),
     theme: new Set(),
   }));
-  const [groupBySector, setGroupBySector] = useState(
-    () => localStorage.getItem(sectorGroupingKey) === "true",
-  );
   const [expandedSectors, setExpandedSectors] = useState(readExpandedSectors);
   const [collapsedRequiredSectors, setCollapsedRequiredSectors] = useState<{
     key: string;
@@ -116,10 +119,6 @@ export function GroupPanel({
   useEffect(() => {
     localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
   }, [sortSetting]);
-
-  useEffect(() => {
-    localStorage.setItem(sectorGroupingKey, String(groupBySector));
-  }, [groupBySector]);
 
   useEffect(() => {
     localStorage.setItem(expandedSectorsKey, JSON.stringify([...expandedSectors]));
@@ -177,6 +176,10 @@ export function GroupPanel({
     ),
     [countSortAvailable],
   );
+  const sectorRankingByKey = useMemo(
+    () => new Map(sectorRankings.map((ranking) => [ranking.key, ranking])),
+    [sectorRankings],
+  );
   const sectors = useMemo(() => {
     const byKey = new Map<string, { key: string; name: string; groups: GroupRanking[]; value?: number; totalCount?: number }>();
     for (const group of sortedGroups) {
@@ -191,14 +194,19 @@ export function GroupPanel({
     }
     const sectors = [...byKey.values()];
     for (const sector of sectors) {
-      const values = sector.groups
-        .map((group) => sortValue(group, activeSortSetting.key))
-        .filter((value): value is number => value !== undefined);
-      sector.value = values.length === 0
-        ? undefined
-        : activeSortSetting.key === "count"
-          ? values.reduce((total, value) => total + value, 0)
-          : values.reduce((total, value) => total + value, 0) / values.length;
+      if (activeSortSetting.key === "count") {
+        const values = sector.groups
+          .map((group) => sortValue(group, activeSortSetting.key))
+          .filter((value): value is number => value !== undefined);
+        sector.value = values.length === 0
+          ? undefined
+          : values.reduce((total, value) => total + value, 0);
+      } else {
+        const ranking = sectorRankingByKey.get(sector.key);
+        sector.value = ranking === undefined
+          ? undefined
+          : sortValue(ranking, activeSortSetting.key);
+      }
       if (countSortAvailable) {
         const counts = sector.groups
           .map((group) => group.ticker_count)
@@ -218,7 +226,7 @@ export function GroupPanel({
         ? left.name.localeCompare(right.name)
         : activeSortSetting.direction === "desc" ? -comparison : comparison;
     });
-  }, [countSortAvailable, sortedGroups, activeSortSetting]);
+  }, [countSortAvailable, sectorRankingByKey, sortedGroups, activeSortSetting]);
   const sectorKeyByGroup = useMemo(
     () => new Map(sectors.flatMap((sector) => sector.groups.map((group) => [group.key, sector.key]))),
     [sectors],
