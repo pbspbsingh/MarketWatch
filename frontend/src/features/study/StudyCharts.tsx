@@ -46,13 +46,17 @@ import {
   defaultChartBarSpacing,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
+  relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
   volumeScaleMargins,
   visualizationColors,
 } from "../../components/lightweight-chart/chartOptions";
 import { appPalettes } from "../../app/theme";
-import { useAppSettings } from "../../app/AppSettings";
+import {
+  useAppSettings,
+  type RelativeStrengthLineStyle,
+} from "../../app/AppSettings";
 import {
   movingAverageSeriesCount,
   movingAverageSpecs,
@@ -95,7 +99,7 @@ export function StudyCharts({
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
 }) {
-  const { candlePalette, theme } = useAppSettings();
+  const { candlePalette, relativeStrengthLineStyle: rsLineStyle, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const chartColors = useMemo(() => getChartColors(theme), [theme]);
   const topRef = useRef<HTMLDivElement>(null);
@@ -130,6 +134,7 @@ export function StudyCharts({
   const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   const [chartMenuPosition, setChartMenuPosition] = useState<ChartMenuPosition | null>(null);
   const showRelativeStrengthRef = useRef(showRelativeStrength);
+  const rsLineStyleRef = useRef(rsLineStyle);
   const firstSymbol = result.series[0]?.symbol ?? "";
   const secondSymbol = result.series[1]?.symbol ?? "";
   const hasTwoSeries = result.series.length === 2;
@@ -211,6 +216,13 @@ export function StudyCharts({
       series.applyOptions({ visible: showRelativeStrength });
     });
   }, [showRelativeStrength]);
+
+  useEffect(() => {
+    rsLineStyleRef.current = rsLineStyle;
+    relativeStrengthSeriesRef.current[0]?.applyOptions({
+      lineStyle: relativeStrengthLineStyle(rsLineStyle),
+    });
+  }, [rsLineStyle]);
 
   const setCrosshairOwner = useCallback((owner: 0 | 1) => {
     crosshairOwnerRef.current = owner;
@@ -516,6 +528,7 @@ export function StudyCharts({
         result.relative_strength,
         showRelativeStrengthRef.current,
         appearanceRef.current.chartColors.background,
+        rsLineStyleRef.current,
       );
     relativeStrengthSeriesRef.current = relativeStrength.series;
     relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
@@ -610,13 +623,17 @@ function addRelativeStrength(
   relativeStrength: NonNullable<StudyResult["relative_strength"]>,
   visible: boolean,
   background: string,
+  rsLineStyle: RelativeStrengthLineStyle,
 ): {
   series: ISeriesApi<"Line">[];
   provisionalInner: ISeriesApi<"Line"> | undefined;
 } {
   const series: ISeriesApi<"Line">[] = [];
   let provisionalInner: ISeriesApi<"Line"> | undefined;
-  const line = chart.addSeries(LineSeries, relativeStrengthSeriesOptions);
+  const line = chart.addSeries(LineSeries, {
+    ...relativeStrengthSeriesOptions,
+    lineStyle: relativeStrengthLineStyle(rsLineStyle),
+  });
   line.priceScale().applyOptions({ scaleMargins: relativeStrengthScaleMargins });
   line.setData(relativeStrengthLineData(relativeStrength));
   series.push(line);

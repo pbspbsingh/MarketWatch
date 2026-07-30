@@ -18,17 +18,25 @@ const legacyChartEngineKey = "market-watch.chart-engine";
 
 export type ChartEngine = "tradingview" | "lightweight";
 export type CandlePalette = "solid" | "hollow";
+export type RelativeStrengthLineStyle =
+  | "solid"
+  | "dotted"
+  | "dashed"
+  | "large-dashed"
+  | "sparse-dotted";
 
 type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
   candlePalette: CandlePalette;
+  relativeStrengthLineStyle: RelativeStrengthLineStyle;
 };
 
 type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
+  setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
 };
 
 const AppSettingsContext = createContext<AppSettingsValue | undefined>(undefined);
@@ -45,6 +53,9 @@ function readSettings(): StoredSettings {
           ? legacyChartEngine
           : "tradingview",
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
+      relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
+        ? value.relativeStrengthLineStyle
+        : "large-dashed",
     };
   } catch {
     return {
@@ -53,12 +64,23 @@ function readSettings(): StoredSettings {
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
         : "tradingview",
       candlePalette: "solid",
+      relativeStrengthLineStyle: "large-dashed",
     };
   }
 }
 
 function validChartEngine(value: unknown): value is ChartEngine {
   return value === "tradingview" || value === "lightweight";
+}
+
+export function validRelativeStrengthLineStyle(
+  value: unknown,
+): value is RelativeStrengthLineStyle {
+  return value === "solid"
+    || value === "dotted"
+    || value === "dashed"
+    || value === "large-dashed"
+    || value === "sparse-dotted";
 }
 
 const initialSettings = readSettings();
@@ -80,6 +102,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
     setCandlePalette: (candlePalette) =>
       setSettings((current) => ({ ...current, candlePalette })),
+    setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
+      setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);
 
   return (

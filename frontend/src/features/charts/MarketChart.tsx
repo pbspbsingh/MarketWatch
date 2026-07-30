@@ -33,6 +33,7 @@ import {
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
   indicatorSeriesOptions,
+  relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
   volumeAverageSeriesOptions,
@@ -103,7 +104,7 @@ export function MarketChart({
   liveDelta,
   sessionDelta,
 }: MarketChartProps) {
-  const { candlePalette, theme } = useAppSettings();
+  const { candlePalette, relativeStrengthLineStyle: rsLineStyle, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -214,7 +215,10 @@ export function MarketChart({
     );
     const relativeStrengthSeries = chart.addSeries(
       LineSeries,
-      relativeStrengthSeriesOptions,
+      {
+        ...relativeStrengthSeriesOptions,
+        lineStyle: relativeStrengthLineStyle(rsLineStyle),
+      },
     );
     relativeStrengthSeries.priceScale().applyOptions({
       scaleMargins: relativeStrengthScaleMargins,
@@ -265,7 +269,7 @@ export function MarketChart({
     };
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, [candlePalette, palette]);
+  }, [candlePalette, palette, rsLineStyle]);
 
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
@@ -296,6 +300,12 @@ export function MarketChart({
   useEffect(() => {
     candleSeriesRef.current?.applyOptions(candleSeriesOptions(candlePalette));
   }, [candlePalette]);
+
+  useEffect(() => {
+    relativeStrengthSeriesRef.current?.applyOptions({
+      lineStyle: relativeStrengthLineStyle(rsLineStyle),
+    });
+  }, [rsLineStyle]);
 
   useEffect(() => {
     const datasetKey = `${data.symbol}\0${data.interval}`;

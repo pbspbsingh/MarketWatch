@@ -27,7 +27,10 @@ import {
   Typography,
 } from "@mui/material";
 import { NavLink, Outlet } from "react-router-dom";
-import { useAppSettings } from "./AppSettings";
+import {
+  useAppSettings,
+  validRelativeStrengthLineStyle,
+} from "./AppSettings";
 
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
@@ -144,8 +147,10 @@ export function AppShell() {
   const {
     candlePalette,
     chartEngine,
+    relativeStrengthLineStyle,
     setCandlePalette,
     setChartEngine,
+    setRelativeStrengthLineStyle,
     theme,
     setTheme,
   } = useAppSettings();
@@ -343,6 +348,40 @@ export function AppShell() {
               </ToggleButton>
               <ToggleButton value="hollow" aria-label="Red and hollow green candles">
                 Hollow
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              RS line
+            </Typography>
+            <ToggleButtonGroup
+              disabled={chartEngine !== "lightweight"}
+              exclusive
+              fullWidth
+              size="small"
+              value={relativeStrengthLineStyle}
+              aria-label="Relative strength line style"
+              onChange={(_, nextStyle) => {
+                if (validRelativeStrengthLineStyle(nextStyle)) {
+                  setRelativeStrengthLineStyle(nextStyle);
+                }
+              }}
+            >
+              <ToggleButton value="solid" aria-label="Solid" title="Solid">
+                Solid
+              </ToggleButton>
+              <ToggleButton value="dotted" aria-label="Dotted" title="Dotted">
+                Dot
+              </ToggleButton>
+              <ToggleButton value="dashed" aria-label="Dashed" title="Dashed">
+                Dash
+              </ToggleButton>
+              <ToggleButton value="large-dashed" aria-label="Large dashed" title="Large dashed">
+                Long
+              </ToggleButton>
+              <ToggleButton value="sparse-dotted" aria-label="Sparse dotted" title="Sparse dotted">
+                Sparse
               </ToggleButton>
             </ToggleButtonGroup>
           </div>

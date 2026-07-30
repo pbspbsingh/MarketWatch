@@ -6,7 +6,10 @@ import {
   type DeepPartial,
 } from "lightweight-charts";
 import { appPalettes, type AppThemeMode } from "../../app/theme";
-import type { CandlePalette } from "../../app/AppSettings";
+import type {
+  CandlePalette,
+  RelativeStrengthLineStyle,
+} from "../../app/AppSettings";
 
 export const visualizationColors = {
   up: "#0c9981",
@@ -163,6 +166,18 @@ export const relativeStrengthSeriesOptions = {
   priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
   priceScaleId: "left",
 };
+
+export function relativeStrengthLineStyle(
+  style: RelativeStrengthLineStyle,
+): LineStyle {
+  switch (style) {
+    case "solid": return LineStyle.Solid;
+    case "dotted": return LineStyle.Dotted;
+    case "dashed": return LineStyle.Dashed;
+    case "large-dashed": return LineStyle.LargeDashed;
+    case "sparse-dotted": return LineStyle.SparseDotted;
+  }
+}
 
 export function volumeColor(open: number, close: number) {
   return close >= open ? visualizationColors.upVolume : visualizationColors.downVolume;

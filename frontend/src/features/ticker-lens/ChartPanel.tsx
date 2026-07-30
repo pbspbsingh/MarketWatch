@@ -135,6 +135,9 @@ export function ChartPanel({
       ? "sector"
       : benchmarkMode === "theme" && selectedThemeBenchmark !== undefined
         ? "theme"
+        : benchmarkMode === "theme" && summary?.sector_benchmark !== null
+          && summary?.sector_benchmark !== undefined
+          ? "sector"
         : "market";
   const benchmarkSelection: ChartBenchmarkSelection = activeBenchmarkMode === "theme"
     ? selectedThemeBenchmark === undefined
