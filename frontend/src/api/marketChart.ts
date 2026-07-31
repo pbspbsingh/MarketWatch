@@ -1,4 +1,5 @@
 export type MarketChartInterval = "daily" | "weekly";
+export type VolumeEventKind = "history_high" | "year_high";
 
 export const maximumMarketChartHistoryDays = 10_000;
 
@@ -9,6 +10,7 @@ export interface MarketChartCandle {
   low: number;
   close: number;
   volume: number;
+  volume_event?: VolumeEventKind;
 }
 
 export interface MarketChartPoint {

@@ -619,6 +619,7 @@ mod tests {
                 low: 99.0,
                 close: 101.0,
                 volume: 1_000,
+                volume_event: None,
             }],
             moving_averages: vec![series.clone()],
             volume_average: series,

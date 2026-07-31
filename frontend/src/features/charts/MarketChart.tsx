@@ -330,7 +330,7 @@ export function MarketChart({
     const volume = data.candles.map((candle): HistogramData<Time> => ({
       time: marketDateToChartTime(candle.date),
       value: candle.volume,
-      color: volumeColor(candle.open, candle.close),
+      color: volumeColor(candle.open, candle.close, candle.volume_event),
     }));
 
     candleSeriesRef.current?.setData(candles);
@@ -379,6 +379,7 @@ export function MarketChart({
     ) return;
 
     const candle = liveDelta.candle;
+    const persistedVolumeEvent = candlesByDateRef.current.get(candle.date)?.volume_event;
     const candleUpdated = updateCandlestickSeries(candleSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
       open: candle.open,
@@ -386,11 +387,16 @@ export function MarketChart({
       low: candle.low,
       close: candle.close,
     }, data.interval);
-    if (candleUpdated) candlesByDateRef.current.set(candle.date, candle);
+    if (candleUpdated) {
+      candlesByDateRef.current.set(candle.date, {
+        ...candle,
+        volume_event: persistedVolumeEvent,
+      });
+    }
     updateHistogramSeries(volumeSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
       value: candle.volume,
-      color: volumeColor(candle.open, candle.close),
+      color: volumeColor(candle.open, candle.close, persistedVolumeEvent),
     }, data.interval);
 
     const movingAverages = new Map(

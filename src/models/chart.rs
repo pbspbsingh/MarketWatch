@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -9,6 +9,22 @@ const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
 const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
 const WEEKLY_VOLUME_AVERAGE_PERIOD: usize = 10;
+const VOLUME_EVENT_ATR_PERIOD: usize = 20;
+const VOLUME_EVENT_MINIMUM_RVOL: f64 = 2.0;
+const VOLUME_EVENT_MINIMUM_RANGE_ATR: f64 = 1.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VolumeEventKind {
+    HistoryHigh,
+    YearHigh,
+}
+
+#[derive(Clone, Copy)]
+struct VolumeEventMeasurement {
+    volume: f64,
+    repositioning: bool,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -25,6 +41,8 @@ pub struct MarketChartCandle {
     pub low: f64,
     pub close: f64,
     pub volume: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_event: Option<VolumeEventKind>,
 }
 
 impl From<&DailyCandle> for MarketChartCandle {
@@ -36,6 +54,7 @@ impl From<&DailyCandle> for MarketChartCandle {
             low: candle.low,
             close: candle.close,
             volume: candle.volume,
+            volume_event: None,
         }
     }
 }
@@ -147,15 +166,143 @@ pub fn market_chart_candles_for_interval(
     daily: &[MarketChartCandle],
     interval: MarketChartInterval,
 ) -> Result<Vec<MarketChartCandle>, ChartCalculationError> {
-    match interval {
+    let daily_comparison_volumes = volume_event_comparison_volumes(daily)?;
+    let (candles, comparison_volumes) = match interval {
         MarketChartInterval::Daily => {
             for candle in daily {
                 validate_market_chart_candle(candle)?;
             }
-            Ok(daily.to_vec())
+            (daily.to_vec(), daily_comparison_volumes)
         }
-        MarketChartInterval::Weekly => aggregate_market_weeks(daily),
+        MarketChartInterval::Weekly => {
+            let candles = aggregate_market_weeks(daily)?;
+            let comparison_volumes = aggregate_market_week_values(daily, &daily_comparison_volumes);
+            (candles, comparison_volumes)
+        }
+    };
+    Ok(mark_volume_events(candles, &comparison_volumes))
+}
+
+fn volume_event_comparison_volumes(
+    candles: &[MarketChartCandle],
+) -> Result<Vec<VolumeEventMeasurement>, ChartCalculationError> {
+    for candle in candles {
+        validate_market_chart_candle(candle)?;
     }
+    let true_ranges = candles
+        .iter()
+        .enumerate()
+        .map(|(index, candle)| {
+            index
+                .checked_sub(1)
+                .map_or(candle.high - candle.low, |previous| {
+                    let previous_close = candles[previous].close;
+                    (candle.high - candle.low)
+                        .max((candle.high - previous_close).abs())
+                        .max((candle.low - previous_close).abs())
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut comparison_volumes = Vec::with_capacity(candles.len());
+    let mut volume_sum = 0.0;
+    let mut true_range_sum = 0.0;
+
+    for (index, candle) in candles.iter().enumerate() {
+        let average_volume = (index >= DAILY_VOLUME_AVERAGE_PERIOD)
+            .then(|| volume_sum / DAILY_VOLUME_AVERAGE_PERIOD as f64);
+        let atr = (index >= VOLUME_EVENT_ATR_PERIOD)
+            .then(|| true_range_sum / VOLUME_EVENT_ATR_PERIOD as f64);
+        let repositioning = average_volume
+            .zip(atr)
+            .is_some_and(|(average_volume, atr)| {
+                average_volume > 0.0
+                    && atr > 0.0
+                    && candle.volume as f64 / average_volume >= VOLUME_EVENT_MINIMUM_RVOL
+                    && true_ranges[index] / atr < VOLUME_EVENT_MINIMUM_RANGE_ATR
+            });
+        let comparison_volume = if repositioning {
+            average_volume.expect("repositioning event has a volume baseline")
+        } else {
+            candle.volume as f64
+        };
+        comparison_volumes.push(VolumeEventMeasurement {
+            volume: comparison_volume,
+            repositioning,
+        });
+
+        volume_sum += comparison_volume;
+        if index >= DAILY_VOLUME_AVERAGE_PERIOD {
+            volume_sum -= comparison_volumes[index - DAILY_VOLUME_AVERAGE_PERIOD].volume;
+        }
+        true_range_sum += true_ranges[index];
+        if index >= VOLUME_EVENT_ATR_PERIOD {
+            true_range_sum -= true_ranges[index - VOLUME_EVENT_ATR_PERIOD];
+        }
+    }
+    Ok(comparison_volumes)
+}
+
+fn aggregate_market_week_values(
+    candles: &[MarketChartCandle],
+    values: &[VolumeEventMeasurement],
+) -> Vec<VolumeEventMeasurement> {
+    let mut weekly = Vec::<VolumeEventMeasurement>::new();
+    let mut current_key = None;
+    for (candle, value) in candles.iter().zip(values) {
+        let week = candle.date.iso_week();
+        let week_key = (week.year(), week.week());
+        if current_key == Some(week_key) {
+            weekly.last_mut().expect("current week exists").volume += value.volume;
+        } else {
+            weekly.push(VolumeEventMeasurement {
+                volume: value.volume,
+                repositioning: false,
+            });
+            current_key = Some(week_key);
+        }
+    }
+    weekly
+}
+
+fn mark_volume_events(
+    mut candles: Vec<MarketChartCandle>,
+    measurements: &[VolumeEventMeasurement],
+) -> Vec<MarketChartCandle> {
+    let history_high_index = measurements
+        .iter()
+        .enumerate()
+        .filter(|(_, measurement)| !measurement.repositioning)
+        .max_by(|(_, left), (_, right)| left.volume.total_cmp(&right.volume))
+        .map(|(index, _)| index);
+    let first_date = candles.first().map(|candle| candle.date);
+    let mut year_high_indices = Vec::<usize>::new();
+    for index in 0..candles.len() {
+        let Some(measurement) = measurements.get(index).copied() else {
+            continue;
+        };
+        if !measurement.repositioning
+            && let Some(lookback_start) = candles[index].date.checked_sub_months(Months::new(12))
+        {
+            let has_complete_lookback = first_date.is_some_and(|date| date <= lookback_start);
+            let exceeds_year_high = has_complete_lookback
+                && candles[..index]
+                    .iter()
+                    .zip(&measurements[..index])
+                    .filter(|(prior, _)| prior.date >= lookback_start)
+                    .all(|(_, prior)| measurement.volume > prior.volume);
+            if exceeds_year_high {
+                year_high_indices.retain(|prior| candles[*prior].date < lookback_start);
+                year_high_indices.push(index);
+            }
+        }
+    }
+    for index in year_high_indices {
+        candles[index].volume_event = Some(VolumeEventKind::YearHigh);
+    }
+    if let Some(index) = history_high_index {
+        candles[index].volume_event = Some(VolumeEventKind::HistoryHigh);
+    }
+    candles
 }
 
 pub const fn market_chart_moving_average_periods(
@@ -293,6 +440,7 @@ mod tests {
                 low: day.into(),
                 close: day.into(),
                 volume: day.into(),
+                volume_event: None,
             })
             .collect()
     }
@@ -389,6 +537,7 @@ mod tests {
             low,
             close,
             volume,
+            volume_event: None,
         };
         let daily = vec![
             candle(
@@ -460,5 +609,103 @@ mod tests {
         reported[0].high = reported[0].close - 0.5;
 
         assert_eq!(aggregate_market_weeks(&reported).unwrap(), reported);
+    }
+
+    #[test]
+    fn excludes_repositioning_volume_without_changing_reported_bars() {
+        let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let mut daily = (0..70)
+            .map(|day| MarketChartCandle {
+                date: start + chrono::Days::new(day),
+                open: 100.0,
+                high: 101.0,
+                low: 99.0,
+                close: 100.0,
+                volume: 100,
+                volume_event: None,
+            })
+            .collect::<Vec<_>>();
+        daily[55].high = 100.25;
+        daily[55].low = 99.75;
+        daily[55].volume = 1_000;
+        daily[65].high = 103.0;
+        daily[65].low = 97.0;
+        daily[65].volume = 300;
+
+        let classified =
+            market_chart_candles_for_interval(&daily, MarketChartInterval::Daily).unwrap();
+        let weekly =
+            market_chart_candles_for_interval(&daily, MarketChartInterval::Weekly).unwrap();
+
+        assert_eq!(classified[55].volume, 1_000);
+        assert_eq!(classified[55].volume_event, None);
+        assert_eq!(
+            classified[65].volume_event,
+            Some(VolumeEventKind::HistoryHigh)
+        );
+        assert_eq!(
+            weekly.iter().map(|candle| candle.volume).sum::<i64>(),
+            daily.iter().map(|candle| candle.volume).sum::<i64>(),
+        );
+        let week_key = |candle: &MarketChartCandle| {
+            let week = candle.date.iso_week();
+            (week.year(), week.week())
+        };
+        let repositioning_week = weekly
+            .iter()
+            .find(|candle| week_key(candle) == week_key(&daily[55]))
+            .unwrap();
+        let valid_event_week = weekly
+            .iter()
+            .find(|candle| week_key(candle) == week_key(&daily[65]))
+            .unwrap();
+        assert!(repositioning_week.volume > valid_event_week.volume);
+        assert_ne!(
+            repositioning_week.volume_event,
+            Some(VolumeEventKind::HistoryHigh)
+        );
+        assert_eq!(
+            valid_event_week.volume_event,
+            Some(VolumeEventKind::HistoryHigh)
+        );
+    }
+
+    #[test]
+    fn marks_trailing_year_and_loaded_history_highs() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let mut daily = (0..800)
+            .map(|day| MarketChartCandle {
+                date: start + chrono::Days::new(day),
+                open: 100.0,
+                high: 101.0,
+                low: 99.0,
+                close: 100.0,
+                volume: 100,
+                volume_event: None,
+            })
+            .collect::<Vec<_>>();
+        daily[370].volume = 200;
+        daily[390].volume = 300;
+        daily[760].volume = 250;
+
+        let classified =
+            market_chart_candles_for_interval(&daily, MarketChartInterval::Daily).unwrap();
+
+        assert_eq!(classified[370].volume_event, None,);
+        assert_eq!(
+            classified[390].volume_event,
+            Some(VolumeEventKind::HistoryHigh)
+        );
+        assert_eq!(
+            classified[760].volume_event,
+            Some(VolumeEventKind::YearHigh)
+        );
+        assert_eq!(
+            classified
+                .iter()
+                .filter(|candle| candle.volume_event == Some(VolumeEventKind::HistoryHigh))
+                .count(),
+            1,
+        );
     }
 }

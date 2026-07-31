@@ -11,6 +11,7 @@ export interface StudyCandle {
   low: number;
   close: number;
   volume: number;
+  volume_event?: "history_high" | "year_high";
 }
 
 export interface StudyResult {

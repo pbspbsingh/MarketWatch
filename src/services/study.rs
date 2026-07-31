@@ -1,6 +1,6 @@
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
-    market_chart_candles_for_interval, market_chart_moving_average,
+    VolumeEventKind, market_chart_candles_for_interval, market_chart_moving_average,
     market_chart_moving_average_periods, market_chart_volume_average_period, volume_sma,
 };
 use crate::models::{
@@ -25,6 +25,8 @@ pub struct StudyCandle {
     pub low: f64,
     pub close: f64,
     pub volume: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_event: Option<VolumeEventKind>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -334,6 +336,7 @@ fn study_market_candle(candle: &StudyCandle) -> Result<MarketChartCandle, StudyE
         close: candle.close,
         volume: i64::try_from(candle.volume)
             .map_err(|_| ChartCalculationError::InvalidVolume(candle.date))?,
+        volume_event: candle.volume_event,
     })
 }
 
@@ -346,6 +349,7 @@ fn market_study_candle(candle: MarketChartCandle) -> Result<StudyCandle, StudyEr
         close: candle.close,
         volume: u64::try_from(candle.volume)
             .map_err(|_| ChartCalculationError::InvalidVolume(candle.date))?,
+        volume_event: candle.volume_event,
     })
 }
 
@@ -401,6 +405,7 @@ fn provider_study_candle(candle: crate::providers::Candle) -> StudyCandle {
         low: candle.low,
         close: candle.close,
         volume: candle.volume,
+        volume_event: None,
     }
 }
 
@@ -662,6 +667,7 @@ mod tests {
             low: close,
             close,
             volume: 1,
+            volume_event: None,
         };
         let merged = merge_study_candles(
             &[candle(2, 2.0), candle(3, 3.0)],
@@ -698,6 +704,7 @@ mod tests {
                             low: value,
                             close: value,
                             volume: 1,
+                            volume_event: None,
                         }
                     })
                     .collect(),
@@ -752,6 +759,7 @@ mod tests {
                     low: 100.0,
                     close: 100.0 + daily_gain * f64::from(day),
                     volume: 1_000,
+                    volume_event: None,
                 })
                 .collect(),
             moving_averages: Vec::new(),

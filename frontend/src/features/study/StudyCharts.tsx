@@ -52,7 +52,7 @@ import {
   volumeAverageSeriesOptions,
   volumeScaleMargins,
   volumeSeriesOptions,
-  visualizationColors,
+  volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
 import { appPalettes } from "../../app/theme";
 import {
@@ -498,9 +498,7 @@ export function StudyCharts({
               : {
                 time: date,
                 value: candle.volume,
-                color: candle.close >= candle.open
-                  ? visualizationColors.upVolume
-                  : visualizationColors.downVolume,
+                color: volumeColor(candle.open, candle.close, candle.volume_event),
               };
           }),
         );

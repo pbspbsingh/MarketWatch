@@ -16,6 +16,9 @@ export const visualizationColors = {
   down: "#f23645",
   upVolume: "#26a69a66",
   downVolume: "#ef535066",
+  historyHighUpVolume: "#8f9a45",
+  historyHighDownVolume: "#a97845",
+  yearHighVolume: "#a371f7",
   volumeAverage: "#c2ad4f80",
   relativeStrengthPositive: "#2fbf71",
   relativeStrengthNegative: "#ef5350",
@@ -179,6 +182,16 @@ export function relativeStrengthLineStyle(
   }
 }
 
-export function volumeColor(open: number, close: number) {
+export function volumeColor(
+  open: number,
+  close: number,
+  event?: "history_high" | "year_high",
+) {
+  if (event === "history_high") {
+    return close >= open
+      ? visualizationColors.historyHighUpVolume
+      : visualizationColors.historyHighDownVolume;
+  }
+  if (event === "year_high") return visualizationColors.yearHighVolume;
   return close >= open ? visualizationColors.upVolume : visualizationColors.downVolume;
 }
