@@ -5,6 +5,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  MismatchDirection,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -378,14 +379,14 @@ export function MarketChart({
     ) return;
 
     const candle = liveDelta.candle;
-    candlesByDateRef.current.set(candle.date, candle);
-    updateCandlestickSeries(candleSeriesRef.current, {
+    const candleUpdated = updateCandlestickSeries(candleSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
       open: candle.open,
       high: candle.high,
       low: candle.low,
       close: candle.close,
     }, data.interval);
+    if (candleUpdated) candlesByDateRef.current.set(candle.date, candle);
     updateHistogramSeries(volumeSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
       value: candle.volume,
@@ -417,8 +418,9 @@ export function MarketChart({
     )[0];
     if (relativePoint !== undefined) {
       const series = relativeStrengthSeriesRef.current;
-      updateLineSeries(series, relativePoint, data.interval);
-      updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
+      if (updateLineSeries(series, relativePoint, data.interval)) {
+        updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
+      }
     }
   }, [data.candles, data.interval, data.symbol, liveDelta, updateRelativeStrengthStructure]);
 
@@ -443,9 +445,13 @@ export function MarketChart({
         postMarketLineRef.current = null;
       }
       const candle = sessionDelta.candle;
+      const regularCandle = liveDelta?.symbol === data.symbol
+        && liveDelta.interval === data.interval
+        ? liveDelta.candle
+        : undefined;
+      if (regularCandle !== undefined && regularCandle.date >= candle.date) return;
       const color = candle.close >= candle.open ? preMarketUpColor : preMarketDownColor;
-      candlesByDateRef.current.set(candle.date, candle);
-      candleSeries.update({
+      const candleUpdated = updateCandlestickSeries(candleSeries, {
         time: marketDateToChartTime(candle.date),
         open: candle.open,
         high: candle.high,
@@ -454,12 +460,13 @@ export function MarketChart({
         color,
         borderColor: color,
         wickColor: color,
-      });
-      volumeSeriesRef.current?.update({
+      }, data.interval);
+      if (candleUpdated) candlesByDateRef.current.set(candle.date, candle);
+      updateHistogramSeries(volumeSeriesRef.current, {
         time: marketDateToChartTime(candle.date),
         value: candle.volume,
         color,
-      });
+      }, data.interval);
       return;
     }
 
@@ -565,13 +572,25 @@ export function MarketChart({
 const preMarketUpColor = visualizationColors.preMarketUp;
 const preMarketDownColor = visualizationColors.preMarketDown;
 
+type UpdatableSeries =
+  | ISeriesApi<"Candlestick">
+  | ISeriesApi<"Histogram">
+  | ISeriesApi<"Line">;
+
+function latestSeriesTime(series: UpdatableSeries): Time | undefined {
+  return series.dataByIndex(
+    Number.MAX_SAFE_INTEGER,
+    MismatchDirection.NearestLeft,
+  )?.time;
+}
+
 function shouldReplaceCurrentWeek(
-  series: ISeriesApi<"Candlestick"> | ISeriesApi<"Histogram"> | ISeriesApi<"Line">,
+  series: UpdatableSeries,
   time: Time,
   interval: MarketChartInterval,
 ): boolean {
   if (interval !== "weekly") return false;
-  const previous = series.data().at(-1)?.time;
+  const previous = latestSeriesTime(series);
   if (previous === undefined) return false;
   const previousDate = chartTimeToMarketDate(previous);
   const nextDate = chartTimeToMarketDate(time);
@@ -584,32 +603,40 @@ function marketWeek(date: string): string {
   return monday.toISOString().slice(0, 10);
 }
 
+function isOlderChartTime(previous: Time | undefined, next: Time): boolean {
+  return previous !== undefined
+    && chartTimeToMarketDate(next) < chartTimeToMarketDate(previous);
+}
+
 function updateCandlestickSeries(
   series: ISeriesApi<"Candlestick"> | null,
   point: CandlestickData<Time>,
   interval: MarketChartInterval,
-) {
-  if (series === null) return;
+): boolean {
+  if (series === null || isOlderChartTime(latestSeriesTime(series), point.time)) return false;
   if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
   series.update(point);
+  return true;
 }
 
 function updateHistogramSeries(
   series: ISeriesApi<"Histogram"> | null,
   point: HistogramData<Time>,
   interval: MarketChartInterval,
-) {
-  if (series === null) return;
+): boolean {
+  if (series === null || isOlderChartTime(latestSeriesTime(series), point.time)) return false;
   if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
   series.update(point);
+  return true;
 }
 
 function updateLineSeries(
   series: ISeriesApi<"Line"> | null,
   point: { time: Time; value: number; color?: string },
   interval: MarketChartInterval,
-) {
-  if (series === null) return;
+): boolean {
+  if (series === null || isOlderChartTime(latestSeriesTime(series), point.time)) return false;
   if (shouldReplaceCurrentWeek(series, point.time, interval)) series.pop(1);
   series.update(point);
+  return true;
 }
