@@ -23,22 +23,6 @@ body,
   background: var(--color-canvas);
 }
 
-.development-badge {
-  position: fixed;
-  z-index: 1000;
-  right: 0.375rem;
-  bottom: 0.375rem;
-  padding: 0.125rem 0.3rem;
-  border: 0.0625rem solid var(--color-warning);
-  border-radius: 0.2rem;
-  color: var(--color-warning);
-  background: var(--color-surface);
-  font: 700 0.6rem/1.2 monospace;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  user-select: none;
-}
-
 .navigation-trigger {
   position: fixed !important;
   z-index: 1100;
@@ -234,9 +218,18 @@ body,
   transition: transform 160ms ease, filter 160ms ease;
 }
 
+.navigation-rail-brand img.development-logo {
+  filter: sepia(0.9) saturate(4) hue-rotate(355deg) brightness(1.08);
+}
+
 .navigation-rail-brand:hover img {
   filter: drop-shadow(0 0 0.3rem var(--color-accent));
   transform: translateY(-0.0625rem) scale(1.08);
+}
+
+.navigation-rail-brand:hover img.development-logo {
+  filter: sepia(0.9) saturate(4) hue-rotate(355deg) brightness(1.08)
+    drop-shadow(0 0 0.3rem var(--color-warning));
 }
 
 @media (prefers-reduced-motion: reduce) {

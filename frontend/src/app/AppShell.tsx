@@ -228,7 +228,11 @@ export function AppShell() {
         <aside className="navigation-rail">
           <Tooltip title="Market Watch" placement="right">
             <span className="navigation-rail-brand">
-              <img src="/favicon.svg" alt="Market Watch" />
+              <img
+                className={import.meta.env.DEV ? "development-logo" : undefined}
+                src="/favicon.svg"
+                alt="Market Watch"
+              />
             </span>
           </Tooltip>
           <NavigationItems compact />
@@ -387,7 +391,6 @@ export function AppShell() {
           </div>
         </section>
       </Drawer>
-      {import.meta.env.DEV && <span className="development-badge" aria-hidden="true">DEV</span>}
     </div>
   );
 }
