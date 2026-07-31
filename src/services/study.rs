@@ -1,7 +1,7 @@
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
     market_chart_candles_for_interval, market_chart_moving_average,
-    market_chart_moving_average_periods,
+    market_chart_moving_average_periods, market_chart_volume_average_period, volume_sma,
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
@@ -33,6 +33,7 @@ pub struct StudySeries {
     pub company_name: Option<String>,
     pub candles: Vec<StudyCandle>,
     pub moving_averages: Vec<StudyMovingAverage>,
+    pub volume_average: StudyMovingAverage,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -285,6 +286,19 @@ fn build_study_result(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            let volume_average =
+                volume_sma(&candles, market_chart_volume_average_period(interval))?;
+            let volume_average = StudyMovingAverage {
+                period: volume_average.period,
+                points: volume_average
+                    .points
+                    .into_iter()
+                    .map(|point| StudyMovingAveragePoint {
+                        date: point.date,
+                        value: point.value,
+                    })
+                    .collect(),
+            };
             let candles = candles
                 .into_iter()
                 .map(market_study_candle)
@@ -294,6 +308,7 @@ fn build_study_result(
                 company_name: source.company_name.clone(),
                 candles,
                 moving_averages,
+                volume_average,
             })
         })
         .collect::<Result<Vec<_>, StudyError>>()?;
@@ -709,6 +724,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [10, 20, 50, 100, 200]
         );
+        assert_eq!(daily.series[0].volume_average.period, 50);
+        assert!(!daily.series[0].volume_average.points.is_empty());
         assert!(weekly.series[0].candles.len() < daily.series[0].candles.len());
         assert_eq!(
             weekly.series[0]
@@ -718,6 +735,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [10, 20, 40]
         );
+        assert_eq!(weekly.series[0].volume_average.period, 10);
+        assert!(!weekly.series[0].volume_average.points.is_empty());
     }
 
     #[test]
@@ -736,6 +755,10 @@ mod tests {
                 })
                 .collect(),
             moving_averages: Vec::new(),
+            volume_average: StudyMovingAverage {
+                period: 1,
+                points: Vec::new(),
+            },
         };
         let ticker = series("AAPL", 2.0);
         let comparison = series("QQQ", 1.0);

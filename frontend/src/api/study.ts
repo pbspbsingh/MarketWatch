@@ -26,6 +26,7 @@ export interface StudyResult {
     company_name: string | null;
     candles: StudyCandle[];
     moving_averages: MarketChartSeries[];
+    volume_average: MarketChartSeries;
   }>;
 }
 

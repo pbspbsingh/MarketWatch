@@ -49,7 +49,9 @@ import {
   relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
+  volumeAverageSeriesOptions,
   volumeScaleMargins,
+  volumeSeriesOptions,
   visualizationColors,
 } from "../../components/lightweight-chart/chartOptions";
 import { appPalettes } from "../../app/theme";
@@ -107,6 +109,7 @@ export function StudyCharts({
   const chartsRef = useRef<IChartApi[]>([]);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">[]>([]);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">[]>([]);
+  const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[][]>([]);
   const markerSeriesRef = useRef<ISeriesMarkersPluginApi<Time>[]>([]);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>[]>([]);
@@ -267,6 +270,7 @@ export function StudyCharts({
     if (top === null || bottom === null || !hasTwoSeries) return;
     const candleSeries: ISeriesApi<"Candlestick">[] = [];
     const volumeSeries: ISeriesApi<"Histogram">[] = [];
+    const volumeAverageSeries: ISeriesApi<"Line">[] = [];
     const movingAverageSeries: ISeriesApi<"Line">[][] = [];
     const markerSeries: ISeriesMarkersPluginApi<Time>[] = [];
     const watermarks: ITextWatermarkPluginApi<Time>[] = [];
@@ -313,12 +317,10 @@ export function StudyCharts({
         }],
       }));
       candleSeries.push(candles);
-      const volume = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: "volume" },
-        priceScaleId: "",
-      });
+      const volume = chart.addSeries(HistogramSeries, volumeSeriesOptions);
       volume.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
       volumeSeries.push(volume);
+      volumeAverageSeries.push(chart.addSeries(LineSeries, volumeAverageSeriesOptions));
       const averages: ISeriesApi<"Line">[] = [];
       for (let averageIndex = 0; averageIndex < movingAverageSeriesCount; averageIndex += 1) {
         const line = chart.addSeries(LineSeries, {
@@ -337,6 +339,7 @@ export function StudyCharts({
     chartsRef.current = charts;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    volumeAverageSeriesRef.current = volumeAverageSeries;
     movingAverageSeriesRef.current = movingAverageSeries;
     markerSeriesRef.current = markerSeries;
     watermarkRef.current = watermarks;
@@ -423,6 +426,7 @@ export function StudyCharts({
       chartsRef.current = [];
       candleSeriesRef.current = [];
       volumeSeriesRef.current = [];
+      volumeAverageSeriesRef.current = [];
       movingAverageSeriesRef.current = [];
       markerSeriesRef.current = [];
       watermarkRef.current = [];
@@ -499,6 +503,12 @@ export function StudyCharts({
                   : visualizationColors.downVolume,
               };
           }),
+        );
+        volumeAverageSeriesRef.current[index]?.setData(
+          series.volume_average.points.map((point) => ({
+            time: point.date,
+            value: point.value,
+          })),
         );
         const averagesByPeriod = new Map(
           series.moving_averages.map((average) => [average.period, average]),

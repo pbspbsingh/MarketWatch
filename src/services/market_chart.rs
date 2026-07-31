@@ -1,7 +1,8 @@
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
     MarketChartSnapshot, market_chart_candles_for_interval, market_chart_moving_average,
-    market_chart_moving_average_periods, validate_market_chart_candle, volume_sma,
+    market_chart_moving_average_periods, market_chart_volume_average_period,
+    validate_market_chart_candle, volume_sma,
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
@@ -15,8 +16,6 @@ use std::sync::Arc;
 use thiserror::Error;
 
 const MAX_HISTORY_RANGE_DAYS: i64 = 10_000;
-const DAILY_VOLUME_PERIOD: usize = 50;
-const WEEKLY_VOLUME_PERIOD: usize = 10;
 
 pub struct MarketChartService {
     yahoo: Arc<YahooService>,
@@ -262,10 +261,7 @@ fn build_snapshot(
         .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
     let candles = market_chart_candles_for_interval(&daily, interval)?;
-    let volume_average_period = match interval {
-        MarketChartInterval::Daily => DAILY_VOLUME_PERIOD,
-        MarketChartInterval::Weekly => WEEKLY_VOLUME_PERIOD,
-    };
+    let volume_average_period = market_chart_volume_average_period(interval);
     let moving_averages = market_chart_moving_average_periods(interval)
         .iter()
         .map(|period| market_chart_moving_average(&candles, interval, *period))
@@ -565,7 +561,10 @@ mod tests {
             market_chart_moving_average_periods(MarketChartInterval::Daily)
         );
         assert_eq!(snapshot.moving_averages[4].points.len(), 21);
-        assert_eq!(snapshot.volume_average.period, DAILY_VOLUME_PERIOD);
+        assert_eq!(
+            snapshot.volume_average.period,
+            market_chart_volume_average_period(MarketChartInterval::Daily)
+        );
         assert_eq!(snapshot.volume_average.points.len(), 171);
         assert!(snapshot.relative_strength.is_none());
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
@@ -588,7 +587,10 @@ mod tests {
             market_chart_moving_average_periods(MarketChartInterval::Weekly)
         );
         assert_eq!(snapshot.moving_averages[2].points.len(), 11);
-        assert_eq!(snapshot.volume_average.period, WEEKLY_VOLUME_PERIOD);
+        assert_eq!(
+            snapshot.volume_average.period,
+            market_chart_volume_average_period(MarketChartInterval::Weekly)
+        );
         assert_eq!(snapshot.volume_average.points.len(), 41);
         assert!(
             snapshot

@@ -7,6 +7,8 @@ use super::{DailyCandle, TickerSymbol};
 
 const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
 const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
+const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
+const WEEKLY_VOLUME_AVERAGE_PERIOD: usize = 10;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -162,6 +164,13 @@ pub const fn market_chart_moving_average_periods(
     match interval {
         MarketChartInterval::Daily => &DAILY_SMA_PERIODS,
         MarketChartInterval::Weekly => &WEEKLY_EMA_PERIODS,
+    }
+}
+
+pub const fn market_chart_volume_average_period(interval: MarketChartInterval) -> usize {
+    match interval {
+        MarketChartInterval::Daily => DAILY_VOLUME_AVERAGE_PERIOD,
+        MarketChartInterval::Weekly => WEEKLY_VOLUME_AVERAGE_PERIOD,
     }
 }
 

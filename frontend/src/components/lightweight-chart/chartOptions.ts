@@ -16,7 +16,7 @@ export const visualizationColors = {
   down: "#f23645",
   upVolume: "#26a69a66",
   downVolume: "#ef535066",
-  volumeAverage: "#c2ad4f",
+  volumeAverage: "#c2ad4f80",
   relativeStrengthPositive: "#2fbf71",
   relativeStrengthNegative: "#ef5350",
   relativeStrengthNeutral: "#e6c84f",
