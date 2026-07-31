@@ -31,6 +31,7 @@ import "./theme-tracker.css";
 type HistoricalRange = "day" | "week" | "month" | "quarter" | "half_year" | "year";
 type Range = HistoricalRange | "trading_day";
 type TrackerMode = "theme" | "sector" | "industry";
+type TrackerLevel = "overview" | "industries" | "stocks";
 type RankedItem = {
   key: string;
   label: string;
@@ -89,7 +90,8 @@ export function ThemeTrackerPage() {
   const [activeTheme, setActiveTheme] = useState<ThemeRanking>();
   const [activeSector, setActiveSector] = useState<SectorRanking>();
   const [activeIndustry, setActiveIndustry] = useState<IndustryRanking>();
-  const [stockMode, setStockMode] = useState(false);
+  const [level, setLevel] = useState<TrackerLevel>("overview");
+  const stockMode = level === "stocks";
   const [selectedTicker, setSelectedTicker] = useState<string>();
   const [selectedStock, setSelectedStock] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -119,19 +121,21 @@ export function ThemeTrackerPage() {
   const activeIndustryKeys = useMemo(
     () => mode === "industry" && activeIndustry !== undefined
       ? new Set([activeIndustry.key])
-      : mode === "sector" && activeSector !== undefined
+      : mode === "sector" && level !== "overview" && activeIndustry !== undefined
+        ? new Set([activeIndustry.key])
+        : mode === "sector" && activeSector !== undefined
         ? new Set(
             industries
               .filter((industry) => industry.sector_key === activeSector.key)
               .map((industry) => industry.key),
           )
         : new Set<string>(),
-    [activeIndustry, activeSector, industries, mode],
+    [activeIndustry, activeSector, industries, level, mode],
   );
   const activeGroupKey = mode === "theme"
     ? activeTheme === undefined ? undefined : String(activeTheme.id)
     : mode === "sector"
-      ? activeSector?.key
+      ? level === "overview" ? activeSector?.key : activeIndustry?.key
       : activeIndustry?.key;
   const resolveGroupStocks = useCallback(
     (signal: AbortSignal) => {
@@ -290,6 +294,18 @@ export function ThemeTrackerPage() {
       .finally(() => { if (!controller.signal.aborted) setIndustriesLoading(false); });
     return () => controller.abort();
   }, []);
+  useEffect(() => {
+    if (
+      mode !== "sector"
+      || level !== "industries"
+      || activeSector === undefined
+      || activeIndustry?.sector_key === activeSector.key
+    ) return;
+    const first = industries
+      .filter((industry) => industry.sector_key === activeSector.key)
+      .sort((a, b) => metric(b, industryRangeRef.current) - metric(a, industryRangeRef.current))[0];
+    setActiveIndustry(first);
+  }, [activeIndustry?.sector_key, activeSector, industries, level, mode]);
 
   const stockSymbolsKey = stockStream.tickers.map((ticker) => ticker.symbol).join("\0");
   const setStockTickerWatchlists = stockStream.setTickerWatchlists;
@@ -317,6 +333,8 @@ export function ThemeTrackerPage() {
 
   const range = stockMode
     ? drillDownRange
+    : level === "industries"
+      ? industryRange
     : mode === "sector"
       ? sectorRange
       : mode === "industry"
@@ -333,7 +351,7 @@ export function ThemeTrackerPage() {
             performance: theme.performance,
             tradingDayPerformance: tradingDayReturn(livePrices.get(theme.etf_symbol.toUpperCase())?.price, theme.previous_close),
           }))
-        : mode === "sector"
+        : mode === "sector" && level === "overview"
           ? sectors.map((sector) => ({
               key: sector.key,
               label: `${sector.name} (${sector.etf_symbol})`,
@@ -344,13 +362,15 @@ export function ThemeTrackerPage() {
                 sector.previous_close,
               ),
             }))
-          : industries.map((industry) => ({
+          : industries
+            .filter((industry) => mode !== "sector" || industry.sector_key === activeSector?.key)
+            .map((industry) => ({
               key: industry.key,
               label: industry.name,
               performance: industry.performance,
             }));
     return items.sort((a, b) => metric(b, range) - metric(a, range));
-  }, [industries, livePrices, mode, range, sectors, stockMode, stockStream.tickers, themes]);
+  }, [activeSector?.key, industries, level, livePrices, mode, range, sectors, stockMode, stockStream.tickers, themes]);
   const scale = useMemo(() => Math.max(0.01, ...sortedItems.flatMap((item) => {
     const value = itemMetric(item, range);
     return value == null ? [] : [Math.abs(value)];
@@ -362,12 +382,12 @@ export function ThemeTrackerPage() {
   const activeGroupName = mode === "theme"
     ? activeTheme?.name
     : mode === "sector"
-      ? activeSector?.name
+      ? level === "stocks" ? activeIndustry?.name : activeSector?.name
       : activeIndustry?.name;
   const activeGroupSymbol = mode === "theme"
     ? activeTheme?.etf_symbol
     : mode === "sector"
-      ? activeSector?.etf_symbol
+      ? level === "industries" ? activeSector?.etf_symbol : undefined
       : undefined;
 
   const selectRange = (_: React.MouseEvent<HTMLElement>, value: Range | null) => {
@@ -376,6 +396,11 @@ export function ThemeTrackerPage() {
       if (value === "trading_day") return;
       localStorage.setItem(drillDownRangeStorageKey, value);
       setDrillDownRange(value);
+    } else if (level === "industries" || mode === "industry") {
+      if (value === "trading_day") return;
+      localStorage.setItem(industryRangeStorageKey, value);
+      industryRangeRef.current = value;
+      setIndustryRange(value);
     } else if (mode === "sector") {
       if (value !== "trading_day") {
         localStorage.setItem(sectorRangeStorageKey, value);
@@ -383,11 +408,6 @@ export function ThemeTrackerPage() {
       }
       sectorRangeRef.current = value;
       setSectorRange(value);
-    } else if (mode === "industry") {
-      if (value === "trading_day") return;
-      localStorage.setItem(industryRangeStorageKey, value);
-      industryRangeRef.current = value;
-      setIndustryRange(value);
     } else {
       if (value !== "trading_day") {
         localStorage.setItem(themeRangeStorageKey, value);
@@ -404,19 +424,28 @@ export function ThemeTrackerPage() {
     else if (mode === "theme") {
       setSelectedStock(undefined);
       setActiveTheme(themes.find((theme) => String(theme.id) === item.key));
-    } else if (mode === "sector") {
+    } else if (mode === "sector" && level === "overview") {
       setSelectedStock(undefined);
       setActiveSector(sectors.find((sector) => sector.key === item.key));
     } else {
       setSelectedStock(undefined);
       setActiveIndustry(industries.find((industry) => industry.key === item.key));
     }
-  }, [industries, mode, sectors, stockMode, themes]);
-  const enterStockMode = (item: RankedItem) => {
+  }, [industries, level, mode, sectors, stockMode, themes]);
+  const enterNextLevel = useCallback((item: RankedItem) => {
     selectItem(item);
     restoreHistoricalOverviewRange();
-    setStockMode(true);
-  };
+    if (mode === "sector" && level === "overview") {
+      const first = industries
+        .filter((industry) => industry.sector_key === item.key)
+        .sort((a, b) => metric(b, industryRangeRef.current) - metric(a, industryRangeRef.current))[0];
+      setActiveIndustry(first);
+      setSelectedTicker(undefined);
+      setLevel("industries");
+    } else {
+      setLevel("stocks");
+    }
+  }, [industries, level, mode, restoreHistoricalOverviewRange, selectItem]);
   const handleFavouriteClick = (item: RankedItem) => {
     const symbol = item.symbol;
     if (symbol === undefined) return;
@@ -474,7 +503,7 @@ export function ThemeTrackerPage() {
     if (value === "industry") restoreHistoricalOverviewRange();
     modeRef.current = value;
     setMode(value);
-    setStockMode(false);
+    setLevel("overview");
     setSelectedStock(undefined);
     if (value === "sector") {
       setSectors([]);
@@ -510,10 +539,18 @@ export function ThemeTrackerPage() {
       setSelectedTicker(undefined);
     }
   };
-  const leaveStockMode = useCallback(() => {
-    setStockMode(false);
+  const leaveDrillDown = useCallback(() => {
     setSelectedStock(undefined);
     setContextMenu(undefined);
+    if (mode === "sector" && level === "stocks") {
+      setLevel("industries");
+      setSelectedTicker(undefined);
+      if (activeIndustry !== undefined) {
+        requestAnimationFrame(() => scrollTrackerItemIntoView(activeIndustry.key));
+      }
+      return;
+    }
+    setLevel("overview");
     setSelectedTicker(
       mode === "theme"
         ? activeTheme?.etf_symbol
@@ -521,13 +558,20 @@ export function ThemeTrackerPage() {
           ? activeSector?.etf_symbol
           : undefined,
     );
-    if (activeGroupKey !== undefined) {
-      requestAnimationFrame(() => scrollTrackerItemIntoView(activeGroupKey));
+    const overviewKey = mode === "theme"
+      ? activeTheme === undefined ? undefined : String(activeTheme.id)
+      : mode === "sector"
+        ? activeSector?.key
+        : activeIndustry?.key;
+    if (overviewKey !== undefined) {
+      requestAnimationFrame(() => scrollTrackerItemIntoView(overviewKey));
     }
   }, [
-    activeGroupKey,
+    activeIndustry,
     activeSector?.etf_symbol,
-    activeTheme?.etf_symbol,
+    activeSector?.key,
+    activeTheme,
+    level,
     mode,
   ]);
 
@@ -537,17 +581,16 @@ export function ThemeTrackerPage() {
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
 
       if (event.key === "ArrowRight" && !stockMode) {
-        if (activeGroupKey === undefined) return;
+        const activeItem = sortedItems.find((item) => item.key === activeGroupKey);
+        if (activeItem === undefined) return;
         event.preventDefault();
         userSelected.current = true;
-        restoreHistoricalOverviewRange();
-        setSelectedStock(undefined);
-        setStockMode(true);
+        enterNextLevel(activeItem);
         return;
       }
-      if (event.key === "ArrowLeft" && stockMode) {
+      if (event.key === "ArrowLeft" && level !== "overview") {
         event.preventDefault();
-        leaveStockMode();
+        leaveDrillDown();
         return;
       }
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -565,19 +608,19 @@ export function ThemeTrackerPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activeGroupKey, leaveStockMode, restoreHistoricalOverviewRange, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
+  }, [activeGroupKey, enterNextLevel, leaveDrillDown, level, selectItem, selectedStock, sortedItems, stockListRef, stockMode]);
 
   return (
     <section className="theme-tracker">
       <aside className="workspace-panel theme-tracker-panel">
         <header className="theme-tracker-header">
-          {stockMode && (
+          {level !== "overview" && (
             <div className="theme-tracker-title">
-              <IconButton size="small" aria-label={`Back to ${mode === "industry" ? "industries" : `${mode}s`}`} onClick={leaveStockMode}><ArrowBackIcon fontSize="small" /></IconButton>
+              <IconButton size="small" aria-label={`Back to ${level === "stocks" && mode === "sector" ? "industries" : mode === "industry" ? "industries" : `${mode}s`}`} onClick={leaveDrillDown}><ArrowBackIcon fontSize="small" /></IconButton>
               <Typography component="h1">{`${activeGroupName ?? ""}${activeGroupSymbol === undefined ? "" : ` (${activeGroupSymbol})`}`}</Typography>
             </div>
           )}
-          {!stockMode && (
+          {level === "overview" && (
             <ToggleButtonGroup className="theme-tracker-mode" exclusive size="small" value={mode} onChange={selectMode} aria-label="Tracker mode">
               <ToggleButton value="theme">Theme</ToggleButton>
               <ToggleButton value="sector">Sector</ToggleButton>
@@ -585,7 +628,7 @@ export function ThemeTrackerPage() {
             </ToggleButtonGroup>
           )}
           <ToggleButtonGroup exclusive size="small" value={range} onChange={selectRange} aria-label="Performance range">
-            {!stockMode && mode !== "industry" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
+            {level === "overview" && mode !== "industry" && tradingDayAvailable && <ToggleButton value="trading_day">TD</ToggleButton>}
             {ranges.map((item) => <ToggleButton key={item.key} value={item.key}>{item.label}</ToggleButton>)}
           </ToggleButtonGroup>
         </header>
@@ -596,6 +639,8 @@ export function ThemeTrackerPage() {
         )}
         {(stockMode
           ? stockStream.loading
+          : level === "industries"
+            ? industriesLoading
           : mode === "theme"
             ? loading
             : mode === "sector"
@@ -625,11 +670,11 @@ export function ThemeTrackerPage() {
           <ol className="theme-tracker-list">
             {sortedItems.map((item) => {
               return <li key={item.key}>
-                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)} onDoubleClick={() => enterStockMode(item)}>
+                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)} onDoubleClick={() => enterNextLevel(item)}>
                   <PerformanceCells item={item} range={range} scale={scale} />
-                  <IconButton component="span" size="small" aria-label={`Show stocks in ${item.label}`} onDoubleClick={(event) => event.stopPropagation()} onClick={(event) => {
+                  <IconButton component="span" size="small" aria-label={`${mode === "sector" && level === "overview" ? "Show industries in" : "Show stocks in"} ${item.label}`} onDoubleClick={(event) => event.stopPropagation()} onClick={(event) => {
                     event.stopPropagation();
-                    enterStockMode(item);
+                    enterNextLevel(item);
                   }}><ChevronRightIcon fontSize="small" /></IconButton>
                 </button>
               </li>;
