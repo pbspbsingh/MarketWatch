@@ -276,7 +276,7 @@ async fn retry_ai_job(
         .themes
         .retry_automatic_job(id)
         .await
-        .map(|ids| Json(json!({ "ids": ids })))
+        .map(|id| Json(json!({ "id": id })))
         .map_err(api_error)
 }
 

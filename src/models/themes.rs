@@ -63,7 +63,6 @@ pub struct ThemeAiJob {
     pub suggestions: Option<Vec<ThemeSuggestion>>,
     pub validation_errors: Vec<ThemeSuggestionError>,
     pub error: Option<String>,
-    pub retry_of_job_id: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

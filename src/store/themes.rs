@@ -43,7 +43,6 @@ struct StoredThemeAiJob {
     suggestions: Option<String>,
     validation_errors: Option<String>,
     error: Option<String>,
-    retry_of_job_id: Option<i64>,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
 }
@@ -575,7 +574,6 @@ impl Store {
         &self,
         model: &str,
         batches: &[(Vec<TickerSymbol>, String)],
-        retry_of_job_id: Option<i64>,
     ) -> anyhow::Result<Vec<i64>> {
         let now = Utc::now().naive_utc();
         let mut transaction = self
@@ -589,12 +587,11 @@ impl Store {
                 serde_json::to_string(symbols).context("failed to serialize job symbols")?;
             let result = sqlx::query!(
                 r#"INSERT INTO theme_ai_jobs (
-                       status, symbols, model, prompt, retry_of_job_id, created_at, updated_at
-                   ) VALUES ('pending', ?, ?, ?, ?, ?, ?)"#,
+                       status, symbols, model, prompt, created_at, updated_at
+                   ) VALUES ('pending', ?, ?, ?, ?, ?)"#,
                 symbols,
                 model,
                 prompt,
-                retry_of_job_id,
                 now,
                 now,
             )
@@ -686,6 +683,22 @@ impl Store {
         .await
         .context("failed to fail theme AI job")?;
         Ok(())
+    }
+
+    pub async fn retry_theme_ai_job(&self, id: i64) -> anyhow::Result<bool> {
+        let now = Utc::now().naive_utc();
+        sqlx::query!(
+            r#"UPDATE theme_ai_jobs
+               SET status = 'pending', response = NULL, suggestions = NULL,
+                   validation_errors = NULL, error = NULL, updated_at = ?
+               WHERE id = ? AND status = 'failed'"#,
+            now,
+            id,
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to retry theme AI job")
+        .map(|result| result.rows_affected() == 1)
     }
 
     pub async fn apply_theme_ai_job(
@@ -808,7 +821,7 @@ impl Store {
             StoredThemeAiJob,
             r#"SELECT id, status, symbols AS "symbols: String", model,
                       prompt, response, suggestions AS "suggestions: String",
-                      validation_errors AS "validation_errors: String", error, retry_of_job_id,
+                      validation_errors AS "validation_errors: String", error,
                       created_at AS "created_at: NaiveDateTime",
                       updated_at AS "updated_at: NaiveDateTime"
                FROM theme_ai_jobs
@@ -851,7 +864,6 @@ fn parse_theme_ai_job(job: StoredThemeAiJob) -> anyhow::Result<ThemeAiJob> {
             .transpose()?
             .unwrap_or_default(),
         error: job.error,
-        retry_of_job_id: job.retry_of_job_id,
         created_at: job.created_at.and_utc(),
         updated_at: job.updated_at.and_utc(),
     })
@@ -1083,7 +1095,6 @@ mod tests {
                     vec![ticker("EMPTY"), ticker("ASSIGNED"), ticker("INVALID")],
                     "prompt".to_owned(),
                 )],
-                None,
             )
             .await
             .unwrap();
@@ -1227,7 +1238,6 @@ mod tests {
             .create_theme_ai_jobs(
                 "test-model",
                 &[(vec![ticker("ROLLBACK")], "prompt".to_owned())],
-                None,
             )
             .await
             .unwrap();
@@ -1267,6 +1277,61 @@ mod tests {
             .unwrap();
         assert!(!ticker.automatic_processed);
         assert!(ticker.assignments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn retry_resets_the_same_failed_job_once() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let ids = store
+            .create_theme_ai_jobs(
+                "test-model",
+                &[(vec![ticker("RETRY")], "original prompt".to_owned())],
+            )
+            .await
+            .unwrap();
+        store
+            .finish_theme_ai_job(
+                ids[0],
+                "invalid response",
+                &[],
+                &[ThemeSuggestionError {
+                    symbol: Some("RETRY".to_owned()),
+                    error: "invalid suggestion".to_owned(),
+                }],
+            )
+            .await
+            .unwrap();
+        store
+            .fail_theme_ai_job(ids[0], "request failed")
+            .await
+            .unwrap();
+        let original = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
+        let original_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM theme_ai_jobs")
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+
+        assert!(store.retry_theme_ai_job(ids[0]).await.unwrap());
+        assert!(!store.retry_theme_ai_job(ids[0]).await.unwrap());
+
+        let retried = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
+        assert_eq!(retried.id, original.id);
+        assert_eq!(retried.symbols, original.symbols);
+        assert_eq!(retried.model, original.model);
+        assert_eq!(retried.prompt, original.prompt);
+        assert_eq!(retried.created_at, original.created_at);
+        assert!(matches!(retried.status, ThemeAiJobStatus::Pending));
+        assert!(retried.response.is_none());
+        assert!(retried.suggestions.is_none());
+        assert!(retried.validation_errors.is_empty());
+        assert!(retried.error.is_none());
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM theme_ai_jobs")
+                .fetch_one(&store.pool)
+                .await
+                .unwrap(),
+            original_count
+        );
     }
 
     #[tokio::test]

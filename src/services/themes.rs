@@ -244,14 +244,6 @@ impl ThemeService {
         self: &Arc<Self>,
         symbols: &[TickerSymbol],
     ) -> Result<Vec<i64>, ThemeServiceError> {
-        self.create_automatic_jobs_for_attempt(symbols, None).await
-    }
-
-    async fn create_automatic_jobs_for_attempt(
-        self: &Arc<Self>,
-        symbols: &[TickerSymbol],
-        retry_of_job_id: Option<i64>,
-    ) -> Result<Vec<i64>, ThemeServiceError> {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
         })?;
@@ -271,39 +263,44 @@ impl ThemeService {
             .collect::<Vec<_>>();
         let job_ids = self
             .store
-            .create_theme_ai_jobs(ai.model(), &batches, retry_of_job_id)
+            .create_theme_ai_jobs(ai.model(), &batches)
             .await
             .map_err(ThemeServiceError::Persistence)?;
         for (job_id, (_, prompt)) in job_ids.iter().copied().zip(batches) {
-            let service = self.clone();
-            tokio::spawn(async move {
-                if let Err(job_error) = service.run_automatic_job(job_id, prompt).await {
-                    error!(job_id, %job_error, "theme AI job failed");
-                    if let Err(persistence_error) = service
-                        .store
-                        .fail_theme_ai_job(job_id, &job_error.to_string())
-                        .await
-                    {
-                        error!(job_id, %persistence_error, "failed to persist theme AI job failure");
-                    }
-                }
-            });
+            self.spawn_automatic_job(job_id, prompt);
         }
         Ok(job_ids)
     }
 
-    pub async fn retry_automatic_job(
-        self: &Arc<Self>,
-        id: i64,
-    ) -> Result<Vec<i64>, ThemeServiceError> {
+    pub async fn retry_automatic_job(self: &Arc<Self>, id: i64) -> Result<i64, ThemeServiceError> {
+        let ai = self.ai.as_ref().ok_or_else(|| {
+            ThemeServiceError::Validation("automatic AI mapping is disabled".into())
+        })?;
         let job = self.ai_job(id).await?;
         if !matches!(job.status, ThemeAiJobStatus::Failed) {
             return Err(ThemeServiceError::Validation(
                 "only failed AI jobs can be retried".to_owned(),
             ));
         }
-        self.create_automatic_jobs_for_attempt(&job.symbols, Some(id))
+        if job.model != ai.model() {
+            return Err(ThemeServiceError::Validation(format!(
+                "job model {} does not match configured model {}",
+                job.model,
+                ai.model()
+            )));
+        }
+        if !self
+            .store
+            .retry_theme_ai_job(id)
             .await
+            .map_err(ThemeServiceError::Persistence)?
+        {
+            return Err(ThemeServiceError::Validation(
+                "AI job is no longer failed".to_owned(),
+            ));
+        }
+        self.spawn_automatic_job(id, job.prompt);
+        Ok(id)
     }
 
     pub async fn ai_jobs(&self) -> Result<Vec<ThemeAiJobSummary>, ThemeServiceError> {
@@ -379,6 +376,22 @@ impl ThemeService {
             .finish_theme_ai_job(id, &response, &validation.suggestions, &validation.errors)
             .await
             .map_err(ThemeServiceError::Persistence)
+    }
+
+    fn spawn_automatic_job(self: &Arc<Self>, job_id: i64, prompt: String) {
+        let service = self.clone();
+        tokio::spawn(async move {
+            if let Err(job_error) = service.run_automatic_job(job_id, prompt).await {
+                error!(job_id, %job_error, "theme AI job failed");
+                if let Err(persistence_error) = service
+                    .store
+                    .fail_theme_ai_job(job_id, &job_error.to_string())
+                    .await
+                {
+                    error!(job_id, %persistence_error, "failed to persist theme AI job failure");
+                }
+            }
+        });
     }
 
     pub async fn apply_suggestions(

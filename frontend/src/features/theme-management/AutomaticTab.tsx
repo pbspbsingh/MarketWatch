@@ -285,12 +285,10 @@ export function AutomaticTab({
                         disabled={busy || !capability.enabled}
                         onClick={() =>
                           run(async () => {
-                            const jobs = await retryThemeAiJob(selected.id);
-                            setSelectedId(jobs.ids[0]);
+                            const job = await retryThemeAiJob(selected.id);
+                            setSelectedId(job.id);
                             await reloadJobs();
-                            onMessage(
-                              `${jobs.ids.length} retry job${jobs.ids.length === 1 ? "" : "s"} scheduled`,
-                            );
+                            onMessage("AI job retry started");
                           })
                         }
                       >
@@ -316,11 +314,6 @@ export function AutomaticTab({
                   </div>
                 </div>
                 <Typography color="text.secondary">{selected.symbols.join(", ")}</Typography>
-                {selected.retry_of_job_id !== null && (
-                  <Typography color="text.secondary">
-                    Retry of job #{selected.retry_of_job_id}
-                  </Typography>
-                )}
                 {selected.error && <Typography color="error">{selected.error}</Typography>}
                 {selected.suggestions !== null && selected.suggestions.length > 0 && (
                   <div className="suggestion-preview ai-job-suggestions">

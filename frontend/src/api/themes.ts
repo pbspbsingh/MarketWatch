@@ -57,7 +57,6 @@ export interface ThemeAiJob {
   suggestions: ThemeSuggestion[] | null;
   validation_errors: ThemeSuggestionError[];
   error: string | null;
-  retry_of_job_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -163,7 +162,7 @@ export const deleteThemeAiJob = (id: number) =>
   request<{ ok: boolean }>(`/api/theme-ai/jobs/${id}`, { method: "DELETE" });
 
 export const retryThemeAiJob = (id: number) =>
-  request<{ ids: number[] }>(`/api/theme-ai/jobs/${id}/retry`, { method: "POST" });
+  request<{ id: number }>(`/api/theme-ai/jobs/${id}/retry`, { method: "POST" });
 
 export const applyThemeSuggestions = (
   suggestions: ThemeSuggestion[],
