@@ -1,8 +1,9 @@
+use crate::models::TickerSymbol;
 use anyhow::Context;
 use chrono::NaiveTime;
 use chrono_tz::Tz;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
 
@@ -27,10 +28,12 @@ pub(crate) fn sector_name(key: &str) -> Option<&'static str> {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub market: MarketConfig,
+    pub home: HomeConfig,
     pub providers: ProviderConfig,
     pub finviz: FinvizConfig,
     #[serde(default)]
@@ -38,16 +41,19 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub address: SocketAddr,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     pub url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarketConfig {
     pub timezone: String,
     pub benchmark: String,
@@ -58,6 +64,13 @@ pub struct MarketConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HomeConfig {
+    pub tickers: [TickerSymbol; 4],
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     pub connect_timeout_secs: u64,
     pub request_timeout_secs: u64,
@@ -66,6 +79,7 @@ pub struct ProviderConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FinvizConfig {
     pub industry_membership_filters: Vec<String>,
     #[serde(default)]
@@ -74,7 +88,7 @@ pub struct FinvizConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "provider", rename_all = "snake_case")]
+#[serde(tag = "provider", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AiConfig {
     Ollama {
         endpoint: String,
@@ -134,6 +148,10 @@ impl Config {
         anyhow::ensure!(
             self.market.average_volume_sessions > 0,
             "market.average_volume_sessions must be positive"
+        );
+        anyhow::ensure!(
+            self.home.tickers.iter().collect::<HashSet<_>>().len() == 4,
+            "home.tickers must contain four unique tickers"
         );
         anyhow::ensure!(
             self.providers.connect_timeout_secs > 0,
@@ -225,6 +243,7 @@ mod tests {
 
         assert!(!config.market.benchmark.is_empty());
         assert_eq!(config.market.sector_benchmarks.len(), SECTORS.len());
+        assert_eq!(config.home.tickers.len(), 4);
     }
 
     #[test]
@@ -235,5 +254,16 @@ mod tests {
         );
         assert_eq!(sector_name("realestate"), Some("Real Estate"));
         assert_eq!(sector_name("unknown"), None);
+    }
+
+    #[test]
+    fn rejects_unknown_nested_config_keys() {
+        let config = include_str!("../config.example.toml").replace(
+            "tickers = [\"QQQ\", \"SPY\", \"IWM\", \"DIA\"]",
+            "tickers = [\"QQQ\", \"SPY\", \"IWM\", \"DIA\"]\nunknown = true",
+        );
+
+        let error = toml::from_str::<Config>(&config).unwrap_err();
+        assert!(error.to_string().contains("unknown field `unknown`"));
     }
 }

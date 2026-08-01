@@ -11,6 +11,9 @@ market_hours = ["6:30:00", "13:00:00"]
 adr_sessions = 20
 average_volume_sessions = 50
 
+[home]
+tickers = ["QQQ", "SPY", "IWM", "DIA"]
+
 [market.sector_benchmarks]
 basicmaterials = "XLB"
 communicationservices = "XLC"

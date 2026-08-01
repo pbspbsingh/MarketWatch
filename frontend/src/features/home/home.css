@@ -1,0 +1,33 @@
+.home-chart-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: column;
+}
+
+.home-chart-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  border-right: 0.0625rem solid var(--color-border);
+  border-bottom: 0.0625rem solid var(--color-border);
+  flex-direction: column;
+}
+
+.home-chart-pane:nth-child(n + 3) {
+  border-right: 0;
+}
+
+.home-chart-pane:nth-child(2n) {
+  border-bottom: 0;
+}
+
+.home-chart-pane > .market-chart-container,
+.home-chart-pane > .tradingview-chart {
+  min-height: 0;
+  flex: 1;
+}

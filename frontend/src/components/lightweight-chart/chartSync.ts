@@ -109,6 +109,94 @@ export function synchronizeCharts(
   };
 }
 
+export function synchronizeChartGroup(targets: ChartSyncTarget[]): () => void {
+  if (targets.length < 2) return () => undefined;
+
+  let synchronizingRange = false;
+  const rangeHandlers = targets.map((source) => {
+    const handler = (range: LogicalRange | null) => {
+      if (synchronizingRange || range === null || source.isDisposed()) return;
+      synchronizingRange = true;
+      try {
+        for (const target of targets) {
+          if (target === source || target.isDisposed()) continue;
+          const translated = translateLogicalRange(source, target, range);
+          if (translated === null) continue;
+          const current = target.chart.timeScale().getVisibleLogicalRange();
+          if (
+            current !== null
+            && Math.abs(current.from - translated.from) < 0.001
+            && Math.abs(current.to - translated.to) < 0.001
+          ) continue;
+          target.chart.timeScale().setVisibleLogicalRange(translated);
+        }
+      } finally {
+        synchronizingRange = false;
+      }
+    };
+    source.chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return handler;
+  });
+
+  const initialRange = targets[0].chart.timeScale().getVisibleLogicalRange();
+  if (initialRange !== null) {
+    synchronizingRange = true;
+    try {
+      for (const target of targets.slice(1)) {
+        const translated = translateLogicalRange(targets[0], target, initialRange);
+        if (translated !== null) target.chart.timeScale().setVisibleLogicalRange(translated);
+      }
+    } finally {
+      synchronizingRange = false;
+    }
+  }
+
+  let synchronizingCrosshair = false;
+  const crosshairHandlers = targets.map((source) => {
+    const handler = (event: MouseEventParams<Time>) => {
+      if (
+        synchronizingCrosshair
+        || source.isDisposed()
+        || !source.chart.options().crosshair.horzLine.visible
+      ) return;
+      synchronizingCrosshair = true;
+      try {
+        const date = event.time === undefined
+          ? undefined
+          : chartTimeToMarketDate(event.time);
+        for (const target of targets) {
+          if (target === source || target.isDisposed()) continue;
+          const candle = date === undefined ? undefined : target.candleAt(date);
+          if (date === undefined || candle === undefined) {
+            target.chart.clearCrosshairPosition();
+          } else {
+            target.chart.setCrosshairPosition(
+              candle.close,
+              marketDateToChartTime(date),
+              target.candleSeries,
+            );
+          }
+        }
+      } finally {
+        synchronizingCrosshair = false;
+      }
+    };
+    source.chart.subscribeCrosshairMove(handler);
+    return handler;
+  });
+
+  return () => {
+    targets.forEach((target, index) => {
+      if (target.isDisposed()) return;
+      target.chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandlers[index]);
+      target.chart.unsubscribeCrosshairMove(crosshairHandlers[index]);
+    });
+    targets.forEach((target) => {
+      if (!target.isDisposed()) target.chart.clearCrosshairPosition();
+    });
+  };
+}
+
 export function setHorizontalCrosshairVisible(
   target: ChartSyncTarget,
   visible: boolean,

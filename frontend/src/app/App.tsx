@@ -7,6 +7,9 @@ const CsvAnalyzerPage = lazy(() =>
     default: CsvAnalyzerPage,
   })),
 );
+const HomePage = lazy(() =>
+  import("../features/home/HomePage").then(({ HomePage }) => ({ default: HomePage })),
+);
 const WatchlistsPage = lazy(() =>
   import("../features/watchlists/WatchlistsPage").then(({ WatchlistsPage }) => ({
     default: WatchlistsPage,
@@ -53,7 +56,7 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/market-watch" replace />} />
+        <Route index element={<Page title="Home"><HomePage /></Page>} />
         <Route path="/market-watch" element={<Page title="Market Watch"><MarketWatchPage /></Page>} />
         <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />
         <Route path="/watchlists" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />

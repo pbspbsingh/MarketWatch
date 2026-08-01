@@ -14,6 +14,7 @@ import TuneIcon from "@mui/icons-material/Tune";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import {
   Drawer,
   IconButton,
@@ -32,6 +33,7 @@ import {
   validRelativeStrengthLineStyle,
 } from "./AppSettings";
 
+const homeDestination = ["Home", "/", HomeOutlinedIcon, "blue"] as const;
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
@@ -227,13 +229,13 @@ export function AppShell() {
       ) : (
         <aside className="navigation-rail">
           <Tooltip title="Market Watch" placement="right">
-            <span className="navigation-rail-brand">
+            <NavLink className="navigation-rail-brand" to="/" aria-label="Home">
               <img
                 className={import.meta.env.DEV ? "development-logo" : undefined}
                 src="/favicon.svg"
                 alt="Market Watch"
               />
-            </span>
+            </NavLink>
           </Tooltip>
           <NavigationItems compact />
           <Tooltip title="Use sliding navigation" placement="right">
@@ -404,12 +406,14 @@ function NavigationItems({
 }) {
   return (
     <List dense disablePadding component="nav" aria-label="Primary navigation">
-      {destinations.map(([label, path, DestinationIcon, accent]) => {
+      {(compact ? destinations : [homeDestination, ...destinations]).map(
+        ([label, path, DestinationIcon, accent]) => {
         const item = (
           <ListItemButton
             component={NavLink}
             key={path}
             to={path}
+            end={path === "/"}
             aria-label={compact ? label : undefined}
             onClick={onNavigate}
           >
@@ -424,7 +428,8 @@ function NavigationItems({
             {item}
           </Tooltip>
         ) : item;
-      })}
+        },
+      )}
     </List>
   );
 }
