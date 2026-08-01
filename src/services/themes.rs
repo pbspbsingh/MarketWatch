@@ -342,10 +342,9 @@ impl ThemeService {
         let suggestions = self
             .validate_automatic_suggestions(suggestions, &job.symbols)
             .await?;
-        self.persist_suggestions(suggestions, AssignmentSource::AutomaticAi, Some(&job.model))
-            .await?;
+        let assignments = self.resolve_suggestions(suggestions).await?;
         self.store
-            .mark_theme_ai_job_applied(id)
+            .apply_theme_ai_job(id, &assignments, &job.model)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
@@ -401,6 +400,17 @@ impl ThemeService {
         source: AssignmentSource,
         model: Option<&str>,
     ) -> Result<(), ThemeServiceError> {
+        let assignments = self.resolve_suggestions(suggestions).await?;
+        self.store
+            .replace_theme_assignment_batch(&assignments, source, model)
+            .await
+            .map_err(ThemeServiceError::Persistence)
+    }
+
+    async fn resolve_suggestions(
+        &self,
+        suggestions: Vec<ThemeSuggestion>,
+    ) -> Result<Vec<(TickerSymbol, Vec<i64>, Option<String>)>, ThemeServiceError> {
         let mut assignments = Vec::with_capacity(suggestions.len());
         for suggestion in suggestions {
             let ids = self
@@ -410,10 +420,7 @@ impl ThemeService {
                 .map_err(ThemeServiceError::Persistence)?;
             assignments.push((suggestion.symbol, ids, suggestion.reasoning));
         }
-        self.store
-            .replace_theme_assignment_batch(&assignments, source, model)
-            .await
-            .map_err(ThemeServiceError::Persistence)
+        Ok(assignments)
     }
 
     pub fn ai_capability(&self) -> AiCapability {

@@ -656,11 +656,6 @@ impl Store {
         let validation_errors_json = serde_json::to_string(validation_errors)
             .context("failed to serialize suggestion validation errors")?;
         let now = Utc::now().naive_utc();
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin theme AI job completion")?;
         sqlx::query!(
             r#"UPDATE theme_ai_jobs
                SET status = ?, response = ?, suggestions = ?, validation_errors = ?,
@@ -673,35 +668,10 @@ impl Store {
             now,
             id,
         )
-        .execute(&mut *transaction)
+        .execute(&self.pool)
         .await
         .context("failed to complete theme AI job")?;
-        for suggestion in suggestions {
-            let outcome = if suggestion.themes.is_empty() {
-                "no_theme"
-            } else {
-                "assigned"
-            };
-            sqlx::query!(
-                r#"INSERT INTO theme_ai_processed_symbols (symbol, job_id, outcome, processed_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(symbol) DO UPDATE SET
-                       job_id = excluded.job_id,
-                       outcome = excluded.outcome,
-                       processed_at = excluded.processed_at"#,
-                suggestion.symbol.as_str(),
-                id,
-                outcome,
-                now,
-            )
-            .execute(&mut *transaction)
-            .await
-            .context("failed to mark automatically processed ticker")?;
-        }
-        transaction
-            .commit()
-            .await
-            .context("failed to commit theme AI job completion")
+        Ok(())
     }
 
     pub async fn fail_theme_ai_job(&self, id: i64, error: &str) -> anyhow::Result<()> {
@@ -718,19 +688,92 @@ impl Store {
         Ok(())
     }
 
-    pub async fn mark_theme_ai_job_applied(&self, id: i64) -> anyhow::Result<()> {
+    pub async fn apply_theme_ai_job(
+        &self,
+        id: i64,
+        assignments: &[(TickerSymbol, Vec<i64>, Option<String>)],
+        model: &str,
+    ) -> anyhow::Result<()> {
         let now = Utc::now().naive_utc();
-        sqlx::query!(
-            r#"UPDATE theme_ai_jobs
-               SET status = 'applied', updated_at = ?
-               WHERE id = ? AND status IN ('completed', 'partially_failed')"#,
-            now,
-            id,
-        )
-        .execute(&self.pool)
-        .await
-        .context("failed to mark theme AI job applied")?;
-        Ok(())
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin theme AI job application")?;
+        let application = async {
+            let result = sqlx::query!(
+                r#"UPDATE theme_ai_jobs
+                   SET status = 'applied', updated_at = ?
+                   WHERE id = ? AND status IN ('completed', 'partially_failed')"#,
+                now,
+                id,
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to mark theme AI job applied")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "theme AI job is not applicable"
+            );
+
+            for (symbol, theme_ids, reasoning) in assignments {
+                let symbol = symbol.as_str();
+                sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
+                    .execute(&mut *transaction)
+                    .await
+                    .context("failed to clear accepted theme assignments")?;
+                for theme_id in theme_ids {
+                    sqlx::query!(
+                        r#"INSERT INTO theme_stocks (
+                               theme_id, symbol, source, reasoning, model, assigned_at
+                           ) VALUES (?, ?, 'automatic_ai', ?, ?, ?)"#,
+                        theme_id,
+                        symbol,
+                        reasoning,
+                        model,
+                        now,
+                    )
+                    .execute(&mut *transaction)
+                    .await
+                    .context("failed to insert accepted theme assignment")?;
+                }
+                let outcome = if theme_ids.is_empty() {
+                    "no_theme"
+                } else {
+                    "assigned"
+                };
+                sqlx::query!(
+                    r#"INSERT INTO theme_ai_processed_symbols (
+                           symbol, job_id, outcome, processed_at
+                       ) VALUES (?, ?, ?, ?)
+                       ON CONFLICT(symbol) DO UPDATE SET
+                           job_id = excluded.job_id,
+                           outcome = excluded.outcome,
+                           processed_at = excluded.processed_at"#,
+                    symbol,
+                    id,
+                    outcome,
+                    now,
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to mark accepted automatically processed ticker")?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        if let Err(error) = application {
+            transaction
+                .rollback()
+                .await
+                .context("failed to roll back theme AI job application")?;
+            return Err(error);
+        }
+
+        transaction
+            .commit()
+            .await
+            .context("failed to commit theme AI job application")
     }
 
     pub async fn delete_theme_ai_job(&self, id: i64) -> anyhow::Result<bool> {
@@ -1015,7 +1058,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn partial_ai_job_marks_only_valid_suggestions_as_processed() {
+    async fn partial_ai_job_does_not_mark_suggestions_as_processed_before_apply() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         for symbol in ["EMPTY", "ASSIGNED", "INVALID"] {
             store
@@ -1029,6 +1072,10 @@ mod tests {
                 .await
                 .unwrap();
         }
+        let theme_id = store
+            .create_theme("AI", &ticker("AIQ"), None)
+            .await
+            .unwrap();
         let ids = store
             .create_theme_ai_jobs(
                 "test-model",
@@ -1069,6 +1116,43 @@ mod tests {
         assert_eq!(job.validation_errors.len(), 1);
         let tickers = store.theme_tickers().await.unwrap();
         assert!(
+            !tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "EMPTY")
+                .unwrap()
+                .automatic_processed
+        );
+        assert!(
+            !tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "ASSIGNED")
+                .unwrap()
+                .automatic_processed
+        );
+        assert!(
+            !tickers
+                .iter()
+                .find(|ticker| ticker.symbol == "INVALID")
+                .unwrap()
+                .automatic_processed
+        );
+
+        store
+            .apply_theme_ai_job(
+                ids[0],
+                &[
+                    (ticker("EMPTY"), Vec::new(), None),
+                    (ticker("ASSIGNED"), vec![theme_id], None),
+                ],
+                "test-model",
+            )
+            .await
+            .unwrap();
+
+        let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
+        assert!(matches!(job.status, ThemeAiJobStatus::Applied));
+        let tickers = store.theme_tickers().await.unwrap();
+        assert!(
             tickers
                 .iter()
                 .find(|ticker| ticker.symbol == "EMPTY")
@@ -1089,6 +1173,100 @@ mod tests {
                 .unwrap()
                 .automatic_processed
         );
+        let outcomes = sqlx::query_as::<_, (String, String)>(
+            "SELECT symbol, outcome FROM theme_ai_processed_symbols ORDER BY symbol",
+        )
+        .fetch_all(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            outcomes,
+            [
+                ("ASSIGNED".to_owned(), "assigned".to_owned()),
+                ("EMPTY".to_owned(), "no_theme".to_owned()),
+            ]
+        );
+        assert!(
+            store
+                .apply_theme_ai_job(
+                    ids[0],
+                    &[(ticker("ASSIGNED"), vec![theme_id], None)],
+                    "test-model",
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .theme_tickers()
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|ticker| ticker.symbol == "ASSIGNED")
+                .unwrap()
+                .assignments
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_job_application_rolls_back_every_change() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: ticker("ROLLBACK"),
+                name: None,
+                exchange: Exchange::Nasdaq,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let ids = store
+            .create_theme_ai_jobs(
+                "test-model",
+                &[(vec![ticker("ROLLBACK")], "prompt".to_owned())],
+                None,
+            )
+            .await
+            .unwrap();
+        store
+            .finish_theme_ai_job(
+                ids[0],
+                "response",
+                &[ThemeSuggestion {
+                    symbol: ticker("ROLLBACK"),
+                    themes: vec!["Missing Theme".to_owned()],
+                    reasoning: None,
+                }],
+                &[],
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            store
+                .apply_theme_ai_job(
+                    ids[0],
+                    &[(ticker("ROLLBACK"), vec![i64::MAX], None)],
+                    "test-model",
+                )
+                .await
+                .is_err()
+        );
+
+        let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
+        assert!(matches!(job.status, ThemeAiJobStatus::Completed));
+        let ticker = store
+            .theme_tickers()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|ticker| ticker.symbol == "ROLLBACK")
+            .unwrap();
+        assert!(!ticker.automatic_processed);
+        assert!(ticker.assignments.is_empty());
     }
 
     #[tokio::test]
