@@ -19,12 +19,11 @@ codegen-units = 1
 # Application and runtime
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-stream = "0.1.18"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 # Error handling
-anyhow = "1.0.102"
-thiserror = "2.0.18"
+anyhow = "1.0.104"
+thiserror = "2.0.19"
 
 # Web
 axum = { version = "0.8.9", features = ["multipart", "ws"] }
@@ -35,24 +34,24 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 
 # Content
 comrak = { version = "0.54.0", default-features = false }
-regex = "1.12.0"
-image = { version = "0.25.9", default-features = false, features = ["jpeg", "png"] }
+regex = "1.13.1"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 webp = { version = "0.3.1", default-features = false, features = ["img"] }
 
 # External providers
 base64 = "0.22.1"
-fastrand = "2.4.1"
-futures-util = "0.3.32"
+fastrand = "2.5.0"
+futures-util = "0.3.33"
 prost = "0.14.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "cookies", "gzip", "json", "deflate", "stream"] }
 scraper = "0.27.0"
 tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 
 # Configuration and serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 smol_str = { version = "0.3.6", features = ["serde"] }
-toml = "1.1.2"
+toml = "1.1.4"
 
 # Observability
 tracing = "0.1.44"
