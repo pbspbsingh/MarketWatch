@@ -26,6 +26,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { fetchFundamentalScores } from "../../api/fundamentalScores";
 import {
   fetchTickerRanking,
   type TickerRanking,
@@ -73,10 +74,13 @@ import {
 
 const tickerRowHeight = 28;
 const emptyTickers: TickerRanking[] = [];
+const fundamentalsMetricId = "fundamentals";
+const fundamentalsSortKey = boundedMetricSortKey(fundamentalsMetricId);
 
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
   bounded: boolean;
+  boundedUniverseKey: string;
   boundedMetrics: readonly BoundedTickerMetric[];
   defaultBoundedMetricSort?: DefaultBoundedMetricSort;
   mode: GroupMode;
@@ -106,6 +110,12 @@ interface TickerRowProps {
 interface TickerRequestState {
   key: string;
   tickers?: TickerRanking[];
+  error?: string;
+}
+
+interface FundamentalMetricState {
+  key: string;
+  values: ReadonlyMap<string, number>;
   error?: string;
 }
 
@@ -173,6 +183,7 @@ function TickerRow({
 export function TickerPanel({
   tickerStream,
   bounded,
+  boundedUniverseKey,
   boundedMetrics,
   defaultBoundedMetricSort,
   mode,
@@ -213,10 +224,34 @@ export function TickerPanel({
         };
   });
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
+  const [fundamentalMetricState, setFundamentalMetricState] =
+    useState<FundamentalMetricState>();
   const groupKey = [...groupKeys].sort().join("\0");
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
   const metricsActive = groupKeys.size > 0 || filtersActive;
-  const activeBoundedMetric = boundedMetricForKey(boundedMetrics, sortSetting.key);
+  const fundamentalRequestKey = `${mode}\0${groupKey}\0${boundedUniverseKey}`;
+  const fundamentalsSelected = bounded && sortSetting.key === fundamentalsSortKey;
+  const activeFundamentalState = fundamentalsSelected
+    && fundamentalMetricState?.key === fundamentalRequestKey
+    ? fundamentalMetricState
+    : undefined;
+  const fundamentalLoading = fundamentalsSelected && activeFundamentalState === undefined;
+  const fundamentalMetric = useMemo<BoundedTickerMetric>(() => ({
+    id: fundamentalsMetricId,
+    label: "FUN",
+    values: activeFundamentalState?.values ?? new Map(),
+    formatValue: (value) => Math.round(value).toString(),
+  }), [activeFundamentalState?.values]);
+  const availableBoundedMetrics = useMemo(
+    () => !bounded
+      ? boundedMetrics
+      : [
+          ...boundedMetrics.filter((metric) => metric.id !== fundamentalsMetricId),
+          fundamentalMetric,
+        ],
+    [bounded, boundedMetrics, fundamentalMetric],
+  );
+  const activeBoundedMetric = boundedMetricForKey(availableBoundedMetrics, sortSetting.key);
   const sortActive = metricsActive || activeBoundedMetric !== undefined;
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
@@ -239,6 +274,30 @@ export function TickerPanel({
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
   }, [panelRequestKey]);
+
+  useEffect(() => {
+    if (!fundamentalsSelected) return;
+    const controller = new AbortController();
+    resolveRankedSymbols(controller.signal)
+      .then((symbols) => fetchFundamentalScores(symbols, controller.signal))
+      .then((scores) => {
+        if (controller.signal.aborted) return;
+        setFundamentalMetricState({
+          key: fundamentalRequestKey,
+          values: new Map(scores.map((score) => [score.symbol, score.score])),
+        });
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof Error && requestError.name !== "AbortError") {
+          setFundamentalMetricState({
+            key: fundamentalRequestKey,
+            values: new Map(),
+            error: requestError.message,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [fundamentalRequestKey, fundamentalsSelected, resolveRankedSymbols]);
   const resolvedTickers = resolvedTickerState.key === resolvedTickerRequestKey
     ? resolvedTickerState.tickers
     : undefined;
@@ -257,12 +316,14 @@ export function TickerPanel({
     ? rankingStream.loading
     : resolvedTickerState.key !== resolvedTickerRequestKey;
   const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
+    ?? activeFundamentalState?.error
     ?? rankingStream.error
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
 
   useEffect(() => {
     if (previousSelectionContextKey.current === selectionContextKey) return;
     previousSelectionContextKey.current = selectionContextKey;
+    setFundamentalMetricState(undefined);
     setSelectedTicker(undefined);
   }, [selectionContextKey, setSelectedTicker]);
 
@@ -577,7 +638,7 @@ export function TickerPanel({
               {selectedTickerPosition}/{sortedTickers.length}
             </Typography>
           </Tooltip>
-          {panelLoading && <CircularProgress size="0.75rem" />}
+          {(panelLoading || fundamentalLoading) && <CircularProgress size="0.75rem" />}
         </div>
         <div className="metric-sort-controls">
           <Select
@@ -585,14 +646,16 @@ export function TickerPanel({
             value={sortSetting.key}
             disabled={!bounded && !metricsActive}
             aria-label="Sort tickers by"
-            onChange={(event) =>
-              setSortSetting({ key: event.target.value as TickerSortKey, direction: "desc" })
-            }
+            onChange={(event) => {
+              const key = event.target.value as TickerSortKey;
+              if (key !== fundamentalsSortKey) setFundamentalMetricState(undefined);
+              setSortSetting({ key, direction: "desc" });
+            }}
           >
             {[
               ...tickerSortOptions,
               ...(bounded
-                ? boundedMetrics.map((metric) => ({
+                ? availableBoundedMetrics.map((metric) => ({
                     key: boundedMetricSortKey(metric.id),
                     label: metric.label,
                   }))
@@ -681,6 +744,9 @@ export function TickerPanel({
       </Menu>
       <Toast message={panelError} onClose={() => {
         setErrorState(undefined);
+        setFundamentalMetricState((current) => current === undefined
+          ? undefined
+          : { ...current, error: undefined });
         rankingStream.clearError();
         setResolvedTickerState((current) =>
           current.key === resolvedTickerRequestKey

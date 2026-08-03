@@ -1,6 +1,7 @@
 pub mod chart;
 pub mod daily_notes;
 pub mod details;
+pub mod fundamental_scores;
 pub mod global_search;
 pub mod highest_volume;
 pub mod industries;

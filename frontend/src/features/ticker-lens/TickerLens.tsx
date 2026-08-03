@@ -475,6 +475,7 @@ export function TickerLens({
       <TickerPanel
         tickerStream={tickerStream}
         bounded={bounded}
+        boundedUniverseKey={bounded ? boundedSymbolsKey : ""}
         boundedMetrics={bounded ? boundedMetrics : []}
         defaultBoundedMetricSort={bounded ? defaultBoundedMetricSort : undefined}
         mode={groupMode}
