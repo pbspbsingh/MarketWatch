@@ -1,51 +1,86 @@
 import { useEffect, useRef } from "react";
-import { Typography } from "@mui/material";
+import { CircularProgress, Typography } from "@mui/material";
 import type { ChartConfiguration, TooltipItem } from "chart.js";
 import type { QuarterFundamentals, TickerDetails } from "../api/details";
+import type { FundamentalScore } from "../api/fundamentalScores";
 import { useAppSettings } from "../app/AppSettings";
 import { appPalettes, type AppPalette } from "../app/theme";
 
 interface TickerFundamentalsTabProps {
   details: TickerDetails;
+  score?: FundamentalScore;
+  scoreLoading: boolean;
 }
 
-export function TickerFundamentalsTab({ details }: TickerFundamentalsTabProps) {
+export function TickerFundamentalsTab({
+  details,
+  score,
+  scoreLoading,
+}: TickerFundamentalsTabProps) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
   const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
 
   return (
-    <div className="fundamentals-grid">
-      <GrowthChart
-        title="EPS YoY Growth"
-        quarters={quarters}
-        field="earnings_per_share"
-        forecast={details.fundamentals.next_quarter.earnings_per_share}
-        color={palette.accent}
-      />
-      <GrowthChart
-        title="Revenue YoY Growth"
-        quarters={quarters}
-        field="revenue"
-        forecast={details.fundamentals.next_quarter.revenue}
-        color={palette.warning}
-      />
-      <EstimateChart
-        title="EPS Actual / Estimate / Forecast"
-        quarters={quarters}
-        actualField="earnings_per_share"
-        estimateField="earnings_per_share_estimate"
-        forecast={details.fundamentals.next_quarter.earnings_per_share}
-        format={(value) => value.toFixed(2)}
-      />
-      <EstimateChart
-        title="Revenue Actual / Estimate / Forecast"
-        quarters={quarters}
-        actualField="revenue"
-        estimateField="revenue_estimate"
-        forecast={details.fundamentals.next_quarter.revenue}
-        format={compact}
-      />
+    <div className="fundamentals-tab">
+      <section className="fundamentals-score">
+        <div className="fundamentals-score-heading">
+          <Typography component="h3">FUNDAMENTALS</Typography>
+          {scoreLoading && score === undefined ? (
+            <CircularProgress size="0.875rem" />
+          ) : score === undefined ? (
+            <Typography className="fundamentals-score-value" color="text.secondary">N/A</Typography>
+          ) : (
+            <Typography className="fundamentals-score-value">
+              {Math.round(score.score)}
+            </Typography>
+          )}
+          {score !== undefined && (
+            <Typography color="text.secondary">
+              EPS {Math.round(score.eps_score)} · Revenue {Math.round(score.revenue_score)} · Coverage {Math.round(score.coverage * 100)}%
+            </Typography>
+          )}
+        </div>
+        {score !== undefined && score.reasons.length > 0 && (
+          <div className="fundamentals-score-reasons">
+            {score.reasons.map((reason) => (
+              <Typography key={reason} color="text.secondary">{reason}</Typography>
+            ))}
+          </div>
+        )}
+      </section>
+      <div className="fundamentals-grid">
+        <GrowthChart
+          title="EPS YoY Growth"
+          quarters={quarters}
+          field="earnings_per_share"
+          forecast={details.fundamentals.next_quarter.earnings_per_share}
+          color={palette.accent}
+        />
+        <GrowthChart
+          title="Revenue YoY Growth"
+          quarters={quarters}
+          field="revenue"
+          forecast={details.fundamentals.next_quarter.revenue}
+          color={palette.warning}
+        />
+        <EstimateChart
+          title="EPS Actual / Estimate / Forecast"
+          quarters={quarters}
+          actualField="earnings_per_share"
+          estimateField="earnings_per_share_estimate"
+          forecast={details.fundamentals.next_quarter.earnings_per_share}
+          format={(value) => value.toFixed(2)}
+        />
+        <EstimateChart
+          title="Revenue Actual / Estimate / Forecast"
+          quarters={quarters}
+          actualField="revenue"
+          estimateField="revenue_estimate"
+          forecast={details.fundamentals.next_quarter.revenue}
+          format={compact}
+        />
+      </div>
     </div>
   );
 }
