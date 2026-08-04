@@ -1,9 +1,15 @@
 import type { TickerRanking } from "./tickers";
+import type { FundamentalScore } from "./fundamentalScores";
 
 export interface TickerStreamClient {
   streamSymbols(
     symbols: string[],
     onTicker: (ticker: TickerRanking) => void,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  streamFundamentalScores(
+    symbols: string[],
+    onScore: (score: FundamentalScore) => void,
     signal?: AbortSignal,
   ): Promise<void>;
   close(): void;
@@ -15,10 +21,11 @@ export function createTickerStreamClient(): TickerStreamClient {
 
 type TickerStreamEvent =
   | { request_id: number; type: "ticker"; ticker: TickerRanking }
+  | { request_id: number; type: "fundamental_score"; score: FundamentalScore }
   | { request_id: number; type: "complete" }
   | { request_id: number; type: "error"; message: string };
 
-const idleSocketTimeoutMs = 30_000;
+const idleSocketTimeoutMs = 5 * 60_000;
 
 class WebSocketTickerStreamClient implements TickerStreamClient {
   private socket?: WebSocket;
@@ -26,7 +33,8 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
   private requestId = 0;
   private active?: {
     id: number;
-    onTicker: (ticker: TickerRanking) => void;
+    onTicker?: (ticker: TickerRanking) => void;
+    onFundamentalScore?: (score: FundamentalScore) => void;
     resolve: () => void;
     reject: (error: unknown) => void;
     signal?: AbortSignal;
@@ -35,6 +43,33 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
   private idleTimer?: number;
 
   streamSymbols(symbols: string[], onTicker: (ticker: TickerRanking) => void, signal?: AbortSignal) {
+    return this.stream(
+      { group_type: "symbols", symbols },
+      { onTicker },
+      signal,
+    );
+  }
+
+  streamFundamentalScores(
+    symbols: string[],
+    onFundamentalScore: (score: FundamentalScore) => void,
+    signal?: AbortSignal,
+  ) {
+    return this.stream(
+      { group_type: "fundamental_scores", symbols },
+      { onFundamentalScore },
+      signal,
+    );
+  }
+
+  private stream(
+    request: { group_type: "symbols" | "fundamental_scores"; symbols: string[] },
+    handlers: {
+      onTicker?: (ticker: TickerRanking) => void;
+      onFundamentalScore?: (score: FundamentalScore) => void;
+    },
+    signal?: AbortSignal,
+  ) {
     this.clearIdleTimer();
     this.abortActive();
     const id = ++this.requestId;
@@ -46,7 +81,7 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
         this.finish(id, () => reject(new DOMException("Aborted", "AbortError")));
         this.scheduleIdleClose();
       };
-      this.active = { id, onTicker, resolve, reject, signal, abort };
+      this.active = { id, ...handlers, resolve, reject, signal, abort };
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) {
         abort();
@@ -58,8 +93,7 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
           socket.send(JSON.stringify({
             type: "stream",
             request_id: id,
-            group_type: "symbols",
-            symbols,
+            ...request,
           }));
         })
         .catch((error: unknown) => this.finish(id, () => reject(error)));
@@ -107,7 +141,19 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
       return;
     }
     if (event.request_id !== this.active?.id) return;
-    if (event.type === "ticker") this.active.onTicker(event.ticker);
+    if (event.type === "ticker") {
+      if (this.active.onTicker === undefined) {
+        this.failProtocol("Ticker WebSocket sent an unexpected ticker event");
+        return;
+      }
+      this.active.onTicker(event.ticker);
+    } else if (event.type === "fundamental_score") {
+      if (this.active.onFundamentalScore === undefined) {
+        this.failProtocol("Ticker WebSocket sent an unexpected fundamental score event");
+        return;
+      }
+      this.active.onFundamentalScore(event.score);
+    }
     else if (event.type === "error") {
       this.finish(event.request_id, () => this.active?.reject(new Error(event.message)));
       this.scheduleIdleClose();
@@ -115,7 +161,11 @@ class WebSocketTickerStreamClient implements TickerStreamClient {
     if (event.type === "complete") {
       this.finish(event.request_id, () => this.active?.resolve());
       this.scheduleIdleClose();
-    } else if (event.type !== "ticker" && event.type !== "error") {
+    } else if (
+      event.type !== "ticker"
+      && event.type !== "fundamental_score"
+      && event.type !== "error"
+    ) {
       this.failProtocol("Ticker WebSocket sent an unknown event");
     }
   }

@@ -8,16 +8,18 @@ export function useTickerRankingStream({
   client,
   enabled,
   requestKey,
+  refreshKey,
   resolveSymbols,
 }: {
   client: TickerStreamClient;
   enabled: boolean;
   requestKey: string;
+  refreshKey?: number;
   resolveSymbols: (signal: AbortSignal) => Promise<string[]>;
 }) {
   const request = useMemo(
-    () => ({ client, enabled, requestKey, resolveSymbols }),
-    [client, enabled, requestKey, resolveSymbols],
+    () => ({ client, enabled, requestKey, refreshKey, resolveSymbols }),
+    [client, enabled, refreshKey, requestKey, resolveSymbols],
   );
   const [state, setState] = useState<{
     request: typeof request;
@@ -25,27 +27,40 @@ export function useTickerRankingStream({
     loading: boolean;
     error?: string;
   }>(() => ({ request, tickers: [], loading: enabled }));
+  const latestState = useRef(state);
   const watchlistOverrides = useRef(new Map<string, number[]>());
+
+  useEffect(() => {
+    latestState.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (!request.enabled) return;
 
     const controller = new AbortController();
-    const tickerBySymbol = new Map<string, TickerRanking>();
+    const previousState = latestState.current;
+    const sameRequest = previousState.request.requestKey === request.requestKey;
+    const tickerBySymbol = new Map(
+      (sameRequest ? previousState.tickers : []).map((ticker) => [ticker.symbol, ticker]),
+    );
+    const receivedSymbols = new Set<string>();
     let flushTimer: number | undefined;
-    const flush = () => {
+    const flush = (complete = false) => {
       if (flushTimer !== undefined) window.clearTimeout(flushTimer);
       flushTimer = undefined;
       if (!controller.signal.aborted) {
         setState((current) => ({
           request,
-          tickers: [...tickerBySymbol.values()],
+          tickers: complete
+            ? [...tickerBySymbol.values()].filter((ticker) => receivedSymbols.has(ticker.symbol))
+            : [...tickerBySymbol.values()],
           loading: current.request === request ? current.loading : true,
           error: current.request === request ? current.error : undefined,
         }));
       }
     };
     const queue = (ticker: TickerRanking) => {
+      receivedSymbols.add(ticker.symbol);
       const watchlistIds = watchlistOverrides.current.get(ticker.symbol);
       tickerBySymbol.set(
         ticker.symbol,
@@ -56,10 +71,15 @@ export function useTickerRankingStream({
 
     request.resolveSymbols(controller.signal)
       .then((symbols) => request.client.streamSymbols(symbols, queue, controller.signal))
-      .then(flush)
+      .then(() => flush(true))
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setState({ request, tickers: [], loading: true, error: requestError.message });
+          setState({
+            request,
+            tickers: [...tickerBySymbol.values()],
+            loading: true,
+            error: requestError.message,
+          });
         }
       })
       .finally(() => {
@@ -89,12 +109,12 @@ export function useTickerRankingStream({
     }));
   }, []);
 
-  const current = enabled && state.request === request ? state : undefined;
+  const current = enabled && state.request.requestKey === request.requestKey ? state : undefined;
 
   return {
     tickers: current?.tickers ?? [],
-    loading: enabled && (current?.loading ?? true),
-    error: current?.error,
+    loading: enabled && (state.request === request ? current?.loading ?? true : true),
+    error: state.request === request ? current?.error : undefined,
     clearError: () => setState((value) =>
       value.request === request ? { ...value, error: undefined } : value,
     ),

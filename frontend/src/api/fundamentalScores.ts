@@ -1,6 +1,10 @@
 export interface FundamentalScore {
   symbol: string;
   score: number;
+  eps_score: number;
+  revenue_score: number;
+  coverage: number;
+  reasons: string[];
 }
 
 export async function fetchFundamentalScores(

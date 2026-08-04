@@ -453,18 +453,22 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
         })
         .collect::<Vec<_>>();
 
-    let forecast_period = route_data
-        .earnings_data
-        .iter()
-        .filter(|period| period.eps_reported_actual.is_none() && period.sales_actual.is_none())
-        .filter(|period| period.eps_reported_estimate.is_some() || period.sales_estimate.is_some())
-        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+    let forecast_period = next_forecast_period(
+        &route_data.earnings_data,
+        quarters
+            .first()
+            .map(|quarter| quarter.fiscal_period.as_str()),
+    );
 
     Ok(Fundamentals {
         symbol: symbol.clone(),
         currency: None,
         quarters,
         next_quarter: Forecast {
+            fiscal_period: forecast_period.map(|period| period.fiscal_period.clone()),
+            earnings_release_date: forecast_period
+                .and_then(|period| period.earnings_date.as_deref())
+                .and_then(parse_finviz_datetime),
             earnings_per_share: forecast_period.and_then(|period| period.eps_reported_estimate),
             revenue: forecast_period
                 .and_then(|period| period.sales_estimate)
@@ -489,6 +493,20 @@ struct EarningsPeriod {
     eps_reported_estimate: Option<f64>,
     sales_actual: Option<f64>,
     sales_estimate: Option<f64>,
+}
+
+fn next_forecast_period<'a>(
+    periods: &'a [EarningsPeriod],
+    latest_reported_period: Option<&str>,
+) -> Option<&'a EarningsPeriod> {
+    periods
+        .iter()
+        .filter(|period| period.eps_reported_actual.is_none() && period.sales_actual.is_none())
+        .filter(|period| period.eps_reported_estimate.is_some() || period.sales_estimate.is_some())
+        .filter(|period| {
+            latest_reported_period.is_none_or(|latest| period.fiscal_period.as_str() > latest)
+        })
+        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period))
 }
 
 fn parse_finviz_datetime(value: &str) -> Option<DateTime<Utc>> {
@@ -540,6 +558,20 @@ fn selector(value: &str) -> anyhow::Result<Selector> {
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    #[test]
+    fn forecast_is_the_first_unreported_period_after_the_latest_report() {
+        let periods = [
+            earnings_period("2025Q4", None, Some(0.4)),
+            earnings_period("2026Q2", Some(0.5), Some(0.45)),
+            earnings_period("2026Q4", None, Some(0.7)),
+            earnings_period("2026Q3", None, Some(0.6)),
+        ];
+
+        let forecast = next_forecast_period(&periods, Some("2026Q2")).unwrap();
+
+        assert_eq!(forecast.fiscal_period, "2026Q3");
+    }
 
     #[tokio::test]
     #[ignore = "calls live Finviz endpoints"]
@@ -598,8 +630,11 @@ mod tests {
             );
         }
         println!(
-            "forecast eps={:?} revenue={:?}",
-            fundamentals.next_quarter.earnings_per_share, fundamentals.next_quarter.revenue
+            "forecast period={:?} release_date={:?} eps={:?} revenue={:?}",
+            fundamentals.next_quarter.fiscal_period,
+            fundamentals.next_quarter.earnings_release_date,
+            fundamentals.next_quarter.earnings_per_share,
+            fundamentals.next_quarter.revenue
         );
         assert_eq!(fundamentals.quarters.len(), FUNDAMENTAL_QUARTERS);
         assert!(
@@ -613,7 +648,29 @@ mod tests {
         );
         assert!(fundamentals.next_quarter.earnings_per_share.is_some());
         assert!(fundamentals.next_quarter.revenue.is_some());
+        assert!(
+            fundamentals.next_quarter.fiscal_period.as_deref()
+                > fundamentals
+                    .quarters
+                    .first()
+                    .map(|quarter| quarter.fiscal_period.as_str())
+        );
 
         Ok(())
+    }
+
+    fn earnings_period(
+        fiscal_period: &str,
+        actual_eps: Option<f64>,
+        estimated_eps: Option<f64>,
+    ) -> EarningsPeriod {
+        EarningsPeriod {
+            fiscal_period: fiscal_period.to_owned(),
+            earnings_date: None,
+            eps_reported_actual: actual_eps,
+            eps_reported_estimate: estimated_eps,
+            sales_actual: None,
+            sales_estimate: None,
+        }
     }
 }

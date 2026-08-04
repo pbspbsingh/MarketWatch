@@ -12,6 +12,8 @@ export interface Fundamentals {
   currency: string | null;
   quarters: QuarterFundamentals[];
   next_quarter: {
+    fiscal_period: string | null;
+    earnings_release_date: string | null;
     earnings_per_share: number | null;
     revenue: number | null;
   };

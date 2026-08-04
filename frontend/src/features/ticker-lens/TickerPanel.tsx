@@ -26,12 +26,16 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { fetchFundamentalScores } from "../../api/fundamentalScores";
+import {
+  type FundamentalScore,
+} from "../../api/fundamentalScores";
 import {
   fetchTickerRanking,
   type TickerRanking,
 } from "../../api/tickers";
-import type { TickerStreamClient } from "../../api/tickerStream";
+import {
+  type TickerStreamClient,
+} from "../../api/tickerStream";
 import {
   addTickerToWatchlist,
   clearTickerWatchlists,
@@ -74,6 +78,7 @@ import {
 
 const tickerRowHeight = 28;
 const emptyTickers: TickerRanking[] = [];
+const fundamentalBatchIntervalMs = 250;
 const fundamentalsMetricId = "fundamentals";
 const fundamentalsSortKey = boundedMetricSortKey(fundamentalsMetricId);
 
@@ -115,7 +120,8 @@ interface TickerRequestState {
 
 interface FundamentalMetricState {
   key: string;
-  values: ReadonlyMap<string, number>;
+  scores: ReadonlyMap<string, FundamentalScore>;
+  loading: boolean;
   error?: string;
 }
 
@@ -134,6 +140,9 @@ function TickerRow({
 }: RowComponentProps<TickerRowProps>) {
   const ticker = tickers[index];
   const metric = tickerSortValue(ticker, sortKey, boundedMetric);
+  const metricTooltip = metric === undefined
+    ? undefined
+    : boundedMetric?.tooltipLines?.(ticker.symbol, metric);
   const memberships = ticker.watchlist_ids
     .map((id) => watchlists.find((watchlist) => watchlist.id === id))
     .filter((watchlist): watchlist is Watchlist => watchlist !== undefined);
@@ -165,7 +174,7 @@ function TickerRow({
           )}
         </span>
         <span className="ranked-name">{ticker.symbol}</span>
-        {metric !== undefined && (
+        {metric !== undefined && metricTooltip === undefined && (
           <span
             className="ranked-metric"
             style={{
@@ -174,6 +183,24 @@ function TickerRow({
           >
             {formatMetric(metric, sortKey, boundedMetric)}
           </span>
+        )}
+        {metric !== undefined && metricTooltip !== undefined && (
+          <Tooltip title={(
+            <div>
+              {metricTooltip.map((line, lineIndex) => (
+                <div key={`${lineIndex}:${line}`}>{line}</div>
+              ))}
+            </div>
+          )}>
+            <span
+              className="ranked-metric"
+              style={{
+                color: metricColor(metric, sortKey, boundedMetric),
+              }}
+            >
+              {formatMetric(metric, sortKey, boundedMetric)}
+            </span>
+          </Tooltip>
         )}
       </button>
     </li>
@@ -226,6 +253,7 @@ export function TickerPanel({
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
   const [fundamentalMetricState, setFundamentalMetricState] =
     useState<FundamentalMetricState>();
+  const [rankingRefreshKey, setRankingRefreshKey] = useState(0);
   const groupKey = [...groupKeys].sort().join("\0");
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
   const metricsActive = groupKeys.size > 0 || filtersActive;
@@ -235,13 +263,26 @@ export function TickerPanel({
     && fundamentalMetricState?.key === fundamentalRequestKey
     ? fundamentalMetricState
     : undefined;
-  const fundamentalLoading = fundamentalsSelected && activeFundamentalState === undefined;
+  const fundamentalLoading = fundamentalsSelected
+    && (activeFundamentalState?.loading ?? true);
   const fundamentalMetric = useMemo<BoundedTickerMetric>(() => ({
     id: fundamentalsMetricId,
     label: "FUN",
-    values: activeFundamentalState?.values ?? new Map(),
+    values: new Map(
+      [...(activeFundamentalState?.scores ?? new Map())]
+        .map(([symbol, score]) => [symbol, score.score]),
+    ),
     formatValue: (value) => Math.round(value).toString(),
-  }), [activeFundamentalState?.values]);
+    tooltipLines: (symbol) => {
+      const score = activeFundamentalState?.scores.get(symbol);
+      if (score === undefined) return [];
+      return [
+        `FUNDAMENTALS ${Math.round(score.score)} · EPS ${Math.round(score.eps_score)} · Revenue ${Math.round(score.revenue_score)}`,
+        ...score.reasons,
+        `Data coverage ${Math.round(score.coverage * 100)}%${score.coverage < 0.7 ? " · Low confidence" : ""}`,
+      ];
+    },
+  }), [activeFundamentalState?.scores]);
   const availableBoundedMetrics = useMemo(
     () => !bounded
       ? boundedMetrics
@@ -265,6 +306,7 @@ export function TickerPanel({
     client: tickerStream,
     enabled: metricsActive,
     requestKey: `${mode}:${groupKey}`,
+    refreshKey: rankingRefreshKey,
     resolveSymbols: resolveRankedSymbols,
   });
   const resolvedTickerRequestKey = `${mode}\0${groupKey}`;
@@ -274,30 +316,62 @@ export function TickerPanel({
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
   }, [panelRequestKey]);
+  const previousFundamentalsSelected = useRef(fundamentalsSelected);
 
   useEffect(() => {
-    if (!fundamentalsSelected) return;
+    if (previousFundamentalsSelected.current && !fundamentalsSelected) {
+      setRankingRefreshKey((current) => current + 1);
+    }
+    previousFundamentalsSelected.current = fundamentalsSelected;
+  }, [fundamentalsSelected]);
+
+  useEffect(() => {
+    if (!fundamentalsSelected || (metricsActive && rankingStream.loading)) return;
     const controller = new AbortController();
-    resolveRankedSymbols(controller.signal)
-      .then((symbols) => fetchFundamentalScores(symbols, controller.signal))
-      .then((scores) => {
-        if (controller.signal.aborted) return;
+    const scoresBySymbol = new Map<string, FundamentalScore>();
+    let flushTimer: number | undefined;
+    const flush = (loading: boolean) => {
+      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+      flushTimer = undefined;
+      if (!controller.signal.aborted) {
         setFundamentalMetricState({
           key: fundamentalRequestKey,
-          values: new Map(scores.map((score) => [score.symbol, score.score])),
+          scores: new Map(scoresBySymbol),
+          loading,
         });
-      })
+      }
+    };
+    const queue = (score: FundamentalScore) => {
+      scoresBySymbol.set(score.symbol, score);
+      flushTimer ??= window.setTimeout(() => flush(true), fundamentalBatchIntervalMs);
+    };
+    resolveRankedSymbols(controller.signal)
+      .then((symbols) =>
+        tickerStream.streamFundamentalScores(symbols, queue, controller.signal)
+      )
+      .then(() => flush(false))
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.name !== "AbortError") {
           setFundamentalMetricState({
             key: fundamentalRequestKey,
-            values: new Map(),
+            scores: new Map(scoresBySymbol),
+            loading: false,
             error: requestError.message,
           });
         }
       });
-    return () => controller.abort();
-  }, [fundamentalRequestKey, fundamentalsSelected, resolveRankedSymbols]);
+    return () => {
+      controller.abort();
+      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+    };
+  }, [
+    fundamentalRequestKey,
+    fundamentalsSelected,
+    metricsActive,
+    rankingStream.loading,
+    resolveRankedSymbols,
+    tickerStream,
+  ]);
   const resolvedTickers = resolvedTickerState.key === resolvedTickerRequestKey
     ? resolvedTickerState.tickers
     : undefined;

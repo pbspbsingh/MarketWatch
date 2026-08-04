@@ -20,6 +20,7 @@ export type BoundedTickerMetric = {
   values: ReadonlyMap<string, number>;
   formatValue: (value: number) => string;
   colorValue?: (value: number) => string;
+  tooltipLines?: (symbol: string, value: number) => readonly string[];
 };
 
 export type DefaultBoundedMetricSort = {

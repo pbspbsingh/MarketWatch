@@ -36,6 +36,8 @@ pub struct QuarterFundamentals {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Forecast {
+    pub fiscal_period: Option<String>,
+    pub earnings_release_date: Option<DateTime<Utc>>,
     pub earnings_per_share: Option<f64>,
     pub revenue: Option<f64>,
 }
