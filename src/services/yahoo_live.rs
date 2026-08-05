@@ -463,8 +463,14 @@ impl YahooLiveActor {
     }
 
     fn has_current_candle(&self, symbol: &YahooSymbol) -> bool {
-        let current_date = self.schedule.market_date(Utc::now());
-        self.cache
+        let now = Utc::now();
+        let cache = match self.schedule.session(now) {
+            MarketSession::PreMarket => &self.pre_market_cache,
+            MarketSession::Regular | MarketSession::PostMarket => &self.cache,
+            MarketSession::Closed => return false,
+        };
+        let current_date = self.schedule.market_date(now);
+        cache
             .get(symbol)
             .is_some_and(|cached| cached.market_date == current_date && cached.published.is_some())
     }

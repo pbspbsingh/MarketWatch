@@ -118,7 +118,12 @@ impl TickerDetailsService {
             return Ok((cached.expect("fresh cache exists"), false));
         }
 
-        match self.fetch_fundamentals(symbol).await {
+        let is_etf = self
+            .store
+            .ticker_has_industry_membership(symbol, ETF_INDUSTRY_KEY)
+            .await
+            .map_err(TickerDetailsError::Persistence)?;
+        match self.fetch_fundamentals(symbol, is_etf).await {
             Ok(fundamentals) => {
                 self.store
                     .upsert_fundamentals(&fundamentals)
@@ -141,13 +146,19 @@ impl TickerDetailsService {
         )
     }
 
-    async fn fetch_fundamentals(&self, symbol: &TickerSymbol) -> anyhow::Result<Fundamentals> {
+    async fn fetch_fundamentals(
+        &self,
+        symbol: &TickerSymbol,
+        is_etf: bool,
+    ) -> anyhow::Result<Fundamentals> {
         let mut delay = INITIAL_RETRY_DELAY;
         let mut last_error = None;
         for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
             match self.finviz.fundamentals(symbol).await {
                 Ok(mut fundamentals) => {
-                    if self.upcoming_earnings_date(&fundamentals).is_none() {
+                    let needs_earnings_fallback =
+                        self.upcoming_earnings_date(&fundamentals).is_none() && !is_etf;
+                    if needs_earnings_fallback {
                         match self.yahoo.earnings_date(symbol).await {
                             Ok(Some(date)) => {
                                 fundamentals.next_quarter.earnings_release_date = Some(date);
