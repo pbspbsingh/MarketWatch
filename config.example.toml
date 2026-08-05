@@ -10,6 +10,7 @@ benchmark = "VTI"
 market_hours = ["6:30:00", "13:00:00"]
 adr_sessions = 20
 average_volume_sessions = 50
+market_repositioning_dates = ["2026-06-26"]
 
 [home]
 tickers = ["QQQ", "SPY", "IWM", "DIA"]

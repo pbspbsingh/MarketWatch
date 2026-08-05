@@ -12,6 +12,7 @@ use crate::services::yahoo::YahooService;
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
@@ -95,6 +96,7 @@ pub struct StudyService {
     yahoo_client: Arc<YahooClient>,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
+    market_repositioning_dates: Arc<HashSet<NaiveDate>>,
     load_lock: AsyncMutex<()>,
     dataset: Mutex<Option<StudyDataset>>,
     last: Mutex<Option<StudyResult>>,
@@ -105,11 +107,13 @@ impl StudyService {
         yahoo_client: Arc<YahooClient>,
         yahoo: Arc<YahooService>,
         market_schedule: MarketSchedule,
+        market_repositioning_dates: Arc<HashSet<NaiveDate>>,
     ) -> Self {
         Self {
             yahoo_client,
             yahoo,
             market_schedule,
+            market_repositioning_dates,
             load_lock: AsyncMutex::new(()),
             dataset: Mutex::new(None),
             last: Mutex::new(None),
@@ -156,8 +160,11 @@ impl StudyService {
                     && dataset.range_end == end
             })
         {
-            let result =
-                build_study_result(&previous.expect("checked cached Study dataset"), interval)?;
+            let result = build_study_result(
+                &previous.expect("checked cached Study dataset"),
+                interval,
+                &self.market_repositioning_dates,
+            )?;
             *self
                 .last
                 .lock()
@@ -243,7 +250,7 @@ impl StudyService {
             has_more_after: end < available_end,
             series,
         };
-        let result = build_study_result(&dataset, interval)?;
+        let result = build_study_result(&dataset, interval, &self.market_repositioning_dates)?;
         *self
             .dataset
             .lock()
@@ -259,6 +266,7 @@ impl StudyService {
 fn build_study_result(
     dataset: &StudyDataset,
     interval: MarketChartInterval,
+    market_repositioning_dates: &HashSet<NaiveDate>,
 ) -> Result<StudyResult, StudyError> {
     let series = dataset
         .series
@@ -269,7 +277,8 @@ fn build_study_result(
                 .iter()
                 .map(study_market_candle)
                 .collect::<Result<Vec<_>, _>>()?;
-            let candles = market_chart_candles_for_interval(&daily, interval)?;
+            let candles =
+                market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
             let moving_averages = market_chart_moving_average_periods(interval)
                 .iter()
                 .map(|period| {
@@ -703,7 +712,11 @@ mod tests {
                             high: value,
                             low: value,
                             close: value,
-                            volume: 1,
+                            volume: match day {
+                                250 => 1_000,
+                                270 => 300,
+                                _ => 1,
+                            },
                             volume_event: None,
                         }
                     })
@@ -719,10 +732,20 @@ mod tests {
             series,
         };
 
-        let daily = build_study_result(&dataset, MarketChartInterval::Daily).unwrap();
-        let weekly = build_study_result(&dataset, MarketChartInterval::Weekly).unwrap();
+        let repositioning_dates = HashSet::from([start + chrono::Days::new(250)]);
+        let daily =
+            build_study_result(&dataset, MarketChartInterval::Daily, &repositioning_dates).unwrap();
+        let weekly =
+            build_study_result(&dataset, MarketChartInterval::Weekly, &repositioning_dates)
+                .unwrap();
 
         assert_eq!(daily.series[0].candles.len(), 300);
+        assert_eq!(daily.series[0].candles[250].volume, 1_000);
+        assert_eq!(daily.series[0].candles[250].volume_event, None);
+        assert_eq!(
+            daily.series[0].candles[270].volume_event,
+            Some(VolumeEventKind::HistoryHigh)
+        );
         assert_eq!(
             daily.series[0]
                 .moving_averages

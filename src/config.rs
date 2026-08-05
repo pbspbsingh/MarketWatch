@@ -1,6 +1,6 @@
 use crate::models::TickerSymbol;
 use anyhow::Context;
-use chrono::NaiveTime;
+use chrono::{NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
@@ -61,6 +61,7 @@ pub struct MarketConfig {
     pub market_hours: (NaiveTime, NaiveTime),
     pub adr_sessions: u16,
     pub average_volume_sessions: u16,
+    pub market_repositioning_dates: HashSet<NaiveDate>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -243,6 +244,10 @@ mod tests {
 
         assert!(!config.market.benchmark.is_empty());
         assert_eq!(config.market.sector_benchmarks.len(), SECTORS.len());
+        assert_eq!(
+            config.market.market_repositioning_dates,
+            HashSet::from([NaiveDate::from_ymd_opt(2026, 6, 26).unwrap()])
+        );
         assert_eq!(config.home.tickers.len(), 4);
     }
 

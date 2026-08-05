@@ -78,6 +78,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         nyse_holidays,
     )?);
     let yahoo_live = YahooLiveHandle::spawn(yahoo.clone(), market_schedule.clone());
+    let market_repositioning_dates = Arc::new(config.market.market_repositioning_dates.clone());
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
         finviz.clone(),
@@ -101,7 +102,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     )?);
-    let market_chart = Arc::new(MarketChartService::new(yahoo.clone(), yahoo_live.clone()));
+    let market_chart = Arc::new(MarketChartService::new(
+        yahoo.clone(),
+        yahoo_live.clone(),
+        market_repositioning_dates.clone(),
+    ));
     let sector_analysis = Arc::new(SectorAnalysisService::new(
         store.clone(),
         yahoo.clone(),
@@ -128,6 +133,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_client,
         yahoo.clone(),
         market_schedule.clone(),
+        market_repositioning_dates,
     ));
     let industry_refresh = IndustryRefreshService::new(
         store.clone(),

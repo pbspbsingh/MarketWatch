@@ -215,6 +215,7 @@ mod tests {
                 ),
                 adr_sessions: 20,
                 average_volume_sessions: 50,
+                market_repositioning_dates: Default::default(),
             },
             Duration::ZERO,
             HashSet::from([holiday]),
@@ -255,6 +256,7 @@ mod tests {
                 ),
                 adr_sessions: 20,
                 average_volume_sessions: 50,
+                market_repositioning_dates: Default::default(),
             },
             Duration::ZERO,
         )

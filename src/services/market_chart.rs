@@ -11,7 +11,7 @@ use crate::models::{
 use crate::models::{DailyCandle, TickerSymbol, YahooSymbol};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::services::yahoo_live::YahooLiveHandle;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -20,6 +20,7 @@ const MAX_HISTORY_RANGE_DAYS: i64 = 10_000;
 pub struct MarketChartService {
     yahoo: Arc<YahooService>,
     yahoo_live: YahooLiveHandle,
+    market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
 }
 
 struct RelativeStrengthSource {
@@ -43,8 +44,16 @@ pub enum MarketChartError {
 }
 
 impl MarketChartService {
-    pub fn new(yahoo: Arc<YahooService>, yahoo_live: YahooLiveHandle) -> Self {
-        Self { yahoo, yahoo_live }
+    pub fn new(
+        yahoo: Arc<YahooService>,
+        yahoo_live: YahooLiveHandle,
+        market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
+    ) -> Self {
+        Self {
+            yahoo,
+            yahoo_live,
+            market_repositioning_dates,
+        }
     }
 
     pub async fn snapshot(
@@ -66,6 +75,7 @@ impl MarketChartService {
             candles,
             Vec::new(),
             relative_strength,
+            &self.market_repositioning_dates,
         )
     }
 
@@ -88,6 +98,7 @@ impl MarketChartService {
             candles,
             Vec::new(),
             relative_strength,
+            &self.market_repositioning_dates,
         )
     }
 
@@ -165,6 +176,7 @@ impl MarketChartService {
             history.candles,
             Vec::new(),
             relative_strength,
+            &self.market_repositioning_dates,
         )?;
         snapshot.has_more_before = has_more_before;
         Ok(snapshot)
@@ -215,6 +227,7 @@ fn build_expanded_snapshot(
     persisted: Vec<DailyCandle>,
     ephemeral: Vec<DailyCandle>,
     relative_strength: Option<RelativeStrengthSource>,
+    market_repositioning_dates: &HashSet<chrono::NaiveDate>,
 ) -> Result<MarketChartSnapshot, MarketChartError> {
     let daily = merge_daily_candles(persisted, ephemeral)?;
     let relative_strength = if let Some(source) = relative_strength {
@@ -223,7 +236,7 @@ fn build_expanded_snapshot(
     } else {
         None
     };
-    let mut snapshot = build_snapshot(symbol, interval, &daily)?;
+    let mut snapshot = build_snapshot(symbol, interval, &daily, market_repositioning_dates)?;
     snapshot.relative_strength = relative_strength;
     Ok(snapshot)
 }
@@ -255,12 +268,13 @@ fn build_snapshot(
     symbol: TickerSymbol,
     interval: MarketChartInterval,
     daily: &[DailyCandle],
+    market_repositioning_dates: &HashSet<chrono::NaiveDate>,
 ) -> Result<MarketChartSnapshot, ChartCalculationError> {
     let daily = daily
         .iter()
         .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
-    let candles = market_chart_candles_for_interval(&daily, interval)?;
+    let candles = market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
     let volume_average_period = market_chart_volume_average_period(interval);
     let moving_averages = market_chart_moving_average_periods(interval)
         .iter()
@@ -439,6 +453,7 @@ mod tests {
             persisted,
             all,
             None,
+            &HashSet::new(),
         )
         .unwrap();
 
@@ -460,6 +475,7 @@ mod tests {
             all[30..].to_vec(),
             all[..30].to_vec(),
             None,
+            &HashSet::new(),
         )
         .unwrap();
 
@@ -482,6 +498,7 @@ mod tests {
                 ticker.clone(),
                 Vec::new(),
                 Some(relative_strength_source(comparison.clone())),
+                &HashSet::new(),
             )
             .unwrap();
             let relative_strength = snapshot.relative_strength.unwrap();
@@ -513,6 +530,7 @@ mod tests {
                 recent.clone(),
                 Vec::new(),
                 Some(relative_strength_source(recent_comparison.clone())),
+                &HashSet::new(),
             )
             .unwrap()
             .relative_strength
@@ -527,6 +545,7 @@ mod tests {
                     persisted: recent_comparison.clone(),
                     ephemeral: comparison.clone(),
                 }),
+                &HashSet::new(),
             )
             .unwrap()
             .relative_strength
@@ -548,8 +567,13 @@ mod tests {
 
     #[test]
     fn builds_complete_daily_snapshot_in_date_order() {
-        let snapshot =
-            build_snapshot(symbol("TEST"), MarketChartInterval::Daily, &candles(220, 1)).unwrap();
+        let snapshot = build_snapshot(
+            symbol("TEST"),
+            MarketChartInterval::Daily,
+            &candles(220, 1),
+            &HashSet::new(),
+        )
+        .unwrap();
 
         assert_eq!(snapshot.candles.len(), 220);
         assert_eq!(
@@ -574,8 +598,13 @@ mod tests {
 
     #[test]
     fn builds_complete_weekly_snapshot_in_date_order() {
-        let snapshot =
-            build_snapshot(symbol("TEST"), MarketChartInterval::Weekly, &candles(50, 7)).unwrap();
+        let snapshot = build_snapshot(
+            symbol("TEST"),
+            MarketChartInterval::Weekly,
+            &candles(50, 7),
+            &HashSet::new(),
+        )
+        .unwrap();
 
         assert_eq!(snapshot.candles.len(), 50);
         assert_eq!(
