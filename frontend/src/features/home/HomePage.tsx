@@ -1,5 +1,5 @@
 import { CircularProgress, Typography } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppSettings } from "../../app/AppSettings";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import { fetchHomeCharts } from "../../api/home";
@@ -11,9 +11,14 @@ import {
 import { Toast } from "../../components/Toast";
 import {
   setHorizontalCrosshairVisible,
+  subscribeChartViewport,
   synchronizeChartGroup,
   type ChartSyncTarget,
 } from "../../components/lightweight-chart/chartSync";
+import {
+  readStoredChartViewport,
+  writeStoredChartViewport,
+} from "../../components/lightweight-chart/chartViewportStorage";
 import { HomeChartPane } from "./HomeChartPane";
 import "./home.css";
 
@@ -24,6 +29,9 @@ interface ChartState {
   sessionDelta?: MarketChartSessionDelta;
 }
 
+const homeChartViewportStorageKey = "market-watch.home-chart-viewport";
+const viewportPersistenceDebounceMs = 200;
+
 export function HomePage() {
   const { chartEngine } = useAppSettings();
   const [tickers, setTickers] = useState<string[]>();
@@ -32,6 +40,10 @@ export function HomePage() {
   const [chartErrors, setChartErrors] = useState<Record<string, string>>({});
   const [chartContexts, setChartContexts] = useState<Record<string, ChartSyncTarget | null>>({});
   const [crosshairOwner, setCrosshairOwner] = useState<string>();
+  const initialViewport = useMemo(
+    () => readStoredChartViewport(homeChartViewportStorageKey),
+    [],
+  );
   const firstChartError = Object.entries(chartErrors)[0];
   const activeCrosshairOwner = tickers?.includes(crosshairOwner ?? "")
     ? crosshairOwner
@@ -120,6 +132,17 @@ export function HomePage() {
 
   useEffect(() => {
     if (tickers === undefined || chartEngine !== "lightweight") return;
+    const target = chartContexts[tickers[0]];
+    if (target === null || target === undefined) return;
+    return subscribeChartViewport(
+      target,
+      (viewport) => writeStoredChartViewport(homeChartViewportStorageKey, viewport),
+      viewportPersistenceDebounceMs,
+    );
+  }, [chartContexts, chartEngine, tickers]);
+
+  useEffect(() => {
+    if (tickers === undefined || chartEngine !== "lightweight") return;
     for (const symbol of tickers) {
       const context = chartContexts[symbol];
       if (context !== null && context !== undefined) {
@@ -147,6 +170,7 @@ export function HomePage() {
           summarySettled={charts[symbol]?.summarySettled ?? false}
           liveDelta={charts[symbol]?.liveDelta}
           sessionDelta={charts[symbol]?.sessionDelta}
+          initialViewport={initialViewport}
           onChartContext={(context) => {
             setChartContexts((current) => current[symbol] === context
               ? current

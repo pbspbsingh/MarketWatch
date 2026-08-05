@@ -6,7 +6,10 @@ import type {
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 import { TradingViewChart } from "../../components/TradingViewChart";
-import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
+import type {
+  ChartSyncTarget,
+  ChartViewport,
+} from "../../components/lightweight-chart/chartSync";
 import { MarketChartContainer } from "../charts/MarketChartContainer";
 
 interface HomeChartPaneProps {
@@ -15,6 +18,7 @@ interface HomeChartPaneProps {
   summarySettled: boolean;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
+  initialViewport?: ChartViewport;
   onError: (message: string | undefined) => void;
   onChartContext: (context: ChartSyncTarget | null) => void;
   onPointerEnter: () => void;
@@ -26,6 +30,7 @@ export function HomeChartPane({
   summarySettled,
   liveDelta,
   sessionDelta,
+  initialViewport,
   onError,
   onChartContext,
   onPointerEnter,
@@ -42,6 +47,7 @@ export function HomeChartPane({
           interval="daily"
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
+          initialViewport={initialViewport}
           onError={onError}
           onChartContext={onChartContext}
         />
