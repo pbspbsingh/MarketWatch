@@ -36,6 +36,13 @@
   }
 }
 
+.chart-next-earnings.MuiChip-root {
+  flex-shrink: 0;
+  height: 1.2rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
 .chart-header-controls,
 .chart-header-loading,
 .chart-indicators,

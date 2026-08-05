@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -11,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
+import { fetchNextEarningsDate } from "../../api/details";
 import {
   ImageExportMenu,
   type ImageExportAction,
@@ -59,6 +61,29 @@ export function ChartHeader({
   exportingChartPanel = false,
   contextLabel,
 }: ChartHeaderProps) {
+  const [earningsState, setEarningsState] = useState<{
+    symbol: string;
+    date: string | null;
+  }>();
+  const nextEarningsDate = earningsState !== undefined
+    && earningsState.symbol === selectedTicker
+    ? earningsState.date
+    : undefined;
+
+  useEffect(() => {
+    if (selectedTicker === undefined) return;
+    const controller = new AbortController();
+    void fetchNextEarningsDate(selectedTicker, controller.signal)
+      .then((date) => {
+        setEarningsState({
+          symbol: selectedTicker,
+          date,
+        });
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [selectedTicker]);
+
   return (
     <header className="panel-header chart-header">
       <div className="chart-header-identity">
@@ -120,6 +145,17 @@ export function ChartHeader({
           >
             <AssessmentOutlinedIcon fontSize="small" />
           </IconButton>
+        )}
+        {nextEarningsDate !== null && nextEarningsDate !== undefined && (
+          <Tooltip arrow title={`Next earnings: ${formatEarningsDate(nextEarningsDate)}`}>
+            <Chip
+              className="chart-next-earnings"
+              color="error"
+              variant="outlined"
+              size="small"
+              label={formatEarningsDate(nextEarningsDate)}
+            />
+          </Tooltip>
         )}
       </div>
       <div className="chart-header-controls">
@@ -224,6 +260,15 @@ export function ChartHeader({
       </div>
     </header>
   );
+}
+
+function formatEarningsDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
 }
 
 function ChartIndicators({ summary }: { summary: ChartSummary }) {

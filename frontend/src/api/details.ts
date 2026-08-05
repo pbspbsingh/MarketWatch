@@ -45,3 +45,17 @@ export async function fetchTickerDetails(
   }
   return response.json() as Promise<TickerDetails>;
 }
+
+export async function fetchNextEarningsDate(
+  symbol: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const response = await fetch(
+    `/api/ticker-details/${encodeURIComponent(symbol)}/next-earnings`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to load next earnings date: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<string | null>;
+}

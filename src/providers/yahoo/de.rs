@@ -55,6 +55,24 @@ pub(super) struct QuoteSummaryResult {
     #[serde(rename = "assetProfile")]
     pub(super) asset_profile: Option<AssetProfile>,
     pub(super) price: Option<Price>,
+    #[serde(rename = "calendarEvents")]
+    pub(super) calendar_events: Option<CalendarEvents>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CalendarEvents {
+    pub(super) earnings: Option<EarningsEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct EarningsEvent {
+    #[serde(rename = "earningsDate")]
+    pub(super) earnings_date: Option<Vec<RawTimestamp>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RawTimestamp {
+    pub(super) raw: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

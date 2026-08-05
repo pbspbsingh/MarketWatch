@@ -107,6 +107,26 @@ impl YahooService {
         Ok(profile)
     }
 
+    pub async fn earnings_date(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> Result<Option<chrono::DateTime<Utc>>, YahooServiceError> {
+        let mut delay = INITIAL_RETRY_DELAY;
+        for attempt in 1..=MAX_PROVIDER_ATTEMPTS {
+            match self.yahoo.earnings_date(symbol).await {
+                Ok(date) => return Ok(date),
+                Err(error) if error.is_retryable() && attempt < MAX_PROVIDER_ATTEMPTS => {
+                    let delay = jitter(delay);
+                    warn!(%symbol, attempt, delay_ms = delay.as_millis(), %error, "retrying Yahoo earnings request");
+                    sleep(delay).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+            delay *= 2;
+        }
+        unreachable!("Yahoo earnings retry loop always returns")
+    }
+
     pub async fn daily_candles_for_year(
         &self,
         symbol: &TickerSymbol,

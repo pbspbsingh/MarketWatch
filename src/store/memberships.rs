@@ -25,6 +25,24 @@ impl Store {
         .context("failed to check ticker industry")
     }
 
+    pub async fn ticker_has_industry_membership(
+        &self,
+        symbol: &TickerSymbol,
+        industry_key: &str,
+    ) -> anyhow::Result<bool> {
+        sqlx::query_scalar!(
+            "SELECT EXISTS(
+                SELECT 1 FROM industry_membership_tickers
+                WHERE symbol = ? AND industry_key = ?
+             ) AS \"exists!: bool\"",
+            symbol.as_str(),
+            industry_key,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("failed to check ticker industry membership")
+    }
+
     pub async fn add_ticker_industry(
         &self,
         industry_key: &str,
@@ -420,6 +438,29 @@ mod tests {
                 industry_name: "Unknown Industry".to_owned(),
                 symbol: TickerSymbol::parse("TICKER").unwrap(),
             }]
+        );
+    }
+
+    #[tokio::test]
+    async fn checks_exact_industry_membership_without_a_ranking() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = TickerSymbol::parse("SPY").unwrap();
+        store
+            .add_ticker_industry("exchangetradedfund", "Exchange Traded Fund", &symbol)
+            .await
+            .unwrap();
+
+        assert!(
+            store
+                .ticker_has_industry_membership(&symbol, "exchangetradedfund")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .ticker_has_industry_membership(&symbol, "assetmanagement")
+                .await
+                .unwrap()
         );
     }
 }

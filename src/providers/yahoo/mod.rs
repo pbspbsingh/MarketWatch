@@ -145,19 +145,38 @@ impl YahooClient {
     }
 
     pub async fn profile(&self, symbol: &TickerSymbol) -> Result<CompanyProfile, YahooError> {
+        let response = self.quote_summary(symbol, "assetProfile,price").await;
+        let profile = parse_profile(response?, symbol)?;
+        info!(%symbol, "fetched Yahoo company profile");
+        Ok(profile)
+    }
+
+    pub async fn earnings_date(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> Result<Option<DateTime<Utc>>, YahooError> {
+        let response = self.quote_summary(symbol, "calendarEvents").await?;
+        let earnings_date = parse_earnings_date(response, symbol)?;
+        info!(%symbol, ?earnings_date, "fetched Yahoo earnings date");
+        Ok(earnings_date)
+    }
+
+    async fn quote_summary(
+        &self,
+        symbol: &TickerSymbol,
+        modules: &str,
+    ) -> Result<QuoteSummaryResponse, YahooError> {
         let yahoo_symbol = YahooSymbol::from(symbol);
         let crumb = self.crumb().await?;
         let mut url = endpoint(PROFILE_URL, &yahoo_symbol);
         url.query_pairs_mut()
-            .append_pair("modules", "assetProfile,price")
+            .append_pair("modules", modules)
             .append_pair("crumb", &crumb);
         let response = self.get_json(url, &yahoo_symbol).await;
         if matches!(response, Err(YahooError::Unauthorized)) {
             *self.crumb.lock().await = None;
         }
-        let profile = parse_profile(response?, symbol)?;
-        info!(%symbol, "fetched Yahoo company profile");
-        Ok(profile)
+        response
     }
 
     async fn crumb(&self) -> Result<String, YahooError> {
@@ -409,6 +428,33 @@ fn parse_profile(
     })
 }
 
+fn parse_earnings_date(
+    response: QuoteSummaryResponse,
+    symbol: &TickerSymbol,
+) -> Result<Option<DateTime<Utc>>, YahooError> {
+    if let Some(error) = response.quote_summary.error {
+        return Err(api_error(
+            error.code,
+            error.description,
+            &YahooSymbol::from(symbol),
+        ));
+    }
+    let result = response
+        .quote_summary
+        .result
+        .and_then(|results| results.into_iter().next())
+        .ok_or_else(|| invalid(format!("empty earnings result for {symbol}")))?;
+    Ok(result
+        .calendar_events
+        .and_then(|events| events.earnings)
+        .and_then(|earnings| earnings.earnings_date)
+        .into_iter()
+        .flatten()
+        .filter_map(|timestamp| timestamp.raw)
+        .filter_map(|timestamp| DateTime::from_timestamp(timestamp, 0))
+        .min())
+}
+
 fn normalize_exchange(code: Option<&str>, name: Option<&str>) -> Option<Exchange> {
     match code {
         Some("NMS" | "NGM" | "NCM") => Some(Exchange::Nasdaq),
@@ -530,6 +576,50 @@ mod tests {
         assert_eq!(range.first_trade_at.unwrap().timestamp(), 728_317_800);
     }
 
+    #[test]
+    fn parses_earliest_yahoo_earnings_date() {
+        let response = serde_json::from_str::<QuoteSummaryResponse>(
+            r#"{
+                "quoteSummary": {
+                    "result": [{
+                        "calendarEvents": {
+                            "earnings": {
+                                "earningsDate": [
+                                    {"raw": 1800000000, "fmt": "2027-01-15"},
+                                    {"raw": 1700000000, "fmt": "2023-11-14"}
+                                ]
+                            }
+                        }
+                    }],
+                    "error": null
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let date = parse_earnings_date(response, &TickerSymbol::parse("DELL").unwrap()).unwrap();
+
+        assert_eq!(date.unwrap().timestamp(), 1_700_000_000);
+    }
+
+    #[test]
+    fn accepts_missing_yahoo_earnings_date() {
+        let response = serde_json::from_str::<QuoteSummaryResponse>(
+            r#"{
+                "quoteSummary": {
+                    "result": [{"calendarEvents": {"earnings": {}}}],
+                    "error": null
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parse_earnings_date(response, &TickerSymbol::parse("SPY").unwrap()).unwrap(),
+            None
+        );
+    }
+
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_chart_and_profile() -> Result<(), YahooError> {
@@ -555,6 +645,20 @@ mod tests {
         println!("Fetched AAPL profile: {profile:?}");
         assert!(profile.description.is_some());
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Yahoo Finance endpoints"]
+    async fn live_fetches_dell_earnings_date() -> Result<(), YahooError> {
+        let config = Config::load("config.toml").expect("default config is valid");
+        let client = YahooClient::new(&config.providers);
+        let date = client
+            .earnings_date(&TickerSymbol::parse("DELL").unwrap())
+            .await?;
+
+        println!("Fetched DELL earnings date: {date:?}");
+        assert!(date.is_some());
         Ok(())
     }
 

@@ -83,6 +83,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         store.clone(),
         finviz.clone(),
         yahoo.clone(),
+        market_schedule.clone(),
     ));
     let global_search = Arc::new(GlobalSearchService::new(store.clone()));
     let highest_volume = Arc::new(HighestVolumeService::new(

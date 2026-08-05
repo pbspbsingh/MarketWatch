@@ -10,7 +10,23 @@ use tracing::error;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/ticker-details/{symbol}", get(details))
+        .route("/ticker-details/{symbol}/next-earnings", get(next_earnings))
         .route("/ticker-details/{symbol}/refresh", post(refresh))
+}
+
+async fn next_earnings(
+    State(state): State<AppState>,
+    Path(symbol): Path<TickerSymbol>,
+) -> Result<Json<Option<chrono::NaiveDate>>, StatusCode> {
+    state
+        .details
+        .next_earnings_date(&symbol)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            error!(%symbol, %error, "failed to load next earnings date");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 async fn details(
