@@ -200,7 +200,7 @@ fn freshness_period(fundamentals: &Fundamentals, now: DateTime<Utc>) -> TimeDelt
         return TimeDelta::hours(24);
     };
     let until_earnings = earnings_at - now;
-    if until_earnings <= TimeDelta::zero() {
+    if until_earnings < -TimeDelta::days(1) {
         TimeDelta::hours(24)
     } else if until_earnings <= TimeDelta::days(2) {
         TimeDelta::hours(12)
@@ -271,6 +271,17 @@ mod tests {
         );
         assert_eq!(
             freshness_period(&fundamentals(now, Some(now - TimeDelta::seconds(1))), now),
+            TimeDelta::hours(12)
+        );
+        assert_eq!(
+            freshness_period(&fundamentals(now, Some(now - TimeDelta::days(1))), now),
+            TimeDelta::hours(12)
+        );
+        assert_eq!(
+            freshness_period(
+                &fundamentals(now, Some(now - TimeDelta::days(1) - TimeDelta::seconds(1))),
+                now,
+            ),
             TimeDelta::hours(24)
         );
         assert_eq!(

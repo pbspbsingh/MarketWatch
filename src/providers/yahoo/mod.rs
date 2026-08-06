@@ -337,7 +337,7 @@ fn parse_chart_range(
     end: DateTime<Utc>,
 ) -> Result<ChartRange, YahooError> {
     if let Some(error) = response.chart.error {
-        return Err(api_error(error.code, error.description, symbol));
+        return Err(chart_api_error(error.code, error.description, symbol));
     }
     let data = response
         .chart
@@ -348,9 +348,14 @@ fn parse_chart_range(
         .meta
         .and_then(|meta| meta.first_trade_date)
         .and_then(|timestamp| DateTime::from_timestamp(timestamp, 0));
-    let timestamps = data
-        .timestamp
-        .ok_or_else(|| invalid(format!("chart has no timestamps for {symbol}")))?;
+    let timestamps = data.timestamp.ok_or_else(|| YahooError::NoChartData {
+        symbol: symbol.clone(),
+    })?;
+    if timestamps.is_empty() {
+        return Err(YahooError::NoChartData {
+            symbol: symbol.clone(),
+        });
+    }
     let quote = data
         .indicators
         .quote
@@ -484,6 +489,19 @@ fn api_error(code: String, description: String, symbol: &YahooSymbol) -> YahooEr
     }
 }
 
+fn chart_api_error(code: String, description: String, symbol: &YahooSymbol) -> YahooError {
+    if description
+        .to_ascii_lowercase()
+        .contains("data doesn't exist for startdate")
+    {
+        YahooError::NoChartData {
+            symbol: symbol.clone(),
+        }
+    } else {
+        api_error(code, description, symbol)
+    }
+}
+
 fn format_chart_ts(ts: DateTime<Utc>) -> String {
     const TIME_FORMAT: &str = "%Y/%m/%d %H:%M";
     const DATE_FORMAT: &str = "%Y/%m/%d";
@@ -542,6 +560,41 @@ mod tests {
             }
             .is_retryable()
         );
+    }
+
+    #[test]
+    fn identifies_an_exhausted_chart_range() {
+        let symbol = YahooSymbol::parse("SNDK").unwrap();
+        let error = chart_api_error(
+            "Bad Request".to_owned(),
+            "Data doesn't exist for startDate = 946684800, endDate = 978307200".to_owned(),
+            &symbol,
+        );
+
+        assert!(matches!(error, YahooError::NoChartData { symbol: actual } if actual == symbol));
+    }
+
+    #[test]
+    fn identifies_a_chart_range_without_timestamps_as_empty() {
+        let response = serde_json::from_str::<ChartResponse>(
+            r#"{
+                "chart": {
+                    "result": [{
+                        "meta": {"firstTradeDate": 1700000000},
+                        "indicators": {"quote": []}
+                    }],
+                    "error": null
+                }
+            }"#,
+        )
+        .unwrap();
+        let start = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2001, 1, 1, 0, 0, 0).unwrap();
+
+        let symbol = YahooSymbol::parse("SNDK").unwrap();
+        let error = parse_chart_range(response, &symbol, start, end).unwrap_err();
+
+        assert!(matches!(error, YahooError::NoChartData { symbol: actual } if actual == symbol));
     }
 
     #[test]

@@ -175,10 +175,30 @@ impl StudyService {
             && reusable_previous(previous.as_ref(), &symbols, date, start, end, fetch_range);
         let request_start = if reuse { fetch_start } else { start };
         let request_end = if reuse { fetch_end } else { end };
+        let extending_before = reuse
+            && previous
+                .as_ref()
+                .is_some_and(|dataset| request_end == dataset.range_start);
+        let extending_after = reuse
+            && previous
+                .as_ref()
+                .is_some_and(|dataset| request_start == dataset.range_end);
+        if let Some(dataset) = previous.as_ref().filter(|dataset| {
+            (extending_before && !dataset.has_more_before)
+                || (extending_after && !dataset.has_more_after)
+        }) {
+            let result = build_study_result(dataset, interval, &self.market_repositioning_dates)?;
+            *self
+                .last
+                .lock()
+                .expect("study last-result mutex is not poisoned") = Some(result.clone());
+            return Ok(result);
+        }
         let mut series = Vec::with_capacity(2);
-        let mut has_more_before = false;
+        let mut has_more_before = true;
+        let mut fetched_all = true;
         for (index, symbol) in symbols.into_iter().enumerate() {
-            let fetched = self
+            let fetched = match self
                 .yahoo_client
                 .chart_range(
                     &YahooSymbol::from(&symbol),
@@ -194,8 +214,17 @@ impl StudyService {
                             .expect("valid Study end time"),
                     ),
                 )
-                .await?;
+                .await
+            {
+                Ok(range) => range,
+                Err(YahooError::NoChartData { .. }) => ChartRange {
+                    candles: Vec::new(),
+                    first_trade_at: None,
+                },
+                Err(error) => return Err(error.into()),
+            };
             let fetched_has_more_before = provider_has_more_before(&fetched, request_start);
+            fetched_all &= !fetched.candles.is_empty();
             let fetched = fetched
                 .candles
                 .into_iter()
@@ -214,7 +243,7 @@ impl StudyService {
                 start,
                 end,
             );
-            has_more_before |= if reuse && request_start > start {
+            has_more_before &= if reuse && request_start > start {
                 previous
                     .as_ref()
                     .is_some_and(|result| result.has_more_before)
@@ -247,7 +276,11 @@ impl StudyService {
             range_start: start,
             range_end: end,
             has_more_before,
-            has_more_after: end < available_end,
+            has_more_after: if extending_after {
+                fetched_all && end < available_end
+            } else {
+                end < available_end
+            },
             series,
         };
         let result = build_study_result(&dataset, interval, &self.market_repositioning_dates)?;

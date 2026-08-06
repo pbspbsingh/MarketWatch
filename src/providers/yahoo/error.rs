@@ -25,6 +25,9 @@ pub enum YahooError {
     #[error("Yahoo Finance API error: {message}")]
     Api { message: String },
 
+    #[error("Yahoo Finance has no chart data in the requested range for {symbol}")]
+    NoChartData { symbol: YahooSymbol },
+
     #[error("invalid Yahoo Finance response: {message}")]
     InvalidResponse { message: String },
 
