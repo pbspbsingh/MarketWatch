@@ -130,13 +130,3 @@
     opacity: 0.7;
   }
 }
-
-.study-attribution {
-  position: absolute;
-  z-index: 3;
-  right: 0.4rem;
-  bottom: 0.15rem;
-  color: var(--color-muted);
-  font-size: 0.55rem;
-  text-decoration: none;
-}

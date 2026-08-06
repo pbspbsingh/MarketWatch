@@ -410,9 +410,6 @@ export function StudyPage() {
           />
         )}
       </div>
-      <a className="study-attribution" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
-        Charts by TradingView
-      </a>
       <Toast message={error} onClose={() => setError(undefined)} />
       <Toast
         message={captureNotice?.message}

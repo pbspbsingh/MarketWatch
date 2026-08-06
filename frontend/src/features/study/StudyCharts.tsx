@@ -29,6 +29,7 @@ import {
 } from "lightweight-charts";
 import type { StudyCandle, StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
+import { updateAttributionUrl } from "../../components/lightweight-chart/ChartHost";
 import {
   captureAnchoredLogicalRange,
   restoreAnchoredLogicalRange,
@@ -274,6 +275,7 @@ export function StudyCharts({
     const movingAverageSeries: ISeriesApi<"Line">[][] = [];
     const markerSeries: ISeriesMarkersPluginApi<Time>[] = [];
     const watermarks: ITextWatermarkPluginApi<Time>[] = [];
+    const attributionObservers: MutationObserver[] = [];
     const containers = [top, bottom];
     const symbols = [firstSymbol, secondSymbol];
     const appearance = appearanceRef.current;
@@ -302,6 +304,13 @@ export function StudyCharts({
         },
         timeScale: { borderColor: appearance.chartColors.border, timeVisible: false },
       });
+      const attributionUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbols[index])}`;
+      const attributionObserver = new MutationObserver(() => {
+        updateAttributionUrl(container, attributionUrl);
+      });
+      attributionObserver.observe(container, { childList: true, subtree: true });
+      attributionObservers.push(attributionObserver);
+      updateAttributionUrl(container, attributionUrl);
       const candles = chart.addSeries(
         CandlestickSeries,
         candleSeriesOptions(candlePaletteRef.current),
@@ -422,6 +431,7 @@ export function StudyCharts({
       const anchor = captureAnchoredLogicalRange(charts[0], candleSeries[0]);
       if (anchor !== undefined) viewportRef.current = { datasetKey, anchor };
       watermarks.forEach((watermark) => watermark.detach());
+      attributionObservers.forEach((observer) => observer.disconnect());
       charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
       candleSeriesRef.current = [];

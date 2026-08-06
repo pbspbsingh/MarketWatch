@@ -22,6 +22,7 @@ interface HomeChartPaneProps {
   onError: (message: string | undefined) => void;
   onChartContext: (context: ChartSyncTarget | null) => void;
   onPointerEnter: () => void;
+  onViewportInteraction: () => void;
 }
 
 export function HomeChartPane({
@@ -34,11 +35,17 @@ export function HomeChartPane({
   onError,
   onChartContext,
   onPointerEnter,
+  onViewportInteraction,
 }: HomeChartPaneProps) {
   const { chartEngine } = useAppSettings();
 
   return (
-    <section className="home-chart-pane" onPointerEnter={onPointerEnter}>
+    <section
+      className="home-chart-pane"
+      onPointerEnter={onPointerEnter}
+      onPointerDownCapture={onViewportInteraction}
+      onWheelCapture={onViewportInteraction}
+    >
       {chartEngine === "lightweight" ? (
         <MarketChartContainer
           symbol={symbol}

@@ -99,7 +99,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
   },
 );
 
-function updateAttributionUrl(container: HTMLElement, url: string | undefined) {
+export function updateAttributionUrl(container: HTMLElement, url: string | undefined) {
   if (url === undefined) return;
   const logo = container.querySelector<HTMLAnchorElement>("#tv-attr-logo");
   if (logo === null) return;

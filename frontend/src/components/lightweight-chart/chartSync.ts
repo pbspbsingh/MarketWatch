@@ -109,13 +109,21 @@ export function synchronizeCharts(
   };
 }
 
-export function synchronizeChartGroup(targets: ChartSyncTarget[]): () => void {
+export function synchronizeChartGroup(
+  targets: ChartSyncTarget[],
+  canSyncRange: (source: ChartSyncTarget) => boolean = () => true,
+): () => void {
   if (targets.length < 2) return () => undefined;
 
   let synchronizingRange = false;
   const rangeHandlers = targets.map((source) => {
     const handler = (range: LogicalRange | null) => {
-      if (synchronizingRange || range === null || source.isDisposed()) return;
+      if (
+        synchronizingRange
+        || range === null
+        || source.isDisposed()
+        || !canSyncRange(source)
+      ) return;
       synchronizingRange = true;
       try {
         for (const target of targets) {

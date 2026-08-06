@@ -1,5 +1,5 @@
 import { CircularProgress, Typography } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppSettings } from "../../app/AppSettings";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import { fetchHomeCharts } from "../../api/home";
@@ -40,6 +40,7 @@ export function HomePage() {
   const [chartErrors, setChartErrors] = useState<Record<string, string>>({});
   const [chartContexts, setChartContexts] = useState<Record<string, ChartSyncTarget | null>>({});
   const [crosshairOwner, setCrosshairOwner] = useState<string>();
+  const viewportOwnerRef = useRef<string | undefined>(undefined);
   const initialViewport = useMemo(
     () => readStoredChartViewport(homeChartViewportStorageKey),
     [],
@@ -127,7 +128,10 @@ export function HomePage() {
     if (tickers === undefined || chartEngine !== "lightweight") return;
     const targets = tickers.map((symbol) => chartContexts[symbol]);
     if (targets.some((target) => target === null || target === undefined)) return;
-    return synchronizeChartGroup(targets as ChartSyncTarget[]);
+    return synchronizeChartGroup(
+      targets as ChartSyncTarget[],
+      (source) => source === chartContexts[viewportOwnerRef.current ?? tickers[0]],
+    );
   }, [chartContexts, chartEngine, tickers]);
 
   useEffect(() => {
@@ -177,6 +181,7 @@ export function HomePage() {
               : { ...current, [symbol]: context });
           }}
           onPointerEnter={() => setCrosshairOwner(symbol)}
+          onViewportInteraction={() => { viewportOwnerRef.current = symbol; }}
           onError={(message) => {
             setChartErrors((current) => {
               if (message === undefined) {
