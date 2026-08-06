@@ -58,13 +58,13 @@ export function ImageExportMenu({
         open={anchor !== null}
         onClose={() => setAnchor(null)}
       >
-        <MenuItem onClick={() => select("download")}>
-          <ListItemIcon><DownloadOutlinedIcon fontSize="small" /></ListItemIcon>
-          Download
-        </MenuItem>
         <MenuItem onClick={() => select("copy")}>
           <ListItemIcon><ContentCopyOutlinedIcon fontSize="small" /></ListItemIcon>
           Copy to Clipboard
+        </MenuItem>
+        <MenuItem onClick={() => select("download")}>
+          <ListItemIcon><DownloadOutlinedIcon fontSize="small" /></ListItemIcon>
+          Download
         </MenuItem>
       </Menu>
     </>

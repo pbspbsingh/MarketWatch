@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  LinearProgress,
   Typography,
 } from "@mui/material";
 import {
@@ -24,7 +23,7 @@ export function CsvAnalyzerPage() {
   const [collection, setCollection] = useState<TickerCollection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [uploadProgress, setUploadProgress] = useState<number>();
+  const [uploading, setUploading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [failedResolutionCount, setFailedResolutionCount] = useState(0);
   const [error, setError] = useState<string>();
@@ -44,15 +43,15 @@ export function CsvAnalyzerPage() {
       return;
     }
     setLoading(true);
-    setUploadProgress(0);
+    setUploading(true);
     try {
-      setCollection(await uploadTickerCollection(selectedFiles, setUploadProgress));
+      setCollection(await uploadTickerCollection(selectedFiles));
       setFailedResolutionCount(0);
     } catch (uploadError) {
       setError(errorMessage(uploadError));
     } finally {
       setLoading(false);
-      setUploadProgress(undefined);
+      setUploading(false);
       setDragging(false);
     }
   };
@@ -89,7 +88,7 @@ export function CsvAnalyzerPage() {
         <header className="panel-header csv-analyzer-header">
           <Typography component="h1">CSV Analyzer</Typography>
           <div className="csv-analyzer-actions">
-            {loading && <CircularProgress size="0.85rem" />}
+            {loading && !uploading && <CircularProgress size="0.85rem" />}
             {collection !== null && (
               <Typography className="csv-analyzer-summary">
                 {summary(collection, failedResolutionCount)}
@@ -122,14 +121,9 @@ export function CsvAnalyzerPage() {
             </IconButton>
           </div>
         </header>
-        {uploadProgress !== undefined ? (
+        {uploading ? (
           <div className="panel-status csv-analyzer-upload-status">
-            <LinearProgress
-              className="csv-analyzer-upload-progress"
-              variant="determinate"
-              value={uploadProgress}
-              aria-label="File upload progress"
-            />
+            <CircularProgress aria-label="Uploading and parsing ticker files" />
           </div>
         ) : collection === null ? (
           <div className="panel-status csv-analyzer-drop-target">

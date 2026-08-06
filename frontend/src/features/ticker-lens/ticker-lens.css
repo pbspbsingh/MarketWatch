@@ -20,6 +20,7 @@
 .ticker-lens-group-viewport {
   min-width: 0;
   min-height: 0;
+  border-right: 0.0625rem solid var(--color-border);
   overflow: hidden;
 
   & > .industries-panel {
@@ -28,6 +29,10 @@
     opacity: 1;
     transition: opacity 120ms ease;
   }
+}
+
+.ticker-lens-groups-collapsed .ticker-lens-group-viewport {
+  border-right: 0;
 }
 
 .ticker-lens-groups-collapsed .ticker-lens-group-viewport > .industries-panel {
