@@ -46,10 +46,15 @@ export async function fetchTickerDetails(
   return response.json() as Promise<TickerDetails>;
 }
 
+export interface NextEarnings {
+  date: string;
+  trading_days_until: number;
+}
+
 export async function fetchNextEarningsDate(
   symbol: string,
   signal?: AbortSignal,
-): Promise<string | null> {
+): Promise<NextEarnings | null> {
   const response = await fetch(
     `/api/ticker-details/${encodeURIComponent(symbol)}/next-earnings`,
     { signal },
@@ -57,5 +62,5 @@ export async function fetchNextEarningsDate(
   if (!response.ok) {
     throw new Error(`Failed to load next earnings date: HTTP ${response.status}`);
   }
-  return response.json() as Promise<string | null>;
+  return response.json() as Promise<NextEarnings | null>;
 }

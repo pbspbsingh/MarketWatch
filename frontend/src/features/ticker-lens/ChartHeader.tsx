@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
-import { fetchNextEarningsDate } from "../../api/details";
+import { fetchNextEarningsDate, type NextEarnings } from "../../api/details";
 import {
   ImageExportMenu,
   type ImageExportAction,
@@ -63,21 +63,21 @@ export function ChartHeader({
 }: ChartHeaderProps) {
   const [earningsState, setEarningsState] = useState<{
     symbol: string;
-    date: string | null;
+    earnings: NextEarnings | null;
   }>();
-  const nextEarningsDate = earningsState !== undefined
+  const nextEarnings = earningsState !== undefined
     && earningsState.symbol === selectedTicker
-    ? earningsState.date
+    ? earningsState.earnings
     : undefined;
 
   useEffect(() => {
     if (selectedTicker === undefined) return;
     const controller = new AbortController();
     void fetchNextEarningsDate(selectedTicker, controller.signal)
-      .then((date) => {
+      .then((earnings) => {
         setEarningsState({
           symbol: selectedTicker,
-          date,
+          earnings,
         });
       })
       .catch(() => undefined);
@@ -146,14 +146,14 @@ export function ChartHeader({
             <AssessmentOutlinedIcon fontSize="small" />
           </IconButton>
         )}
-        {nextEarningsDate !== null && nextEarningsDate !== undefined && (
-          <Tooltip arrow title={`Next earnings: ${formatEarningsDate(nextEarningsDate)}`}>
+        {nextEarnings !== null && nextEarnings !== undefined && (
+          <Tooltip arrow title={earningsTooltip(nextEarnings)}>
             <Chip
               className="chart-next-earnings"
-              color="error"
+              color={earningsColor(nextEarnings.trading_days_until)}
               variant="outlined"
               size="small"
-              label={formatEarningsDate(nextEarningsDate)}
+              label={formatEarningsDate(nextEarnings.date)}
             />
           </Tooltip>
         )}
@@ -269,6 +269,17 @@ function formatEarningsDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function earningsColor(tradingDaysUntil: number): "error" | "warning" | "success" {
+  if (tradingDaysUntil <= 2) return "error";
+  if (tradingDaysUntil <= 5) return "warning";
+  return "success";
+}
+
+function earningsTooltip(earnings: NextEarnings): string {
+  const days = earnings.trading_days_until;
+  return `Next earnings: ${formatEarningsDate(earnings.date)} (${days} trading ${days === 1 ? "day" : "days"})`;
 }
 
 function ChartIndicators({ summary }: { summary: ChartSummary }) {

@@ -134,6 +134,18 @@ impl MarketSchedule {
         }
         date
     }
+
+    pub fn trading_days_until(&self, start: NaiveDate, end: NaiveDate) -> usize {
+        let mut date = start;
+        let mut count = 0;
+        while date < end {
+            date += TimeDelta::days(1);
+            if !date.is_weekend() && !self.holidays.contains(&date) {
+                count += 1;
+            }
+        }
+        count
+    }
 }
 
 impl<K> KeyedLock<K>
@@ -240,6 +252,13 @@ mod tests {
         assert_eq!(
             schedule.trading_day_on_or_after(NaiveDate::from_ymd_opt(2026, 6, 19).unwrap()),
             NaiveDate::from_ymd_opt(2026, 6, 22).unwrap(),
+        );
+        assert_eq!(
+            schedule.trading_days_until(
+                NaiveDate::from_ymd_opt(2026, 6, 18).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 6, 23).unwrap(),
+            ),
+            2,
         );
     }
 
