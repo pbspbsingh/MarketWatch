@@ -1,14 +1,13 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
 use crate::models::{Forecast, Fundamentals, QuarterFundamentals, TickerSymbol};
+use crate::providers::request_throttle::RequestThrottle;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
 use serde::Deserialize;
 use std::time::Duration;
-use tokio::sync::Semaphore;
-use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 const INDUSTRY_URL: &str = "https://finviz.com/groups?g=industry&v=140&o=-perf1w&st=d1";
@@ -17,7 +16,6 @@ const QUOTE_URL: &str = "https://finviz.com/quote";
 const STOCK_URL: &str = "https://finviz.com/stock";
 const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
-const MAX_CONCURRENT_REQUESTS: usize = 1;
 const FUNDAMENTAL_QUARTERS: usize = 8;
 const FINVIZ_SECTOR_COUNT: usize = 11;
 
@@ -28,9 +26,7 @@ pub struct FinvizClient {
     quote_url: Url,
     stock_url: Url,
     industry_membership_filters: Vec<String>,
-    min_delay: Duration,
-    max_delay: Duration,
-    request_permits: Semaphore,
+    request_throttle: RequestThrottle,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,9 +75,10 @@ impl FinvizClient {
             quote_url: Url::parse(QUOTE_URL).context("invalid Finviz quote URL")?,
             stock_url: Url::parse(STOCK_URL).context("invalid Finviz stock URL")?,
             industry_membership_filters: finviz.industry_membership_filters.clone(),
-            min_delay: Duration::from_millis(provider.min_delay_ms),
-            max_delay: Duration::from_millis(provider.max_delay_ms),
-            request_permits: Semaphore::new(MAX_CONCURRENT_REQUESTS),
+            request_throttle: RequestThrottle::new(
+                Duration::from_millis(provider.min_delay_ms),
+                Duration::from_millis(provider.max_delay_ms),
+            ),
         })
     }
 
@@ -238,13 +235,10 @@ impl FinvizClient {
     async fn get(&self, url: Url) -> anyhow::Result<String> {
         debug!(%url, "waiting for Finviz request permit");
         let _permit = self
-            .request_permits
+            .request_throttle
             .acquire()
             .await
             .context("Finviz request queue was closed")?;
-        let delay = self.request_delay();
-        debug!(%url, delay_ms = delay.as_millis(), "delaying Finviz request");
-        sleep(delay).await;
 
         info!(%url, "requesting Finviz API");
         let response = self
@@ -306,12 +300,6 @@ impl FinvizClient {
                 return Ok(tickers);
             }
         }
-    }
-
-    fn request_delay(&self) -> Duration {
-        let minimum = self.min_delay.as_millis() as u64;
-        let maximum = self.max_delay.as_millis() as u64;
-        Duration::from_millis(fastrand::u64(minimum..=maximum))
     }
 }
 

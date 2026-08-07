@@ -7,6 +7,7 @@ pub use error::YahooError;
 use crate::config::ProviderConfig;
 use crate::constants::BROWSER_USER_AGENT;
 use crate::models::{CompanyProfile, Exchange, TickerSymbol, YahooSymbol};
+use crate::providers::request_throttle::RequestThrottle;
 use chrono::Timelike;
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
@@ -14,8 +15,7 @@ use reqwest::{Client, StatusCode, Url, header};
 use serde::de::DeserializeOwned;
 use std::fmt;
 use std::time::Duration;
-use tokio::sync::{Mutex, Semaphore};
-use tokio::time::sleep;
+use tokio::sync::Mutex;
 use tracing::{debug, info};
 
 const CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart/";
@@ -24,13 +24,10 @@ const COOKIE_URL: &str = "https://fc.yahoo.com/";
 const CRUMB_URL: &str = "https://query2.finance.yahoo.com/v1/test/getcrumb";
 const COOKIE_FALLBACK_URL: &str = "https://finance.yahoo.com/";
 const CRUMB_FALLBACK_URL: &str = "https://query1.finance.yahoo.com/v1/test/getcrumb";
-const MAX_CONCURRENT_REQUESTS: usize = 1;
 
 pub struct YahooClient {
     http: Client,
-    min_delay: Duration,
-    max_delay: Duration,
-    request_permits: Semaphore,
+    request_throttle: RequestThrottle,
     crumb: Mutex<Option<String>>,
 }
 
@@ -78,9 +75,10 @@ impl YahooClient {
 
         Self {
             http,
-            min_delay: Duration::from_millis(provider.min_delay_ms),
-            max_delay: Duration::from_millis(provider.max_delay_ms),
-            request_permits: Semaphore::new(MAX_CONCURRENT_REQUESTS),
+            request_throttle: RequestThrottle::new(
+                Duration::from_millis(provider.min_delay_ms),
+                Duration::from_millis(provider.max_delay_ms),
+            ),
             crumb: Mutex::new(None),
         }
     }
@@ -200,11 +198,10 @@ impl YahooClient {
     async fn seed_cookie(&self) -> Result<(), YahooError> {
         let url = Url::parse(COOKIE_URL).expect("Yahoo cookie URL is valid");
         let _permit = self
-            .request_permits
+            .request_throttle
             .acquire()
             .await
             .map_err(|_| YahooError::RequestQueueClosed)?;
-        sleep(self.request_delay()).await;
         info!(endpoint = %url.path(), "requesting Yahoo API");
         let response = self
             .http
@@ -258,13 +255,10 @@ impl YahooClient {
     ) -> Result<String, YahooError> {
         debug!(%url, "waiting for Yahoo request permit");
         let _permit = self
-            .request_permits
+            .request_throttle
             .acquire()
             .await
             .map_err(|_| YahooError::RequestQueueClosed)?;
-        let delay = self.request_delay();
-        debug!(%url, delay_ms = delay.as_millis(), "delaying Yahoo request");
-        sleep(delay).await;
 
         info!(symbol = symbol.map(YahooSymbol::as_str), endpoint = %url.path(), "requesting Yahoo API");
         let response = self
@@ -294,12 +288,6 @@ impl YahooClient {
         }
 
         response.text().await.map_err(YahooError::Transport)
-    }
-
-    fn request_delay(&self) -> Duration {
-        let minimum = self.min_delay.as_millis() as u64;
-        let maximum = self.max_delay.as_millis() as u64;
-        Duration::from_millis(fastrand::u64(minimum..=maximum))
     }
 }
 

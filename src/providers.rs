@@ -1,5 +1,6 @@
 mod ai;
 mod finviz;
+mod request_throttle;
 mod yahoo;
 
 pub use ai::{AiClient, AiError};
