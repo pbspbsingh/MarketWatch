@@ -1,3 +1,4 @@
+use crate::constants::{DAILY_CANDLE_HISTORY, WEEKLY_CANDLE_HISTORY};
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
     MarketChartSnapshot, market_chart_candles_for_interval, market_chart_moving_average,
@@ -63,11 +64,11 @@ impl MarketChartService {
         comparison_symbol: Option<&TickerSymbol>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
-            self.yahoo.daily_candles_for_year(symbol).await?,
+            self.candles_for_interval(symbol, interval).await?,
             self.live_candles(symbol).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .relative_strength_source(symbol, &candles, interval, comparison_symbol)
             .await?;
         build_expanded_snapshot(
             symbol.clone(),
@@ -86,11 +87,11 @@ impl MarketChartService {
         comparison_symbol: Option<&TickerSymbol>,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
-            self.yahoo.refresh_daily_candles_for_year(symbol).await?,
+            self.refresh_candles_for_interval(symbol, interval).await?,
             self.live_candles(symbol).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, comparison_symbol)
+            .relative_strength_source(symbol, &candles, interval, comparison_symbol)
             .await?;
         build_expanded_snapshot(
             symbol.clone(),
@@ -106,6 +107,7 @@ impl MarketChartService {
         &self,
         symbol: &TickerSymbol,
         candles: &[DailyCandle],
+        interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
     ) -> Result<Option<RelativeStrengthSource>, MarketChartError> {
         let Some(comparison_symbol) = comparison_symbol else {
@@ -115,7 +117,8 @@ impl MarketChartService {
             candles.to_vec()
         } else {
             merge_live_candles(
-                self.yahoo.daily_candles_for_year(comparison_symbol).await?,
+                self.candles_for_interval(comparison_symbol, interval)
+                    .await?,
                 self.live_candles(comparison_symbol).await,
             )?
         };
@@ -124,6 +127,26 @@ impl MarketChartService {
             persisted: comparison,
             ephemeral: Vec::new(),
         }))
+    }
+
+    async fn candles_for_interval(
+        &self,
+        symbol: &TickerSymbol,
+        interval: MarketChartInterval,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        self.yahoo
+            .daily_candles_for_duration(symbol, candle_history(interval))
+            .await
+    }
+
+    async fn refresh_candles_for_interval(
+        &self,
+        symbol: &TickerSymbol,
+        interval: MarketChartInterval,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        self.yahoo
+            .refresh_daily_candles_for_duration(symbol, candle_history(interval))
+            .await
     }
 
     async fn live_candles(&self, symbol: &TickerSymbol) -> Vec<DailyCandle> {
@@ -180,6 +203,13 @@ impl MarketChartService {
         )?;
         snapshot.has_more_before = has_more_before;
         Ok(snapshot)
+    }
+}
+
+fn candle_history(interval: MarketChartInterval) -> chrono::TimeDelta {
+    match interval {
+        MarketChartInterval::Daily => DAILY_CANDLE_HISTORY,
+        MarketChartInterval::Weekly => WEEKLY_CANDLE_HISTORY,
     }
 }
 
@@ -318,6 +348,18 @@ mod tests {
                 volume: index as i64 + 1,
             })
             .collect()
+    }
+
+    #[test]
+    fn selects_chart_history_for_interval() {
+        assert_eq!(
+            candle_history(MarketChartInterval::Daily),
+            DAILY_CANDLE_HISTORY
+        );
+        assert_eq!(
+            candle_history(MarketChartInterval::Weekly),
+            WEEKLY_CANDLE_HISTORY
+        );
     }
 
     fn relative_strength_source(candles: Vec<DailyCandle>) -> RelativeStrengthSource {

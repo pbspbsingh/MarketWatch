@@ -1,5 +1,5 @@
 use crate::config::MarketConfig;
-use crate::constants::DAILY_CANDLE_HISTORY_CALENDAR_DAYS;
+use crate::constants::DAILY_CANDLE_HISTORY;
 use crate::models::ticker_symbol::InvalidTickerSymbol;
 use crate::models::{CompanyProfile, DailyCandle, TickerSymbol, YahooSymbol};
 use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
@@ -131,15 +131,34 @@ impl YahooService {
         &self,
         symbol: &TickerSymbol,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
-        let (start, end) = self.completed_year_range()?;
+        self.daily_candles_for_duration(symbol, DAILY_CANDLE_HISTORY)
+            .await
+    }
+
+    pub async fn daily_candles_for_duration(
+        &self,
+        symbol: &TickerSymbol,
+        duration: TimeDelta,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
+        let (start, end) = self.completed_duration_range(duration)?;
         self.daily_candles(symbol, start, end).await
     }
 
-    pub async fn refresh_daily_candles_for_year(
+    pub async fn refresh_daily_candles_for_duration(
         &self,
         symbol: &TickerSymbol,
+        duration: TimeDelta,
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
-        let (start, end) = self.completed_year_range()?;
+        let (start, end) = self.completed_duration_range(duration)?;
+        self.refresh_daily_candles(symbol, start, end).await
+    }
+
+    async fn refresh_daily_candles(
+        &self,
+        symbol: &TickerSymbol,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         let _guard = self.daily_candle_locks.lock(symbol).await;
         self.profile(symbol).await?;
         let latest_session = self.market_schedule.previous_trading_day(end);
@@ -304,16 +323,25 @@ impl YahooService {
         Ok(Some(has_more_before))
     }
 
-    fn completed_year_range(&self) -> Result<(NaiveDate, NaiveDate), YahooServiceError> {
-        let end = self
-            .market_schedule
+    fn completed_duration_range(
+        &self,
+        duration: TimeDelta,
+    ) -> Result<(NaiveDate, NaiveDate), YahooServiceError> {
+        let end = self.completed_end()?;
+        let start = end
+            .checked_sub_signed(duration)
+            .ok_or(YahooServiceError::InvalidRange)?;
+        if start >= end {
+            return Err(YahooServiceError::InvalidRange);
+        }
+        Ok((start, end))
+    }
+
+    fn completed_end(&self) -> Result<NaiveDate, YahooServiceError> {
+        self.market_schedule
             .recent_trading_day(Utc::now())
             .succ_opt()
-            .ok_or(YahooServiceError::InvalidRange)?;
-        Ok((
-            end - TimeDelta::days(DAILY_CANDLE_HISTORY_CALENDAR_DAYS),
-            end,
-        ))
+            .ok_or(YahooServiceError::InvalidRange)
     }
 
     async fn fetch_daily_candles_from_provider(
