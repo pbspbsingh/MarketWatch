@@ -5,6 +5,7 @@ import type {
   MarketChartLiveDelta,
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
+import type { MarketChartInterval } from "../../api/marketChart";
 import { TradingViewChart } from "../../components/TradingViewChart";
 import type {
   ChartSyncTarget,
@@ -16,6 +17,8 @@ interface HomeChartPaneProps {
   symbol: string;
   summary: ChartSummary | undefined;
   summarySettled: boolean;
+  interval: MarketChartInterval;
+  rightPriceScaleVisible: boolean;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
   initialViewport?: ChartViewport;
@@ -29,6 +32,8 @@ export function HomeChartPane({
   symbol,
   summary,
   summarySettled,
+  interval,
+  rightPriceScaleVisible,
   liveDelta,
   sessionDelta,
   initialViewport,
@@ -51,7 +56,8 @@ export function HomeChartPane({
           symbol={symbol}
           companyName={summary?.company_name ?? undefined}
           tradingViewSymbol={summary?.tradingview_symbol}
-          interval="daily"
+          interval={interval}
+          rightPriceScaleVisible={rightPriceScaleVisible}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
           initialViewport={initialViewport}
@@ -61,7 +67,7 @@ export function HomeChartPane({
       ) : summary !== undefined ? (
         <TradingViewChart
           symbol={summary.tradingview_symbol}
-          interval="D"
+          interval={interval === "daily" ? "D" : "W"}
           onError={onError}
         />
       ) : (

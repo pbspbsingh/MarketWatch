@@ -60,8 +60,8 @@ export const dailySmaColors = {
 
 export const weeklyEmaColors = {
   10: "#3179f5",
-  20: "#9b7ede",
-  40: "#f60c0c",
+  20: "#8b5cf6",
+  40: "#b23a48",
 } as const;
 
 export function chartThemeOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {

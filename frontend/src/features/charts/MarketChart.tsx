@@ -77,6 +77,7 @@ interface MarketChartProps {
   ariaLabel?: string;
   initialViewport?: ChartViewport;
   priceScaleBottomMargin?: number;
+  rightPriceScaleVisible?: boolean;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   liveDelta?: MarketChartLiveDelta;
@@ -100,6 +101,7 @@ export function MarketChart({
   ariaLabel,
   initialViewport,
   priceScaleBottomMargin,
+  rightPriceScaleVisible = true,
   onChartContext,
   relativeStrength,
   liveDelta,
@@ -155,17 +157,17 @@ export function MarketChart({
       relativeStrengthProvisionalInnerRef.current,
     ].forEach((series) => series?.applyOptions({ visible: showRelativeStrength }));
   }, [showRelativeStrength]);
-  const chartOptions = useMemo(() => priceScaleBottomMargin === undefined
-    ? undefined
-    : {
-      rightPriceScale: {
-        scaleMargins: {
+  const chartOptions = useMemo(() => ({
+    rightPriceScale: {
+      visible: rightPriceScaleVisible,
+      ...(priceScaleBottomMargin === undefined
+        ? {}
+        : { scaleMargins: {
           top: defaultPriceScaleMargins.top,
           bottom: priceScaleBottomMargin,
-        },
-      },
+        } }),
     },
-  [priceScaleBottomMargin]);
+  }), [priceScaleBottomMargin, rightPriceScaleVisible]);
 
   const updateRelativeStrengthStructure = useCallback((
     structure: MarketChartRelativeStrengthStructure | null | undefined,
