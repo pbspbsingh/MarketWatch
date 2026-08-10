@@ -7,7 +7,8 @@ use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStreng
 use super::{DailyCandle, TickerSymbol};
 
 const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
-const WEEKLY_EMA_PERIODS: [usize; 3] = [10, 20, 40];
+const WEEKLY_EMA_PERIODS: [usize; 2] = [10, 20];
+const WEEKLY_DAILY_SMA_PERIOD: usize = 200;
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
 const WEEKLY_VOLUME_AVERAGE_PERIOD: usize = 10;
 
@@ -280,15 +281,6 @@ fn mark_volume_events(
     candles
 }
 
-pub const fn market_chart_moving_average_periods(
-    interval: MarketChartInterval,
-) -> &'static [usize] {
-    match interval {
-        MarketChartInterval::Daily => &DAILY_SMA_PERIODS,
-        MarketChartInterval::Weekly => &WEEKLY_EMA_PERIODS,
-    }
-}
-
 pub const fn market_chart_volume_average_period(interval: MarketChartInterval) -> usize {
     match interval {
         MarketChartInterval::Daily => DAILY_VOLUME_AVERAGE_PERIOD,
@@ -296,7 +288,7 @@ pub const fn market_chart_volume_average_period(interval: MarketChartInterval) -
     }
 }
 
-pub fn market_chart_moving_average(
+fn market_chart_moving_average(
     candles: &[MarketChartCandle],
     interval: MarketChartInterval,
     period: usize,
@@ -310,6 +302,43 @@ pub fn market_chart_moving_average(
         }
         MarketChartInterval::Daily => close_sma(candles, period),
         MarketChartInterval::Weekly => close_ema(candles, period),
+    }
+}
+
+pub fn market_chart_moving_averages(
+    daily: &[MarketChartCandle],
+    interval_candles: &[MarketChartCandle],
+    interval: MarketChartInterval,
+    daily_short_ma_type: DailyShortMaType,
+) -> Result<Vec<MarketChartSeries>, ChartCalculationError> {
+    match interval {
+        MarketChartInterval::Daily => DAILY_SMA_PERIODS
+            .iter()
+            .map(|period| {
+                market_chart_moving_average(
+                    interval_candles,
+                    interval,
+                    *period,
+                    daily_short_ma_type,
+                )
+            })
+            .collect(),
+        MarketChartInterval::Weekly => {
+            let mut averages = WEEKLY_EMA_PERIODS
+                .iter()
+                .map(|period| close_ema(interval_candles, *period))
+                .collect::<Result<Vec<_>, _>>()?;
+            let weekly_dates = interval_candles
+                .iter()
+                .map(|candle| candle.date)
+                .collect::<HashSet<_>>();
+            let mut daily_sma = close_sma(daily, WEEKLY_DAILY_SMA_PERIOD)?;
+            daily_sma
+                .points
+                .retain(|point| weekly_dates.contains(&point.date));
+            averages.push(daily_sma);
+            Ok(averages)
+        }
     }
 }
 
@@ -467,6 +496,38 @@ mod tests {
             .unwrap(),
             close_sma(&candles, 50).unwrap(),
         );
+    }
+
+    #[test]
+    fn samples_daily_200_sma_on_weekly_candle_dates() {
+        let daily = candles(220);
+        let weekly =
+            market_chart_candles_for_interval(&daily, MarketChartInterval::Weekly, &HashSet::new())
+                .unwrap();
+        let averages = market_chart_moving_averages(
+            &daily,
+            &weekly,
+            MarketChartInterval::Weekly,
+            DailyShortMaType::Sma,
+        )
+        .unwrap();
+        let weekly_dates = weekly
+            .iter()
+            .map(|candle| candle.date)
+            .collect::<HashSet<_>>();
+        let mut expected = close_sma(&daily, 200).unwrap();
+        expected
+            .points
+            .retain(|point| weekly_dates.contains(&point.date));
+
+        assert_eq!(
+            averages
+                .iter()
+                .map(|series| series.period)
+                .collect::<Vec<_>>(),
+            [10, 20, 200]
+        );
+        assert_eq!(averages[2], expected);
     }
 
     #[test]

@@ -18,6 +18,7 @@ export interface StudyCandle {
 export interface StudyResult {
   date: string;
   interval: MarketChartInterval;
+  daily_short_ma_type: DailyShortMaType;
   range_start: string;
   range_end: string;
   has_more_before: boolean;

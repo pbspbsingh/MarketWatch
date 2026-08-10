@@ -2,8 +2,8 @@ use crate::constants::{DAILY_CANDLE_HISTORY, WEEKLY_CANDLE_HISTORY};
 use crate::models::chart::{
     ChartCalculationError, DailyShortMaType, MarketChartCandle, MarketChartInterval,
     MarketChartRelativeStrength, MarketChartSnapshot, market_chart_candles_for_interval,
-    market_chart_moving_average, market_chart_moving_average_periods,
-    market_chart_volume_average_period, validate_market_chart_candle, volume_sma,
+    market_chart_moving_averages, market_chart_volume_average_period, validate_market_chart_candle,
+    volume_sma,
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
@@ -320,10 +320,8 @@ fn build_snapshot(
         .collect::<Vec<_>>();
     let candles = market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
     let volume_average_period = market_chart_volume_average_period(interval);
-    let moving_averages = market_chart_moving_average_periods(interval)
-        .iter()
-        .map(|period| market_chart_moving_average(&candles, interval, *period, daily_short_ma_type))
-        .collect::<Result<Vec<_>, _>>()?;
+    let moving_averages =
+        market_chart_moving_averages(&daily, &candles, interval, daily_short_ma_type)?;
     let volume_average = volume_sma(&candles, volume_average_period)?;
     let earliest_date = candles.first().map(|candle| candle.date);
     let latest_date = candles.last().map(|candle| candle.date);
@@ -525,23 +523,23 @@ mod tests {
 
     #[test]
     fn recomputes_weekly_indicators_over_merged_history() {
-        let all = candles(50, 7);
+        let all = candles(220, 7);
         let snapshot = build_expanded_snapshot(
             symbol("TEST"),
             MarketChartInterval::Weekly,
-            all[30..].to_vec(),
-            all[..30].to_vec(),
+            all[200..].to_vec(),
+            all[..200].to_vec(),
             None,
             DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();
 
-        assert_eq!(snapshot.candles.len(), 50);
-        assert_eq!(snapshot.moving_averages[2].points.len(), 11);
-        assert_eq!(snapshot.volume_average.points.len(), 41);
+        assert_eq!(snapshot.candles.len(), 220);
+        assert_eq!(snapshot.moving_averages[2].points.len(), 21);
+        assert_eq!(snapshot.volume_average.points.len(), 211);
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
-        assert_eq!(snapshot.latest_date, Some(snapshot.candles[49].date));
+        assert_eq!(snapshot.latest_date, Some(snapshot.candles[219].date));
     }
 
     #[test]
@@ -644,7 +642,7 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            market_chart_moving_average_periods(MarketChartInterval::Daily)
+            [10, 20, 50, 100, 200]
         );
         assert_eq!(snapshot.moving_averages[4].points.len(), 21);
         assert_eq!(
@@ -663,27 +661,27 @@ mod tests {
         let snapshot = build_snapshot(
             symbol("TEST"),
             MarketChartInterval::Weekly,
-            &candles(50, 7),
+            &candles(220, 7),
             DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();
 
-        assert_eq!(snapshot.candles.len(), 50);
+        assert_eq!(snapshot.candles.len(), 220);
         assert_eq!(
             snapshot
                 .moving_averages
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            market_chart_moving_average_periods(MarketChartInterval::Weekly)
+            [10, 20, 200]
         );
-        assert_eq!(snapshot.moving_averages[2].points.len(), 11);
+        assert_eq!(snapshot.moving_averages[2].points.len(), 21);
         assert_eq!(
             snapshot.volume_average.period,
             market_chart_volume_average_period(MarketChartInterval::Weekly)
         );
-        assert_eq!(snapshot.volume_average.points.len(), 41);
+        assert_eq!(snapshot.volume_average.points.len(), 211);
         assert!(
             snapshot
                 .candles

@@ -21,7 +21,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import type { DailyShortMaType, MarketChartInterval } from "../../api/marketChart";
+import type { MarketChartInterval } from "../../api/marketChart";
 import { useAppSettings } from "../../app/AppSettings";
 import {
   fetchLastStudy,
@@ -82,7 +82,6 @@ export function StudyPage() {
   const requestRef = useRef<AbortController | undefined>(undefined);
   const historyRequestRef = useRef<AbortController | undefined>(undefined);
   const resultRef = useRef(result);
-  const activeDailyShortMaTypeRef = useRef<DailyShortMaType>(dailyShortMaType);
 
   useEffect(() => {
     resultRef.current = result;
@@ -100,7 +99,6 @@ export function StudyPage() {
     )
       .then((last) => {
         if (last === null) return;
-        activeDailyShortMaTypeRef.current = initialDailyShortMaTypeRef.current;
         resultRef.current = last;
         setResult(last);
         setDate(last.date);
@@ -147,7 +145,6 @@ export function StudyPage() {
         interval,
         { dailyShortMaType: requestedDailyShortMaType, refresh, signal: controller.signal },
       );
-      activeDailyShortMaTypeRef.current = requestedDailyShortMaType;
       resultRef.current = next;
       setResult(next);
       setDatasetVersion((version) => version + 1);
@@ -185,7 +182,7 @@ export function StudyPage() {
         current.date,
         current.interval,
         {
-          dailyShortMaType: activeDailyShortMaTypeRef.current,
+          dailyShortMaType: current.daily_short_ma_type,
           range,
           fetchRange,
           signal: controller.signal,
@@ -245,7 +242,6 @@ export function StudyPage() {
         },
       );
       if (!controller.signal.aborted && requestRef.current === controller) {
-        activeDailyShortMaTypeRef.current = requestedDailyShortMaType;
         resultRef.current = next;
         setResult(next);
       }

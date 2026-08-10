@@ -1,8 +1,7 @@
 use crate::models::chart::{
     ChartCalculationError, DailyShortMaType, MarketChartCandle, MarketChartInterval,
     MarketChartRelativeStrength, VolumeEventKind, market_chart_candles_for_interval,
-    market_chart_moving_average, market_chart_moving_average_periods,
-    market_chart_volume_average_period, volume_sma,
+    market_chart_moving_averages, market_chart_volume_average_period, volume_sma,
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
@@ -56,6 +55,7 @@ pub struct StudyMovingAveragePoint {
 pub struct StudyResult {
     pub date: NaiveDate,
     pub interval: MarketChartInterval,
+    pub daily_short_ma_type: DailyShortMaType,
     pub range_start: NaiveDate,
     pub range_end: NaiveDate,
     pub has_more_before: bool,
@@ -346,23 +346,21 @@ fn build_study_result(
                 .collect::<Result<Vec<_>, _>>()?;
             let candles =
                 market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
-            let moving_averages = market_chart_moving_average_periods(interval)
-                .iter()
-                .map(|period| {
-                    market_chart_moving_average(&candles, interval, *period, daily_short_ma_type)
-                        .map(|average| StudyMovingAverage {
-                            period: average.period,
-                            points: average
-                                .points
-                                .into_iter()
-                                .map(|point| StudyMovingAveragePoint {
-                                    date: point.date,
-                                    value: point.value,
-                                })
-                                .collect(),
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let moving_averages =
+                market_chart_moving_averages(&daily, &candles, interval, daily_short_ma_type)?
+                    .into_iter()
+                    .map(|average| StudyMovingAverage {
+                        period: average.period,
+                        points: average
+                            .points
+                            .into_iter()
+                            .map(|point| StudyMovingAveragePoint {
+                                date: point.date,
+                                value: point.value,
+                            })
+                            .collect(),
+                    })
+                    .collect();
             let volume_average =
                 volume_sma(&candles, market_chart_volume_average_period(interval))?;
             let volume_average = StudyMovingAverage {
@@ -393,6 +391,7 @@ fn build_study_result(
     Ok(StudyResult {
         date: dataset.date,
         interval,
+        daily_short_ma_type,
         range_start: dataset.range_start,
         range_end: dataset.range_end,
         has_more_before: dataset.has_more_before,
@@ -761,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_daily_smas_and_weekly_emas_from_one_dataset() {
+    fn builds_daily_and_weekly_moving_averages_from_one_dataset() {
         let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
         let symbols = ["SPY", "QQQ"];
         let series = symbols
@@ -838,8 +837,9 @@ mod tests {
                 .iter()
                 .map(|average| average.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 40]
+            [10, 20, 200]
         );
+        assert!(!weekly.series[0].moving_averages[2].points.is_empty());
         assert_eq!(weekly.series[0].volume_average.period, 10);
         assert!(!weekly.series[0].volume_average.points.is_empty());
     }

@@ -58,10 +58,10 @@ export const dailySmaColors = {
   200: "#f60c0c",
 } as const;
 
-export const weeklyEmaColors = {
+export const weeklyMovingAverageColors = {
   10: "#3179f5",
   20: "#8b5cf6",
-  40: "#b23a48",
+  200: "#b23a48",
 } as const;
 
 export function chartThemeOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
