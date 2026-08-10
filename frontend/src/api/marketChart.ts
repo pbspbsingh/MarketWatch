@@ -1,4 +1,5 @@
 export type MarketChartInterval = "daily" | "weekly";
+export type DailyShortMaType = "sma" | "ema";
 export type VolumeEventKind = "history_high" | "year_high";
 
 export const maximumMarketChartHistoryDays = 10_000;
@@ -70,6 +71,7 @@ export interface MarketChartSnapshot extends MarketChartData {
 
 interface MarketChartRequestOptions {
   comparisonSymbol?: string;
+  dailyShortMaType?: DailyShortMaType;
   signal?: AbortSignal;
 }
 
@@ -83,6 +85,7 @@ export async function fetchMarketChartSnapshot(
     ? undefined
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval });
+  query.set("daily_short_ma_type", options.dailyShortMaType ?? "sma");
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}?${query}`,
@@ -105,6 +108,7 @@ export async function refreshMarketChartSnapshot(
     ? undefined
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval });
+  query.set("daily_short_ma_type", options.dailyShortMaType ?? "sma");
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/refresh?${query}`,
@@ -129,6 +133,7 @@ export async function fetchMarketChartHistorySnapshot(
     ? undefined
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval, start, end });
+  query.set("daily_short_ma_type", options.dailyShortMaType ?? "sma");
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/history?${query}`,

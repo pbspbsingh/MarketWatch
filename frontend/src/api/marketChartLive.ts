@@ -1,5 +1,6 @@
 import {
   marketDataSymbol,
+  type DailyShortMaType,
   type MarketChartCandle,
   type MarketChartInterval,
   type MarketChartRelativeStrength,
@@ -11,6 +12,7 @@ export interface MarketChartLiveRequest {
   symbol: string;
   interval: MarketChartInterval;
   comparison_symbol?: string;
+  daily_short_ma_type: DailyShortMaType;
 }
 
 export interface MarketChartLiveDelta {

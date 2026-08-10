@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { Button, CircularProgress, Typography } from "@mui/material";
+import { useAppSettings } from "../../app/AppSettings";
 import type { LogicalRange } from "lightweight-charts";
 import {
   fetchMarketChartHistorySnapshot,
@@ -89,6 +90,9 @@ export function MarketChartContainer({
   liveDelta,
   sessionDelta,
 }: MarketChartContainerProps) {
+  const { dailyShortMaType } = useAppSettings();
+  const dailyShortMaTypeRef = useRef(dailyShortMaType);
+  const activeDailyShortMaTypeRef = useRef(dailyShortMaType);
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
   const generationRef = useRef(0);
@@ -112,6 +116,9 @@ export function MarketChartContainer({
   const [retryVersion, setRetryVersion] = useState(0);
   const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
   const [historyTrigger, setHistoryTrigger] = useState(0);
+  useEffect(() => {
+    dailyShortMaTypeRef.current = dailyShortMaType;
+  }, [dailyShortMaType]);
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
@@ -152,6 +159,11 @@ export function MarketChartContainer({
     const sameDataset = currentSnapshot !== undefined
       && snapshotDatasetKeyRef.current === datasetKey;
     const backgroundReload = sameDataset && !refreshCandles;
+    const requestDailyShortMaType = interval === "daily"
+      ? sameDataset
+        ? activeDailyShortMaTypeRef.current
+        : dailyShortMaTypeRef.current
+      : "sma";
     if (backgroundReload) {
       onLoadStatusChangeRef.current?.("ready");
       setLoadState({
@@ -173,6 +185,7 @@ export function MarketChartContainer({
       : fetchMarketChartSnapshot;
     void request(symbol, interval, {
       comparisonSymbol: relativeStrengthComparisonSymbol,
+      dailyShortMaType: requestDailyShortMaType,
       signal: controller.signal,
     })
       .then((snapshot) => {
@@ -184,6 +197,7 @@ export function MarketChartContainer({
               : { ...current, relative_strength: snapshot.relative_strength }
           ));
         } else {
+          activeDailyShortMaTypeRef.current = requestDailyShortMaType;
           snapshotDatasetKeyRef.current = datasetKey;
           setSnapshot(snapshot);
           setLoadState({ key: datasetKey, status: "ready", snapshot });
@@ -304,6 +318,7 @@ export function MarketChartContainer({
       range.end,
       {
         comparisonSymbol: relativeStrengthComparisonSymbol,
+        dailyShortMaType: activeDailyShortMaTypeRef.current,
         signal: controller.signal,
       },
     )

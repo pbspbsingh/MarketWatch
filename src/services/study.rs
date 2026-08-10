@@ -1,7 +1,8 @@
 use crate::models::chart::{
-    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
-    VolumeEventKind, market_chart_candles_for_interval, market_chart_moving_average,
-    market_chart_moving_average_periods, market_chart_volume_average_period, volume_sma,
+    ChartCalculationError, DailyShortMaType, MarketChartCandle, MarketChartInterval,
+    MarketChartRelativeStrength, VolumeEventKind, market_chart_candles_for_interval,
+    market_chart_moving_average, market_chart_moving_average_periods,
+    market_chart_volume_average_period, volume_sma,
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
@@ -63,6 +64,17 @@ pub struct StudyResult {
     pub relative_strength: Option<MarketChartRelativeStrength>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct StudyLoadOptions {
+    pub interval: MarketChartInterval,
+    pub range_start: Option<NaiveDate>,
+    pub range_end: Option<NaiveDate>,
+    pub fetch_start: Option<NaiveDate>,
+    pub fetch_end: Option<NaiveDate>,
+    pub refresh: bool,
+    pub daily_short_ma_type: DailyShortMaType,
+}
+
 #[derive(Clone, Debug)]
 struct StudyDataset {
     date: NaiveDate,
@@ -99,7 +111,6 @@ pub struct StudyService {
     market_repositioning_dates: Arc<HashSet<NaiveDate>>,
     load_lock: AsyncMutex<()>,
     dataset: Mutex<Option<StudyDataset>>,
-    last: Mutex<Option<StudyResult>>,
 }
 
 impl StudyService {
@@ -116,26 +127,49 @@ impl StudyService {
             market_repositioning_dates,
             load_lock: AsyncMutex::new(()),
             dataset: Mutex::new(None),
-            last: Mutex::new(None),
         }
     }
 
-    pub fn last(&self) -> Option<StudyResult> {
-        self.last
+    pub async fn last(
+        &self,
+        interval: MarketChartInterval,
+        daily_short_ma_type: DailyShortMaType,
+    ) -> Result<Option<StudyResult>, StudyError> {
+        let _load_guard = self.load_lock.lock().await;
+        let dataset = self
+            .dataset
             .lock()
-            .expect("study last-result mutex is not poisoned")
-            .clone()
+            .expect("study dataset mutex is not poisoned")
+            .clone();
+        let Some(dataset) = dataset else {
+            return Ok(None);
+        };
+        build_study_result(
+            &dataset,
+            interval,
+            daily_short_ma_type,
+            &self.market_repositioning_dates,
+        )
+        .map(Some)
     }
 
     pub async fn load(
         &self,
         symbols: &[TickerSymbol],
         date: NaiveDate,
-        interval: MarketChartInterval,
-        range: (Option<NaiveDate>, Option<NaiveDate>),
-        fetch_range: (Option<NaiveDate>, Option<NaiveDate>),
-        refresh: bool,
+        options: StudyLoadOptions,
     ) -> Result<StudyResult, StudyError> {
+        let StudyLoadOptions {
+            interval,
+            range_start,
+            range_end,
+            fetch_start,
+            fetch_end,
+            refresh,
+            daily_short_ma_type,
+        } = options;
+        let range = (range_start, range_end);
+        let fetch_range = (fetch_start, fetch_end);
         let _load_guard = self.load_lock.lock().await;
         let symbols = validate(symbols, date)?;
         let available_end = self
@@ -163,12 +197,9 @@ impl StudyService {
             let result = build_study_result(
                 &previous.expect("checked cached Study dataset"),
                 interval,
+                daily_short_ma_type,
                 &self.market_repositioning_dates,
             )?;
-            *self
-                .last
-                .lock()
-                .expect("study last-result mutex is not poisoned") = Some(result.clone());
             return Ok(result);
         }
         let reuse = !refresh
@@ -187,11 +218,12 @@ impl StudyService {
             (extending_before && !dataset.has_more_before)
                 || (extending_after && !dataset.has_more_after)
         }) {
-            let result = build_study_result(dataset, interval, &self.market_repositioning_dates)?;
-            *self
-                .last
-                .lock()
-                .expect("study last-result mutex is not poisoned") = Some(result.clone());
+            let result = build_study_result(
+                dataset,
+                interval,
+                daily_short_ma_type,
+                &self.market_repositioning_dates,
+            )?;
             return Ok(result);
         }
         let mut series = Vec::with_capacity(2);
@@ -283,15 +315,16 @@ impl StudyService {
             },
             series,
         };
-        let result = build_study_result(&dataset, interval, &self.market_repositioning_dates)?;
+        let result = build_study_result(
+            &dataset,
+            interval,
+            daily_short_ma_type,
+            &self.market_repositioning_dates,
+        )?;
         *self
             .dataset
             .lock()
             .expect("study dataset mutex is not poisoned") = Some(dataset);
-        *self
-            .last
-            .lock()
-            .expect("study last-result mutex is not poisoned") = Some(result.clone());
         Ok(result)
     }
 }
@@ -299,6 +332,7 @@ impl StudyService {
 fn build_study_result(
     dataset: &StudyDataset,
     interval: MarketChartInterval,
+    daily_short_ma_type: DailyShortMaType,
     market_repositioning_dates: &HashSet<NaiveDate>,
 ) -> Result<StudyResult, StudyError> {
     let series = dataset
@@ -315,8 +349,8 @@ fn build_study_result(
             let moving_averages = market_chart_moving_average_periods(interval)
                 .iter()
                 .map(|period| {
-                    market_chart_moving_average(&candles, interval, *period).map(|average| {
-                        StudyMovingAverage {
+                    market_chart_moving_average(&candles, interval, *period, daily_short_ma_type)
+                        .map(|average| StudyMovingAverage {
                             period: average.period,
                             points: average
                                 .points
@@ -326,8 +360,7 @@ fn build_study_result(
                                     value: point.value,
                                 })
                                 .collect(),
-                        }
-                    })
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let volume_average =
@@ -766,11 +799,20 @@ mod tests {
         };
 
         let repositioning_dates = HashSet::from([start + chrono::Days::new(250)]);
-        let daily =
-            build_study_result(&dataset, MarketChartInterval::Daily, &repositioning_dates).unwrap();
-        let weekly =
-            build_study_result(&dataset, MarketChartInterval::Weekly, &repositioning_dates)
-                .unwrap();
+        let daily = build_study_result(
+            &dataset,
+            MarketChartInterval::Daily,
+            DailyShortMaType::Sma,
+            &repositioning_dates,
+        )
+        .unwrap();
+        let weekly = build_study_result(
+            &dataset,
+            MarketChartInterval::Weekly,
+            DailyShortMaType::Sma,
+            &repositioning_dates,
+        )
+        .unwrap();
 
         assert_eq!(daily.series[0].candles.len(), 300);
         assert_eq!(daily.series[0].candles[250].volume, 1_000);

@@ -15,6 +15,7 @@ import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   Drawer,
   IconButton,
@@ -149,9 +150,11 @@ export function AppShell() {
   const {
     candlePalette,
     chartEngine,
+    dailyShortMaType,
     relativeStrengthLineStyle,
     setCandlePalette,
     setChartEngine,
+    setDailyShortMaType,
     setRelativeStrengthLineStyle,
     theme,
     setTheme,
@@ -355,6 +358,34 @@ export function AppShell() {
               <ToggleButton value="hollow" aria-label="Red and hollow green candles">
                 Hollow
               </ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <div className="settings-control-label-row">
+              <Typography className="settings-control-label" color="text.secondary">
+                Daily 10/20 MA
+              </Typography>
+              <Tooltip title="Applies when the next chart is loaded; open charts are unchanged.">
+                <InfoOutlinedIcon
+                  className="settings-info-icon"
+                  color="action"
+                  tabIndex={0}
+                  aria-label="Moving average setting behavior"
+                />
+              </Tooltip>
+            </div>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              value={dailyShortMaType}
+              aria-label="Daily 10 and 20 moving average type"
+              onChange={(_, nextType) => {
+                if (nextType === "sma" || nextType === "ema") setDailyShortMaType(nextType);
+              }}
+            >
+              <ToggleButton value="sma" aria-label="Simple moving average">SMA</ToggleButton>
+              <ToggleButton value="ema" aria-label="Exponential moving average">EMA</ToggleButton>
             </ToggleButtonGroup>
           </div>
           <div className="settings-control">

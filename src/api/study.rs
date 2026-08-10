@@ -1,8 +1,8 @@
 use crate::app::AppState;
 use crate::models::TickerSymbol;
-use crate::models::chart::MarketChartInterval;
-use crate::services::study::StudyError;
-use axum::extract::State;
+use crate::models::chart::{DailyShortMaType, MarketChartInterval};
+use crate::services::study::{StudyError, StudyLoadOptions};
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -21,6 +21,15 @@ struct StudyRequest {
     fetch_end: Option<NaiveDate>,
     #[serde(default)]
     refresh: bool,
+    #[serde(default)]
+    daily_short_ma_type: DailyShortMaType,
+}
+
+#[derive(Deserialize)]
+struct LastStudyQuery {
+    interval: Option<MarketChartInterval>,
+    #[serde(default)]
+    daily_short_ma_type: DailyShortMaType,
 }
 
 pub fn router() -> Router<AppState> {
@@ -31,8 +40,18 @@ pub fn router() -> Router<AppState> {
 
 async fn last(
     State(state): State<AppState>,
-) -> Result<Json<crate::services::study::StudyResult>, StatusCode> {
-    state.study.last().map(Json).ok_or(StatusCode::NO_CONTENT)
+    Query(query): Query<LastStudyQuery>,
+) -> Result<Json<crate::services::study::StudyResult>, (StatusCode, String)> {
+    state
+        .study
+        .last(
+            query.interval.unwrap_or(MarketChartInterval::Daily),
+            query.daily_short_ma_type,
+        )
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map(Json)
+        .ok_or((StatusCode::NO_CONTENT, String::new()))
 }
 
 async fn candles(
@@ -44,10 +63,15 @@ async fn candles(
         .load(
             &request.symbols,
             request.date,
-            request.interval,
-            (request.range_start, request.range_end),
-            (request.fetch_start, request.fetch_end),
-            request.refresh,
+            StudyLoadOptions {
+                interval: request.interval,
+                range_start: request.range_start,
+                range_end: request.range_end,
+                fetch_start: request.fetch_start,
+                fetch_end: request.fetch_end,
+                refresh: request.refresh,
+                daily_short_ma_type: request.daily_short_ma_type,
+            },
         )
         .await
         .map(Json)

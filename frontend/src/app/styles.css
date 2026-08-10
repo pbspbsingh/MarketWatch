@@ -361,6 +361,17 @@ body,
   font-size: 0.68rem !important;
 }
 
+.settings-control-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.settings-info-icon {
+  width: 0.85rem !important;
+  height: 0.85rem !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings-trigger {
     transition: none;

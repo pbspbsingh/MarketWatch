@@ -30,6 +30,14 @@ pub enum MarketChartInterval {
     Weekly,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DailyShortMaType {
+    #[default]
+    Sma,
+    Ema,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MarketChartCandle {
     pub date: NaiveDate,
@@ -292,8 +300,14 @@ pub fn market_chart_moving_average(
     candles: &[MarketChartCandle],
     interval: MarketChartInterval,
     period: usize,
+    daily_short_ma_type: DailyShortMaType,
 ) -> Result<MarketChartSeries, ChartCalculationError> {
     match interval {
+        MarketChartInterval::Daily
+            if matches!(period, 10 | 20) && daily_short_ma_type == DailyShortMaType::Ema =>
+        {
+            close_ema(candles, period)
+        }
         MarketChartInterval::Daily => close_sma(candles, period),
         MarketChartInterval::Weekly => close_ema(candles, period),
     }
@@ -425,6 +439,34 @@ mod tests {
                 (401 - period) as f64 / 2.0
             );
         }
+    }
+
+    #[test]
+    fn switches_only_daily_10_and_20_averages_to_ema() {
+        let candles = candles(50);
+
+        for period in [10, 20] {
+            assert_eq!(
+                market_chart_moving_average(
+                    &candles,
+                    MarketChartInterval::Daily,
+                    period,
+                    DailyShortMaType::Ema,
+                )
+                .unwrap(),
+                close_ema(&candles, period).unwrap(),
+            );
+        }
+        assert_eq!(
+            market_chart_moving_average(
+                &candles,
+                MarketChartInterval::Daily,
+                50,
+                DailyShortMaType::Ema,
+            )
+            .unwrap(),
+            close_sma(&candles, 50).unwrap(),
+        );
     }
 
     #[test]

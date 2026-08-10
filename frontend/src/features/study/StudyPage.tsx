@@ -21,7 +21,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import type { MarketChartInterval } from "../../api/marketChart";
+import type { DailyShortMaType, MarketChartInterval } from "../../api/marketChart";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   fetchLastStudy,
   fetchStudy,
@@ -49,6 +50,8 @@ const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
 
 export function StudyPage() {
+  const { dailyShortMaType } = useAppSettings();
+  const initialDailyShortMaTypeRef = useRef(dailyShortMaType);
   const pageRef = useRef<HTMLElement>(null);
   const [symbolA, setSymbolA] = useState("SPY");
   const [symbolB, setSymbolB] = useState("QQQ");
@@ -56,6 +59,7 @@ export function StudyPage() {
   const [interval, setInterval] = useState<MarketChartInterval>(
     () => localStorage.getItem(studyIntervalKey) === "weekly" ? "weekly" : "daily",
   );
+  const initialIntervalRef = useRef(interval);
   const [result, setResult] = useState<StudyResult>();
   const [datasetVersion, setDatasetVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -78,16 +82,25 @@ export function StudyPage() {
   const requestRef = useRef<AbortController | undefined>(undefined);
   const historyRequestRef = useRef<AbortController | undefined>(undefined);
   const resultRef = useRef(result);
+  const activeDailyShortMaTypeRef = useRef<DailyShortMaType>(dailyShortMaType);
 
   useEffect(() => {
     resultRef.current = result;
   }, [result]);
 
   useEffect(() => {
+    requestRef.current?.abort();
+    historyRequestRef.current?.abort();
     const controller = new AbortController();
-    fetchLastStudy(controller.signal)
+    requestRef.current = controller;
+    fetchLastStudy(
+      initialDailyShortMaTypeRef.current,
+      initialIntervalRef.current,
+      controller.signal,
+    )
       .then((last) => {
         if (last === null) return;
+        activeDailyShortMaTypeRef.current = initialDailyShortMaTypeRef.current;
         resultRef.current = last;
         setResult(last);
         setDate(last.date);
@@ -99,9 +112,12 @@ export function StudyPage() {
         if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && requestRef.current === controller) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (requestRef.current === controller) requestRef.current = undefined;
+    };
   }, []);
 
   useEffect(() => () => {
@@ -123,13 +139,15 @@ export function StudyPage() {
     requestRef.current = controller;
     setLoading(true);
     setError(undefined);
+    const requestedDailyShortMaType = dailyShortMaType;
     try {
       const next = await fetchStudy(
         [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
         date,
         interval,
-        { refresh, signal: controller.signal },
+        { dailyShortMaType: requestedDailyShortMaType, refresh, signal: controller.signal },
       );
+      activeDailyShortMaTypeRef.current = requestedDailyShortMaType;
       resultRef.current = next;
       setResult(next);
       setDatasetVersion((version) => version + 1);
@@ -166,7 +184,12 @@ export function StudyPage() {
         [current.series[0].symbol, current.series[1].symbol],
         current.date,
         current.interval,
-        { range, fetchRange, signal: controller.signal },
+        {
+          dailyShortMaType: activeDailyShortMaTypeRef.current,
+          range,
+          fetchRange,
+          signal: controller.signal,
+        },
       );
       if (
         !controller.signal.aborted
@@ -209,6 +232,7 @@ export function StudyPage() {
     requestRef.current = controller;
     setLoading(true);
     setError(undefined);
+    const requestedDailyShortMaType = dailyShortMaType;
     try {
       const next = await fetchStudy(
         [current.series[0].symbol, current.series[1].symbol],
@@ -216,10 +240,12 @@ export function StudyPage() {
         nextInterval,
         {
           range: { start: current.range_start, end: current.range_end },
+          dailyShortMaType: requestedDailyShortMaType,
           signal: controller.signal,
         },
       );
       if (!controller.signal.aborted && requestRef.current === controller) {
+        activeDailyShortMaTypeRef.current = requestedDailyShortMaType;
         resultRef.current = next;
         setResult(next);
       }

@@ -1,4 +1,5 @@
 import type {
+  DailyShortMaType,
   MarketChartInterval,
   MarketChartRelativeStrength,
   MarketChartSeries,
@@ -37,14 +38,20 @@ export interface StudyRange {
 }
 
 interface FetchStudyOptions {
+  dailyShortMaType?: DailyShortMaType;
   refresh?: boolean;
   range?: StudyRange;
   fetchRange?: StudyRange;
   signal?: AbortSignal;
 }
 
-export async function fetchLastStudy(signal?: AbortSignal): Promise<StudyResult | null> {
-  const response = await fetch("/api/study/last", { signal });
+export async function fetchLastStudy(
+  dailyShortMaType: DailyShortMaType,
+  interval: MarketChartInterval,
+  signal?: AbortSignal,
+): Promise<StudyResult | null> {
+  const query = new URLSearchParams({ daily_short_ma_type: dailyShortMaType, interval });
+  const response = await fetch(`/api/study/last?${query}`, { signal });
   if (response.status === 204 || response.status === 404) return null;
   if (!response.ok) throw new Error(`Failed to restore Study: HTTP ${response.status}`);
   return response.json() as Promise<StudyResult>;
@@ -61,6 +68,7 @@ export async function fetchStudy(
     date,
     interval,
     refresh: options.refresh ?? false,
+    daily_short_ma_type: options.dailyShortMaType ?? "sma",
     range_start: options.range?.start,
     range_end: options.range?.end,
     fetch_start: options.fetchRange?.start,

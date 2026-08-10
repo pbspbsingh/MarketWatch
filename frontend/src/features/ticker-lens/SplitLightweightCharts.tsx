@@ -7,6 +7,7 @@ import {
   type MouseEvent,
 } from "react";
 import { CircularProgress, Typography } from "@mui/material";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   MarketChartContainer,
   type ChartHistoryInteractionTracker,
@@ -30,7 +31,7 @@ import {
   overlappingPriceScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
-import { marketDataSymbol } from "../../api/marketChart";
+import { marketDataSymbol, type DailyShortMaType } from "../../api/marketChart";
 import {
   MarketChartLiveClient,
   type MarketChartLiveDelta,
@@ -86,6 +87,7 @@ export default function SplitLightweightCharts({
   onSplitChange,
   onError,
 }: SplitLightweightChartsProps) {
+  const { dailyShortMaType } = useAppSettings();
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [chartMenu, setChartMenu] = useState<ChartMenuState | null>(null);
@@ -103,6 +105,10 @@ export default function SplitLightweightCharts({
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
   const viewportOwnerRef = useRef<"top" | "bottom">("top");
   const liveClientRef = useRef<MarketChartLiveClient | null>(null);
+  const dailyShortMaTypeRef = useRef(dailyShortMaType);
+  useEffect(() => {
+    dailyShortMaTypeRef.current = dailyShortMaType;
+  }, [dailyShortMaType]);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
@@ -117,6 +123,17 @@ export default function SplitLightweightCharts({
   const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain`;
   const topDatasetKey = `${topSymbol}\0${chartInterval}`;
   const bottomDatasetKey = `${bottomSymbol}\0${chartInterval}`;
+  const liveMaTypesRef = useRef<{
+    topDatasetKey: string;
+    bottomDatasetKey: string;
+    top: DailyShortMaType;
+    bottom: DailyShortMaType;
+  }>({
+    topDatasetKey,
+    bottomDatasetKey,
+    top: chartInterval === "daily" ? dailyShortMaType : "sma",
+    bottom: chartInterval === "daily" ? dailyShortMaType : "sma",
+  });
   const topLoading = topLoadState?.key !== topDatasetKey
     || topLoadState.status === "loading";
   const bottomLoading = bottomLoadState?.key !== bottomDatasetKey
@@ -156,16 +173,32 @@ export default function SplitLightweightCharts({
   }, []);
 
   useEffect(() => {
+    const liveMaTypes = liveMaTypesRef.current;
+    const selectedType = chartInterval === "daily" ? dailyShortMaTypeRef.current : "sma";
+    if (liveMaTypes.topDatasetKey !== topDatasetKey) {
+      liveMaTypes.topDatasetKey = topDatasetKey;
+      liveMaTypes.top = selectedType;
+    }
+    if (liveMaTypes.bottomDatasetKey !== bottomDatasetKey) {
+      liveMaTypes.bottomDatasetKey = bottomDatasetKey;
+      liveMaTypes.bottom = selectedType;
+    }
     liveClientRef.current?.setCharts([
       {
         chart_id: "top",
         symbol: topSymbol,
         interval: chartInterval,
         comparison_symbol: bottomSymbol,
+        daily_short_ma_type: liveMaTypes.top,
       },
-      { chart_id: "bottom", symbol: bottomSymbol, interval: chartInterval },
+      {
+        chart_id: "bottom",
+        symbol: bottomSymbol,
+        interval: chartInterval,
+        daily_short_ma_type: liveMaTypes.bottom,
+      },
     ]);
-  }, [bottomSymbol, chartInterval, topSymbol]);
+  }, [bottomDatasetKey, bottomSymbol, chartInterval, topDatasetKey, topSymbol]);
 
   useEffect(() => {
     if (topContext === null) return;
