@@ -37,6 +37,7 @@ import {
   type MarketChartLiveDelta,
   type MarketChartSessionDelta,
 } from "../../api/marketChartLive";
+import { isArrowKeyControl } from "./utils";
 
 interface SplitLightweightChartsProps {
   topSymbol: string;
@@ -253,6 +254,25 @@ export default function SplitLightweightCharts({
     timeScale.applyOptions(viewport);
     timeScale.scrollToPosition(chartRightOffsetPixels / defaultChartBarSpacing, false);
   }, [bottomContext, saveViewport, topContext]);
+
+  useEffect(() => {
+    const handleResetViewShortcut = (event: KeyboardEvent) => {
+      if (
+        event.code !== "KeyR"
+        || event.defaultPrevented
+        || event.repeat
+        || event.ctrlKey
+        || event.metaKey
+        || !event.altKey
+        || isArrowKeyControl(event.target)
+        || document.querySelector('[role="dialog"], [role="menu"]') !== null
+      ) return;
+      event.preventDefault();
+      resetChartView();
+    };
+    document.addEventListener("keydown", handleResetViewShortcut);
+    return () => document.removeEventListener("keydown", handleResetViewShortcut);
+  }, [resetChartView]);
 
   const refreshCandles = useCallback(() => {
     if (chartMenu?.source === "top") {
