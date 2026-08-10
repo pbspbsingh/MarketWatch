@@ -205,7 +205,9 @@ export function HomePage() {
             summarySettled={charts[symbol]?.summarySettled ?? false}
             interval={interval}
             rightPriceScaleVisible={rightPriceScaleVisible}
-            liveDelta={charts[symbol]?.liveDelta}
+            liveDelta={charts[symbol]?.liveDelta?.interval === interval
+              ? charts[symbol]?.liveDelta
+              : undefined}
             sessionDelta={charts[symbol]?.sessionDelta}
             initialViewport={initialViewport}
             onChartContext={(context) => {
