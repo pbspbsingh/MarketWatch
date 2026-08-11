@@ -13,9 +13,9 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior, sleep_until};
 use tracing::warn;
 
-const MAX_ACTIVE_SYMBOLS: usize = 100;
+pub(crate) const MAX_ACTIVE_SYMBOLS: usize = 128;
 const PRICING_BUFFER_SIZE: usize = 256;
-const IDLE_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
+const IDLE_GRACE_PERIOD: Duration = Duration::from_mins(10);
 const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq)]

@@ -1,6 +1,8 @@
 use crate::app::AppState;
 use crate::models::YahooSymbol;
-use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate};
+use crate::services::yahoo_live::{
+    MAX_ACTIVE_SYMBOLS, YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate,
+};
 use crate::utils::{MarketSchedule, MarketSession};
 use axum::Router;
 use axum::extract::State;
@@ -14,7 +16,6 @@ use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 use tokio::time::{Duration, Instant, MissedTickBehavior};
 
-const CLIENT_SYMBOL_LIMIT: usize = 100;
 const EVENT_BUFFER_SIZE: usize = 256;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const PONG_TIMEOUT: Duration = Duration::from_secs(15);
@@ -180,9 +181,9 @@ fn normalize_symbols(symbols: Vec<String>) -> Result<Vec<YahooSymbol>, String> {
         .collect::<Result<Vec<_>, _>>()?;
     symbols.sort_unstable();
     symbols.dedup();
-    if symbols.len() > CLIENT_SYMBOL_LIMIT {
+    if symbols.len() > MAX_ACTIVE_SYMBOLS {
         return Err(format!(
-            "live prices supports at most {CLIENT_SYMBOL_LIMIT} symbols"
+            "live prices supports at most {MAX_ACTIVE_SYMBOLS} symbols"
         ));
     }
     Ok(symbols)
@@ -283,12 +284,12 @@ mod tests {
     #[test]
     fn rejects_invalid_or_excessive_symbols() {
         assert!(normalize_symbols(vec!["bad symbol".into()]).is_err());
-        let excessive = (0..=CLIENT_SYMBOL_LIMIT)
+        let excessive = (0..=MAX_ACTIVE_SYMBOLS)
             .map(|index| format!("S{index}"))
             .collect();
         assert!(normalize_symbols(excessive).is_err());
         assert_eq!(
-            normalize_symbols(vec!["AAPL".to_owned(); CLIENT_SYMBOL_LIMIT + 1]),
+            normalize_symbols(vec!["AAPL".to_owned(); MAX_ACTIVE_SYMBOLS + 1]),
             Ok(vec![yahoo("AAPL")]),
         );
     }

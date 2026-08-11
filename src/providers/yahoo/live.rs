@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep};
-use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, info, warn};
 
 const STREAM_URL: &str = "wss://streamer.finance.yahoo.com/?version=2";
@@ -98,9 +98,7 @@ async fn run_transport(
 }
 
 async fn run_connection(
-    mut socket: tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    mut socket: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
     desired: &mut watch::Receiver<Vec<YahooSymbol>>,
     pricing: &mpsc::Sender<PricingData>,
 ) -> anyhow::Result<()> {
