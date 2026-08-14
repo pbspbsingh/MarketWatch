@@ -21,6 +21,8 @@ import type {
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 import { MarketChart } from "./MarketChart";
+import type { MarketChartMarker } from "./MarketChart";
+import type { MarketChartPriceLine } from "./MarketChart";
 import type {
   ChartSyncTarget,
   ChartViewport,
@@ -63,6 +65,8 @@ interface MarketChartContainerProps {
   onRefreshSettled?: (version: number, succeeded: boolean) => void;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
+  markers?: MarketChartMarker[];
+  priceLines?: MarketChartPriceLine[];
 }
 
 const historyLoadThresholdBars = 25;
@@ -89,6 +93,8 @@ export function MarketChartContainer({
   onRefreshSettled,
   liveDelta,
   sessionDelta,
+  markers,
+  priceLines,
 }: MarketChartContainerProps) {
   const { dailyShortMaType } = useAppSettings();
   const dailyShortMaTypeRef = useRef(dailyShortMaType);
@@ -379,6 +385,8 @@ export function MarketChartContainer({
           relativeStrength={snapshot.relative_strength}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
+          markers={markers}
+          priceLines={priceLines}
         />
       )}
       {state?.status === "error" ? (

@@ -18,6 +18,7 @@ use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
+use crate::services::trade_analyzer::TradeAnalyzerService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::services::yahoo_live::YahooLiveHandle;
@@ -57,6 +58,7 @@ pub struct AppState {
     pub theme_analysis: Arc<ThemeAnalysisService>,
     pub ticker_collections: Arc<TickerCollectionService>,
     pub top_stocks: Arc<TopStocksService>,
+    pub trade_analyzer: Arc<TradeAnalyzerService>,
     pub watchlists: Arc<WatchlistService>,
     pub yahoo_live: YahooLiveHandle,
 }
@@ -131,10 +133,15 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.finviz,
     ));
     let study = Arc::new(StudyService::new(
-        yahoo_client,
+        yahoo_client.clone(),
         yahoo.clone(),
         market_schedule.clone(),
         market_repositioning_dates,
+    ));
+    let trade_analyzer = Arc::new(TradeAnalyzerService::new(
+        store.trade_analyzer(),
+        yahoo_client,
+        yahoo.clone(),
     ));
     let industry_refresh = IndustryRefreshService::new(
         store.clone(),
@@ -161,6 +168,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         theme_analysis,
         ticker_collections,
         top_stocks,
+        trade_analyzer,
         watchlists,
         yahoo_live,
     };

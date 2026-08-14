@@ -16,6 +16,7 @@ pub mod themes;
 pub mod ticker_collections;
 pub mod tickers;
 pub mod top_stocks;
+pub mod trade_analyzer;
 pub mod watchlists;
 pub mod yahoo;
 pub mod yahoo_live;

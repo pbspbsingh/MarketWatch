@@ -24,13 +24,18 @@ use tracing_subscriber::{EnvFilter, fmt::time::ChronoLocal};
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 
-    let config_path = Path::new("config.toml");
+    let configured_path = std::env::var_os("MARKET_WATCH_CONFIG");
+    let config_path = configured_path
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or_else(|| Path::new("config.toml"));
     if !config_path
         .try_exists()
         .context("failed to check for config.toml")?
     {
         eprintln!(
-            "config.toml is missing. Create it with:\n\n{}",
+            "{} is missing. Create it with:\n\n{}",
+            config_path.display(),
             include_str!("../config.example.toml")
         );
         anyhow::bail!("config.toml is required");

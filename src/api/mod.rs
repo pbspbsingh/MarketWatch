@@ -14,6 +14,7 @@ mod themes;
 mod ticker_collections;
 mod tickers;
 mod top_stocks;
+mod trade_analyzer;
 mod watchlists;
 
 use crate::app::AppState;
@@ -39,6 +40,7 @@ pub fn router() -> Router<AppState> {
         .merge(ticker_collections::router())
         .merge(themes::router())
         .merge(top_stocks::router())
+        .merge(trade_analyzer::router())
         .merge(watchlists::router())
 }
 

@@ -13,6 +13,8 @@ import {
   type ChartHistoryInteractionTracker,
   type MarketChartLoadStatus,
 } from "../charts/MarketChartContainer";
+import type { MarketChartMarker } from "../charts/MarketChart";
+import type { MarketChartPriceLine } from "../charts/MarketChart";
 import { SplitPane } from "../../components/SplitPane";
 import {
   ChartContextMenu,
@@ -51,6 +53,8 @@ interface SplitLightweightChartsProps {
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
+  topMarkers?: MarketChartMarker[];
+  topPriceLines?: MarketChartPriceLine[];
 }
 
 const viewportPersistenceDebounceMs = 200;
@@ -87,6 +91,8 @@ export default function SplitLightweightCharts({
   initialSplit,
   onSplitChange,
   onError,
+  topMarkers,
+  topPriceLines,
 }: SplitLightweightChartsProps) {
   const { dailyShortMaType } = useAppSettings();
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
@@ -359,6 +365,8 @@ export default function SplitLightweightCharts({
               sessionDelta={topSession?.key === `${marketDataSymbol(topSymbol)}\0daily`
                 ? topSession.delta
                 : undefined}
+              markers={topMarkers}
+              priceLines={topPriceLines}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>

@@ -12,3 +12,4 @@
 *.db
 config.toml
 .DS_Store
+docs

@@ -14,6 +14,7 @@ import TuneIcon from "@mui/icons-material/Tune";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
@@ -46,6 +47,7 @@ const destinations = [
   ["Theme Management", "/theme-management", TuneIcon, "magenta"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
   ["Daily Notes", "/daily-notes", NoteAltOutlinedIcon, "amber"],
+  ["Trade Analyzer", "/trade-analyzer", QueryStatsOutlinedIcon, "green"],
 ] as const;
 
 const triggerInset = 4;
