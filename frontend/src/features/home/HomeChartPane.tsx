@@ -11,6 +11,7 @@ import type {
   ChartSyncTarget,
   ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
+import { overlappingPriceScaleMargins } from "../../components/lightweight-chart/chartOptions";
 import { MarketChartContainer } from "../charts/MarketChartContainer";
 
 interface HomeChartPaneProps {
@@ -57,6 +58,7 @@ export function HomeChartPane({
           companyName={summary?.company_name ?? undefined}
           tradingViewSymbol={summary?.tradingview_symbol}
           interval={interval}
+          priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
           rightPriceScaleVisible={rightPriceScaleVisible}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
