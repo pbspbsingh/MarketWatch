@@ -715,10 +715,6 @@ impl TradeAnalyzerService {
             .map(|stop| stop.event_key.clone())
             .collect::<Vec<_>>();
         let known_stops = self.repo.stop_event_keys(account_id, &stop_keys).await?;
-        let new_stop_count = stop_keys
-            .iter()
-            .filter(|key| !known_stops.contains(*key))
-            .count();
         let current = match account_id {
             Some(account_id) => self
                 .repo
@@ -792,6 +788,15 @@ impl TradeAnalyzerService {
             (&left.placed_at_utc, left.id).cmp(&(&right.placed_at_utc, right.id))
         });
         let projected = reconstruct(account_id.unwrap_or(0), &executions, &stops);
+        let new_stops = parsed
+            .stops
+            .iter()
+            .filter(|stop| {
+                !known_stops.contains(&stop.event_key)
+                    && stop_matches_projected_trade(stop, &projected)
+            })
+            .collect::<Vec<_>>();
+        let new_stop_count = new_stops.len();
         validate_projected_import(&current, &projected, &synthetic_ids, &new_stops)?;
         let affected_trades =
             projected_affected_trades(&current, &projected, &synthetic_ids, &new_stops);
@@ -908,6 +913,44 @@ impl TradeAnalyzerService {
             &parsed.executions,
             &existing_executions,
         );
+        let mut projected_executions = existing_executions.clone();
+        projected_executions.extend(
+            parsed
+                .executions
+                .iter()
+                .filter(|execution| !known_executions.contains(&execution.event_key))
+                .enumerate()
+                .map(|(index, execution)| AnalyzerExecutionRow {
+                    id: -(index as i64 + 1),
+                    event_key: execution.event_key.clone(),
+                    origin: execution.origin.clone(),
+                    executed_at_utc: execution.executed_at_utc.clone(),
+                    executed_at_local: execution.executed_at_local.clone(),
+                    market_date: execution.market_date.clone(),
+                    symbol: execution.symbol.clone(),
+                    side: execution.side.clone(),
+                    position_effect: execution.position_effect.clone(),
+                    quantity_micros: execution.quantity_micros,
+                    price_micros: execution.price_micros,
+                    fee_micros: execution.fee_micros,
+                    source_sequence: execution.source_sequence,
+                }),
+        );
+        projected_executions.sort_by(|left, right| {
+            (&left.executed_at_utc, left.source_sequence, left.id).cmp(&(
+                &right.executed_at_utc,
+                right.source_sequence,
+                right.id,
+            ))
+        });
+        let projected_without_stops =
+            reconstruct(existing_account_id.unwrap_or(0), &projected_executions, &[]);
+        let projectable_stop_keys = parsed
+            .stops
+            .iter()
+            .filter(|stop| stop_matches_projected_trade(stop, &projected_without_stops))
+            .map(|stop| stop.event_key.clone())
+            .collect::<HashSet<_>>();
         let known_stops = self
             .repo
             .stop_event_keys(existing_account_id, &stop_keys)
@@ -918,7 +961,11 @@ impl TradeAnalyzerService {
             input.timezone,
             &known_executions,
             &known_stops,
+            &projectable_stop_keys,
         )?;
+        parsed.stops.retain(|stop| {
+            known_stops.contains(&stop.event_key) || projectable_stop_keys.contains(&stop.event_key)
+        });
         self.validate_structural_import_edits(&parsed, &structurally_edited, &known_executions)
             .await?;
         self.validate_import_history(
@@ -1824,6 +1871,16 @@ fn projected_trade_is_touched(
         })
 }
 
+fn stop_matches_projected_trade(stop: &NewAnalyzerStop, projected: &[NewAnalyzerTrade]) -> bool {
+    projected.iter().any(|trade| {
+        trade.symbol == stop.symbol
+            && trade
+                .opened_at
+                .as_ref()
+                .is_some_and(|opened| opened == &stop.trade_opened_at_utc)
+    })
+}
+
 fn validate_projected_import(
     current: &[AnalyzerTradeRow],
     projected: &[NewAnalyzerTrade],
@@ -2032,6 +2089,7 @@ fn apply_import_draft(
     timezone: &str,
     known_executions: &HashSet<String>,
     known_stops: &HashSet<String>,
+    projectable_stop_keys: &HashSet<String>,
 ) -> anyhow::Result<HashSet<String>> {
     let expected_executions = parsed
         .executions
@@ -2042,7 +2100,10 @@ fn apply_import_draft(
     let expected_stops = parsed
         .stops
         .iter()
-        .filter(|stop| !known_stops.contains(&stop.event_key))
+        .filter(|stop| {
+            !known_stops.contains(&stop.event_key)
+                && projectable_stop_keys.contains(&stop.event_key)
+        })
         .map(|stop| stop.event_key.clone())
         .collect::<HashSet<_>>();
     if draft.trades.is_empty() {
@@ -3085,6 +3146,73 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_real_overlapping_exports_and_filters_orphaned_stops() {
+        let existing = parse_thinkorswim(
+            include_bytes!("../../docs/AccountStatement-2.csv"),
+            "America/Los_Angeles",
+        )
+        .unwrap();
+        let incoming = parse_thinkorswim(
+            include_bytes!("../../docs/AccountStatement-3.csv"),
+            "America/Los_Angeles",
+        )
+        .unwrap();
+
+        let existing_rows = execution_rows(&existing.executions);
+        let incoming_rows = execution_rows(&incoming.executions);
+
+        let mut known_in_incoming = HashSet::new();
+        include_equivalent_execution_keys(
+            &mut known_in_incoming,
+            &incoming.executions,
+            &existing_rows,
+        );
+        assert_eq!(known_in_incoming.len(), 24);
+
+        let mut known_in_existing = HashSet::new();
+        include_equivalent_execution_keys(
+            &mut known_in_existing,
+            &existing.executions,
+            &incoming_rows,
+        );
+        assert_eq!(known_in_existing.len(), 24);
+
+        let existing_stop_keys = existing
+            .stops
+            .iter()
+            .map(|stop| stop.event_key.as_str())
+            .collect::<HashSet<_>>();
+        let new_stops = incoming
+            .stops
+            .iter()
+            .filter(|stop| !existing_stop_keys.contains(stop.event_key.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(new_stops.len(), 4);
+
+        let mut combined = existing_rows;
+        combined.extend(
+            incoming_rows
+                .into_iter()
+                .filter(|execution| !known_in_incoming.contains(&execution.event_key)),
+        );
+        combined.sort_by(|left, right| {
+            (&left.executed_at_utc, left.source_sequence, left.id).cmp(&(
+                &right.executed_at_utc,
+                right.source_sequence,
+                right.id,
+            ))
+        });
+        let projected = reconstruct(1, &combined, &[]);
+        assert_eq!(
+            new_stops
+                .iter()
+                .filter(|stop| stop_matches_projected_trade(stop, &projected))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
     fn rejects_unknown_execution_semantics() {
         let statement = b"Account Statement for 1234 (test since 08/01/26 through 08/02/26)\nAccount Trade History\n,Exec Time,Spread,Side,Qty,Pos Effect,Symbol,Exp,Strike,Type,Price,Net Price,Order Type\n,8/1/26 10:00:00,STOCK,HOLD,10,UNKNOWN,TEST,,,STOCK,12.34,,MKT\n";
         assert!(parse_thinkorswim(statement, "America/Los_Angeles").is_err());
@@ -3113,5 +3241,27 @@ mod tests {
             fee_micros: 0,
             source_sequence: id,
         }
+    }
+
+    fn execution_rows(executions: &[NewAnalyzerExecution]) -> Vec<AnalyzerExecutionRow> {
+        executions
+            .iter()
+            .enumerate()
+            .map(|(index, execution)| AnalyzerExecutionRow {
+                id: index as i64 + 1,
+                event_key: execution.event_key.clone(),
+                origin: execution.origin.clone(),
+                executed_at_utc: execution.executed_at_utc.clone(),
+                executed_at_local: execution.executed_at_local.clone(),
+                market_date: execution.market_date.clone(),
+                symbol: execution.symbol.clone(),
+                side: execution.side.clone(),
+                position_effect: execution.position_effect.clone(),
+                quantity_micros: execution.quantity_micros,
+                price_micros: execution.price_micros,
+                fee_micros: execution.fee_micros,
+                source_sequence: execution.source_sequence,
+            })
+            .collect()
     }
 }
