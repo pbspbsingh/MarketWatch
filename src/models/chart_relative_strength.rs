@@ -1,5 +1,5 @@
 use super::DailyCandle;
-use super::chart::MarketChartInterval;
+use super::chart::{MarketChartInterval, market_week_start};
 use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -310,7 +310,11 @@ fn closes_by_period(
                     (week.year(), week.week())
                 }
             };
-            (period, (candle.market_date, candle.close))
+            let date = match interval {
+                MarketChartInterval::Daily => candle.market_date,
+                MarketChartInterval::Weekly => market_week_start(candle.market_date),
+            };
+            (period, (date, candle.close))
         })
         .collect()
 }
@@ -522,9 +526,14 @@ mod tests {
                 .iter()
                 .all(|point| requested.contains(point.date))
         );
+        assert!(
+            line.points
+                .iter()
+                .all(|point| point.date.weekday() == chrono::Weekday::Mon)
+        );
         assert_eq!(
             line.points.last().unwrap().date,
-            requested.end.pred_opt().unwrap()
+            market_week_start(requested.end.pred_opt().unwrap())
         );
     }
 

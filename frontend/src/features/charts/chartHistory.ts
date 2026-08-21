@@ -1,5 +1,6 @@
 import {
   maximumMarketChartHistoryDays,
+  type MarketChartInterval,
   type MarketChartSnapshot,
 } from "../../api/marketChart";
 
@@ -13,11 +14,12 @@ export interface MarketChartHistoryRange {
 export function previousHistoryRange(
   earliestDate: string,
   latestDate: string,
+  interval: MarketChartInterval,
 ): MarketChartHistoryRange | undefined {
   const earliest = marketDateTimestamp(earliestDate);
   const latest = marketDateTimestamp(latestDate);
   if (earliest === undefined || latest === undefined || earliest > latest) return undefined;
-  const end = latest + millisecondsPerDay;
+  const end = latest + millisecondsPerDay * (interval === "weekly" ? 7 : 1);
   const currentCalendarDays = Math.max(
     1,
     Math.ceil((end - earliest) / millisecondsPerDay),

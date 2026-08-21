@@ -311,6 +311,7 @@ export function MarketChartContainer({
     const range = previousHistoryRange(
       snapshot.earliest_date,
       snapshot.latest_date,
+      interval,
     );
     if (range === undefined) return;
     const generation = generationRef.current;

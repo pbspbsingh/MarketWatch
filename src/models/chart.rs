@@ -332,7 +332,8 @@ pub fn market_chart_moving_averages(
                 .iter()
                 .map(|candle| candle.date)
                 .collect::<HashSet<_>>();
-            let mut daily_sma = close_sma(daily, WEEKLY_DAILY_SMA_PERIOD)?;
+            let mut daily_sma =
+                sample_series_at_market_week_end(close_sma(daily, WEEKLY_DAILY_SMA_PERIOD)?);
             daily_sma
                 .points
                 .retain(|point| weekly_dates.contains(&point.date));
@@ -398,7 +399,6 @@ pub fn aggregate_market_weeks(
 
         if current_key == Some(week_key) {
             let current = weekly.last_mut().expect("current week exists");
-            current.date = candle.date;
             current.high = current.high.max(candle.high);
             current.low = current.low.min(candle.low);
             current.close = candle.close;
@@ -407,11 +407,40 @@ pub fn aggregate_market_weeks(
                 .checked_add(candle.volume)
                 .ok_or(ChartCalculationError::VolumeOverflow(candle.date))?;
         } else {
-            weekly.push(candle.clone());
+            let mut weekly_candle = candle.clone();
+            weekly_candle.date = market_week_start(candle.date);
+            weekly.push(weekly_candle);
         }
     }
 
     Ok(weekly)
+}
+
+pub(super) fn market_week_start(date: NaiveDate) -> NaiveDate {
+    date.checked_sub_days(chrono::Days::new(
+        date.weekday().num_days_from_monday().into(),
+    ))
+    .expect("market date supports its ISO week start")
+}
+
+fn sample_series_at_market_week_end(series: MarketChartSeries) -> MarketChartSeries {
+    let mut weekly = Vec::<MarketChartPoint>::new();
+    for point in series.points {
+        let date = market_week_start(point.date);
+        if weekly.last().is_some_and(|current| current.date == date) {
+            let current = weekly.last_mut().expect("current week exists");
+            current.value = point.value;
+        } else {
+            weekly.push(MarketChartPoint {
+                date,
+                value: point.value,
+            });
+        }
+    }
+    MarketChartSeries {
+        period: series.period,
+        points: weekly,
+    }
 }
 
 fn validate_date_order(candles: &[MarketChartCandle]) -> Result<(), ChartCalculationError> {
@@ -515,7 +544,7 @@ mod tests {
             .iter()
             .map(|candle| candle.date)
             .collect::<HashSet<_>>();
-        let mut expected = close_sma(&daily, 200).unwrap();
+        let mut expected = sample_series_at_market_week_end(close_sma(&daily, 200).unwrap());
         expected
             .points
             .retain(|point| weekly_dates.contains(&point.date));
@@ -528,6 +557,12 @@ mod tests {
             [10, 20, 200]
         );
         assert_eq!(averages[2], expected);
+        assert!(
+            averages[2]
+                .points
+                .iter()
+                .all(|point| point.date.weekday() == chrono::Weekday::Mon)
+        );
     }
 
     #[test]
@@ -611,7 +646,7 @@ mod tests {
         };
         let daily = vec![
             candle(
-                NaiveDate::from_ymd_opt(2025, 12, 29).unwrap(),
+                NaiveDate::from_ymd_opt(2025, 12, 30).unwrap(),
                 100.0,
                 103.0,
                 99.0,
@@ -647,7 +682,10 @@ mod tests {
         let weekly = aggregate_market_weeks(&daily).unwrap();
 
         assert_eq!(weekly.len(), 2);
-        assert_eq!(weekly[0].date, NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
+        assert_eq!(
+            weekly[0].date,
+            NaiveDate::from_ymd_opt(2025, 12, 29).unwrap()
+        );
         assert_eq!(weekly[0].open, 100.0);
         assert_eq!(weekly[0].high, 106.0);
         assert_eq!(weekly[0].low, 98.0);
@@ -678,7 +716,10 @@ mod tests {
         let mut reported = candles(1);
         reported[0].high = reported[0].close - 0.5;
 
-        assert_eq!(aggregate_market_weeks(&reported).unwrap(), reported);
+        let mut expected = reported.clone();
+        expected[0].date = market_week_start(expected[0].date);
+
+        assert_eq!(aggregate_market_weeks(&reported).unwrap(), expected);
     }
 
     #[test]
