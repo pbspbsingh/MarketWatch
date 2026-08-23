@@ -50,27 +50,29 @@ import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import {
+  defaultTickerSortSetting,
+  fundamentalsMetricId,
   tickerSortOptions,
   tickerSortSettingKey,
 } from "./constants";
 import type {
-  BoundedTickerMetric,
-  DefaultBoundedMetricSort,
+  DefaultMetricSort,
   GroupMode,
   ResolveTickersRequest,
   RevealRequest,
   TickerFilterCounts,
   TickerFilters,
+  TickerMetric,
   TickerSortKey,
   TickerSortSetting,
 } from "./types";
 import {
-  boundedMetricForKey,
-  boundedMetricSortKey,
   formatMetric,
   isArrowKeyControl,
-  isBoundedMetricSortKey,
+  isMetricSortKey,
+  metricForKey,
   metricColor,
+  metricSortKey,
   readTickerSortSetting,
   sortTickers,
   tickerSortValue,
@@ -79,16 +81,15 @@ import {
 const tickerRowHeight = 28;
 const emptyTickers: TickerRanking[] = [];
 const fundamentalBatchIntervalMs = 250;
-const fundamentalsMetricId = "fundamentals";
-const fundamentalsSortKey = boundedMetricSortKey(fundamentalsMetricId);
+const fundamentalsSortKey = metricSortKey(fundamentalsMetricId);
 
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
   bounded: boolean;
   boundedUniverseKey: string;
   universeRevision: number;
-  boundedMetrics: readonly BoundedTickerMetric[];
-  defaultBoundedMetricSort?: DefaultBoundedMetricSort;
+  metrics: readonly TickerMetric[];
+  defaultMetricSort?: DefaultMetricSort;
   mode: GroupMode;
   groupKeys: Set<string>;
   selectedTicker: string | undefined;
@@ -107,7 +108,7 @@ interface TickerPanelProps {
 interface TickerRowProps {
   tickers: TickerRanking[];
   sortKey: TickerSortKey;
-  boundedMetric?: BoundedTickerMetric;
+  metric?: TickerMetric;
   selectedTicker: string | undefined;
   onSelect: (symbol: string) => void;
   watchlists: Watchlist[];
@@ -134,7 +135,7 @@ function TickerRow({
   ariaAttributes,
   tickers,
   sortKey,
-  boundedMetric,
+  metric: selectedMetric,
   selectedTicker,
   onSelect,
   watchlists,
@@ -142,10 +143,10 @@ function TickerRow({
   onContextMenu,
 }: RowComponentProps<TickerRowProps>) {
   const ticker = tickers[index];
-  const metric = tickerSortValue(ticker, sortKey, boundedMetric);
-  const metricTooltip = metric === undefined
+  const metricValue = tickerSortValue(ticker, sortKey, selectedMetric);
+  const metricTooltip = metricValue === undefined
     ? undefined
-    : boundedMetric?.tooltipLines?.(ticker.symbol, metric);
+    : selectedMetric?.tooltipLines?.(ticker.symbol, metricValue);
   const memberships = ticker.watchlist_ids
     .map((id) => watchlists.find((watchlist) => watchlist.id === id))
     .filter((watchlist): watchlist is Watchlist => watchlist !== undefined);
@@ -177,17 +178,17 @@ function TickerRow({
           )}
         </span>
         <span className="ranked-name">{ticker.symbol}</span>
-        {metric !== undefined && metricTooltip === undefined && (
+        {metricValue !== undefined && metricTooltip === undefined && (
           <span
             className="ranked-metric"
             style={{
-              color: metricColor(metric, sortKey, boundedMetric),
+              color: metricColor(metricValue, sortKey, selectedMetric),
             }}
           >
-            {formatMetric(metric, sortKey, boundedMetric)}
+            {formatMetric(metricValue, sortKey, selectedMetric)}
           </span>
         )}
-        {metric !== undefined && metricTooltip !== undefined && (
+        {metricValue !== undefined && metricTooltip !== undefined && (
           <Tooltip title={(
             <div>
               {metricTooltip.map((line, lineIndex) => (
@@ -198,10 +199,10 @@ function TickerRow({
             <span
               className="ranked-metric"
               style={{
-                color: metricColor(metric, sortKey, boundedMetric),
+                color: metricColor(metricValue, sortKey, selectedMetric),
               }}
             >
-              {formatMetric(metric, sortKey, boundedMetric)}
+              {formatMetric(metricValue, sortKey, selectedMetric)}
             </span>
           </Tooltip>
         )}
@@ -215,8 +216,8 @@ export function TickerPanel({
   bounded,
   boundedUniverseKey,
   universeRevision,
-  boundedMetrics,
-  defaultBoundedMetricSort,
+  metrics,
+  defaultMetricSort,
   mode,
   groupKeys,
   selectedTicker,
@@ -246,14 +247,14 @@ export function TickerPanel({
   const revealTickerFrame = useRef<number | undefined>(undefined);
   const rankingRequests = useRef(new Set<string>());
   const [sortSetting, setSortSetting] = useState<TickerSortSetting>(() => {
-    const defaultMetric = defaultBoundedMetricSort === undefined
+    const defaultMetric = defaultMetricSort === undefined
       ? undefined
-      : boundedMetrics.find((metric) => metric.id === defaultBoundedMetricSort.metricId);
+      : metrics.find((metric) => metric.id === defaultMetricSort.metricId);
     return defaultMetric === undefined
       ? readTickerSortSetting(tickerSortSettingKey)
       : {
-          key: boundedMetricSortKey(defaultMetric.id),
-          direction: defaultBoundedMetricSort!.direction,
+          key: metricSortKey(defaultMetric.id),
+          direction: defaultMetricSort!.direction,
         };
   });
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
@@ -271,7 +272,7 @@ export function TickerPanel({
     : undefined;
   const fundamentalLoading = fundamentalsSelected
     && (activeFundamentalState?.loading ?? true);
-  const fundamentalMetric = useMemo<BoundedTickerMetric>(() => ({
+  const fundamentalMetric = useMemo<TickerMetric>(() => ({
     id: fundamentalsMetricId,
     label: "FUN",
     values: new Map(
@@ -289,20 +290,20 @@ export function TickerPanel({
       ];
     },
   }), [activeFundamentalState?.scores]);
-  const availableBoundedMetrics = useMemo(
+  const availableMetrics = useMemo(
     () => !bounded
-      ? boundedMetrics
-      : [
-          ...boundedMetrics.filter((metric) => metric.id !== fundamentalsMetricId),
-          fundamentalMetric,
-        ],
-    [bounded, boundedMetrics, fundamentalMetric],
+      ? metrics
+      : [...metrics, fundamentalMetric],
+    [bounded, fundamentalMetric, metrics],
   );
-  const activeBoundedMetric = boundedMetricForKey(availableBoundedMetrics, sortSetting.key);
-  const sortActive = metricsActive || activeBoundedMetric !== undefined;
+  const activeMetric = metricForKey(availableMetrics, sortSetting.key);
+  const sortActive = metricsActive || activeMetric !== undefined;
+  if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) {
+    setSortSetting(defaultTickerSortSetting);
+  }
   useEffect(() => {
-    onActiveMetricChange?.(activeBoundedMetric?.id);
-  }, [activeBoundedMetric?.id, onActiveMetricChange]);
+    onActiveMetricChange?.(activeMetric?.id);
+  }, [activeMetric?.id, onActiveMetricChange]);
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
       mode,
@@ -465,7 +466,7 @@ export function TickerPanel({
   }, [groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
 
   useEffect(() => {
-    if (!isBoundedMetricSortKey(sortSetting.key)) {
+    if (!isMetricSortKey(sortSetting.key)) {
       localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
     }
   }, [sortSetting]);
@@ -510,8 +511,8 @@ export function TickerPanel({
     [tickerFilters, tickers],
   );
   const sortedTickers = useMemo(
-    () => sortTickers(filteredTickers, sortSetting, sortActive, activeBoundedMetric),
-    [activeBoundedMetric, filteredTickers, sortActive, sortSetting],
+    () => sortTickers(filteredTickers, sortSetting, sortActive, activeMetric),
+    [activeMetric, filteredTickers, sortActive, sortSetting],
   );
   const tickerSymbolsKey = filteredTickers.map((ticker) => ticker.symbol).join("\0");
 
@@ -701,7 +702,7 @@ export function TickerPanel({
   const tickerRowProps = useMemo<TickerRowProps>(() => ({
     tickers: sortedTickers,
     sortKey: sortSetting.key,
-    boundedMetric: activeBoundedMetric,
+    metric: activeMetric,
     selectedTicker,
     onSelect: toggleSelectedTicker,
     watchlists,
@@ -710,7 +711,7 @@ export function TickerPanel({
   }), [
     handleContextMenu,
     handleFavouriteClick,
-    activeBoundedMetric,
+    activeMetric,
     selectedTicker,
     sortSetting.key,
     sortedTickers,
@@ -734,7 +735,7 @@ export function TickerPanel({
           <Select
             size="small"
             value={sortSetting.key}
-            disabled={!bounded && !metricsActive && availableBoundedMetrics.length === 0}
+            disabled={!bounded && !metricsActive && availableMetrics.length === 0}
             aria-label="Sort tickers by"
             onChange={(event) => {
               const key = event.target.value as TickerSortKey;
@@ -744,15 +745,15 @@ export function TickerPanel({
           >
             {[
               ...tickerSortOptions,
-              ...availableBoundedMetrics.map((metric) => ({
-                key: boundedMetricSortKey(metric.id),
+              ...availableMetrics.map((metric) => ({
+                key: metricSortKey(metric.id),
                 label: metric.label,
               })),
             ].map((option) => (
               <MenuItem
                 key={option.key}
                 value={option.key}
-                disabled={!isBoundedMetricSortKey(option.key) && !metricsActive}
+                disabled={!isMetricSortKey(option.key) && !metricsActive}
               >
                 {option.label}
               </MenuItem>

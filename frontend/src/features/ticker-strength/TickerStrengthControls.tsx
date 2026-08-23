@@ -7,15 +7,14 @@ import {
 import "./ticker-strength.css";
 
 type TickerStrengthControlsProps = {
-  disabled: boolean;
   className?: string;
 };
 
 export function TickerStrengthControls({
-  disabled,
   className,
 }: TickerStrengthControlsProps) {
   const tickerStrength = useTickerStrength();
+  const disabled = !tickerStrength.enabled || !tickerStrength.available;
   const busy = !disabled && (tickerStrength.loading || tickerStrength.calculating);
   const classes = [
     "ticker-strength-controls",

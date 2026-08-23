@@ -5,7 +5,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import {
   Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  Divider, FormControlLabel, IconButton, MenuItem, Select, TextField, Tooltip, Typography,
+  FormControlLabel, IconButton, MenuItem, Select, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
   clearTopStocks, createTopStockScreen, deleteTopStockScreen, fetchTopStockScreens,
@@ -28,7 +28,6 @@ const periods: { period: TopStocksPeriod; label: string }[] = [
 const defaultPeriodCount = 100;
 const defaultScreenCount = 200;
 const periodMode = "periods";
-const emptySymbols: string[] = [];
 
 export function TopStocksPage() {
   return (
@@ -78,11 +77,6 @@ function TopStocksContent() {
   const selectedScreen = snapshotSource?.kind === "custom_screen"
     ? screens.find((screen) => screen.id === snapshotSource.screen_id) : undefined;
   const selectedMode = selectedScreen === undefined ? periodMode : String(selectedScreen.id);
-  const tickerStrengthSymbols = snapshot?.symbols ?? emptySymbols;
-  const setTickerStrengthUniverse = tickerStrength.setUniverse;
-  useEffect(() => {
-    setTickerStrengthUniverse({ symbols: tickerStrengthSymbols });
-  }, [setTickerStrengthUniverse, tickerStrengthSymbols]);
   const save = async (source: TopStocksSource) => {
     setLoading(true); setError(undefined);
     try {
@@ -130,10 +124,7 @@ function TopStocksContent() {
       <header className="panel-header top-stocks-header">
         <Typography component="h1">Top Stocks</Typography>
         <div className="top-stocks-ticker-strength">
-          <TickerStrengthControls
-            disabled={!tickerStrength.active || tickerStrengthSymbols.length === 0}
-          />
-          <Divider orientation="vertical" flexItem />
+          <TickerStrengthControls />
         </div>
         <div className="top-stocks-actions"><div className="top-stocks-controls">
           {loading && <CircularProgress size="0.8rem" />}
@@ -206,8 +197,7 @@ function TopStocksContent() {
         : <TickerLens
             accent="green"
             universe={{ type: "bounded", symbols: snapshot.symbols }}
-            tickerMetrics={tickerStrength.tickerMetrics}
-            onTickerMetricChange={tickerStrength.onTickerMetricChange}
+            metricExtensions={tickerStrength.metricExtensions}
           />}
       {editor !== undefined && <ScreenEditor screen={editor} onClose={() => setEditor(undefined)} onSave={saveScreen} />}
       <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>

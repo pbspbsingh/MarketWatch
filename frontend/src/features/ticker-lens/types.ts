@@ -3,8 +3,8 @@ import type { PerformancePeriods } from "../../api/industries";
 export type GroupSortKey = "count";
 export type SortKey = GroupSortKey | "absolute_strength" | keyof PerformancePeriods;
 export type BuiltInTickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume";
-export type BoundedMetricSortKey = `bounded:${string}`;
-export type TickerSortKey = BuiltInTickerSortKey | BoundedMetricSortKey;
+export type MetricSortKey = `metric:${string}`;
+export type TickerSortKey = BuiltInTickerSortKey | MetricSortKey;
 export type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };
@@ -14,7 +14,7 @@ export type ChartBenchmarkSelection = "market" | "sector" | `theme:${string}`;
 
 export type RevealRequest<T> = { value: T; revision: number };
 
-export type BoundedTickerMetric = {
+export type TickerMetric = {
   id: string;
   label: string;
   values: ReadonlyMap<string, number>;
@@ -23,8 +23,6 @@ export type BoundedTickerMetric = {
   tooltipLines?: (symbol: string, value: number) => readonly string[];
 };
 
-export type TickerMetric = BoundedTickerMetric;
-
 export type TickerUniverseSnapshot = {
   mode: GroupMode;
   groupKeys: string[];
@@ -32,7 +30,16 @@ export type TickerUniverseSnapshot = {
   symbols: string[];
 };
 
-export type DefaultBoundedMetricSort = {
+export type TickerMetricExtension = {
+  /** The ID defines attachment identity and must be unique within a TickerLens. */
+  metric: TickerMetric;
+  /** Receives scope changes and null on detach; replacing this handler does not replay state. */
+  onScopeChange: (snapshot: TickerUniverseSnapshot | null) => void;
+  /** Receives active-state changes; replacing this handler does not replay state. */
+  onActiveChange: (active: boolean) => void;
+};
+
+export type DefaultMetricSort = {
   metricId: string;
   direction: SortDirection;
 };

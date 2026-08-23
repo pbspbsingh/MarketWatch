@@ -69,12 +69,7 @@ function MarketWatchContent() {
     },
     [],
   );
-  const setTickerStrengthUniverse = tickerStrength.setUniverse;
   const handleTickerUniverseChange = useCallback((snapshot: TickerUniverseSnapshot) => {
-    setTickerStrengthUniverse({
-      symbols: snapshot.symbols,
-      benchmarkContext: { mode: snapshot.mode, groupKeys: snapshot.groupKeys },
-    });
     setSelection((current) =>
       current.mode === snapshot.mode
         && current.groupKeys.join("\0") === snapshot.groupKeys.join("\0")
@@ -83,7 +78,7 @@ function MarketWatchContent() {
         ? current
         : { mode: snapshot.mode, groupKeys: snapshot.groupKeys, groups: snapshot.groups }
     );
-  }, [setTickerStrengthUniverse]);
+  }, []);
   const requestMembershipRefresh = useCallback(() => {
     if (selection.mode === "industry" && selection.groupKeys.length > 0) {
       setMembershipRefreshTarget([...selection.groupKeys]);
@@ -119,7 +114,6 @@ function MarketWatchContent() {
   return (
     <section className="market-watch-page">
       <MarketWatchToolbar
-        tickerStrengthDisabled={!tickerStrength.active}
         membershipRefreshDisabled={selection.mode !== "industry"
           || selection.groupKeys.length === 0}
         membershipRefreshTooltip={membershipRefreshTooltip(selection)}
@@ -135,9 +129,8 @@ function MarketWatchContent() {
           resolveGroupCounts,
           revision: membershipRevision,
         }}
-        tickerMetrics={tickerStrength.tickerMetrics}
+        metricExtensions={tickerStrength.metricExtensions}
         onTickerUniverseChange={handleTickerUniverseChange}
-        onTickerMetricChange={tickerStrength.onTickerMetricChange}
       />
       <Toast
         message={refreshMessage?.text}

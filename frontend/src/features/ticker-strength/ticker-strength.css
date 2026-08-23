@@ -70,9 +70,9 @@
     width: 4.25rem;
   }
 
-  & .MuiSelect-select {
+  & .MuiSelect-select.MuiSelect-outlined {
     min-width: 0;
-    padding-block: 0.2rem;
+    padding: 0.2rem 1.4rem 0.2rem 0.45rem;
     font-size: 0.65rem;
   }
 }

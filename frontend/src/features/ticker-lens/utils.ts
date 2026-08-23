@@ -4,24 +4,24 @@ import {
   tickerMetricScale,
 } from "../../app/visualizationColors";
 import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
-import type { BoundedMetricSortKey, BoundedTickerMetric, ChartBenchmarkMode, GroupMode, GroupRanking, SelectedTickerContext, SortKey, SortSetting, TickerSortKey, TickerSortSetting } from "./types";
+import type { ChartBenchmarkMode, GroupMode, GroupRanking, MetricSortKey, SelectedTickerContext, SortKey, SortSetting, TickerMetric, TickerSortKey, TickerSortSetting } from "./types";
 
-const boundedMetricPrefix = "bounded:";
+const metricPrefix = "metric:";
 
-export function boundedMetricSortKey(id: string): BoundedMetricSortKey {
-  return `${boundedMetricPrefix}${id}`;
+export function metricSortKey(id: string): MetricSortKey {
+  return `${metricPrefix}${id}`;
 }
 
-export function isBoundedMetricSortKey(key: SortKey | TickerSortKey): key is BoundedMetricSortKey {
-  return key.startsWith(boundedMetricPrefix);
+export function isMetricSortKey(key: SortKey | TickerSortKey): key is MetricSortKey {
+  return key.startsWith(metricPrefix);
 }
 
-export function boundedMetricForKey(
-  metrics: readonly BoundedTickerMetric[],
+export function metricForKey(
+  metrics: readonly TickerMetric[],
   key: SortKey | TickerSortKey,
 ) {
-  if (!isBoundedMetricSortKey(key)) return undefined;
-  const id = key.slice(boundedMetricPrefix.length);
+  if (!isMetricSortKey(key)) return undefined;
+  const id = key.slice(metricPrefix.length);
   return metrics.find((metric) => metric.id === id);
 }
 
@@ -66,9 +66,9 @@ export function sortValue(group: GroupRanking, key: SortKey) {
 export function tickerSortValue(
   ticker: TickerRanking,
   key: TickerSortKey,
-  boundedMetric?: BoundedTickerMetric,
+  metric?: TickerMetric,
 ) {
-  if (isBoundedMetricSortKey(key)) return boundedMetric?.values.get(ticker.symbol);
+  if (isMetricSortKey(key)) return metric?.values.get(ticker.symbol);
   if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
@@ -116,12 +116,12 @@ export function sortTickers(
   tickers: TickerRanking[],
   sortSetting: TickerSortSetting,
   sortActive: boolean,
-  boundedMetric?: BoundedTickerMetric,
+  metric?: TickerMetric,
 ) {
   return [...tickers].sort((left, right) => {
     if (!sortActive) return left.symbol.localeCompare(right.symbol);
-    const leftValue = tickerSortValue(left, sortSetting.key, boundedMetric);
-    const rightValue = tickerSortValue(right, sortSetting.key, boundedMetric);
+    const leftValue = tickerSortValue(left, sortSetting.key, metric);
+    const rightValue = tickerSortValue(right, sortSetting.key, metric);
     if (leftValue === undefined && rightValue === undefined) {
       return left.symbol.localeCompare(right.symbol);
     }
@@ -139,9 +139,9 @@ export function sortTickers(
 export function formatMetric(
   value: number,
   key: SortKey | TickerSortKey,
-  boundedMetric?: BoundedTickerMetric,
+  metric?: TickerMetric,
 ) {
-  if (isBoundedMetricSortKey(key)) return boundedMetric?.formatValue(value) ?? value.toString();
+  if (isMetricSortKey(key)) return metric?.formatValue(value) ?? value.toString();
   if (key === "count") return value.toLocaleString();
   if (key === "adr_percent") return `${value.toFixed(1)}%`;
   if (key === "dollar_volume") return formatWholeVolume(value);
@@ -151,10 +151,10 @@ export function formatMetric(
 export function metricColor(
   value: number,
   key: SortKey | TickerSortKey,
-  boundedMetric?: BoundedTickerMetric,
+  metric?: TickerMetric,
 ) {
-  if (isBoundedMetricSortKey(key)) {
-    return boundedMetric?.colorValue?.(value) ?? "var(--color-text)";
+  if (isMetricSortKey(key)) {
+    return metric?.colorValue?.(value) ?? "var(--color-text)";
   }
   if (key === "count") return "var(--color-text)";
   if (key === "adr_percent") return adrColor(value);

@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   Typography,
 } from "@mui/material";
@@ -22,8 +21,6 @@ import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControl
 import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
 import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import "./csv-analyzer.css";
-
-const emptySymbols: string[] = [];
 
 export function CsvAnalyzerPage() {
   return (
@@ -43,12 +40,6 @@ function CsvAnalyzerContent() {
   const [failedResolutionCount, setFailedResolutionCount] = useState(0);
   const [error, setError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
-  const tickerStrengthSymbols = collection?.symbols ?? emptySymbols;
-
-  const setTickerStrengthUniverse = tickerStrength.setUniverse;
-  useEffect(() => {
-    setTickerStrengthUniverse({ symbols: tickerStrengthSymbols });
-  }, [setTickerStrengthUniverse, tickerStrengthSymbols]);
 
   useEffect(() => {
     fetchLastTickerCollection()
@@ -109,10 +100,7 @@ function CsvAnalyzerContent() {
         <header className="panel-header csv-analyzer-header">
           <Typography component="h1">CSV Analyzer</Typography>
           <div className="csv-analyzer-ticker-strength">
-            <TickerStrengthControls
-              disabled={!tickerStrength.active || tickerStrengthSymbols.length === 0}
-            />
-            <Divider orientation="vertical" flexItem />
+            <TickerStrengthControls />
           </div>
           <div className="csv-analyzer-actions">
             {loading && !uploading && <CircularProgress size="0.85rem" />}
@@ -163,8 +151,7 @@ function CsvAnalyzerContent() {
           <TickerLens
             accent="coral"
             universe={{ type: "bounded", symbols: collection.symbols }}
-            tickerMetrics={tickerStrength.tickerMetrics}
-            onTickerMetricChange={tickerStrength.onTickerMetricChange}
+            metricExtensions={tickerStrength.metricExtensions}
             onBoundedResolution={setFailedResolutionCount}
           />
         )}

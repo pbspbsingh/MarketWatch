@@ -76,9 +76,6 @@ function WatchlistsContent() {
     : `${selectedWatchlistId}\0${focusRevision}`;
   const symbolsLoading = symbolsRequestKey !== undefined
     && loadedSymbolsRequestKey !== symbolsRequestKey;
-  const watchlistReady = selected !== undefined
-    && symbolsWatchlistId === selected.id;
-
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -130,11 +127,6 @@ function WatchlistsContent() {
       });
     return () => controller.abort();
   }, [selectedWatchlistId, symbolsRequestKey]);
-
-  const setTickerStrengthUniverse = tickerStrength.setUniverse;
-  useEffect(() => {
-    setTickerStrengthUniverse({ symbols: watchlistReady ? symbols : [] });
-  }, [setTickerStrengthUniverse, symbols, watchlistReady]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {
@@ -239,7 +231,7 @@ function WatchlistsContent() {
         {selected !== undefined && (
           <div className="watchlists-ticker-strength">
             <Divider orientation="vertical" flexItem />
-            <TickerStrengthControls disabled={!tickerStrength.active} />
+            <TickerStrengthControls />
           </div>
         )}
         <TextField
@@ -290,8 +282,7 @@ function WatchlistsContent() {
           key={selected.id}
           accent="yellow"
           universe={{ type: "bounded", symbols }}
-          tickerMetrics={tickerStrength.tickerMetrics}
-          onTickerMetricChange={tickerStrength.onTickerMetricChange}
+          metricExtensions={tickerStrength.metricExtensions}
           watchlists={watchlists}
           onWatchlistsChange={(symbol, watchlistIds) => {
             if (!watchlistIds.includes(selected.id)) setSymbols((current) => current.filter((item) => item !== symbol));

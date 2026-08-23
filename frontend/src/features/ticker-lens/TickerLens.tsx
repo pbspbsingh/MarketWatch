@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
@@ -10,6 +10,7 @@ import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
+  fundamentalsMetricId,
   groupModeKey,
   sectorGroupingKey,
   unassignedGroupKey,
@@ -29,14 +30,14 @@ import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
   GroupRanking,
-  BoundedTickerMetric,
-  DefaultBoundedMetricSort,
+  DefaultMetricSort,
   RevealRequest,
   ResolveTickersRequest,
   SelectedTickerContext,
   TickerFilterCounts,
   TickerFilters,
   TickerMetric,
+  TickerMetricExtension,
   TickerUniverseSnapshot,
   TickerUniverse,
 } from "./types";
@@ -60,11 +61,10 @@ interface TickerLensProps {
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onBoundedResolution?: (failedCount: number) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
-  boundedMetrics?: readonly BoundedTickerMetric[];
-  tickerMetrics?: readonly TickerMetric[];
+  metrics?: readonly TickerMetric[];
+  metricExtensions?: readonly TickerMetricExtension[];
   onTickerUniverseChange?: (snapshot: TickerUniverseSnapshot) => void;
-  onTickerMetricChange?: (metricId: string | undefined) => void;
-  defaultBoundedMetricSort?: DefaultBoundedMetricSort;
+  defaultMetricSort?: DefaultMetricSort;
 }
 
 interface GroupSelectionState {
@@ -99,6 +99,19 @@ interface SectorRankingsState {
   error?: string;
 }
 
+type AttachedMetricExtension = Pick<
+  TickerMetricExtension,
+  "onScopeChange" | "onActiveChange"
+> & {
+  active: boolean;
+};
+
+type TickerUniverseSymbolsState = {
+  contextKey: string;
+  symbolsKey: string;
+  symbols: string[];
+};
+
 const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
@@ -110,11 +123,10 @@ export function TickerLens({
   onWatchlistsChange,
   onBoundedResolution,
   accent,
-  boundedMetrics = [],
-  tickerMetrics = [],
+  metrics = [],
+  metricExtensions = [],
   onTickerUniverseChange,
-  onTickerMetricChange,
-  defaultBoundedMetricSort,
+  defaultMetricSort,
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
@@ -172,6 +184,11 @@ export function TickerLens({
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
   const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
+  const attachedMetricExtensionsRef = useRef(new Map<string, AttachedMetricExtension>());
+  const latestTickerUniverseRef = useRef<TickerUniverseSnapshot | undefined>(undefined);
+  const [tickerUniverseSymbolsState, setTickerUniverseSymbolsState] =
+    useState<TickerUniverseSymbolsState>({ contextKey: "", symbolsKey: "", symbols: [] });
+  const [activeMetricId, setActiveMetricId] = useState<string>();
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string> | undefined>(() => {
     const keys = initialGroupKeys(searchParams);
     const key = keys.size === 1 ? keys.values().next().value : undefined;
@@ -219,23 +236,77 @@ export function TickerLens({
     : emptySymbols;
   const boundedSymbolsKey = boundedSymbols.join("\0");
   const selectedGroupKey = [...selectedGroupKeys].sort().join("\0");
-  const availableTickerMetrics = useMemo(
-    () => bounded ? [...boundedMetrics, ...tickerMetrics] : tickerMetrics,
-    [bounded, boundedMetrics, tickerMetrics],
+  const tickerUniverseContextKey = `${groupsRequestKey}\u0002${selectedGroupKey}\u0002${marketUniverseRevision}`;
+  const receiveTickerUniverse = useCallback((symbols: string[]) => {
+    const symbolsKey = symbols.join("\0");
+    setTickerUniverseSymbolsState((current) =>
+      current.contextKey === tickerUniverseContextKey && current.symbolsKey === symbolsKey
+        ? current
+        : { contextKey: tickerUniverseContextKey, symbolsKey, symbols }
+    );
+  }, [tickerUniverseContextKey]);
+  const tickerUniverseSymbols = tickerUniverseSymbolsState.contextKey === tickerUniverseContextKey
+    ? tickerUniverseSymbolsState.symbols
+    : emptySymbols;
+  const availableMetrics = useMemo(
+    () => validatedMetrics(metrics, metricExtensions),
+    [metricExtensions, metrics],
   );
+  useEffect(() => {
+    const attached = attachedMetricExtensionsRef.current;
+    const next = new Map<string, AttachedMetricExtension>();
+    const currentIds = new Set(metricExtensions.map((extension) => extension.metric.id));
+    attached.forEach((extension, id) => {
+      if (!currentIds.has(id)) {
+        extension.onActiveChange(false);
+        extension.onScopeChange(null);
+      }
+    });
+    metricExtensions.forEach((extension) => {
+      const id = extension.metric.id;
+      const active = id === activeMetricId;
+      const previous = attached.get(id);
+      if (previous === undefined) {
+        if (latestTickerUniverseRef.current !== undefined) {
+          extension.onScopeChange(latestTickerUniverseRef.current);
+        }
+        extension.onActiveChange(active);
+      } else if (previous.active !== active) {
+        extension.onActiveChange(active);
+      }
+      next.set(id, {
+        onScopeChange: extension.onScopeChange,
+        onActiveChange: extension.onActiveChange,
+        active,
+      });
+    });
+    attachedMetricExtensionsRef.current = next;
+  });
   const reportTickerUniverse = useCallback((symbols: string[]) => {
-    onTickerUniverseChange?.({
+    const snapshot: TickerUniverseSnapshot = {
       mode: groupMode,
       groupKeys: selectedGroupKey === "" ? [] : selectedGroupKey.split("\0"),
       groups: groups
         .filter((group) => selectedGroupKeys.has(group.key))
         .map(({ key, name }) => ({ key, name })),
       symbols,
-    });
+    };
+    latestTickerUniverseRef.current = snapshot;
+    onTickerUniverseChange?.(snapshot);
+    attachedMetricExtensionsRef.current.forEach((extension) => extension.onScopeChange(snapshot));
   }, [groupMode, groups, onTickerUniverseChange, selectedGroupKey, selectedGroupKeys]);
   useEffect(() => {
-    reportTickerUniverse([]);
-  }, [reportTickerUniverse]);
+    reportTickerUniverse(tickerUniverseSymbols);
+  }, [reportTickerUniverse, tickerUniverseSymbols]);
+  useEffect(() => {
+    return () => {
+      attachedMetricExtensionsRef.current.forEach((extension) => {
+        extension.onActiveChange(false);
+        extension.onScopeChange(null);
+      });
+      attachedMetricExtensionsRef.current.clear();
+    };
+  }, []);
   const groupCountsRequestKey = !bounded
     && selectedGroupKey !== ""
     && marketResolveGroupCounts !== undefined
@@ -503,8 +574,8 @@ export function TickerLens({
         bounded={bounded}
         boundedUniverseKey={bounded ? boundedSymbolsKey : ""}
         universeRevision={marketUniverseRevision}
-        boundedMetrics={availableTickerMetrics}
-        defaultBoundedMetricSort={bounded ? defaultBoundedMetricSort : undefined}
+        metrics={availableMetrics}
+        defaultMetricSort={defaultMetricSort}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}
@@ -513,8 +584,8 @@ export function TickerLens({
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
         onTickersChange={setSearchTickerSymbols}
-        onTickerUniverseChange={reportTickerUniverse}
-        onActiveMetricChange={onTickerMetricChange}
+        onTickerUniverseChange={receiveTickerUniverse}
+        onActiveMetricChange={setActiveMetricId}
         onFilterCountsChange={setTickerFilterCounts}
         tickerFilters={hasGroupSelection ? tickerFilters : undefined}
         revealTicker={revealTicker}
@@ -605,6 +676,24 @@ function themeKeysFromSearch(searchParams: URLSearchParams) {
   const keys = searchThemeIds(searchParams);
   if (searchIncludesUnassigned(searchParams)) keys.add(unassignedGroupKey);
   return keys;
+}
+
+function validatedMetrics(
+  metrics: readonly TickerMetric[],
+  extensions: readonly TickerMetricExtension[],
+) {
+  const result = [...metrics, ...extensions.map((extension) => extension.metric)];
+  const ids = new Set<string>();
+  result.forEach((metric) => {
+    if (metric.id === fundamentalsMetricId) {
+      throw new Error(`Ticker metric ID "${metric.id}" is reserved`);
+    }
+    if (ids.has(metric.id)) {
+      throw new Error(`Duplicate ticker metric ID "${metric.id}"`);
+    }
+    ids.add(metric.id);
+  });
+  return result;
 }
 
 function isTypingTarget(target: EventTarget | null) {

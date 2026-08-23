@@ -8,7 +8,6 @@ import {
 import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
 
 type MarketWatchToolbarProps = {
-  tickerStrengthDisabled: boolean;
   membershipRefreshDisabled: boolean;
   membershipRefreshTooltip: string;
   refreshingMembership: boolean;
@@ -16,7 +15,6 @@ type MarketWatchToolbarProps = {
 };
 
 export function MarketWatchToolbar({
-  tickerStrengthDisabled,
   membershipRefreshDisabled,
   membershipRefreshTooltip,
   refreshingMembership,
@@ -41,7 +39,6 @@ export function MarketWatchToolbar({
       </Tooltip>
       <TickerStrengthControls
         className="market-watch-ticker-strength"
-        disabled={tickerStrengthDisabled}
       />
     </header>
   );

@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { TickerMetric } from "../ticker-lens/types";
+import type { TickerMetric, TickerMetricExtension } from "../ticker-lens/types";
 import { useTickerStrength } from "./TickerStrengthContext";
 
 export const tickerStrengthMetricId = "ticker-strength";
@@ -30,16 +30,29 @@ export function useTickerStrengthMetric() {
 export function useTickerStrengthFeature() {
   const tickerStrength = useTickerStrength();
   const metric = useTickerStrengthMetric();
-  const tickerMetrics = useMemo(() => [metric], [metric]);
   const setEnabled = tickerStrength.setEnabled;
-  const onTickerMetricChange = useCallback((metricId: string | undefined) => {
-    setEnabled(metricId === tickerStrengthMetricId);
+  const setUniverse = tickerStrength.setUniverse;
+  const onScopeChange = useCallback<TickerMetricExtension["onScopeChange"]>((snapshot) => {
+    if (snapshot === null) {
+      setUniverse({ symbols: [] });
+      return;
+    }
+    setUniverse({
+      symbols: snapshot.symbols,
+      benchmarkContext: { mode: snapshot.mode, groupKeys: snapshot.groupKeys },
+    });
+  }, [setUniverse]);
+  const onActiveChange = useCallback<TickerMetricExtension["onActiveChange"]>((active) => {
+    setEnabled(active);
   }, [setEnabled]);
+  const extension = useMemo<TickerMetricExtension>(() => ({
+    metric,
+    onScopeChange,
+    onActiveChange,
+  }), [metric, onActiveChange, onScopeChange]);
+  const metricExtensions = useMemo(() => [extension], [extension]);
   return {
-    active: tickerStrength.enabled,
-    tickerMetrics,
-    onTickerMetricChange,
-    setUniverse: tickerStrength.setUniverse,
+    metricExtensions,
   };
 }
 

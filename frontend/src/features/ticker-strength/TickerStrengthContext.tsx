@@ -34,6 +34,7 @@ type CatalogState = { scopeKey: string; catalog?: TickerStrengthBenchmarkCatalog
 type ScoreState = { requestKey: string; scores: TickerStrengthScore[]; error?: string };
 type TickerStrengthContextValue = {
   enabled: boolean;
+  available: boolean;
   draftSessions: number;
   committedSessions: number;
   benchmark: string;
@@ -148,6 +149,7 @@ export function TickerStrengthProvider({
 
   const value = useMemo<TickerStrengthContextValue>(() => ({
     enabled,
+    available: scope.symbols.length > 0,
     draftSessions,
     committedSessions,
     benchmark,
@@ -162,7 +164,7 @@ export function TickerStrengthProvider({
     setBenchmark,
     setUniverse,
   }), [
-    benchmark, benchmarks, commitSessions, committedSessions, draftSessions, enabled, error, loading,
+    benchmark, benchmarks, commitSessions, committedSessions, draftSessions, enabled, error, loading, scope.symbols.length,
     scoreRequestKey, scoreState, setBenchmark, setDraftSessions, setUniverse,
   ]);
 

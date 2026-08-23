@@ -10,7 +10,7 @@ import {
 } from "../../api/highestVolume";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
-import type { BoundedTickerMetric } from "../ticker-lens/types";
+import type { TickerMetric } from "../ticker-lens/types";
 import "./highest-volume.css";
 
 const storagePrefix = "market-watch.highest-volume.";
@@ -74,7 +74,7 @@ export function HighestVolumePage() {
     setLoading(true);
     setSettings((current) => ({ ...current, [key]: value }));
   };
-  const metrics = useMemo<readonly BoundedTickerMetric[]>(() => {
+  const metrics = useMemo<readonly TickerMetric[]>(() => {
     const values = new Map(result?.events.map((event) => [event.symbol, event.rvol]) ?? []);
     return [{
       id: "event-score",
@@ -141,8 +141,8 @@ export function HighestVolumePage() {
         <TickerLens
           accent="indigo"
           universe={{ type: "bounded", symbols }}
-          boundedMetrics={metrics}
-          defaultBoundedMetricSort={defaultMetricSort}
+          metrics={metrics}
+          defaultMetricSort={defaultMetricSort}
         />
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
