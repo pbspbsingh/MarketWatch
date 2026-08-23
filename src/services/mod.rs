@@ -14,6 +14,7 @@ pub mod study;
 pub mod theme_analysis;
 pub mod themes;
 pub mod ticker_collections;
+pub mod ticker_strength;
 pub mod tickers;
 pub mod top_stocks;
 pub mod trade_analyzer;

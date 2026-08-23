@@ -1,9 +1,12 @@
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { resolveTickerMembership } from "../../api/tickers";
 import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import { unassignedGroupKey } from "../ticker-lens/constants";
-import type { ResolveGroupsRequest, ResolveTickersRequest } from "../ticker-lens/types";
+import type { ResolveGroupsRequest, ResolveTickersRequest, TickerMetric } from "../ticker-lens/types";
+import { TickerStrengthProvider, useTickerStrength } from "../ticker-strength/TickerStrengthContext";
+import { TickerStrengthToolbar } from "../ticker-strength/TickerStrengthToolbar";
+import "../ticker-strength/ticker-strength.css";
 
 const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<string>) =>
   mode === "industry"
@@ -17,6 +20,28 @@ const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<str
       } as const);
 
 export function MarketWatchPage() {
+  const [tickerStrengthSelected, setTickerStrengthSelected] = useState(false);
+  const handleTickerMetricChange = useCallback((metricId: string | undefined) => {
+    setTickerStrengthSelected(metricId === "ticker-strength");
+  }, []);
+  return (
+    <TickerStrengthProvider enabled={tickerStrengthSelected}>
+      <MarketWatchContent
+        tickerStrengthSelected={tickerStrengthSelected}
+        onTickerMetricChange={handleTickerMetricChange}
+      />
+    </TickerStrengthProvider>
+  );
+}
+
+function MarketWatchContent({
+  tickerStrengthSelected,
+  onTickerMetricChange,
+}: {
+  tickerStrengthSelected: boolean;
+  onTickerMetricChange: (metricId: string | undefined) => void;
+}) {
+  const tickerStrength = useTickerStrength();
   const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
     return fetchGlobalGroupRankings(mode, signal);
   }, []);
@@ -40,11 +65,41 @@ export function MarketWatchPage() {
     },
     [],
   );
+  const tickerStrengthMetric = useMemo<TickerMetric>(() => {
+    const scores = new Map(tickerStrength.scores.map((score) => [score.symbol, score.score]));
+    const details = new Map(tickerStrength.scores.map((score) => [score.symbol, score]));
+    return {
+      id: "ticker-strength",
+      label: "TS",
+      values: scores,
+      formatValue: formatStrength,
+      colorValue: (value) => value > 0
+        ? "var(--color-positive)"
+        : value < 0 ? "var(--color-negative)" : "var(--color-text)",
+      tooltipLines: (symbol, value) => {
+        const score = details.get(symbol);
+        return score === undefined ? [] : [
+          `${formatStrength(value)} · ${tickerStrength.benchmark} · ${score.samples}/${score.sessions} days`,
+        ];
+      },
+    };
+  }, [tickerStrength.benchmark, tickerStrength.scores]);
+  const tickerMetrics = useMemo(() => [tickerStrengthMetric], [tickerStrengthMetric]);
 
   return (
-    <TickerLens
-      accent="purple"
-      universe={{ type: "market-watch", resolveGroups, resolveTickers, resolveGroupCounts }}
-    />
+    <section className="market-watch-page">
+      <TickerStrengthToolbar disabled={!tickerStrengthSelected} />
+      <TickerLens
+        accent="purple"
+        universe={{ type: "market-watch", resolveGroups, resolveTickers, resolveGroupCounts }}
+        tickerMetrics={tickerMetrics}
+        onTickerUniverseChange={tickerStrength.setUniverse}
+        onTickerMetricChange={onTickerMetricChange}
+      />
+    </section>
   );
+}
+
+function formatStrength(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
 }

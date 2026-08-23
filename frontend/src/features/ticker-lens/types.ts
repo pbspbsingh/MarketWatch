@@ -23,6 +23,14 @@ export type BoundedTickerMetric = {
   tooltipLines?: (symbol: string, value: number) => readonly string[];
 };
 
+export type TickerMetric = BoundedTickerMetric;
+
+export type TickerUniverseSnapshot = {
+  mode: GroupMode;
+  groupKeys: string[];
+  symbols: string[];
+};
+
 export type DefaultBoundedMetricSort = {
   metricId: string;
   direction: SortDirection;

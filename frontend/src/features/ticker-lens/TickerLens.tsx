@@ -36,6 +36,8 @@ import type {
   SelectedTickerContext,
   TickerFilterCounts,
   TickerFilters,
+  TickerMetric,
+  TickerUniverseSnapshot,
   TickerUniverse,
 } from "./types";
 import {
@@ -59,6 +61,9 @@ interface TickerLensProps {
   onBoundedResolution?: (failedCount: number) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
   boundedMetrics?: readonly BoundedTickerMetric[];
+  tickerMetrics?: readonly TickerMetric[];
+  onTickerUniverseChange?: (snapshot: TickerUniverseSnapshot) => void;
+  onTickerMetricChange?: (metricId: string | undefined) => void;
   defaultBoundedMetricSort?: DefaultBoundedMetricSort;
 }
 
@@ -106,6 +111,9 @@ export function TickerLens({
   onBoundedResolution,
   accent,
   boundedMetrics = [],
+  tickerMetrics = [],
+  onTickerUniverseChange,
+  onTickerMetricChange,
   defaultBoundedMetricSort,
 }: TickerLensProps) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -210,6 +218,20 @@ export function TickerLens({
     : emptySymbols;
   const boundedSymbolsKey = boundedSymbols.join("\0");
   const selectedGroupKey = [...selectedGroupKeys].sort().join("\0");
+  const availableTickerMetrics = useMemo(
+    () => bounded ? [...boundedMetrics, ...tickerMetrics] : tickerMetrics,
+    [bounded, boundedMetrics, tickerMetrics],
+  );
+  const reportTickerUniverse = useCallback((symbols: string[]) => {
+    onTickerUniverseChange?.({
+      mode: groupMode,
+      groupKeys: selectedGroupKey === "" ? [] : selectedGroupKey.split("\0"),
+      symbols,
+    });
+  }, [groupMode, onTickerUniverseChange, selectedGroupKey]);
+  useEffect(() => {
+    reportTickerUniverse([]);
+  }, [reportTickerUniverse]);
   const groupCountsRequestKey = !bounded
     && selectedGroupKey !== ""
     && marketResolveGroupCounts !== undefined
@@ -476,7 +498,7 @@ export function TickerLens({
         tickerStream={tickerStream}
         bounded={bounded}
         boundedUniverseKey={bounded ? boundedSymbolsKey : ""}
-        boundedMetrics={bounded ? boundedMetrics : []}
+        boundedMetrics={availableTickerMetrics}
         defaultBoundedMetricSort={bounded ? defaultBoundedMetricSort : undefined}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
@@ -486,6 +508,8 @@ export function TickerLens({
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
         onTickersChange={setSearchTickerSymbols}
+        onTickerUniverseChange={reportTickerUniverse}
+        onActiveMetricChange={onTickerMetricChange}
         onFilterCountsChange={setTickerFilterCounts}
         tickerFilters={hasGroupSelection ? tickerFilters : undefined}
         revealTicker={revealTicker}

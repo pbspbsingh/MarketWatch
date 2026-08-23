@@ -96,6 +96,8 @@ interface TickerPanelProps {
   providedWatchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onTickersChange?: (symbols: string[]) => void;
+  onTickerUniverseChange?: (symbols: string[]) => void;
+  onActiveMetricChange?: (metricId: string | undefined) => void;
   onFilterCountsChange?: (counts: TickerFilterCounts) => void;
   tickerFilters?: TickerFilters;
   revealTicker?: RevealRequest<string>;
@@ -221,6 +223,8 @@ export function TickerPanel({
   providedWatchlists,
   onWatchlistsChange,
   onTickersChange,
+  onTickerUniverseChange,
+  onActiveMetricChange,
   onFilterCountsChange,
   tickerFilters,
   revealTicker,
@@ -294,6 +298,9 @@ export function TickerPanel({
   );
   const activeBoundedMetric = boundedMetricForKey(availableBoundedMetrics, sortSetting.key);
   const sortActive = metricsActive || activeBoundedMetric !== undefined;
+  useEffect(() => {
+    onActiveMetricChange?.(activeBoundedMetric?.id);
+  }, [activeBoundedMetric?.id, onActiveMetricChange]);
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
       mode,
@@ -525,6 +532,13 @@ export function TickerPanel({
     tickerSymbolsKey,
     tickers.length,
   ]);
+
+  useEffect(() => {
+    if (panelLoading) return;
+    onTickerUniverseChange?.(
+      tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0"),
+    );
+  }, [onTickerUniverseChange, panelLoading, tickerSymbolsKey]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
@@ -718,7 +732,7 @@ export function TickerPanel({
           <Select
             size="small"
             value={sortSetting.key}
-            disabled={!bounded && !metricsActive}
+            disabled={!bounded && !metricsActive && availableBoundedMetrics.length === 0}
             aria-label="Sort tickers by"
             onChange={(event) => {
               const key = event.target.value as TickerSortKey;
@@ -728,12 +742,10 @@ export function TickerPanel({
           >
             {[
               ...tickerSortOptions,
-              ...(bounded
-                ? availableBoundedMetrics.map((metric) => ({
-                    key: boundedMetricSortKey(metric.id),
-                    label: metric.label,
-                  }))
-                : []),
+              ...availableBoundedMetrics.map((metric) => ({
+                key: boundedMetricSortKey(metric.id),
+                label: metric.label,
+              })),
             ].map((option) => (
               <MenuItem
                 key={option.key}
