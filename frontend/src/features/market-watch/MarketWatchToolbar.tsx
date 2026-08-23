@@ -2,17 +2,10 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import {
   CircularProgress,
   IconButton,
-  MenuItem,
-  Select,
-  Slider,
   Tooltip,
   Typography,
 } from "@mui/material";
-import {
-  tickerStrengthMaximumSessions,
-  tickerStrengthMinimumSessions,
-  useTickerStrength,
-} from "../ticker-strength/TickerStrengthContext";
+import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
 
 type MarketWatchToolbarProps = {
   tickerStrengthDisabled: boolean;
@@ -29,9 +22,6 @@ export function MarketWatchToolbar({
   refreshingMembership,
   onRefreshMembership,
 }: MarketWatchToolbarProps) {
-  const tickerStrength = useTickerStrength();
-  const tickerStrengthBusy = !tickerStrengthDisabled
-    && (tickerStrength.loading || tickerStrength.calculating);
   return (
     <header className="market-watch-toolbar">
       <Typography component="h2">Market Watch</Typography>
@@ -49,57 +39,10 @@ export function MarketWatchToolbar({
           </IconButton>
         </span>
       </Tooltip>
-      <Typography
-        className={`ticker-strength-label${tickerStrengthBusy
-          ? " ticker-strength-label--loading"
-          : ""}`}
-        component="span"
-        aria-busy={tickerStrengthBusy}
-      >
-        Ticker Strength
-      </Typography>
-      <label className="ticker-strength-window">
-        <Typography component="span">Days</Typography>
-        <Typography component="span">{tickerStrengthMinimumSessions}</Typography>
-        <Slider
-          size="small"
-          min={tickerStrengthMinimumSessions}
-          max={tickerStrengthMaximumSessions}
-          step={1}
-          value={tickerStrength.draftSessions}
-          valueLabelDisplay="auto"
-          aria-label="Ticker Strength trading days"
-          disabled={tickerStrengthDisabled}
-          onChange={(_, value) =>
-            tickerStrength.setDraftSessions(Array.isArray(value) ? value[0] : value)
-          }
-          onChangeCommitted={(_, value) =>
-            tickerStrength.commitSessions(Array.isArray(value) ? value[0] : value)
-          }
-        />
-        <Typography component="span">{tickerStrengthMaximumSessions}</Typography>
-        <Typography className="ticker-strength-window-value" component="span">
-          {tickerStrength.draftSessions}D
-        </Typography>
-      </label>
-      <label className="ticker-strength-benchmark">
-        <Typography component="span">Benchmark</Typography>
-        <Select
-          size="small"
-          value={tickerStrength.benchmark}
-          disabled={tickerStrengthDisabled
-            || tickerStrength.loading
-            || tickerStrength.benchmarks.length === 0}
-          aria-label="Ticker Strength benchmark"
-          onChange={(event) => tickerStrength.setBenchmark(event.target.value)}
-        >
-          {tickerStrength.benchmarks.map((option) => (
-            <MenuItem key={`${option.kind}:${option.symbol}`} value={option.symbol}>
-              {option.name} · {option.symbol}
-            </MenuItem>
-          ))}
-        </Select>
-      </label>
+      <TickerStrengthControls
+        className="market-watch-ticker-strength"
+        disabled={tickerStrengthDisabled}
+      />
     </header>
   );
 }

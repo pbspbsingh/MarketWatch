@@ -6,7 +6,7 @@ import {
   type TickerStrengthBenchmarkCatalog,
   type TickerStrengthScore,
 } from "../../api/tickerStrength";
-import type { GroupMode, TickerUniverseSnapshot } from "../ticker-lens/types";
+import type { GroupMode } from "../ticker-lens/types";
 
 export const tickerStrengthMinimumSessions = 5;
 export const tickerStrengthMaximumSessions = 150;
@@ -15,11 +15,25 @@ export const tickerStrengthDefaultSessions = 20;
 const sessionsStorageKey = "market-watch.ticker-strength-sessions";
 const benchmarkStorageKey = "market-watch.ticker-strength-benchmark";
 
-type Scope = Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "symbols">
-  & { selectionKey: string; requestKey: string };
+export type TickerStrengthUniverse = {
+  symbols: string[];
+  benchmarkContext?: {
+    mode: GroupMode;
+    groupKeys: string[];
+  };
+};
+
+type Scope = {
+  mode: GroupMode;
+  groupKeys: string[];
+  symbols: string[];
+  selectionKey: string;
+  requestKey: string;
+};
 type CatalogState = { scopeKey: string; catalog?: TickerStrengthBenchmarkCatalog; error?: string };
 type ScoreState = { requestKey: string; scores: TickerStrengthScore[]; error?: string };
 type TickerStrengthContextValue = {
+  enabled: boolean;
   draftSessions: number;
   committedSessions: number;
   benchmark: string;
@@ -28,32 +42,32 @@ type TickerStrengthContextValue = {
   loading: boolean;
   calculating: boolean;
   error?: string;
+  setEnabled: (enabled: boolean) => void;
   setDraftSessions: (sessions: number) => void;
   commitSessions: (sessions: number) => void;
   setBenchmark: (benchmark: string) => void;
-  setUniverse: (snapshot: TickerUniverseSnapshot) => void;
+  setUniverse: (universe: TickerStrengthUniverse) => void;
 };
 
 const TickerStrengthContext = createContext<TickerStrengthContextValue | undefined>(undefined);
 
 export function TickerStrengthProvider({
   children,
-  enabled,
 }: {
   children: ReactNode;
-  enabled: boolean;
 }) {
+  const [enabled, setEnabled] = useState(false);
   const [committedSessions, setCommittedSessions] = useState(readSessions);
   const [draftSessions, setDraftSessionsState] = useState(committedSessions);
   const [benchmark, setBenchmarkState] = useState(
     () => localStorage.getItem(benchmarkStorageKey)?.trim().toUpperCase() || "",
   );
-  const [scope, setScope] = useState<Scope>(() => scopeFor("industry", [], []));
+  const [scope, setScope] = useState<Scope>(() => scopeFor({ symbols: [] }));
   const [catalogState, setCatalogState] = useState<CatalogState>({ scopeKey: "" });
   const [scoreState, setScoreState] = useState<ScoreState>({ requestKey: "", scores: [] });
 
-  const setUniverse = useCallback((snapshot: TickerUniverseSnapshot) => {
-    const next = scopeFor(snapshot.mode, snapshot.groupKeys, snapshot.symbols);
+  const setUniverse = useCallback((universe: TickerStrengthUniverse) => {
+    const next = scopeFor(universe);
     setScope((current) => {
       if (current.requestKey === next.requestKey) return current;
       return current.selectionKey === next.selectionKey
@@ -90,7 +104,7 @@ export function TickerStrengthProvider({
     () => activeCatalog === undefined ? [] : [activeCatalog.global, ...activeCatalog.contextual],
     [activeCatalog],
   );
-  const selectionReady = enabled && scope.groupKeys.length > 0 && scope.symbols.length > 0
+  const selectionReady = enabled && scope.symbols.length > 0
     && benchmarks.some((option) => option.symbol === benchmark);
   const scoreRequestKey = selectionReady
     ? `${scope.requestKey}\u0002${benchmark}\u0002${committedSessions}`
@@ -133,6 +147,7 @@ export function TickerStrengthProvider({
     : undefined;
 
   const value = useMemo<TickerStrengthContextValue>(() => ({
+    enabled,
     draftSessions,
     committedSessions,
     benchmark,
@@ -141,12 +156,13 @@ export function TickerStrengthProvider({
     loading,
     calculating: scoreRequestKey !== "" && scoreState.requestKey !== scoreRequestKey,
     error,
+    setEnabled,
     setDraftSessions,
     commitSessions,
     setBenchmark,
     setUniverse,
   }), [
-    benchmark, benchmarks, commitSessions, committedSessions, draftSessions, error, loading,
+    benchmark, benchmarks, commitSessions, committedSessions, draftSessions, enabled, error, loading,
     scoreRequestKey, scoreState, setBenchmark, setDraftSessions, setUniverse,
   ]);
 
@@ -159,7 +175,10 @@ export function useTickerStrength() {
   return value;
 }
 
-function scopeFor(mode: GroupMode, groupKeys: string[], symbols: string[]): Scope {
+function scopeFor(universe: TickerStrengthUniverse): Scope {
+  const mode = universe.benchmarkContext?.mode ?? "industry";
+  const groupKeys = universe.benchmarkContext?.groupKeys ?? [];
+  const symbols = universe.symbols;
   const normalizedGroups = [...groupKeys].sort();
   const normalizedSymbols = [...new Set(symbols)];
   const selectionKey = `${mode}\0${normalizedGroups.join("\0")}`;

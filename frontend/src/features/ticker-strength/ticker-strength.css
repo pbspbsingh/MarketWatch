@@ -1,0 +1,85 @@
+.ticker-strength-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+
+  & p,
+  & span {
+    font-size: 0.65rem;
+  }
+}
+
+.ticker-strength-window,
+.ticker-strength-benchmark {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.ticker-strength-label {
+  color: var(--color-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ticker-strength-label--loading {
+  animation: ticker-strength-loading 0.9s ease-in-out infinite alternate;
+}
+
+.ticker-strength-window {
+  width: min(14rem, 28vw);
+
+  & .MuiSlider-root {
+    min-width: 6rem;
+    padding-block: 0.55rem;
+  }
+
+  & .MuiSlider-valueLabel {
+    top: calc(100% + 0.4rem);
+    transform: scale(0);
+    transform-origin: top center;
+
+    &::before {
+      top: 0;
+      bottom: auto;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    &.MuiSlider-valueLabelOpen {
+      transform: scale(1);
+    }
+  }
+}
+
+.ticker-strength-window-value {
+  width: 2.2rem;
+  color: var(--color-text);
+  font-weight: 700;
+  text-align: right;
+}
+
+.ticker-strength-benchmark {
+  & .MuiInputBase-root {
+    width: 4.25rem;
+  }
+
+  & .MuiSelect-select {
+    min-width: 0;
+    padding-block: 0.2rem;
+    font-size: 0.65rem;
+  }
+}
+
+@keyframes ticker-strength-loading {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 52rem) {
+  .ticker-strength-controls {
+    gap: 0.5rem;
+  }
+}

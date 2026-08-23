@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { refreshIndustryMemberships, resolveTickerMembership } from "../../api/tickers";
 import { Toast } from "../../components/Toast";
 import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
@@ -7,10 +7,10 @@ import { unassignedGroupKey } from "../ticker-lens/constants";
 import type {
   ResolveGroupsRequest,
   ResolveTickersRequest,
-  TickerMetric,
   TickerUniverseSnapshot,
 } from "../ticker-lens/types";
-import { TickerStrengthProvider, useTickerStrength } from "../ticker-strength/TickerStrengthContext";
+import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
+import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import { IndustryMembershipRefreshDialog } from "./IndustryMembershipRefreshDialog";
 import { MarketWatchToolbar } from "./MarketWatchToolbar";
 import "./market-watch.css";
@@ -27,28 +27,15 @@ const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<str
       } as const);
 
 export function MarketWatchPage() {
-  const [tickerStrengthSelected, setTickerStrengthSelected] = useState(false);
-  const handleTickerMetricChange = useCallback((metricId: string | undefined) => {
-    setTickerStrengthSelected(metricId === "ticker-strength");
-  }, []);
   return (
-    <TickerStrengthProvider enabled={tickerStrengthSelected}>
-      <MarketWatchContent
-        tickerStrengthSelected={tickerStrengthSelected}
-        onTickerMetricChange={handleTickerMetricChange}
-      />
+    <TickerStrengthProvider>
+      <MarketWatchContent />
     </TickerStrengthProvider>
   );
 }
 
-function MarketWatchContent({
-  tickerStrengthSelected,
-  onTickerMetricChange,
-}: {
-  tickerStrengthSelected: boolean;
-  onTickerMetricChange: (metricId: string | undefined) => void;
-}) {
-  const tickerStrength = useTickerStrength();
+function MarketWatchContent() {
+  const tickerStrength = useTickerStrengthFeature();
   const [membershipRevision, setMembershipRevision] = useState(0);
   const [selection, setSelection] = useState<
     Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "groups">
@@ -84,7 +71,10 @@ function MarketWatchContent({
   );
   const setTickerStrengthUniverse = tickerStrength.setUniverse;
   const handleTickerUniverseChange = useCallback((snapshot: TickerUniverseSnapshot) => {
-    setTickerStrengthUniverse(snapshot);
+    setTickerStrengthUniverse({
+      symbols: snapshot.symbols,
+      benchmarkContext: { mode: snapshot.mode, groupKeys: snapshot.groupKeys },
+    });
     setSelection((current) =>
       current.mode === snapshot.mode
         && current.groupKeys.join("\0") === snapshot.groupKeys.join("\0")
@@ -126,31 +116,10 @@ function MarketWatchContent({
         setRefreshingMembership(false);
       });
   }, [membershipRefreshTarget]);
-  const tickerStrengthMetric = useMemo<TickerMetric>(() => {
-    const scores = new Map(tickerStrength.scores.map((score) => [score.symbol, score.score]));
-    const details = new Map(tickerStrength.scores.map((score) => [score.symbol, score]));
-    return {
-      id: "ticker-strength",
-      label: "TS",
-      values: scores,
-      formatValue: formatStrength,
-      colorValue: (value) => value > 0
-        ? "var(--color-positive)"
-        : value < 0 ? "var(--color-negative)" : "var(--color-text)",
-      tooltipLines: (symbol, value) => {
-        const score = details.get(symbol);
-        return score === undefined ? [] : [
-          `${formatStrength(value)} · ${tickerStrength.benchmark} · ${score.samples}/${score.sessions} days`,
-        ];
-      },
-    };
-  }, [tickerStrength.benchmark, tickerStrength.scores]);
-  const tickerMetrics = useMemo(() => [tickerStrengthMetric], [tickerStrengthMetric]);
-
   return (
     <section className="market-watch-page">
       <MarketWatchToolbar
-        tickerStrengthDisabled={!tickerStrengthSelected}
+        tickerStrengthDisabled={!tickerStrength.active}
         membershipRefreshDisabled={selection.mode !== "industry"
           || selection.groupKeys.length === 0}
         membershipRefreshTooltip={membershipRefreshTooltip(selection)}
@@ -166,9 +135,9 @@ function MarketWatchContent({
           resolveGroupCounts,
           revision: membershipRevision,
         }}
-        tickerMetrics={tickerMetrics}
+        tickerMetrics={tickerStrength.tickerMetrics}
         onTickerUniverseChange={handleTickerUniverseChange}
-        onTickerMetricChange={onTickerMetricChange}
+        onTickerMetricChange={tickerStrength.onTickerMetricChange}
       />
       <Toast
         message={refreshMessage?.text}
@@ -184,10 +153,6 @@ function MarketWatchContent({
       )}
     </section>
   );
-}
-
-function formatStrength(value: number) {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 function membershipRefreshTooltip(
