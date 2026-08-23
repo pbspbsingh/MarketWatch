@@ -3,6 +3,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { Checkbox, CircularProgress, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { List, type RowComponentProps, useListRef } from "react-window";
 import {
@@ -23,7 +24,12 @@ import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { useLivePrices } from "../../shared/useLivePrices";
 import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
 import { ChartPanel } from "../ticker-lens/ChartPanel";
-import { isArrowKeyControl } from "../ticker-lens/utils";
+import {
+  industriesMarketWatchUrl,
+  industryMarketWatchUrl,
+  isArrowKeyControl,
+  themeMarketWatchIdUrl,
+} from "../ticker-lens/utils";
 import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import "./theme-tracker.css";
@@ -32,6 +38,12 @@ type HistoricalRange = "day" | "week" | "month" | "quarter" | "half_year" | "yea
 type Range = HistoricalRange | "trading_day";
 type TrackerMode = "theme" | "sector" | "industry";
 type TrackerLevel = "overview" | "industries" | "stocks";
+type GroupContextTarget = {
+  kind: TrackerMode;
+  key: string;
+  top: number;
+  left: number;
+};
 type RankedItem = {
   key: string;
   label: string;
@@ -99,6 +111,7 @@ export function ThemeTrackerPage() {
   const [sectorsLoading, setSectorsLoading] = useState(false);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [contextMenu, setContextMenu] = useState<{ symbol: string; top: number; left: number }>();
+  const [groupContextMenu, setGroupContextMenu] = useState<GroupContextTarget>();
   const [error, setError] = useState<string>();
   const themeRangeRef = useRef(themeRange);
   const sectorRangeRef = useRef(sectorRange);
@@ -497,6 +510,31 @@ export function ThemeTrackerPage() {
     event.preventDefault();
     setContextMenu({ symbol, top: event.clientY, left: event.clientX });
   };
+  const handleGroupContextMenu = (event: React.MouseEvent, item: RankedItem) => {
+    event.preventDefault();
+    setGroupContextMenu({
+      kind: mode === "theme" ? "theme" : mode === "sector" && level === "overview"
+        ? "sector"
+        : "industry",
+      key: item.key,
+      top: event.clientY,
+      left: event.clientX,
+    });
+  };
+  const openGroupInMarketWatch = () => {
+    if (groupContextMenu === undefined) return;
+    const url = groupContextMenu.kind === "theme"
+      ? themeMarketWatchIdUrl(groupContextMenu.key)
+      : groupContextMenu.kind === "sector"
+        ? industriesMarketWatchUrl(
+            industries
+              .filter((industry) => industry.sector_key === groupContextMenu.key)
+              .map((industry) => industry.key),
+          )
+        : industryMarketWatchUrl(groupContextMenu.key);
+    setGroupContextMenu(undefined);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
   const selectMode = (_: React.MouseEvent<HTMLElement>, value: TrackerMode | null) => {
     if (value === null || value === mode) return;
     userSelected.current = true;
@@ -670,7 +708,7 @@ export function ThemeTrackerPage() {
           <ol className="theme-tracker-list">
             {sortedItems.map((item) => {
               return <li key={item.key}>
-                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)} onDoubleClick={() => enterNextLevel(item)}>
+                <button className="theme-tracker-row" data-tracker-key={item.key} type="button" aria-pressed={activeGroupKey === item.key} onClick={() => selectItem(item)} onDoubleClick={() => enterNextLevel(item)} onContextMenu={(event) => handleGroupContextMenu(event, item)}>
                   <PerformanceCells item={item} range={range} scale={scale} />
                   <IconButton component="span" size="small" aria-label={`${mode === "sector" && level === "overview" ? "Show industries in" : "Show stocks in"} ${item.label}`} onDoubleClick={(event) => event.stopPropagation()} onClick={(event) => {
                     event.stopPropagation();
@@ -681,6 +719,24 @@ export function ThemeTrackerPage() {
             })}
           </ol>
         )}
+        <Menu
+          open={groupContextMenu !== undefined}
+          onClose={() => setGroupContextMenu(undefined)}
+          anchorReference="anchorPosition"
+          anchorPosition={groupContextMenu === undefined
+            ? undefined
+            : { top: groupContextMenu.top, left: groupContextMenu.left }}
+          slotProps={{ list: { dense: true, "aria-label": "Theme Tracker group actions" } }}
+        >
+          <MenuItem
+            disabled={groupContextMenu?.kind === "sector"
+              && !industries.some((industry) => industry.sector_key === groupContextMenu.key)}
+            onClick={openGroupInMarketWatch}
+          >
+            <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Open in Market Watch</ListItemText>
+          </MenuItem>
+        </Menu>
         <Menu
           open={contextMenu !== undefined}
           onClose={() => setContextMenu(undefined)}
