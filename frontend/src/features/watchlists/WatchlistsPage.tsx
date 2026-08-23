@@ -238,8 +238,8 @@ function WatchlistsContent() {
         </Typography>
         {selected?.is_default === true && (
           <div className="watchlists-ticker-strength">
-            <Divider orientation="vertical" flexItem />
             <TickerStrengthControls disabled={!tickerStrength.active} />
+            <Divider orientation="vertical" flexItem />
           </div>
         )}
         <TextField
