@@ -10,6 +10,10 @@
   }
 }
 
+.ticker-strength-controls--disabled {
+  opacity: 0.45;
+}
+
 .ticker-strength-window,
 .ticker-strength-benchmark {
   display: flex;

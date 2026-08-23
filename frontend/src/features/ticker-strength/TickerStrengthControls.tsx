@@ -17,9 +17,13 @@ export function TickerStrengthControls({
 }: TickerStrengthControlsProps) {
   const tickerStrength = useTickerStrength();
   const busy = !disabled && (tickerStrength.loading || tickerStrength.calculating);
-  const classes = ["ticker-strength-controls", className].filter(Boolean).join(" ");
+  const classes = [
+    "ticker-strength-controls",
+    disabled ? "ticker-strength-controls--disabled" : undefined,
+    className,
+  ].filter(Boolean).join(" ");
   return (
-    <div className={classes}>
+    <div className={classes} aria-disabled={disabled}>
       <Typography
         className={`ticker-strength-label${busy ? " ticker-strength-label--loading" : ""}`}
         component="span"
