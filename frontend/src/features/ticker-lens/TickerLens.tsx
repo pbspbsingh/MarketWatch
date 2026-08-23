@@ -192,6 +192,7 @@ export function TickerLens({
     universe.type === "market-watch" ? universe.resolveGroups : undefined;
   const marketResolveGroupCounts =
     universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
+  const marketUniverseRevision = universe.type === "market-watch" ? universe.revision ?? 0 : 0;
   const groupsRequestKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
   const activeGroupsState = groupsState.key === groupsRequestKey ? groupsState : undefined;
   const groups = activeGroupsState?.groups ?? emptyGroups;
@@ -226,16 +227,19 @@ export function TickerLens({
     onTickerUniverseChange?.({
       mode: groupMode,
       groupKeys: selectedGroupKey === "" ? [] : selectedGroupKey.split("\0"),
+      groups: groups
+        .filter((group) => selectedGroupKeys.has(group.key))
+        .map(({ key, name }) => ({ key, name })),
       symbols,
     });
-  }, [groupMode, onTickerUniverseChange, selectedGroupKey]);
+  }, [groupMode, groups, onTickerUniverseChange, selectedGroupKey, selectedGroupKeys]);
   useEffect(() => {
     reportTickerUniverse([]);
   }, [reportTickerUniverse]);
   const groupCountsRequestKey = !bounded
     && selectedGroupKey !== ""
     && marketResolveGroupCounts !== undefined
-    ? `${groupMode}\0${selectedGroupKey}`
+    ? `${groupMode}\0${selectedGroupKey}\0${marketUniverseRevision}`
     : undefined;
   const selectedGroupTickerCounts = groupCountsState.key === groupCountsRequestKey
     ? groupCountsState.counts
@@ -498,6 +502,7 @@ export function TickerLens({
         tickerStream={tickerStream}
         bounded={bounded}
         boundedUniverseKey={bounded ? boundedSymbolsKey : ""}
+        universeRevision={marketUniverseRevision}
         boundedMetrics={availableTickerMetrics}
         defaultBoundedMetricSort={bounded ? defaultBoundedMetricSort : undefined}
         mode={groupMode}

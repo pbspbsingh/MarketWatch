@@ -27,6 +27,13 @@ export type TickerGroupSelection =
   | { group_type: "industry"; keys: string[] }
   | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
 
+export type IndustryMembershipRefreshResult = {
+  industry_count: number;
+  ticker_count: number;
+  added_count: number;
+  removed_count: number;
+};
+
 export async function resolveTickerMembership(
   selection: TickerGroupSelection,
   signal?: AbortSignal,
@@ -41,6 +48,21 @@ export async function resolveTickerMembership(
     throw new Error(`Failed to resolve ticker membership: HTTP ${response.status}`);
   }
   return response.json() as Promise<string[]>;
+}
+
+export async function refreshIndustryMemberships(
+  industryKeys: string[],
+): Promise<IndustryMembershipRefreshResult> {
+  const response = await fetch("/api/ticker-membership/refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ industry_keys: industryKeys }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Failed to refresh ticker membership: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<IndustryMembershipRefreshResult>;
 }
 
 export async function fetchTickerRanking(

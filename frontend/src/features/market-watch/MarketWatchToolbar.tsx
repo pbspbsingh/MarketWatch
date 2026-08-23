@@ -1,20 +1,60 @@
-import { MenuItem, Select, Slider, Typography } from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import {
+  CircularProgress,
+  IconButton,
+  MenuItem,
+  Select,
+  Slider,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import {
   tickerStrengthMaximumSessions,
   tickerStrengthMinimumSessions,
   useTickerStrength,
-} from "./TickerStrengthContext";
+} from "../ticker-strength/TickerStrengthContext";
 
-export function TickerStrengthToolbar({ disabled }: { disabled: boolean }) {
+type MarketWatchToolbarProps = {
+  tickerStrengthDisabled: boolean;
+  membershipRefreshDisabled: boolean;
+  membershipRefreshTooltip: string;
+  refreshingMembership: boolean;
+  onRefreshMembership: () => void;
+};
+
+export function MarketWatchToolbar({
+  tickerStrengthDisabled,
+  membershipRefreshDisabled,
+  membershipRefreshTooltip,
+  refreshingMembership,
+  onRefreshMembership,
+}: MarketWatchToolbarProps) {
   const tickerStrength = useTickerStrength();
-  const busy = !disabled && (tickerStrength.loading || tickerStrength.calculating);
+  const tickerStrengthBusy = !tickerStrengthDisabled
+    && (tickerStrength.loading || tickerStrength.calculating);
   return (
-    <header className="ticker-strength-toolbar">
+    <header className="market-watch-toolbar">
       <Typography component="h2">Market Watch</Typography>
+      <Tooltip title={membershipRefreshTooltip}>
+        <span className="market-watch-membership-refresh">
+          <IconButton
+            size="small"
+            aria-label="Refresh selected industry tickers"
+            disabled={membershipRefreshDisabled || refreshingMembership}
+            onClick={onRefreshMembership}
+          >
+            {refreshingMembership
+              ? <CircularProgress size="0.875rem" color="inherit" />
+              : <RefreshIcon fontSize="small" />}
+          </IconButton>
+        </span>
+      </Tooltip>
       <Typography
-        className={`ticker-strength-label${busy ? " ticker-strength-label--loading" : ""}`}
+        className={`ticker-strength-label${tickerStrengthBusy
+          ? " ticker-strength-label--loading"
+          : ""}`}
         component="span"
-        aria-busy={busy}
+        aria-busy={tickerStrengthBusy}
       >
         Ticker Strength
       </Typography>
@@ -29,7 +69,7 @@ export function TickerStrengthToolbar({ disabled }: { disabled: boolean }) {
           value={tickerStrength.draftSessions}
           valueLabelDisplay="auto"
           aria-label="Ticker Strength trading days"
-          disabled={disabled}
+          disabled={tickerStrengthDisabled}
           onChange={(_, value) =>
             tickerStrength.setDraftSessions(Array.isArray(value) ? value[0] : value)
           }
@@ -47,7 +87,9 @@ export function TickerStrengthToolbar({ disabled }: { disabled: boolean }) {
         <Select
           size="small"
           value={tickerStrength.benchmark}
-          disabled={disabled || tickerStrength.loading || tickerStrength.benchmarks.length === 0}
+          disabled={tickerStrengthDisabled
+            || tickerStrength.loading
+            || tickerStrength.benchmarks.length === 0}
           aria-label="Ticker Strength benchmark"
           onChange={(event) => tickerStrength.setBenchmark(event.target.value)}
         >

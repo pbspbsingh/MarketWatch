@@ -86,6 +86,7 @@ interface TickerPanelProps {
   tickerStream: TickerStreamClient;
   bounded: boolean;
   boundedUniverseKey: string;
+  universeRevision: number;
   boundedMetrics: readonly BoundedTickerMetric[];
   defaultBoundedMetricSort?: DefaultBoundedMetricSort;
   mode: GroupMode;
@@ -213,6 +214,7 @@ export function TickerPanel({
   tickerStream,
   bounded,
   boundedUniverseKey,
+  universeRevision,
   boundedMetrics,
   defaultBoundedMetricSort,
   mode,
@@ -312,11 +314,11 @@ export function TickerPanel({
   const rankingStream = useTickerRankingStream({
     client: tickerStream,
     enabled: metricsActive,
-    requestKey: `${mode}:${groupKey}`,
+    requestKey: `${mode}:${groupKey}:${universeRevision}`,
     refreshKey: rankingRefreshKey,
     resolveSymbols: resolveRankedSymbols,
   });
-  const resolvedTickerRequestKey = `${mode}\0${groupKey}`;
+  const resolvedTickerRequestKey = `${mode}\0${groupKey}\0${universeRevision}`;
   const panelRequestKey = `${metricsActive ? "ranked" : "resolved"}\0${resolvedTickerRequestKey}`;
   const selectionContextKey = `${mode}\0${groupKey}\0${metricsActive}`;
   const previousSelectionContextKey = useRef(selectionContextKey);

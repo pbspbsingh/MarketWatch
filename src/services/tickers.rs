@@ -11,11 +11,33 @@ use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{TimeDelta, Utc};
-use std::collections::HashMap;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+
+#[derive(Debug, thiserror::Error)]
+pub enum IndustryMembershipRefreshError {
+    #[error("{0}")]
+    Validation(String),
+    #[error("failed to fetch Finviz membership for {industry_key}: {source}")]
+    Provider {
+        industry_key: String,
+        source: anyhow::Error,
+    },
+    #[error("failed to update industry memberships: {0}")]
+    Persistence(anyhow::Error),
+}
+
+#[derive(Serialize)]
+pub struct IndustryMembershipRefreshResult {
+    pub industry_count: usize,
+    pub ticker_count: usize,
+    pub added_count: usize,
+    pub removed_count: usize,
+}
 
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const TWO_HUNDRED_SESSION_SMA: usize = 200;
@@ -137,6 +159,68 @@ impl TickerCatalogService {
             self.refresh_membership_if_stale(industry_key).await?;
         }
         self.store.tickers_for_industries(industry_keys).await
+    }
+
+    pub async fn refresh_industry_memberships(
+        &self,
+        industry_keys: &[String],
+    ) -> Result<IndustryMembershipRefreshResult, IndustryMembershipRefreshError> {
+        validate_industry_keys(industry_keys)
+            .map_err(|error| IndustryMembershipRefreshError::Validation(error.to_string()))?;
+        if industry_keys.is_empty() {
+            return Err(IndustryMembershipRefreshError::Validation(
+                "at least one industry is required".to_owned(),
+            ));
+        }
+
+        let mut industry_keys = industry_keys.to_vec();
+        industry_keys.sort();
+        industry_keys.dedup();
+        for industry_key in &industry_keys {
+            if !self
+                .store
+                .has_industry_ranking(industry_key)
+                .await
+                .map_err(IndustryMembershipRefreshError::Persistence)?
+            {
+                return Err(IndustryMembershipRefreshError::Validation(format!(
+                    "unknown industry: {industry_key}"
+                )));
+            }
+        }
+
+        let previous = self
+            .store
+            .tickers_for_industries(&industry_keys)
+            .await
+            .map_err(IndustryMembershipRefreshError::Persistence)?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        for industry_key in &industry_keys {
+            self.refresh_membership(industry_key, true).await?;
+        }
+
+        let refreshed = self
+            .store
+            .tickers_for_industries(&industry_keys)
+            .await
+            .map_err(IndustryMembershipRefreshError::Persistence)?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let result = IndustryMembershipRefreshResult {
+            industry_count: industry_keys.len(),
+            ticker_count: refreshed.len(),
+            added_count: refreshed.difference(&previous).count(),
+            removed_count: previous.difference(&refreshed).count(),
+        };
+        info!(
+            industry_count = result.industry_count,
+            ticker_count = result.ticker_count,
+            added_count = result.added_count,
+            removed_count = result.removed_count,
+            "manually refreshed Finviz industry memberships"
+        );
+        Ok(result)
     }
 
     pub async fn theme_tickers(
@@ -299,23 +383,44 @@ impl TickerCatalogService {
     }
 
     async fn refresh_membership_if_stale(&self, industry_key: &String) -> anyhow::Result<()> {
+        self.refresh_membership(industry_key, false).await?;
+        Ok(())
+    }
+
+    async fn refresh_membership(
+        &self,
+        industry_key: &String,
+        force: bool,
+    ) -> Result<(), IndustryMembershipRefreshError> {
         let _guard = self.membership_locks.lock(industry_key).await;
-        let fetched_at = self
-            .store
-            .industry_membership_fetched_at(industry_key)
-            .await?;
-        let stale_before = Utc::now() - TimeDelta::days(self.membership_fresh_days);
-        if fetched_at.is_some_and(|fetched_at| fetched_at >= stale_before) {
-            return Ok(());
+        if !force {
+            let fetched_at = self
+                .store
+                .industry_membership_fetched_at(industry_key)
+                .await
+                .map_err(IndustryMembershipRefreshError::Persistence)?;
+            let stale_before = Utc::now() - TimeDelta::days(self.membership_fresh_days);
+            if fetched_at.is_some_and(|fetched_at| fetched_at >= stale_before) {
+                return Ok(());
+            }
         }
 
-        let symbols = self.finviz.industry_tickers(industry_key).await?;
+        let symbols = self
+            .finviz
+            .industry_tickers(industry_key)
+            .await
+            .map_err(|source| IndustryMembershipRefreshError::Provider {
+                industry_key: industry_key.clone(),
+                source,
+            })?;
         self.store
             .replace_industry_membership(industry_key, Utc::now(), &symbols)
-            .await?;
+            .await
+            .map_err(IndustryMembershipRefreshError::Persistence)?;
         info!(
             industry_key,
             ticker_count = symbols.len(),
+            force,
             "stored Finviz industry membership"
         );
         Ok(())

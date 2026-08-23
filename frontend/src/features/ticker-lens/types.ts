@@ -28,6 +28,7 @@ export type TickerMetric = BoundedTickerMetric;
 export type TickerUniverseSnapshot = {
   mode: GroupMode;
   groupKeys: string[];
+  groups: { key: string; name: string }[];
   symbols: string[];
 };
 
@@ -93,6 +94,7 @@ export type TickerUniverse =
       resolveGroups: (request: ResolveGroupsRequest) => Promise<GroupRanking[]>;
       resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
       resolveGroupCounts: (request: ResolveTickersRequest) => Promise<Map<string, number>>;
+      revision?: number;
     }
   | {
       type: "bounded";

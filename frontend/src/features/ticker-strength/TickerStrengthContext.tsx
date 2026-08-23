@@ -15,7 +15,8 @@ export const tickerStrengthDefaultSessions = 20;
 const sessionsStorageKey = "market-watch.ticker-strength-sessions";
 const benchmarkStorageKey = "market-watch.ticker-strength-benchmark";
 
-type Scope = TickerUniverseSnapshot & { selectionKey: string; requestKey: string };
+type Scope = Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "symbols">
+  & { selectionKey: string; requestKey: string };
 type CatalogState = { scopeKey: string; catalog?: TickerStrengthBenchmarkCatalog; error?: string };
 type ScoreState = { requestKey: string; scores: TickerStrengthScore[]; error?: string };
 type TickerStrengthContextValue = {

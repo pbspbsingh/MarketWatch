@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::models::{TickerRanking, TickerSymbol};
 use crate::services::fundamental_scores::{self, FundamentalScore};
+use crate::services::tickers::{IndustryMembershipRefreshError, IndustryMembershipRefreshResult};
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -9,6 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -73,6 +75,11 @@ struct TickerRankingRequest {
 }
 
 #[derive(Deserialize)]
+struct IndustryMembershipRefreshRequest {
+    industry_keys: Vec<String>,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum GroupSummaryMode {
     Industry,
@@ -128,6 +135,7 @@ pub fn router() -> Router<AppState> {
         .route("/tickers", get(tickers_socket))
         .route("/ticker-ranking", post(ticker_ranking))
         .route("/ticker-membership", post(membership))
+        .route("/ticker-membership/refresh", post(refresh_membership))
         .route("/ticker-group-summary", post(group_summary))
 }
 
@@ -371,6 +379,28 @@ async fn membership(
         error!(%error, "failed to resolve ticker membership");
         StatusCode::INTERNAL_SERVER_ERROR
     })
+}
+
+async fn refresh_membership(
+    State(state): State<AppState>,
+    Json(request): Json<IndustryMembershipRefreshRequest>,
+) -> Result<Json<IndustryMembershipRefreshResult>, (StatusCode, Json<Value>)> {
+    state
+        .ticker_catalog
+        .refresh_industry_memberships(&request.industry_keys)
+        .await
+        .map(Json)
+        .map_err(|request_error| {
+            let status = match &request_error {
+                IndustryMembershipRefreshError::Validation(_) => StatusCode::BAD_REQUEST,
+                IndustryMembershipRefreshError::Provider { .. } => StatusCode::BAD_GATEWAY,
+                IndustryMembershipRefreshError::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            if status.is_server_error() {
+                error!(error = %request_error, "failed to refresh industry memberships");
+            }
+            (status, Json(json!({ "error": request_error.to_string() })))
+        })
 }
 
 async fn ticker_ranking(
