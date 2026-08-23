@@ -19,6 +19,8 @@
 
 .watchlists-count { font-size: 0.625rem !important; }
 .watchlists-header .watchlists-add-ticker { width: 8rem; margin-left: auto; }
+.watchlists-header .watchlists-ticker-strength { display: flex; margin-left: auto; align-items: center; gap: 0.5rem; }
+.watchlists-header .watchlists-ticker-strength + .watchlists-add-ticker { margin-left: 0; }
 .watchlists-add-ticker .MuiInputBase-input { padding-block: 0.2rem; font-size: 0.72rem; }
 .watchlists-add-ticker .MuiInputAdornment-positionEnd { transform: translateX(0.35rem); }
 .watchlist-select-option { gap: 0.5rem; }

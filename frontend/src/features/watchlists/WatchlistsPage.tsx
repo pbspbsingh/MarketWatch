@@ -11,6 +11,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -34,14 +35,26 @@ import {
 import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { TickerLens } from "../ticker-lens/TickerLens";
+import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
+import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
+import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import { WatchlistIcon, watchlistIcons } from "./WatchlistIcon";
 import "./watchlists.css";
 
 const selectedWatchlistStorageKey = "market-watch.selected-watchlist";
 
 export function WatchlistsPage() {
+  return (
+    <TickerStrengthProvider>
+      <WatchlistsContent />
+    </TickerStrengthProvider>
+  );
+}
+
+function WatchlistsContent() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const tickerStrength = useTickerStrengthFeature();
   const focusRevision = useFocusRefresh();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
@@ -63,6 +76,8 @@ export function WatchlistsPage() {
     : `${selectedWatchlistId}\0${focusRevision}`;
   const symbolsLoading = symbolsRequestKey !== undefined
     && loadedSymbolsRequestKey !== symbolsRequestKey;
+  const favouritesReady = selected?.is_default === true
+    && symbolsWatchlistId === selected.id;
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -115,6 +130,11 @@ export function WatchlistsPage() {
       });
     return () => controller.abort();
   }, [selectedWatchlistId, symbolsRequestKey]);
+
+  const setTickerStrengthUniverse = tickerStrength.setUniverse;
+  useEffect(() => {
+    setTickerStrengthUniverse({ symbols: favouritesReady ? symbols : [] });
+  }, [favouritesReady, setTickerStrengthUniverse, symbols]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {
@@ -216,6 +236,12 @@ export function WatchlistsPage() {
         <Typography className="watchlists-count" color="text.secondary">
           {selected === undefined ? "" : `${symbols.length} tickers`}
         </Typography>
+        {selected?.is_default === true && (
+          <div className="watchlists-ticker-strength">
+            <Divider orientation="vertical" flexItem />
+            <TickerStrengthControls disabled={!tickerStrength.active} />
+          </div>
+        )}
         <TextField
           className="watchlists-add-ticker"
           size="small"
@@ -264,6 +290,8 @@ export function WatchlistsPage() {
           key={selected.id}
           accent="yellow"
           universe={{ type: "bounded", symbols }}
+          tickerMetrics={selected.is_default ? tickerStrength.tickerMetrics : []}
+          onTickerMetricChange={tickerStrength.onTickerMetricChange}
           watchlists={watchlists}
           onWatchlistsChange={(symbol, watchlistIds) => {
             if (!watchlistIds.includes(selected.id)) setSymbols((current) => current.filter((item) => item !== symbol));
