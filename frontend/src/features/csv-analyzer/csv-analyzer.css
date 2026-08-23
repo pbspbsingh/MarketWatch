@@ -21,7 +21,6 @@
   padding-top: 0.125rem;
   padding-bottom: 0.125rem;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
 
   & h1 {
@@ -35,8 +34,19 @@
   }
 }
 
+.csv-analyzer-ticker-strength {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  & .MuiDivider-root {
+    margin-inline: 0.25rem;
+  }
+}
+
 .csv-analyzer-actions {
   display: flex;
+  margin-left: auto;
   flex-shrink: 0;
   align-items: center;
   gap: 0.25rem;

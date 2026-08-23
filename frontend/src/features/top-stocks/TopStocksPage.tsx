@@ -5,7 +5,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import {
   Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  FormControlLabel, IconButton, MenuItem, Select, TextField, Tooltip, Typography,
+  Divider, FormControlLabel, IconButton, MenuItem, Select, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
   clearTopStocks, createTopStockScreen, deleteTopStockScreen, fetchTopStockScreens,
@@ -15,6 +15,9 @@ import {
 } from "../../api/topStocks";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
+import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
+import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
+import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import "./top-stocks.css";
 
 const periods: { period: TopStocksPeriod; label: string }[] = [
@@ -25,8 +28,18 @@ const periods: { period: TopStocksPeriod; label: string }[] = [
 const defaultPeriodCount = 100;
 const defaultScreenCount = 200;
 const periodMode = "periods";
+const emptySymbols: string[] = [];
 
 export function TopStocksPage() {
+  return (
+    <TickerStrengthProvider>
+      <TopStocksContent />
+    </TickerStrengthProvider>
+  );
+}
+
+function TopStocksContent() {
+  const tickerStrength = useTickerStrengthFeature();
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
   const [screens, setScreens] = useState<TopStockScreen[]>([]);
   const [periodSelections, setPeriodSelections] = useState<TopStocksSelection[]>([]);
@@ -65,6 +78,11 @@ export function TopStocksPage() {
   const selectedScreen = snapshotSource?.kind === "custom_screen"
     ? screens.find((screen) => screen.id === snapshotSource.screen_id) : undefined;
   const selectedMode = selectedScreen === undefined ? periodMode : String(selectedScreen.id);
+  const tickerStrengthSymbols = snapshot?.symbols ?? emptySymbols;
+  const setTickerStrengthUniverse = tickerStrength.setUniverse;
+  useEffect(() => {
+    setTickerStrengthUniverse({ symbols: tickerStrengthSymbols });
+  }, [setTickerStrengthUniverse, tickerStrengthSymbols]);
   const save = async (source: TopStocksSource) => {
     setLoading(true); setError(undefined);
     try {
@@ -111,6 +129,12 @@ export function TopStocksPage() {
     <section className="workspace-panel top-stocks-page" aria-label="Top Stocks">
       <header className="panel-header top-stocks-header">
         <Typography component="h1">Top Stocks</Typography>
+        <div className="top-stocks-ticker-strength">
+          <TickerStrengthControls
+            disabled={!tickerStrength.active || tickerStrengthSymbols.length === 0}
+          />
+          <Divider orientation="vertical" flexItem />
+        </div>
         <div className="top-stocks-actions"><div className="top-stocks-controls">
           {loading && <CircularProgress size="0.8rem" />}
           {selectedMode === periodMode && <TextField className="top-stocks-period-count" size="small" type="number" value={draftCount} disabled={loading}
@@ -179,7 +203,12 @@ export function TopStocksPage() {
       </header>
       {snapshot === undefined ? <div className="panel-status"><CircularProgress size="1rem" /></div>
         : snapshot === null || snapshot.symbols.length === 0 ? <div className="panel-status"><Typography color="text.secondary">Select a source to load top stocks</Typography></div>
-        : <TickerLens accent="green" universe={{ type: "bounded", symbols: snapshot.symbols }} />}
+        : <TickerLens
+            accent="green"
+            universe={{ type: "bounded", symbols: snapshot.symbols }}
+            tickerMetrics={tickerStrength.tickerMetrics}
+            onTickerMetricChange={tickerStrength.onTickerMetricChange}
+          />}
       {editor !== undefined && <ScreenEditor screen={editor} onClose={() => setEditor(undefined)} onSave={saveScreen} />}
       <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>
         <DialogTitle>Delete custom screen?</DialogTitle><DialogContent><Typography>This permanently deletes {deleteTarget?.name}.</Typography></DialogContent>

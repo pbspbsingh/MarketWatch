@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   Typography,
 } from "@mui/material";
@@ -17,9 +18,23 @@ import {
 } from "../../api/tickerCollections";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
+import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
+import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
+import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import "./csv-analyzer.css";
 
+const emptySymbols: string[] = [];
+
 export function CsvAnalyzerPage() {
+  return (
+    <TickerStrengthProvider>
+      <CsvAnalyzerContent />
+    </TickerStrengthProvider>
+  );
+}
+
+function CsvAnalyzerContent() {
+  const tickerStrength = useTickerStrengthFeature();
   const [collection, setCollection] = useState<TickerCollection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -28,6 +43,12 @@ export function CsvAnalyzerPage() {
   const [failedResolutionCount, setFailedResolutionCount] = useState(0);
   const [error, setError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
+  const tickerStrengthSymbols = collection?.symbols ?? emptySymbols;
+
+  const setTickerStrengthUniverse = tickerStrength.setUniverse;
+  useEffect(() => {
+    setTickerStrengthUniverse({ symbols: tickerStrengthSymbols });
+  }, [setTickerStrengthUniverse, tickerStrengthSymbols]);
 
   useEffect(() => {
     fetchLastTickerCollection()
@@ -87,6 +108,12 @@ export function CsvAnalyzerPage() {
       >
         <header className="panel-header csv-analyzer-header">
           <Typography component="h1">CSV Analyzer</Typography>
+          <div className="csv-analyzer-ticker-strength">
+            <TickerStrengthControls
+              disabled={!tickerStrength.active || tickerStrengthSymbols.length === 0}
+            />
+            <Divider orientation="vertical" flexItem />
+          </div>
           <div className="csv-analyzer-actions">
             {loading && !uploading && <CircularProgress size="0.85rem" />}
             {collection !== null && (
@@ -136,6 +163,8 @@ export function CsvAnalyzerPage() {
           <TickerLens
             accent="coral"
             universe={{ type: "bounded", symbols: collection.symbols }}
+            tickerMetrics={tickerStrength.tickerMetrics}
+            onTickerMetricChange={tickerStrength.onTickerMetricChange}
             onBoundedResolution={setFailedResolutionCount}
           />
         )}

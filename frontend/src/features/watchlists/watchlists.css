@@ -19,9 +19,8 @@
 
 .watchlists-count { font-size: 0.625rem !important; }
 .watchlists-header .watchlists-add-ticker { width: 8rem; margin-left: auto; }
-.watchlists-header .watchlists-ticker-strength { display: flex; margin-left: auto; align-items: center; gap: 0.5rem; }
+.watchlists-header .watchlists-ticker-strength { display: flex; align-items: center; gap: 0.5rem; }
 .watchlists-header .watchlists-ticker-strength .MuiDivider-root { margin-inline: 0.25rem; }
-.watchlists-header .watchlists-ticker-strength + .watchlists-add-ticker { margin-left: 0; }
 .watchlists-add-ticker .MuiInputBase-root:not(.Mui-disabled) { background: var(--color-raised); }
 .watchlists-add-ticker .MuiOutlinedInput-root:not(.Mui-disabled):not(.Mui-focused) .MuiOutlinedInput-notchedOutline { border-color: color-mix(in srgb, var(--color-text) 65%, transparent); }
 .watchlists-add-ticker .MuiInputBase-input { padding-block: 0.2rem; font-size: 0.72rem; }
