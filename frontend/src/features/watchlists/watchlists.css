@@ -23,9 +23,11 @@
 .watchlists-header .watchlists-ticker-strength .MuiDivider-root { margin-inline: 0.25rem; }
 .watchlists-header .watchlists-ticker-strength + .watchlists-add-ticker { margin-left: 0; }
 .watchlists-add-ticker .MuiInputBase-root:not(.Mui-disabled) { background: var(--color-raised); }
+.watchlists-add-ticker .MuiOutlinedInput-root:not(.Mui-disabled):not(.Mui-focused) .MuiOutlinedInput-notchedOutline { border-color: color-mix(in srgb, var(--color-text) 65%, transparent); }
 .watchlists-add-ticker .MuiInputBase-input { padding-block: 0.2rem; font-size: 0.72rem; }
 .watchlists-add-ticker .MuiInputBase-input:not(:disabled)::placeholder { color: var(--color-muted); opacity: 1; }
 .watchlists-add-ticker .MuiInputAdornment-positionEnd { transform: translateX(0.35rem); }
+.watchlists-add-ticker .MuiInputBase-root:not(.Mui-disabled) .MuiIconButton-root .MuiSvgIcon-root { color: color-mix(in srgb, var(--color-text) 75%, transparent); }
 .watchlist-select-option { gap: 0.5rem; }
 .watchlists-actions { display: flex; align-items: center; gap: 0.2rem; }
 .watchlists-actions .MuiIconButton-root { padding: 0.1rem; }
