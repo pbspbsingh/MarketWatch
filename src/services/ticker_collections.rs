@@ -13,6 +13,20 @@ use tracing::{debug, warn};
 
 const HEADER_VALUES: &[&str] = &["ticker", "tickers", "symbol", "symbols", "stock", "stocks"];
 
+pub(crate) struct ParsedTickerFiles {
+    pub collection: TickerCollection,
+    pub valid_rows: usize,
+    pub skipped_rows: usize,
+    pub duplicate_rows: usize,
+    pub malformed_rows: usize,
+}
+
+enum ParsedTickerLine {
+    Symbol(TickerSymbol),
+    Skipped,
+    Malformed,
+}
+
 pub struct UploadedTickerFile {
     pub name: String,
     pub content: String,
@@ -82,7 +96,7 @@ impl TickerCollectionService {
         if files.is_empty() {
             return Err(TickerCollectionError::EmptyUpload);
         }
-        let collection = parse_csv_files(files);
+        let collection = parse_uploaded_ticker_files(files);
         *self
             .last_collection
             .lock()
@@ -231,11 +245,19 @@ impl TickerCollectionService {
     }
 }
 
-fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
+pub(crate) fn parse_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
+    analyze_uploaded_ticker_files(files).collection
+}
+
+pub(crate) fn analyze_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> ParsedTickerFiles {
     let mut seen = HashSet::new();
     let mut symbols = Vec::new();
     let mut summaries = Vec::with_capacity(files.len());
     let mut skipped_rows = 0;
+    let mut valid_rows = 0;
+    let mut ignored_rows = 0;
+    let mut duplicate_rows = 0;
+    let mut malformed_rows = 0;
 
     for file in files {
         let mut row_count = 0;
@@ -244,18 +266,35 @@ fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
 
         for line in file.content.lines() {
             row_count += 1;
-            let Some(symbol) = symbol_from_line(line) else {
-                debug!(
-                    file = file.name,
-                    row = row_count,
-                    "skipped ticker collection row"
-                );
-                file_skipped_rows += 1;
-                continue;
-            };
-            if seen.insert(symbol.clone()) {
-                symbols.push(symbol);
-                extracted_count += 1;
+            match parse_ticker_line(line) {
+                ParsedTickerLine::Symbol(symbol) => {
+                    valid_rows += 1;
+                    if seen.insert(symbol.clone()) {
+                        symbols.push(symbol);
+                        extracted_count += 1;
+                    } else {
+                        duplicate_rows += 1;
+                        debug!(file = file.name, row = row_count, %symbol, "ignored duplicate ticker row");
+                    }
+                }
+                ParsedTickerLine::Skipped => {
+                    ignored_rows += 1;
+                    file_skipped_rows += 1;
+                    debug!(
+                        file = file.name,
+                        row = row_count,
+                        "skipped ticker collection row"
+                    );
+                }
+                ParsedTickerLine::Malformed => {
+                    malformed_rows += 1;
+                    file_skipped_rows += 1;
+                    debug!(
+                        file = file.name,
+                        row = row_count,
+                        "rejected malformed ticker row"
+                    );
+                }
             }
         }
 
@@ -268,32 +307,40 @@ fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
         });
     }
 
-    TickerCollection {
-        version: 1,
-        source: TickerCollectionSource::Csv { files: summaries },
-        symbols,
-        skipped_rows,
-        created_at: Utc::now(),
+    ParsedTickerFiles {
+        collection: TickerCollection {
+            version: 1,
+            source: TickerCollectionSource::Csv { files: summaries },
+            symbols,
+            skipped_rows,
+            created_at: Utc::now(),
+        },
+        valid_rows,
+        skipped_rows: ignored_rows,
+        duplicate_rows,
+        malformed_rows,
     }
 }
 
-fn symbol_from_line(line: &str) -> Option<TickerSymbol> {
+fn parse_ticker_line(line: &str) -> ParsedTickerLine {
     let line = line.trim().trim_start_matches('\u{feff}');
     if line.is_empty() || line.starts_with('#') || line.starts_with("//") || line.starts_with("--")
     {
-        return None;
+        return ParsedTickerLine::Skipped;
     }
 
     let first = first_field(line)
         .trim()
         .trim_matches('"')
         .trim_matches('\'');
-    let symbol = normalize_symbol(first)?;
+    let Some(symbol) = normalize_symbol(first) else {
+        return ParsedTickerLine::Malformed;
+    };
     let lower = symbol.as_str().to_ascii_lowercase();
     if HEADER_VALUES.contains(&lower.as_str()) {
-        return None;
+        return ParsedTickerLine::Skipped;
     }
-    Some(symbol)
+    ParsedTickerLine::Symbol(symbol)
 }
 
 fn first_field(line: &str) -> &str {
@@ -324,7 +371,7 @@ mod tests {
 
     #[test]
     fn parses_first_column_and_skips_noise() {
-        let collection = parse_csv_files(vec![UploadedTickerFile {
+        let collection = parse_uploaded_ticker_files(vec![UploadedTickerFile {
             name: "watchlist.csv".to_owned(),
             content:
                 "Ticker,Name\n# comment\nAAPL,Apple\n$msft\nNASDAQ:NVDA\n// skip\nbad value\nAAPL\n"

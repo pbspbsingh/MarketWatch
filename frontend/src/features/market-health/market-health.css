@@ -1,0 +1,291 @@
+.market-health-page {
+  width: 100%;
+  height: 100%;
+}
+
+.market-health-header {
+  display: flex;
+  min-height: 2.5rem;
+  padding-block: 0.25rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.market-health-header h1 {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.market-health-universe {
+  font-size: 0.65rem !important;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.market-health-through {
+  flex-shrink: 0;
+  font-size: 0.65rem !important;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.market-health-ready-controls {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.market-health-header .MuiToggleButtonGroup-root {
+  height: 1.65rem;
+  flex-shrink: 0;
+}
+
+.market-health-header .MuiToggleButton-root {
+  padding: 0 0.5rem;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.market-health-leader-control {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.market-health-leader-control .MuiTextField-root {
+  width: 3.5rem;
+}
+
+.market-health-leader-control .MuiInputBase-root {
+  height: 1.65rem;
+  font-size: 0.65rem;
+}
+
+.market-health-leader-control .MuiInputBase-input {
+  padding: 0 0.35rem;
+}
+
+.market-health-upload-wrapper {
+  margin-left: auto;
+}
+
+.market-health-ready-controls ~ .market-health-upload-wrapper {
+  margin-left: 0;
+}
+
+.market-health-empty .MuiTypography-root {
+  font-size: 0.75rem;
+}
+
+.market-health-tabs {
+  min-width: 0;
+  min-height: 1.65rem;
+}
+
+.market-health-tabs .MuiTab-root {
+  min-width: auto;
+  min-height: 1.65rem;
+  padding: 0 0.5rem;
+  font-size: 0.65rem;
+}
+
+.market-health-tabs .MuiTabs-indicator {
+  height: 0.125rem;
+}
+
+.market-health-progress,
+.market-health-content {
+  padding: 0.8rem;
+}
+
+.market-health-progress {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 36rem);
+  grid-auto-rows: max-content;
+  align-content: center;
+  align-items: start;
+  justify-content: center;
+  overflow: auto;
+}
+
+.market-health-progress-control {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.market-health-progress-bar {
+  min-width: 0;
+  height: 0.35rem;
+  flex: 1;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.market-health-progress-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent-teal);
+  transition: width 180ms ease;
+}
+
+.market-health-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: auto;
+}
+
+.market-health-loading {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.market-health-loading .MuiTypography-root {
+  font-size: 0.75rem;
+}
+
+.market-health-chart-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(auto-fit, minmax(min(32rem, 100%), 1fr));
+  grid-auto-rows: minmax(20rem, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 1900px) {
+  .market-health-chart-grid:not(.market-health-chart-grid-highs_breadth) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.market-health-chart-grid-highs_breadth {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.market-health-content-highs_breadth {
+  overflow: hidden;
+}
+
+.market-health-chart-grid-highs_breadth .market-health-chart,
+.market-health-chart-grid-highs_breadth .market-health-chart-host {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.market-health-chart {
+  display: flex;
+  min-width: 0;
+  min-height: 20rem;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 0.4rem;
+}
+
+.market-health-chart-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.market-health-chart h2,
+.market-health-leaders h2 {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.market-health-chart-host {
+  width: 100%;
+  min-height: 14rem;
+  flex: 1;
+}
+
+.market-health-legend,
+.market-health-summaries {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  font-size: 0.62rem;
+  color: var(--mui-palette-text-secondary);
+}
+
+.market-health-legend i {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.2rem;
+  border-radius: 50%;
+}
+
+.market-health-legend span {
+  cursor: help;
+  outline: none;
+}
+
+.market-health-legend span:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2rem;
+}
+
+.market-health-leaders {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.market-health-leader-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 0.4rem;
+  overflow: hidden;
+}
+
+.market-health-leader-table {
+  min-height: 0;
+  overflow: auto;
+}
+
+.market-health-leader-table .MuiTableCell-root {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.market-health-leader-table .MuiTableCell-head {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.market-health-leader-table a {
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-decoration: none;
+}

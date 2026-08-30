@@ -8,6 +8,8 @@ pub mod industries;
 pub mod industry_analysis;
 pub mod maintenance;
 pub mod market_chart;
+pub mod market_health;
+mod market_health_calculations;
 pub mod nyse_calendar;
 pub mod sector_analysis;
 pub mod study;

@@ -282,6 +282,7 @@ body,
 .navigation-icon-lime { color: var(--accent-lime) !important; }
 .navigation-icon-blue { color: var(--accent-blue) !important; }
 .navigation-icon-indigo { color: var(--accent-indigo) !important; }
+.navigation-icon-teal { color: var(--accent-teal) !important; }
 
 .theme-management-page {
   border-top: 0.125rem solid var(--accent-magenta);

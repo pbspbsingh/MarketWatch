@@ -20,6 +20,11 @@ const MarketWatchPage = lazy(() =>
     default: MarketWatchPage,
   })),
 );
+const MarketHealthPage = lazy(() =>
+  import("../features/market-health/MarketHealthPage").then(({ MarketHealthPage }) => ({
+    default: MarketHealthPage,
+  })),
+);
 const ThemeManagementPage = lazy(() =>
   import("../features/theme-management/ThemeManagementPage").then(({ ThemeManagementPage }) => ({
     default: ThemeManagementPage,
@@ -61,6 +66,7 @@ export function App() {
       <Route element={<AppShell />}>
         <Route index element={<Page title="Home"><HomePage /></Page>} />
         <Route path="/market-watch" element={<Page title="Market Watch"><MarketWatchPage /></Page>} />
+        <Route path="/market-health" element={<Page title="Market Health"><MarketHealthPage /></Page>} />
         <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />
         <Route path="/watchlists" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
         <Route path="/watchlists/:id" element={<Page title="Watchlists"><WatchlistsPage /></Page>} />
