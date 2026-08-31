@@ -793,7 +793,7 @@ mod tests {
                 .iter()
                 .map(|average| average.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 50, 100, 200]
+            [5, 10, 20, 50, 100, 200]
         );
         assert_eq!(daily.series[0].volume_average.period, 50);
         assert!(!daily.series[0].volume_average.points.is_empty());
@@ -804,9 +804,9 @@ mod tests {
                 .iter()
                 .map(|average| average.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 200]
+            [5, 10, 20, 200]
         );
-        assert!(!weekly.series[0].moving_averages[2].points.is_empty());
+        assert!(!weekly.series[0].moving_averages[3].points.is_empty());
         assert_eq!(weekly.series[0].volume_average.period, 10);
         assert!(!weekly.series[0].volume_average.points.is_empty());
     }

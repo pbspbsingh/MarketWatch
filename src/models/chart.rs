@@ -6,8 +6,8 @@ use thiserror::Error;
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{DailyCandle, TickerSymbol};
 
-const DAILY_MA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
-const WEEKLY_EMA_PERIODS: [usize; 2] = [10, 20];
+const DAILY_MA_PERIODS: [usize; 6] = [5, 10, 20, 50, 100, 200];
+const WEEKLY_EMA_PERIODS: [usize; 3] = [5, 10, 20];
 const WEEKLY_DAILY_SMA_PERIOD: usize = 200;
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
 const WEEKLY_VOLUME_AVERAGE_PERIOD: usize = 10;
@@ -286,7 +286,7 @@ fn market_chart_moving_average(
     period: usize,
 ) -> Result<MarketChartSeries, ChartCalculationError> {
     match interval {
-        MarketChartInterval::Daily if matches!(period, 10 | 20) => close_ema(candles, period),
+        MarketChartInterval::Daily if matches!(period, 5 | 10 | 20) => close_ema(candles, period),
         MarketChartInterval::Daily => close_sma(candles, period),
         MarketChartInterval::Weekly => close_ema(candles, period),
     }
@@ -479,10 +479,10 @@ mod tests {
     }
 
     #[test]
-    fn uses_ema_for_daily_10_and_20_averages() {
+    fn uses_ema_for_daily_5_10_and_20_averages() {
         let candles = candles(200);
 
-        for period in [10, 20] {
+        for period in [5, 10, 20] {
             assert_eq!(
                 market_chart_moving_average(&candles, MarketChartInterval::Daily, period).unwrap(),
                 close_ema(&candles, period).unwrap(),
@@ -518,11 +518,11 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 200]
+            [5, 10, 20, 200]
         );
-        assert_eq!(averages[2], expected);
+        assert_eq!(averages[3], expected);
         assert!(
-            averages[2]
+            averages[3]
                 .points
                 .iter()
                 .all(|point| point.date.weekday() == chrono::Weekday::Mon)
@@ -541,7 +541,7 @@ mod tests {
     fn calculates_required_weekly_close_emas_with_sma_seed() {
         let candles = candles(50);
 
-        for period in [10, 20, 40] {
+        for period in WEEKLY_EMA_PERIODS {
             let series = close_ema(&candles, period).unwrap();
             let seed = (period + 1) as f64 / 2.0;
             let alpha = 2.0 / (period as f64 + 1.0);

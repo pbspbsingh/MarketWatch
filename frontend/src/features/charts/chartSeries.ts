@@ -16,6 +16,7 @@ export interface MovingAverageSpec {
 }
 
 const dailySpecs: readonly MovingAverageSpec[] = [
+  { period: 5, type: "EMA", color: dailyMovingAverageColors[5] },
   { period: 10, type: "EMA", color: dailyMovingAverageColors[10] },
   { period: 20, type: "EMA", color: dailyMovingAverageColors[20] },
   { period: 50, type: "SMA", color: dailyMovingAverageColors[50] },
@@ -24,6 +25,7 @@ const dailySpecs: readonly MovingAverageSpec[] = [
 ];
 
 const weeklySpecs: readonly MovingAverageSpec[] = [
+  { period: 5, type: "EMA", color: weeklyMovingAverageColors[5] },
   { period: 10, type: "EMA", color: weeklyMovingAverageColors[10] },
   { period: 20, type: "EMA", color: weeklyMovingAverageColors[20] },
   { period: 200, type: "SMA", color: weeklyMovingAverageColors[200] },

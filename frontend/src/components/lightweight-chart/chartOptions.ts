@@ -49,8 +49,10 @@ export const overlappingPriceScaleMargins = {
   bottom: 0.1,
 } as const;
 const synchronizedPriceScaleMinimumWidth = 64;
+const subtleMovingAverageColor = "rgba(128, 128, 128, 0.9)";
 
 export const dailyMovingAverageColors = {
+  5: subtleMovingAverageColor,
   10: "#3179f5",
   20: "#f6c309",
   50: "#fb9800",
@@ -59,6 +61,7 @@ export const dailyMovingAverageColors = {
 } as const;
 
 export const weeklyMovingAverageColors = {
+  5: subtleMovingAverageColor,
   10: "#3179f5",
   20: "#8b5cf6",
   200: "#b23a48",

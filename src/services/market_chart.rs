@@ -496,8 +496,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(snapshot.candles.len(), 220);
-        assert_eq!(snapshot.moving_averages[4].points.len(), 21);
-        let ema10 = snapshot.moving_averages[0].points.last().unwrap().value;
+        assert_eq!(snapshot.moving_averages[5].points.len(), 21);
+        let ema10 = snapshot.moving_averages[1].points.last().unwrap().value;
         assert!((ema10 - 255.5).abs() < 1e-9);
         assert_eq!(snapshot.volume_average.points.len(), 171);
     }
@@ -516,7 +516,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(snapshot.candles.len(), 220);
-        assert_eq!(snapshot.moving_averages[2].points.len(), 21);
+        assert_eq!(snapshot.moving_averages[3].points.len(), 21);
         assert_eq!(snapshot.volume_average.points.len(), 211);
         assert_eq!(snapshot.earliest_date, Some(snapshot.candles[0].date));
         assert_eq!(snapshot.latest_date, Some(snapshot.candles[219].date));
@@ -618,9 +618,9 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 50, 100, 200]
+            [5, 10, 20, 50, 100, 200]
         );
-        assert_eq!(snapshot.moving_averages[4].points.len(), 21);
+        assert_eq!(snapshot.moving_averages[5].points.len(), 21);
         assert_eq!(
             snapshot.volume_average.period,
             market_chart_volume_average_period(MarketChartInterval::Daily)
@@ -649,9 +649,9 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            [10, 20, 200]
+            [5, 10, 20, 200]
         );
-        assert_eq!(snapshot.moving_averages[2].points.len(), 21);
+        assert_eq!(snapshot.moving_averages[3].points.len(), 21);
         assert_eq!(
             snapshot.volume_average.period,
             market_chart_volume_average_period(MarketChartInterval::Weekly)
