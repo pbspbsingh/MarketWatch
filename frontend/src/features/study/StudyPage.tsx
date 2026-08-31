@@ -22,7 +22,6 @@ import {
   Typography,
 } from "@mui/material";
 import type { MarketChartInterval } from "../../api/marketChart";
-import { useAppSettings } from "../../app/AppSettings";
 import {
   fetchLastStudy,
   fetchStudy,
@@ -50,8 +49,6 @@ const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
 
 export function StudyPage() {
-  const { dailyShortMaType } = useAppSettings();
-  const initialDailyShortMaTypeRef = useRef(dailyShortMaType);
   const pageRef = useRef<HTMLElement>(null);
   const [symbolA, setSymbolA] = useState("SPY");
   const [symbolB, setSymbolB] = useState("QQQ");
@@ -93,7 +90,6 @@ export function StudyPage() {
     const controller = new AbortController();
     requestRef.current = controller;
     fetchLastStudy(
-      initialDailyShortMaTypeRef.current,
       initialIntervalRef.current,
       controller.signal,
     )
@@ -137,13 +133,12 @@ export function StudyPage() {
     requestRef.current = controller;
     setLoading(true);
     setError(undefined);
-    const requestedDailyShortMaType = dailyShortMaType;
     try {
       const next = await fetchStudy(
         [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
         date,
         interval,
-        { dailyShortMaType: requestedDailyShortMaType, refresh, signal: controller.signal },
+        { refresh, signal: controller.signal },
       );
       resultRef.current = next;
       setResult(next);
@@ -182,7 +177,6 @@ export function StudyPage() {
         current.date,
         current.interval,
         {
-          dailyShortMaType: current.daily_short_ma_type,
           range,
           fetchRange,
           signal: controller.signal,
@@ -229,7 +223,6 @@ export function StudyPage() {
     requestRef.current = controller;
     setLoading(true);
     setError(undefined);
-    const requestedDailyShortMaType = dailyShortMaType;
     try {
       const next = await fetchStudy(
         [current.series[0].symbol, current.series[1].symbol],
@@ -237,7 +230,6 @@ export function StudyPage() {
         nextInterval,
         {
           range: { start: current.range_start, end: current.range_end },
-          dailyShortMaType: requestedDailyShortMaType,
           signal: controller.signal,
         },
       );

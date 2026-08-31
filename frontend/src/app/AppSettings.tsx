@@ -7,7 +7,6 @@ import {
   type ReactNode,
 } from "react";
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import type { DailyShortMaType } from "../api/marketChart";
 import {
   applyThemeToDocument,
   createAppTheme,
@@ -30,7 +29,6 @@ type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
   candlePalette: CandlePalette;
-  dailyShortMaType: DailyShortMaType;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
 };
 
@@ -38,7 +36,6 @@ type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
-  setDailyShortMaType: (dailyShortMaType: DailyShortMaType) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
 };
 
@@ -56,7 +53,6 @@ function readSettings(): StoredSettings {
           ? legacyChartEngine
           : "tradingview",
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
-      dailyShortMaType: value.dailyShortMaType === "ema" ? "ema" : "sma",
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
@@ -68,7 +64,6 @@ function readSettings(): StoredSettings {
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
         : "tradingview",
       candlePalette: "solid",
-      dailyShortMaType: "sma",
       relativeStrengthLineStyle: "large-dashed",
     };
   }
@@ -107,8 +102,6 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
     setCandlePalette: (candlePalette) =>
       setSettings((current) => ({ ...current, candlePalette })),
-    setDailyShortMaType: (dailyShortMaType) =>
-      setSettings((current) => ({ ...current, dailyShortMaType })),
     setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
       setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);

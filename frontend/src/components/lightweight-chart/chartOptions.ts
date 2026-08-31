@@ -50,7 +50,7 @@ export const overlappingPriceScaleMargins = {
 } as const;
 const synchronizedPriceScaleMinimumWidth = 64;
 
-export const dailySmaColors = {
+export const dailyMovingAverageColors = {
   10: "#3179f5",
   20: "#f6c309",
   50: "#fb9800",

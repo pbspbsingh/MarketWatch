@@ -1,7 +1,7 @@
 use crate::models::chart::{
-    ChartCalculationError, DailyShortMaType, MarketChartCandle, MarketChartInterval,
-    MarketChartRelativeStrength, VolumeEventKind, market_chart_candles_for_interval,
-    market_chart_moving_averages, market_chart_volume_average_period, volume_sma,
+    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
+    VolumeEventKind, market_chart_candles_for_interval, market_chart_moving_averages,
+    market_chart_volume_average_period, volume_sma,
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
@@ -55,7 +55,6 @@ pub struct StudyMovingAveragePoint {
 pub struct StudyResult {
     pub date: NaiveDate,
     pub interval: MarketChartInterval,
-    pub daily_short_ma_type: DailyShortMaType,
     pub range_start: NaiveDate,
     pub range_end: NaiveDate,
     pub has_more_before: bool,
@@ -72,7 +71,6 @@ pub struct StudyLoadOptions {
     pub fetch_start: Option<NaiveDate>,
     pub fetch_end: Option<NaiveDate>,
     pub refresh: bool,
-    pub daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Clone, Debug)]
@@ -133,7 +131,6 @@ impl StudyService {
     pub async fn last(
         &self,
         interval: MarketChartInterval,
-        daily_short_ma_type: DailyShortMaType,
     ) -> Result<Option<StudyResult>, StudyError> {
         let _load_guard = self.load_lock.lock().await;
         let dataset = self
@@ -144,13 +141,7 @@ impl StudyService {
         let Some(dataset) = dataset else {
             return Ok(None);
         };
-        build_study_result(
-            &dataset,
-            interval,
-            daily_short_ma_type,
-            &self.market_repositioning_dates,
-        )
-        .map(Some)
+        build_study_result(&dataset, interval, &self.market_repositioning_dates).map(Some)
     }
 
     pub async fn load(
@@ -166,7 +157,6 @@ impl StudyService {
             fetch_start,
             fetch_end,
             refresh,
-            daily_short_ma_type,
         } = options;
         let range = (range_start, range_end);
         let fetch_range = (fetch_start, fetch_end);
@@ -197,7 +187,6 @@ impl StudyService {
             let result = build_study_result(
                 &previous.expect("checked cached Study dataset"),
                 interval,
-                daily_short_ma_type,
                 &self.market_repositioning_dates,
             )?;
             return Ok(result);
@@ -218,12 +207,7 @@ impl StudyService {
             (extending_before && !dataset.has_more_before)
                 || (extending_after && !dataset.has_more_after)
         }) {
-            let result = build_study_result(
-                dataset,
-                interval,
-                daily_short_ma_type,
-                &self.market_repositioning_dates,
-            )?;
+            let result = build_study_result(dataset, interval, &self.market_repositioning_dates)?;
             return Ok(result);
         }
         let mut series = Vec::with_capacity(2);
@@ -315,12 +299,7 @@ impl StudyService {
             },
             series,
         };
-        let result = build_study_result(
-            &dataset,
-            interval,
-            daily_short_ma_type,
-            &self.market_repositioning_dates,
-        )?;
+        let result = build_study_result(&dataset, interval, &self.market_repositioning_dates)?;
         *self
             .dataset
             .lock()
@@ -332,7 +311,6 @@ impl StudyService {
 fn build_study_result(
     dataset: &StudyDataset,
     interval: MarketChartInterval,
-    daily_short_ma_type: DailyShortMaType,
     market_repositioning_dates: &HashSet<NaiveDate>,
 ) -> Result<StudyResult, StudyError> {
     let series = dataset
@@ -346,21 +324,20 @@ fn build_study_result(
                 .collect::<Result<Vec<_>, _>>()?;
             let candles =
                 market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
-            let moving_averages =
-                market_chart_moving_averages(&daily, &candles, interval, daily_short_ma_type)?
-                    .into_iter()
-                    .map(|average| StudyMovingAverage {
-                        period: average.period,
-                        points: average
-                            .points
-                            .into_iter()
-                            .map(|point| StudyMovingAveragePoint {
-                                date: point.date,
-                                value: point.value,
-                            })
-                            .collect(),
-                    })
-                    .collect();
+            let moving_averages = market_chart_moving_averages(&daily, &candles, interval)?
+                .into_iter()
+                .map(|average| StudyMovingAverage {
+                    period: average.period,
+                    points: average
+                        .points
+                        .into_iter()
+                        .map(|point| StudyMovingAveragePoint {
+                            date: point.date,
+                            value: point.value,
+                        })
+                        .collect(),
+                })
+                .collect();
             let volume_average =
                 volume_sma(&candles, market_chart_volume_average_period(interval))?;
             let volume_average = StudyMovingAverage {
@@ -391,7 +368,6 @@ fn build_study_result(
     Ok(StudyResult {
         date: dataset.date,
         interval,
-        daily_short_ma_type,
         range_start: dataset.range_start,
         range_end: dataset.range_end,
         has_more_before: dataset.has_more_before,
@@ -798,20 +774,11 @@ mod tests {
         };
 
         let repositioning_dates = HashSet::from([start + chrono::Days::new(250)]);
-        let daily = build_study_result(
-            &dataset,
-            MarketChartInterval::Daily,
-            DailyShortMaType::Sma,
-            &repositioning_dates,
-        )
-        .unwrap();
-        let weekly = build_study_result(
-            &dataset,
-            MarketChartInterval::Weekly,
-            DailyShortMaType::Sma,
-            &repositioning_dates,
-        )
-        .unwrap();
+        let daily =
+            build_study_result(&dataset, MarketChartInterval::Daily, &repositioning_dates).unwrap();
+        let weekly =
+            build_study_result(&dataset, MarketChartInterval::Weekly, &repositioning_dates)
+                .unwrap();
 
         assert_eq!(daily.series[0].candles.len(), 300);
         assert_eq!(daily.series[0].candles[250].volume, 1_000);

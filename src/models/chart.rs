@@ -6,7 +6,7 @@ use thiserror::Error;
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{DailyCandle, TickerSymbol};
 
-const DAILY_SMA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
+const DAILY_MA_PERIODS: [usize; 5] = [10, 20, 50, 100, 200];
 const WEEKLY_EMA_PERIODS: [usize; 2] = [10, 20];
 const WEEKLY_DAILY_SMA_PERIOD: usize = 200;
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
@@ -29,14 +29,6 @@ struct VolumeEventMeasurement {
 pub enum MarketChartInterval {
     Daily,
     Weekly,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DailyShortMaType {
-    #[default]
-    Sma,
-    Ema,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -292,14 +284,9 @@ fn market_chart_moving_average(
     candles: &[MarketChartCandle],
     interval: MarketChartInterval,
     period: usize,
-    daily_short_ma_type: DailyShortMaType,
 ) -> Result<MarketChartSeries, ChartCalculationError> {
     match interval {
-        MarketChartInterval::Daily
-            if matches!(period, 10 | 20) && daily_short_ma_type == DailyShortMaType::Ema =>
-        {
-            close_ema(candles, period)
-        }
+        MarketChartInterval::Daily if matches!(period, 10 | 20) => close_ema(candles, period),
         MarketChartInterval::Daily => close_sma(candles, period),
         MarketChartInterval::Weekly => close_ema(candles, period),
     }
@@ -309,19 +296,11 @@ pub fn market_chart_moving_averages(
     daily: &[MarketChartCandle],
     interval_candles: &[MarketChartCandle],
     interval: MarketChartInterval,
-    daily_short_ma_type: DailyShortMaType,
 ) -> Result<Vec<MarketChartSeries>, ChartCalculationError> {
     match interval {
-        MarketChartInterval::Daily => DAILY_SMA_PERIODS
+        MarketChartInterval::Daily => DAILY_MA_PERIODS
             .iter()
-            .map(|period| {
-                market_chart_moving_average(
-                    interval_candles,
-                    interval,
-                    *period,
-                    daily_short_ma_type,
-                )
-            })
+            .map(|period| market_chart_moving_average(interval_candles, interval, *period))
             .collect(),
         MarketChartInterval::Weekly => {
             let mut averages = WEEKLY_EMA_PERIODS
@@ -500,31 +479,21 @@ mod tests {
     }
 
     #[test]
-    fn switches_only_daily_10_and_20_averages_to_ema() {
-        let candles = candles(50);
+    fn uses_ema_for_daily_10_and_20_averages() {
+        let candles = candles(200);
 
         for period in [10, 20] {
             assert_eq!(
-                market_chart_moving_average(
-                    &candles,
-                    MarketChartInterval::Daily,
-                    period,
-                    DailyShortMaType::Ema,
-                )
-                .unwrap(),
+                market_chart_moving_average(&candles, MarketChartInterval::Daily, period).unwrap(),
                 close_ema(&candles, period).unwrap(),
             );
         }
-        assert_eq!(
-            market_chart_moving_average(
-                &candles,
-                MarketChartInterval::Daily,
-                50,
-                DailyShortMaType::Ema,
-            )
-            .unwrap(),
-            close_sma(&candles, 50).unwrap(),
-        );
+        for period in [50, 100, 200] {
+            assert_eq!(
+                market_chart_moving_average(&candles, MarketChartInterval::Daily, period).unwrap(),
+                close_sma(&candles, period).unwrap(),
+            );
+        }
     }
 
     #[test]
@@ -533,13 +502,8 @@ mod tests {
         let weekly =
             market_chart_candles_for_interval(&daily, MarketChartInterval::Weekly, &HashSet::new())
                 .unwrap();
-        let averages = market_chart_moving_averages(
-            &daily,
-            &weekly,
-            MarketChartInterval::Weekly,
-            DailyShortMaType::Sma,
-        )
-        .unwrap();
+        let averages =
+            market_chart_moving_averages(&daily, &weekly, MarketChartInterval::Weekly).unwrap();
         let weekly_dates = weekly
             .iter()
             .map(|candle| candle.date)

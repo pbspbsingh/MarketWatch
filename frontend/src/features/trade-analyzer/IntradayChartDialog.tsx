@@ -22,7 +22,7 @@ import { ChartHost } from "../../components/lightweight-chart/ChartHost";
 import { money } from "./format";
 import {
   candleSeriesOptions,
-  dailySmaColors,
+  dailyMovingAverageColors,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   visualizationColors,
@@ -166,7 +166,7 @@ function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: An
         volumeRef.current = volume;
         emaRefs.current = ([65, 130, 260] as const).map((period) => chart.addSeries(LineSeries, {
           ...indicatorSeriesOptions,
-          color: dailySmaColors[period === 65 ? 10 : period === 130 ? 20 : 50],
+          color: dailyMovingAverageColors[period === 65 ? 10 : period === 130 ? 20 : 50],
           title: `EMA ${period}`,
         }));
         populate();

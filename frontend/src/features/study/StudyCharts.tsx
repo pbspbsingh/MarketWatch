@@ -599,7 +599,6 @@ export function StudyCharts({
             containerRef={topRef}
             companyName={result.series[0].company_name ?? undefined}
             interval={result.interval}
-            dailyShortMaType={result.daily_short_ma_type}
             onPointerEnter={() => setCrosshairOwner(0)}
             showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
             onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
@@ -614,7 +613,6 @@ export function StudyCharts({
             containerRef={bottomRef}
             companyName={result.series[1]?.company_name ?? undefined}
             interval={result.interval}
-            dailyShortMaType={result.daily_short_ma_type}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}
@@ -707,7 +705,6 @@ function ChartContainer({
   containerRef,
   companyName,
   interval,
-  dailyShortMaType,
   onPointerEnter,
   showRelativeStrength,
   onToggleRelativeStrength,
@@ -719,7 +716,6 @@ function ChartContainer({
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
   interval: StudyResult["interval"];
-  dailyShortMaType: StudyResult["daily_short_ma_type"];
   onPointerEnter: () => void;
   showRelativeStrength?: boolean;
   onToggleRelativeStrength?: () => void;
@@ -766,7 +762,7 @@ function ChartContainer({
         className="study-chart-legend"
         aria-label="Moving averages"
       >
-        {movingAverageSpecs(interval, dailyShortMaType).map(({ period, type, color }) => (
+        {movingAverageSpecs(interval).map(({ period, type, color }) => (
           <span key={period} style={{ color }}>
             {type} {period}
           </span>

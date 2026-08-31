@@ -1,11 +1,10 @@
 import type { LineData, Time } from "lightweight-charts";
 import type {
-  DailyShortMaType,
   MarketChartInterval,
   MarketChartSeries,
 } from "../../api/marketChart";
 import {
-  dailySmaColors,
+  dailyMovingAverageColors,
   weeklyMovingAverageColors,
 } from "../../components/lightweight-chart/chartOptions";
 import { marketDateToChartTime } from "../../components/lightweight-chart/chartTime";
@@ -17,11 +16,11 @@ export interface MovingAverageSpec {
 }
 
 const dailySpecs: readonly MovingAverageSpec[] = [
-  { period: 10, type: "SMA", color: dailySmaColors[10] },
-  { period: 20, type: "SMA", color: dailySmaColors[20] },
-  { period: 50, type: "SMA", color: dailySmaColors[50] },
-  { period: 100, type: "SMA", color: dailySmaColors[100] },
-  { period: 200, type: "SMA", color: dailySmaColors[200] },
+  { period: 10, type: "EMA", color: dailyMovingAverageColors[10] },
+  { period: 20, type: "EMA", color: dailyMovingAverageColors[20] },
+  { period: 50, type: "SMA", color: dailyMovingAverageColors[50] },
+  { period: 100, type: "SMA", color: dailyMovingAverageColors[100] },
+  { period: 200, type: "SMA", color: dailyMovingAverageColors[200] },
 ];
 
 const weeklySpecs: readonly MovingAverageSpec[] = [
@@ -37,15 +36,9 @@ export const movingAverageSeriesCount = Math.max(
 
 export function movingAverageSpecs(
   interval: MarketChartInterval,
-  dailyShortMaType: DailyShortMaType = "sma",
 ): readonly MovingAverageSpec[] {
   if (interval === "weekly") return weeklySpecs;
-  if (dailyShortMaType === "sma") return dailySpecs;
-  return dailySpecs.map((spec) => (
-    spec.period === 10 || spec.period === 20
-      ? { ...spec, type: "EMA" }
-      : spec
-  ));
+  return dailySpecs;
 }
 
 export function lineData(series: MarketChartSeries | undefined): LineData<Time>[] {

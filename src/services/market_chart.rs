@@ -1,9 +1,8 @@
 use crate::constants::{DAILY_CANDLE_HISTORY, WEEKLY_CANDLE_HISTORY};
 use crate::models::chart::{
-    ChartCalculationError, DailyShortMaType, MarketChartCandle, MarketChartInterval,
-    MarketChartRelativeStrength, MarketChartSnapshot, market_chart_candles_for_interval,
-    market_chart_moving_averages, market_chart_volume_average_period, validate_market_chart_candle,
-    volume_sma,
+    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
+    MarketChartSnapshot, market_chart_candles_for_interval, market_chart_moving_averages,
+    market_chart_volume_average_period, validate_market_chart_candle, volume_sma,
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
@@ -62,7 +61,6 @@ impl MarketChartService {
         symbol: &TickerSymbol,
         interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
-        daily_short_ma_type: DailyShortMaType,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
             self.candles_for_interval(symbol, interval).await?,
@@ -77,7 +75,6 @@ impl MarketChartService {
             candles,
             Vec::new(),
             relative_strength,
-            daily_short_ma_type,
             &self.market_repositioning_dates,
         )
     }
@@ -87,7 +84,6 @@ impl MarketChartService {
         symbol: &TickerSymbol,
         interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
-        daily_short_ma_type: DailyShortMaType,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
             self.refresh_candles_for_interval(symbol, interval).await?,
@@ -102,7 +98,6 @@ impl MarketChartService {
             candles,
             Vec::new(),
             relative_strength,
-            daily_short_ma_type,
             &self.market_repositioning_dates,
         )
     }
@@ -170,7 +165,6 @@ impl MarketChartService {
         start: chrono::NaiveDate,
         end: chrono::NaiveDate,
         comparison_symbol: Option<&TickerSymbol>,
-        daily_short_ma_type: DailyShortMaType,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
         self.yahoo.daily_candles_for_year(symbol).await?;
@@ -204,7 +198,6 @@ impl MarketChartService {
             history.candles,
             Vec::new(),
             relative_strength,
-            daily_short_ma_type,
             &self.market_repositioning_dates,
         )?;
         snapshot.has_more_before = has_more_before;
@@ -263,7 +256,6 @@ fn build_expanded_snapshot(
     persisted: Vec<DailyCandle>,
     ephemeral: Vec<DailyCandle>,
     relative_strength: Option<RelativeStrengthSource>,
-    daily_short_ma_type: DailyShortMaType,
     market_repositioning_dates: &HashSet<chrono::NaiveDate>,
 ) -> Result<MarketChartSnapshot, MarketChartError> {
     let daily = merge_daily_candles(persisted, ephemeral)?;
@@ -273,13 +265,7 @@ fn build_expanded_snapshot(
     } else {
         None
     };
-    let mut snapshot = build_snapshot(
-        symbol,
-        interval,
-        &daily,
-        daily_short_ma_type,
-        market_repositioning_dates,
-    )?;
+    let mut snapshot = build_snapshot(symbol, interval, &daily, market_repositioning_dates)?;
     snapshot.relative_strength = relative_strength;
     Ok(snapshot)
 }
@@ -311,7 +297,6 @@ fn build_snapshot(
     symbol: TickerSymbol,
     interval: MarketChartInterval,
     daily: &[DailyCandle],
-    daily_short_ma_type: DailyShortMaType,
     market_repositioning_dates: &HashSet<chrono::NaiveDate>,
 ) -> Result<MarketChartSnapshot, ChartCalculationError> {
     let daily = daily
@@ -320,8 +305,7 @@ fn build_snapshot(
         .collect::<Vec<_>>();
     let candles = market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
     let volume_average_period = market_chart_volume_average_period(interval);
-    let moving_averages =
-        market_chart_moving_averages(&daily, &candles, interval, daily_short_ma_type)?;
+    let moving_averages = market_chart_moving_averages(&daily, &candles, interval)?;
     let volume_average = volume_sma(&candles, volume_average_period)?;
     let earliest_date = candles.first().map(|candle| candle.date);
     let latest_date = candles.last().map(|candle| candle.date);
@@ -507,17 +491,14 @@ mod tests {
             persisted,
             all,
             None,
-            DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();
 
         assert_eq!(snapshot.candles.len(), 220);
         assert_eq!(snapshot.moving_averages[4].points.len(), 21);
-        assert_eq!(
-            snapshot.moving_averages[0].points.last().unwrap().value,
-            237.5
-        );
+        let ema10 = snapshot.moving_averages[0].points.last().unwrap().value;
+        assert!((ema10 - 255.5).abs() < 1e-9);
         assert_eq!(snapshot.volume_average.points.len(), 171);
     }
 
@@ -530,7 +511,6 @@ mod tests {
             all[200..].to_vec(),
             all[..200].to_vec(),
             None,
-            DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();
@@ -554,7 +534,6 @@ mod tests {
                 ticker.clone(),
                 Vec::new(),
                 Some(relative_strength_source(comparison.clone())),
-                DailyShortMaType::Sma,
                 &HashSet::new(),
             )
             .unwrap();
@@ -587,7 +566,6 @@ mod tests {
                 recent.clone(),
                 Vec::new(),
                 Some(relative_strength_source(recent_comparison.clone())),
-                DailyShortMaType::Sma,
                 &HashSet::new(),
             )
             .unwrap()
@@ -603,7 +581,6 @@ mod tests {
                     persisted: recent_comparison.clone(),
                     ephemeral: comparison.clone(),
                 }),
-                DailyShortMaType::Sma,
                 &HashSet::new(),
             )
             .unwrap()
@@ -630,7 +607,6 @@ mod tests {
             symbol("TEST"),
             MarketChartInterval::Daily,
             &candles(220, 1),
-            DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();
@@ -662,7 +638,6 @@ mod tests {
             symbol("TEST"),
             MarketChartInterval::Weekly,
             &candles(220, 7),
-            DailyShortMaType::Sma,
             &HashSet::new(),
         )
         .unwrap();

@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use crate::models::TickerSymbol;
-use crate::models::chart::{DailyShortMaType, MarketChartInterval};
+use crate::models::chart::MarketChartInterval;
 use crate::services::study::{StudyError, StudyLoadOptions};
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -21,15 +21,11 @@ struct StudyRequest {
     fetch_end: Option<NaiveDate>,
     #[serde(default)]
     refresh: bool,
-    #[serde(default)]
-    daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Deserialize)]
 struct LastStudyQuery {
     interval: Option<MarketChartInterval>,
-    #[serde(default)]
-    daily_short_ma_type: DailyShortMaType,
 }
 
 pub fn router() -> Router<AppState> {
@@ -44,10 +40,7 @@ async fn last(
 ) -> Result<Json<crate::services::study::StudyResult>, (StatusCode, String)> {
     state
         .study
-        .last(
-            query.interval.unwrap_or(MarketChartInterval::Daily),
-            query.daily_short_ma_type,
-        )
+        .last(query.interval.unwrap_or(MarketChartInterval::Daily))
         .await
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         .map(Json)
@@ -70,7 +63,6 @@ async fn candles(
                 fetch_start: request.fetch_start,
                 fetch_end: request.fetch_end,
                 refresh: request.refresh,
-                daily_short_ma_type: request.daily_short_ma_type,
             },
         )
         .await

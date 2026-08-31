@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::chart::{
-    DailyShortMaType, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
-    MarketChartSeries, MarketChartSnapshot,
+    MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength, MarketChartSeries,
+    MarketChartSnapshot,
 };
 use crate::models::{TickerSymbol, YahooSymbol};
 use crate::providers::YahooError;
@@ -35,8 +35,6 @@ const LIVE_DELTA_DEBOUNCE: Duration = Duration::from_millis(250);
 struct SnapshotQuery {
     interval: MarketChartInterval,
     comparison_symbol: Option<TickerSymbol>,
-    #[serde(default)]
-    daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Deserialize)]
@@ -45,8 +43,6 @@ struct HistoryQuery {
     start: chrono::NaiveDate,
     end: chrono::NaiveDate,
     comparison_symbol: Option<TickerSymbol>,
-    #[serde(default)]
-    daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Deserialize)]
@@ -64,8 +60,6 @@ struct RawLiveChartRequest {
     symbol: String,
     interval: MarketChartInterval,
     comparison_symbol: Option<String>,
-    #[serde(default)]
-    daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Clone)]
@@ -74,7 +68,6 @@ struct LiveChartRequest {
     symbol: TickerSymbol,
     interval: MarketChartInterval,
     comparison_symbol: Option<TickerSymbol>,
-    daily_short_ma_type: DailyShortMaType,
 }
 
 #[derive(Serialize)]
@@ -196,7 +189,6 @@ async fn handle_live_chart_socket(
                         &chart.symbol,
                         chart.interval,
                         chart.comparison_symbol.as_ref(),
-                        chart.daily_short_ma_type,
                     ).await {
                         Ok(snapshot) => {
                             let Some(delta) = snapshot_delta(chart, snapshot) else { continue };
@@ -354,7 +346,6 @@ fn normalize_live_charts(
             symbol,
             interval: chart.interval,
             comparison_symbol,
-            daily_short_ma_type: chart.daily_short_ma_type,
         });
     }
     symbols.sort_unstable();
@@ -502,12 +493,7 @@ async fn snapshot(
     let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .snapshot(
-            &symbol,
-            query.interval,
-            comparison_symbol.as_ref(),
-            query.daily_short_ma_type,
-        )
+        .snapshot(&symbol, query.interval, comparison_symbol.as_ref())
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -521,12 +507,7 @@ async fn refresh_snapshot(
     let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .refresh_snapshot(
-            &symbol,
-            query.interval,
-            comparison_symbol.as_ref(),
-            query.daily_short_ma_type,
-        )
+        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_ref())
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -546,7 +527,6 @@ async fn history_snapshot(
             query.start,
             query.end,
             comparison_symbol.as_ref(),
-            query.daily_short_ma_type,
         )
         .await
         .map(Json)
@@ -586,7 +566,6 @@ mod tests {
                 symbol: symbol.to_owned(),
                 interval: MarketChartInterval::Daily,
                 comparison_symbol: comparison_symbol.map(str::to_owned),
-                daily_short_ma_type: DailyShortMaType::Sma,
             };
         let (charts, symbols) = normalize_live_charts(vec![
             request("top", " aapl ", Some("qqq")),
@@ -654,7 +633,6 @@ mod tests {
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
-            daily_short_ma_type: DailyShortMaType::Sma,
         };
 
         let delta = snapshot_delta(&chart, snapshot).unwrap();
@@ -673,7 +651,6 @@ mod tests {
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
-            daily_short_ma_type: DailyShortMaType::Sma,
         };
         let update = YahooLiveUpdate::PreMarket(YahooLiveCandle {
             symbol: YahooSymbol::parse("AAPL").unwrap(),

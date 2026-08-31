@@ -53,8 +53,7 @@ function homeChartViewportKey(interval: MarketChartInterval) {
 }
 
 export function HomePage() {
-  const { chartEngine, dailyShortMaType } = useAppSettings();
-  const dailyShortMaTypeRef = useRef(dailyShortMaType);
+  const { chartEngine } = useAppSettings();
   const [tickers, setTickers] = useState<string[]>();
   const [charts, setCharts] = useState<Record<string, ChartState>>({});
   const [error, setError] = useState<string>();
@@ -74,10 +73,6 @@ export function HomePage() {
   const activeCrosshairOwner = tickers?.includes(crosshairOwner ?? "")
     ? crosshairOwner
     : tickers?.[0];
-
-  useEffect(() => {
-    dailyShortMaTypeRef.current = dailyShortMaType;
-  }, [dailyShortMaType]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -149,7 +144,6 @@ export function HomePage() {
       chart_id: `home-${index}`,
       symbol,
       interval,
-      daily_short_ma_type: interval === "daily" ? dailyShortMaTypeRef.current : "sma",
     })));
     return () => client.close();
   }, [chartEngine, interval, tickers]);
