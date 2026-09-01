@@ -356,6 +356,14 @@ fn trend(stocks: &[Stock], dates: &[NaiveDate], start: NaiveDate) -> Vec<MarketH
                     3,
                     start,
                 ),
+                series(
+                    "Above SMA200",
+                    breadth(stocks, dates, |stock, i| {
+                        Some(stock.close(i)? >= stock.sma200[i]?)
+                    }),
+                    3,
+                    start,
+                ),
             ],
         ),
     ]

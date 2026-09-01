@@ -164,6 +164,8 @@ function metricDescription(chartTitle: string, seriesName: string) {
       return chartTitle === "Healthy Leader Price Health"
         ? "Percent of Healthy Leaders closing at or above SMA50; shown as a 3-session average."
         : "Percent of eligible universe stocks closing at or above SMA50; shown as a 3-session average.";
+    case "Above SMA200":
+      return "Percent of eligible universe stocks closing at or above SMA200; shown as a 3-session average.";
     case "Within 5%":
     case "Within 10%":
     case "Within 15%": {
