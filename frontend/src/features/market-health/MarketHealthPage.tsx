@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import {
   Button,
@@ -139,14 +140,12 @@ export function MarketHealthPage() {
           {universe === null ? (
             "No universe loaded"
           ) : (
-            <>Universe: <strong>{universe.file_name}</strong> · {usableCount}/{universe.imported_count} Tickers</>
+            <>
+              Universe: <strong>{universe.file_name}</strong> · {usableCount}/{universe.imported_count} Tickers
+              {snapshot.phase === "ready" && latestSession !== undefined ? ` · ${latestSession}` : ""}
+            </>
           )}
         </Typography>
-        {snapshot.phase === "ready" && latestSession !== undefined && (
-          <Typography className="market-health-through" color="text.secondary">
-            Through {latestSession}
-          </Typography>
-        )}
         {snapshot.phase === "ready" && (
           <ReadyControls
             rs={rs}
@@ -309,6 +308,7 @@ function Progress(props: ProgressProps) {
   const total = props.progress?.total_work_items ?? 0;
   const completed = props.progress?.completed_work_items ?? 0;
   const percentage = total === 0 ? 100 : Math.round(completed / total * 100);
+  const hasProgress = props.universe !== null && props.progress != null && total > 0;
   const exceptions = new Map<string, {
     symbol: string;
     state: "skipped" | "failed";
@@ -333,7 +333,7 @@ function Progress(props: ProgressProps) {
   }
 
   return (
-    <div className="panel-status market-health-progress" data-testid="market-health-progress">
+    <div className={`panel-status market-health-progress${hasProgress ? "" : " market-health-empty"}`} data-testid="market-health-progress">
       <Typography color={props.error === undefined ? "text.secondary" : "error"}>
         {props.error ?? statusText(props.universe, props.loading, props.phase)}
       </Typography>
@@ -465,15 +465,16 @@ function ProgressRow({ label, step }: { label: string; step: MarketHealthProgres
 function LeaderLists({ data }: { data: MarketHealthTabResponse }) {
   return (
     <div className="market-health-leaders">
-      <LeaderList title="Leaders" leaders={data.leaders} />
-      <LeaderList title="Healthy Leaders" leaders={data.healthy_leaders} />
+      <LeaderList title="Leaders" leaders={data.leaders} latestSession={data.latest_session} />
+      <LeaderList title="Healthy Leaders" leaders={data.healthy_leaders} latestSession={data.latest_session} />
     </div>
   );
 }
 
-function LeaderList({ title, leaders }: {
+function LeaderList({ title, leaders, latestSession }: {
   title: string;
   leaders: MarketHealthTabResponse["leaders"];
+  latestSession: string;
 }) {
   const [sort, setSort] = useState<{
     column: LeaderSortColumn;
@@ -500,7 +501,21 @@ function LeaderList({ title, leaders }: {
 
   return (
     <section className="market-health-leader-list">
-      <Typography component="h2">{title}</Typography>
+      <div className="market-health-leader-header">
+        <Typography component="h2">{title}</Typography>
+        <Tooltip title={`Export ${title} CSV`}>
+          <span>
+            <IconButton
+              size="small"
+              disabled={sortedLeaders.length === 0}
+              aria-label={`Export ${title} CSV`}
+              onClick={() => downloadLeaderCsv(title, latestSession, sortedLeaders)}
+            >
+              <FileDownloadOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </div>
       <div className="market-health-leader-table">
         <Table stickyHeader size="small" aria-label={title}>
           <TableHead>
@@ -594,6 +609,31 @@ function compareLeaders(
     : leftValue.localeCompare(rightValue as string);
   return sort.direction === "asc" ? comparison : -comparison;
 }
+
+function downloadLeaderCsv(
+  title: string,
+  latestSession: string,
+  leaders: MarketHealthTabResponse["leaders"],
+) {
+  const csv = [
+    "ticker,rs,sector,industry_group",
+    ...leaders.map((leader) => [
+      leader.symbol,
+      String(Math.round(leader.percentile)),
+      leader.sector ?? "",
+      leader.industry_group ?? "",
+    ].map(csvCell).join(",")),
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${latestSession}-${slug(title)}.csv`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function csvCell(value: string) { return `"${value.replaceAll('"', '""')}"`; }
+function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
 function formatDuration(seconds: number) {
   const minutes = Math.floor(seconds / 60);

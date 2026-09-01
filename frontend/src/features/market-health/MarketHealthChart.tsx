@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip, Typography } from "@mui/material";
 import {
   CrosshairMode,
@@ -20,6 +20,7 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
   const chartApiRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const pointsRef = useRef<MarketHealthPoint[][]>([]);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set());
   const colors = useMemo(() => {
     const accents = featureAccents[theme];
     return [accents.teal, accents.indigo, accents.amber, accents.blue];
@@ -28,7 +29,10 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
   const setData = useCallback(() => {
     const initializing = pointsRef.current.length === 0;
     chart.series.forEach((source, index) => {
-      seriesRef.current[index]?.applyOptions({ color: colors[index % colors.length] });
+      seriesRef.current[index]?.applyOptions({
+        color: colors[index % colors.length],
+        visible: !hiddenSeries.has(source.name),
+      });
       if (!samePoints(pointsRef.current[index], source.points)) {
         seriesRef.current[index]?.setData(source.points.map((point) => ({
           time: point.date as Time,
@@ -38,7 +42,7 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
       }
     });
     if (initializing) chartApiRef.current?.timeScale().fitContent();
-  }, [chart, colors]);
+  }, [chart, colors, hiddenSeries]);
 
   const initializeChart = useCallback((api: IChartApi) => {
     chartApiRef.current = api;
@@ -72,10 +76,20 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
               title={metricDescription(chart.title, series.name)}
               arrow
             >
-              <span tabIndex={0}>
+              <button
+                type="button"
+                className={hiddenSeries.has(series.name) ? "market-health-legend-hidden" : undefined}
+                aria-pressed={!hiddenSeries.has(series.name)}
+                onClick={() => setHiddenSeries((current) => {
+                  const next = new Set(current);
+                  if (next.has(series.name)) next.delete(series.name);
+                  else next.add(series.name);
+                  return next;
+                })}
+              >
                 <i style={{ backgroundColor: colors[index % colors.length] }} />
                 {series.name}
-              </span>
+              </button>
             </Tooltip>
           ))}
         </div>

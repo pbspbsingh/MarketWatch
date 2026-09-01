@@ -23,13 +23,6 @@
   text-transform: none;
 }
 
-.market-health-through {
-  flex-shrink: 0;
-  font-size: 0.65rem !important;
-  text-transform: none;
-  white-space: nowrap;
-}
-
 .market-health-ready-controls {
   display: flex;
   min-width: 0;
@@ -83,6 +76,7 @@
 
 .market-health-empty .MuiTypography-root {
   font-size: 0.75rem;
+  text-align: center;
 }
 
 .market-health-tabs {
@@ -239,14 +233,24 @@
   border-radius: 50%;
 }
 
-.market-health-legend span {
-  cursor: help;
+.market-health-legend button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  font: inherit;
+  cursor: pointer;
   outline: none;
 }
 
-.market-health-legend span:focus-visible {
+.market-health-legend button:focus-visible {
   text-decoration: underline dotted;
   text-underline-offset: 0.2rem;
+}
+
+.market-health-legend .market-health-legend-hidden {
+  opacity: 0.45;
+  text-decoration: line-through;
 }
 
 .market-health-leaders {
@@ -266,6 +270,16 @@
   border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   border-radius: 0.4rem;
   overflow: hidden;
+}
+
+.market-health-leader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.market-health-leader-header .MuiIconButton-root {
+  padding: 0.1rem;
 }
 
 .market-health-leader-table {
