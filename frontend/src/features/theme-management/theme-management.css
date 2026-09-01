@@ -297,18 +297,6 @@
 .bulk-prompt-pane > .MuiFormControl-root {
   min-height: 0;
   flex: 1;
-
-  & .MuiInputBase-root {
-    height: 100%;
-    align-items: flex-start;
-    overflow: hidden;
-  }
-
-  & .MuiInputBase-inputMultiline {
-    height: 100% !important;
-    max-height: 100%;
-    overflow: auto !important;
-  }
 }
 
 .bulk-response-pane > .MuiFormControl-root,
@@ -317,17 +305,23 @@
   flex: 1 1 50%;
 }
 
+.bulk-prompt-pane > .MuiFormControl-root,
 .bulk-response-pane > .MuiFormControl-root {
+  position: relative;
+
   & .MuiInputBase-root {
-    height: 100%;
-    align-items: flex-start;
+    position: absolute;
     overflow: hidden;
+    inset: 0;
   }
 
-  & .MuiInputBase-inputMultiline {
+  & textarea.MuiInputBase-input {
     height: 100% !important;
-    max-height: 100%;
-    overflow: auto !important;
+    width: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow-y: auto !important;
+    resize: none;
   }
 }
 

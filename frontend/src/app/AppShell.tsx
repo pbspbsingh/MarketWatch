@@ -39,8 +39,8 @@ const homeDestination = ["Home", "/", HomeOutlinedIcon, "blue"] as const;
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Market Health", "/market-health", MonitorHeartOutlinedIcon, "teal"],
-  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
+  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Highest Volume", "/highest-volume", BarChartIcon, "indigo"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],

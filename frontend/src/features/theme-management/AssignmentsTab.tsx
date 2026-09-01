@@ -331,7 +331,7 @@ export function AssignmentsTab({
                   multiline
                   label={promptLoading ? "Preparing prompt..." : "Prompt"}
                   value={prompt}
-                  slotProps={{ input: { readOnly: true } }}
+                  slotProps={{ input: { inputComponent: "textarea", readOnly: true } }}
                 />
                 <Button
                   disabled={promptLoading || !prompt}
@@ -348,6 +348,7 @@ export function AssignmentsTab({
                   multiline
                   label="Paste AI JSON response"
                   value={response}
+                  slotProps={{ input: { inputComponent: "textarea" } }}
                   onChange={(event) => setPromptSession({
                     ...activePromptSession,
                     response: event.target.value,

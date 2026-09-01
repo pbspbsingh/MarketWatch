@@ -1,6 +1,7 @@
 .market-health-page {
   width: 100%;
   height: 100%;
+  border-top: 0.125rem solid var(--accent-teal);
 }
 
 .market-health-header {

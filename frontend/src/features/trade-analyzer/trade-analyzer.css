@@ -4,6 +4,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  border-top: 0.125rem solid var(--accent-green);
   flex-direction: column;
   background: var(--color-canvas);
 }
