@@ -35,6 +35,7 @@ import {
   candleSeriesOptions,
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
+  fiveEmaColor,
   indicatorSeriesOptions,
   relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
@@ -127,7 +128,12 @@ export function MarketChart({
   markers = [],
   priceLines = [],
 }: MarketChartProps) {
-  const { candlePalette, relativeStrengthLineStyle: rsLineStyle, theme } = useAppSettings();
+  const {
+    candlePalette,
+    fiveEmaOpacity,
+    relativeStrengthLineStyle: rsLineStyle,
+    theme,
+  } = useAppSettings();
   const palette = appPalettes[theme];
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
@@ -430,10 +436,22 @@ export function MarketChart({
         line.setData([]);
         return;
       }
-      line.applyOptions({ color: spec.color });
+      if (spec.period !== 5 || spec.type !== "EMA") {
+        line.applyOptions({ color: spec.color });
+      }
       line.setData(lineData(byPeriod.get(spec.period)));
     });
   }, [data.interval, data.moving_averages]);
+
+  useEffect(() => {
+    const specs = movingAverageSpecs(data.interval);
+    movingAverageSeriesRef.current.forEach((line, index) => {
+      const spec = specs[index];
+      if (spec?.period === 5 && spec.type === "EMA") {
+        line.applyOptions({ color: fiveEmaColor(fiveEmaOpacity) });
+      }
+    });
+  }, [data.interval, fiveEmaOpacity]);
 
   useEffect(() => {
     const chart = hostRef.current?.getChart();

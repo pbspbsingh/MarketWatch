@@ -24,6 +24,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Slider,
   Tooltip,
   ToggleButton,
   ToggleButtonGroup,
@@ -153,9 +154,11 @@ export function AppShell() {
   const {
     candlePalette,
     chartEngine,
+    fiveEmaOpacity,
     relativeStrengthLineStyle,
     setCandlePalette,
     setChartEngine,
+    setFiveEmaOpacity,
     setRelativeStrengthLineStyle,
     theme,
     setTheme,
@@ -381,9 +384,6 @@ export function AppShell() {
               <ToggleButton value="solid" aria-label="Solid" title="Solid">
                 Solid
               </ToggleButton>
-              <ToggleButton value="dotted" aria-label="Dotted" title="Dotted">
-                Dot
-              </ToggleButton>
               <ToggleButton value="dashed" aria-label="Dashed" title="Dashed">
                 Dash
               </ToggleButton>
@@ -394,6 +394,29 @@ export function AppShell() {
                 Sparse
               </ToggleButton>
             </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <div className="settings-control-label-row">
+              <Typography className="settings-control-label" color="text.secondary">
+                5 EMA opacity
+              </Typography>
+              <Typography className="settings-control-label" color="text.secondary">
+                {Math.round(fiveEmaOpacity * 100)}%
+              </Typography>
+            </div>
+            <Slider
+              disabled={chartEngine !== "lightweight"}
+              min={0}
+              max={100}
+              size="small"
+              value={Math.round(fiveEmaOpacity * 100)}
+              aria-label="5 EMA opacity"
+              valueLabelDisplay="auto"
+              valueLabelFormat={(value) => `${value}%`}
+              onChange={(_, value) => {
+                if (typeof value === "number") setFiveEmaOpacity(value / 100);
+              }}
+            />
           </div>
         </section>
       </Drawer>

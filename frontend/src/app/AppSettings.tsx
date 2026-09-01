@@ -20,7 +20,6 @@ export type ChartEngine = "tradingview" | "lightweight";
 export type CandlePalette = "solid" | "hollow";
 export type RelativeStrengthLineStyle =
   | "solid"
-  | "dotted"
   | "dashed"
   | "large-dashed"
   | "sparse-dotted";
@@ -29,6 +28,7 @@ type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
   candlePalette: CandlePalette;
+  fiveEmaOpacity: number;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
 };
 
@@ -36,6 +36,7 @@ type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
+  setFiveEmaOpacity: (opacity: number) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
 };
 
@@ -53,6 +54,7 @@ function readSettings(): StoredSettings {
           ? legacyChartEngine
           : "tradingview",
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
+      fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
@@ -64,6 +66,7 @@ function readSettings(): StoredSettings {
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
         : "tradingview",
       candlePalette: "solid",
+      fiveEmaOpacity: 0.9,
       relativeStrengthLineStyle: "large-dashed",
     };
   }
@@ -73,11 +76,14 @@ function validChartEngine(value: unknown): value is ChartEngine {
   return value === "tradingview" || value === "lightweight";
 }
 
+function validOpacity(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
 export function validRelativeStrengthLineStyle(
   value: unknown,
 ): value is RelativeStrengthLineStyle {
   return value === "solid"
-    || value === "dotted"
     || value === "dashed"
     || value === "large-dashed"
     || value === "sparse-dotted";
@@ -102,6 +108,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
     setCandlePalette: (candlePalette) =>
       setSettings((current) => ({ ...current, candlePalette })),
+    setFiveEmaOpacity: (fiveEmaOpacity) =>
+      setSettings((current) => ({ ...current, fiveEmaOpacity })),
     setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
       setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);
