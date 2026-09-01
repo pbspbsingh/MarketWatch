@@ -6,6 +6,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import {
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -58,7 +59,7 @@ function WatchlistsContent() {
   const focusRevision = useFocusRefresh();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
-  const [symbolsWatchlistId, setSymbolsWatchlistId] = useState<number>();
+  const [symbolsSelectionKey, setSymbolsSelectionKey] = useState("");
   const [loadedSymbolsRequestKey, setLoadedSymbolsRequestKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -67,18 +68,21 @@ function WatchlistsContent() {
   const [editor, setEditor] = useState<Watchlist | null | undefined>();
   const [deleteTarget, setDeleteTarget] = useState<Watchlist>();
   const [error, setError] = useState<string>();
-  const selectedId = Number(id);
-  const selectedIdRef = useRef(selectedId);
-  const selected = watchlists.find((watchlist) => watchlist.id === selectedId);
-  const selectedWatchlistId = selected?.id;
-  const symbolsRequestKey = selectedWatchlistId === undefined
+  const selectedIds = useMemo(() => parseSelectedWatchlistIds(id), [id]);
+  const selectionKey = serializeWatchlistIds(selectedIds);
+  const selectionKeyRef = useRef(selectionKey);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedWatchlists = watchlists.filter((watchlist) => selectedIdSet.has(watchlist.id));
+  const selectionReady = selectedIds.length > 0 && selectedWatchlists.length === selectedIds.length;
+  const soleSelected = selectedWatchlists.length === 1 ? selectedWatchlists[0] : undefined;
+  const symbolsRequestKey = !selectionReady
     ? undefined
-    : `${selectedWatchlistId}\0${focusRevision}`;
+    : `${selectionKey}\0${focusRevision}`;
   const symbolsLoading = symbolsRequestKey !== undefined
     && loadedSymbolsRequestKey !== symbolsRequestKey;
   useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
+    selectionKeyRef.current = selectionKey;
+  }, [selectionKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,11 +90,19 @@ function WatchlistsContent() {
       .then((items) => {
         if (controller.signal.aborted) return;
         setWatchlists(items);
-        const requested = items.find((item) => item.id === selectedId);
-        if (requested === undefined && items[0] !== undefined) {
-          const storedId = id === undefined ? readSelectedWatchlistId() : undefined;
-          const fallback = items.find((item) => item.id === storedId) ?? items[0];
-          navigate(`/watchlists/${fallback.id}`, { replace: true });
+        const availableIds = new Set(items.map((item) => item.id));
+        const requestedIds = parseSelectedWatchlistIds(id).filter((itemId) => availableIds.has(itemId));
+        const storedIds = id === undefined
+          ? readSelectedWatchlistIds().filter((itemId) => availableIds.has(itemId))
+          : [];
+        const nextIds = requestedIds.length > 0
+          ? requestedIds
+          : storedIds.length > 0
+            ? storedIds
+            : items[0] === undefined ? [] : [items[0].id];
+        const nextKey = serializeWatchlistIds(nextIds);
+        if (nextKey !== "" && nextKey !== id) {
+          navigate(watchlistsPath(nextIds), { replace: true });
         }
       })
       .catch((requestError: unknown) => {
@@ -100,22 +112,22 @@ function WatchlistsContent() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [focusRevision, id, navigate, selectedId]);
+  }, [focusRevision, id, navigate]);
 
   useEffect(() => {
-    if (selectedWatchlistId !== undefined) {
-      localStorage.setItem(selectedWatchlistStorageKey, String(selectedWatchlistId));
+    if (selectionReady) {
+      localStorage.setItem(selectedWatchlistStorageKey, selectionKey);
     }
-  }, [selectedWatchlistId]);
+  }, [selectionKey, selectionReady]);
 
   useEffect(() => {
-    if (selectedWatchlistId === undefined || symbolsRequestKey === undefined) return;
+    if (!selectionReady || symbolsRequestKey === undefined) return;
     const controller = new AbortController();
-    fetchWatchlistSymbols(selectedWatchlistId, controller.signal)
+    fetchWatchlistSymbols(selectedIds, controller.signal)
       .then((items) => {
         if (!controller.signal.aborted) {
           setSymbols(items);
-          setSymbolsWatchlistId(selectedWatchlistId);
+          setSymbolsSelectionKey(selectionKey);
           setLoadedSymbolsRequestKey(symbolsRequestKey);
         }
       })
@@ -126,7 +138,7 @@ function WatchlistsContent() {
         }
       });
     return () => controller.abort();
-  }, [selectedWatchlistId, symbolsRequestKey]);
+  }, [selectedIds, selectionKey, selectionReady, symbolsRequestKey]);
 
   const saveWatchlist = async (name: string, iconKey: string) => {
     try {
@@ -137,7 +149,7 @@ function WatchlistsContent() {
         ? [...current, saved].sort(compareWatchlists)
         : current.map((item) => item.id === saved.id ? saved : item).sort(compareWatchlists));
       setEditor(undefined);
-      navigate(`/watchlists/${saved.id}`);
+      navigate(watchlistsPath([saved.id]));
     } catch (requestError) {
       setError(message(requestError));
     }
@@ -150,14 +162,14 @@ function WatchlistsContent() {
       const remaining = watchlists.filter((item) => item.id !== deleteTarget.id);
       setWatchlists(remaining);
       setDeleteTarget(undefined);
-      navigate(`/watchlists/${remaining[0]!.id}`, { replace: true });
+      navigate(watchlistsPath([remaining[0]!.id]), { replace: true });
     } catch (requestError) {
       setError(message(requestError));
     }
   };
 
   const download = async () => {
-    if (selected === undefined || symbols.length === 0) return;
+    if (!selectionReady || symbols.length === 0) return;
     setDownloading(true);
     try {
       const rows: string[][] = [];
@@ -177,7 +189,7 @@ function WatchlistsContent() {
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${date}-${slug(selected.name)}.csv`;
+      link.download = `${date}-${soleSelected === undefined ? "merged-watchlists" : slug(soleSelected.name)}.csv`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (requestError) {
@@ -188,14 +200,15 @@ function WatchlistsContent() {
   };
 
   const addTicker = async () => {
-    if (selected === undefined || addingTicker) return;
-    const watchlistId = selected.id;
+    const watchlistId = soleSelected?.id;
+    if (watchlistId === undefined || addingTicker) return;
+    const requestSelectionKey = selectionKey;
     const symbol = tickerInput.trim().toUpperCase();
     if (symbol === "") return;
     setAddingTicker(true);
     try {
       await addTickerToWatchlist(watchlistId, symbol);
-      if (selectedIdRef.current === watchlistId) {
+      if (selectionKeyRef.current === requestSelectionKey) {
         setSymbols((current) => current.includes(symbol) ? current : [...current, symbol].sort());
       }
       setTickerInput("");
@@ -206,29 +219,71 @@ function WatchlistsContent() {
     }
   };
 
+  const selectOnly = (watchlistId: number) => {
+    navigate(watchlistsPath([watchlistId]));
+  };
+
+  const toggleMergedSelection = (watchlistId: number) => {
+    const selected = selectedIdSet.has(watchlistId);
+    if (selected && selectedIds.length === 1) return;
+    navigate(watchlistsPath(
+      selected
+        ? selectedIds.filter((itemId) => itemId !== watchlistId)
+        : [...selectedIds, watchlistId],
+    ));
+  };
+
   return (
     <section className="workspace-panel watchlists-page" aria-label="Watchlists">
       <header className="panel-header watchlists-header">
         <Typography component="h1">Watchlists</Typography>
-        {selected !== undefined && (
+        {selectionReady && (
           <Select
+            multiple
             size="small"
-            value={selected.id}
-            aria-label="Selected watchlist"
-            onChange={(event) => navigate(`/watchlists/${event.target.value}`)}
+            value={selectedIds}
+            aria-label="Selected watchlists"
+            onChange={() => undefined}
+            renderValue={() => soleSelected === undefined
+              ? `${selectedWatchlists.length} watchlists`
+              : (
+                <>
+                  <WatchlistIcon iconKey={soleSelected.icon_key} fontSize="inherit" />
+                  {soleSelected.name}
+                </>
+              )}
           >
             {watchlists.map((watchlist) => (
-              <MenuItem className="watchlist-select-option" key={watchlist.id} value={watchlist.id}>
+              <MenuItem
+                className="watchlist-select-option"
+                key={watchlist.id}
+                value={watchlist.id}
+                onClick={() => selectOnly(watchlist.id)}
+              >
                 <WatchlistIcon iconKey={watchlist.icon_key} fontSize="inherit" />
                 {watchlist.name}
+                <Checkbox
+                  className="watchlist-select-checkbox"
+                  size="small"
+                  checked={selectedIdSet.has(watchlist.id)}
+                  disabled={selectedIds.length === 1 && selectedIdSet.has(watchlist.id)}
+                  slotProps={{ input: { "aria-label": `Include ${watchlist.name} in merged view` } }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleMergedSelection(watchlist.id);
+                  }}
+                />
               </MenuItem>
             ))}
           </Select>
         )}
         <Typography className="watchlists-count" color="text.secondary">
-          {selected === undefined ? "" : `${symbols.length} tickers`}
+          {!selectionReady
+            ? ""
+            : `${symbols.length}${selectedWatchlists.length > 1 ? " unique" : ""} tickers`}
         </Typography>
-        {selected !== undefined && (
+        {selectionReady && (
           <div className="watchlists-ticker-strength">
             <Divider orientation="vertical" flexItem />
             <TickerStrengthControls />
@@ -238,7 +293,7 @@ function WatchlistsContent() {
           className="watchlists-add-ticker"
           size="small"
           value={tickerInput}
-          disabled={selected === undefined || addingTicker}
+          disabled={soleSelected === undefined || addingTicker}
           placeholder="Add ticker"
           slotProps={{
             htmlInput: { "aria-label": "Add ticker", maxLength: 12 },
@@ -249,7 +304,7 @@ function WatchlistsContent() {
                     edge="end"
                     size="small"
                     aria-label="Submit ticker"
-                    disabled={selected === undefined || addingTicker || tickerInput.trim() === ""}
+                    disabled={soleSelected === undefined || addingTicker || tickerInput.trim() === ""}
                     onClick={() => void addTicker()}
                   >
                     <ArrowForwardIcon fontSize="small" />
@@ -268,24 +323,26 @@ function WatchlistsContent() {
         <div className="watchlists-actions">
           {(loading || symbolsLoading || downloading || addingTicker) && <CircularProgress size="0.8rem" />}
           <Tooltip title="Create watchlist"><span><IconButton size="small" disabled={watchlists.length >= watchlistIcons.length} onClick={() => setEditor(null)}><AddIcon fontSize="small" /></IconButton></span></Tooltip>
-          <Tooltip title="Edit watchlist"><span><IconButton size="small" disabled={selected === undefined || selected.is_default} onClick={() => setEditor(selected)}><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
-          <Tooltip title="Delete watchlist"><span><IconButton size="small" disabled={selected === undefined || selected.is_default} onClick={() => setDeleteTarget(selected)}><DeleteOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
-          <Tooltip title="Export watchlist CSV"><span><IconButton size="small" disabled={selected === undefined || symbols.length === 0 || downloading} onClick={() => void download()}><FileDownloadIcon fontSize="small" /></IconButton></span></Tooltip>
+          <Tooltip title="Edit watchlist"><span><IconButton size="small" disabled={soleSelected === undefined || soleSelected.is_default} onClick={() => setEditor(soleSelected)}><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
+          <Tooltip title="Delete watchlist"><span><IconButton size="small" disabled={soleSelected === undefined || soleSelected.is_default} onClick={() => setDeleteTarget(soleSelected)}><DeleteOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
+          <Tooltip title="Export watchlist CSV"><span><IconButton size="small" disabled={!selectionReady || symbols.length === 0 || downloading} onClick={() => void download()}><FileDownloadIcon fontSize="small" /></IconButton></span></Tooltip>
         </div>
       </header>
-      {selected === undefined || symbolsWatchlistId !== selected.id ? (
+      {!selectionReady || symbolsSelectionKey !== selectionKey ? (
         <div className="panel-status">{loading || symbolsLoading ? <CircularProgress size="1rem" /> : null}</div>
       ) : symbols.length === 0 ? (
-        <div className="panel-status"><Typography color="text.secondary">No tickers in {selected.name}</Typography></div>
+        <div className="panel-status"><Typography color="text.secondary">{soleSelected === undefined ? "No tickers in selected watchlists" : `No tickers in ${soleSelected.name}`}</Typography></div>
       ) : (
         <TickerLens
-          key={selected.id}
+          key={selectionKey}
           accent="yellow"
           universe={{ type: "bounded", symbols }}
           metricExtensions={tickerStrength.metricExtensions}
           watchlists={watchlists}
           onWatchlistsChange={(symbol, watchlistIds) => {
-            if (!watchlistIds.includes(selected.id)) setSymbols((current) => current.filter((item) => item !== symbol));
+            if (!watchlistIds.some((watchlistId) => selectedIdSet.has(watchlistId))) {
+              setSymbols((current) => current.filter((item) => item !== symbol));
+            }
           }}
         />
       )}
@@ -329,7 +386,15 @@ function compareWatchlists(left: Watchlist, right: Watchlist) {
 function csvCell(value: string) { return `"${value.replaceAll('"', '""')}"`; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "watchlist"; }
 function message(error: unknown) { return error instanceof Error ? error.message : "Watchlist request failed"; }
-function readSelectedWatchlistId() {
-  const value = Number(localStorage.getItem(selectedWatchlistStorageKey));
-  return Number.isInteger(value) && value > 0 ? value : undefined;
+function parseSelectedWatchlistIds(value: string | null | undefined) {
+  if (value === null || value === undefined) return [];
+  return [...new Set(
+    value
+      .split(",")
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0),
+  )].sort((left, right) => left - right);
 }
+function serializeWatchlistIds(ids: number[]) { return [...ids].sort((left, right) => left - right).join(","); }
+function watchlistsPath(ids: number[]) { return `/watchlists/${serializeWatchlistIds(ids)}`; }
+function readSelectedWatchlistIds() { return parseSelectedWatchlistIds(localStorage.getItem(selectedWatchlistStorageKey)); }

@@ -1,6 +1,7 @@
 use crate::models::{TickerSymbol, TickerWatchlists, Watchlist};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
+use std::collections::HashSet;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -143,12 +144,41 @@ impl WatchlistService {
     }
 
     pub async fn symbols(&self, id: i64) -> Result<Vec<TickerSymbol>, WatchlistServiceError> {
-        validate_id(id)?;
+        self.merged_symbols(&[id]).await
+    }
+
+    pub async fn merged_symbols(
+        &self,
+        ids: &[i64],
+    ) -> Result<Vec<TickerSymbol>, WatchlistServiceError> {
+        if ids.is_empty() {
+            return Err(WatchlistServiceError::Validation(
+                "at least one watchlist ID is required".to_owned(),
+            ));
+        }
+        let mut unique_ids = Vec::with_capacity(ids.len());
+        let mut seen = HashSet::with_capacity(ids.len());
+        for &id in ids {
+            validate_id(id)?;
+            if seen.insert(id) {
+                unique_ids.push(id);
+            }
+        }
+        let existing_ids = self
+            .watchlists()
+            .await?
+            .into_iter()
+            .map(|watchlist| watchlist.id)
+            .collect::<HashSet<_>>();
+        if unique_ids.iter().any(|id| !existing_ids.contains(id)) {
+            return Err(WatchlistServiceError::NotFound(
+                "watchlist does not exist".to_owned(),
+            ));
+        }
         self.store
-            .watchlist_symbols(id)
+            .watchlist_symbols_union(&unique_ids)
             .await
-            .map_err(WatchlistServiceError::Persistence)?
-            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
+            .map_err(WatchlistServiceError::Persistence)
     }
 
     pub async fn add_symbol(

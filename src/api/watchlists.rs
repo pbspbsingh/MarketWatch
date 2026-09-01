@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::{TickerSymbol, Watchlist};
 use crate::services::watchlists::WatchlistServiceError;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, put};
 use axum::{Json, Router};
@@ -22,11 +22,17 @@ struct SymbolsInput {
     symbols: Vec<TickerSymbol>,
 }
 
+#[derive(Deserialize)]
+struct WatchlistIdsQuery {
+    ids: String,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/watchlists", get(list).post(create))
         .route("/watchlists/memberships", axum::routing::post(memberships))
         .route("/watchlists/{id}", put(update).delete(remove))
+        .route("/watchlists/tickers", get(merged_symbols))
         .route("/watchlists/{id}/tickers", get(symbols))
         .route(
             "/watchlists/{id}/tickers/{symbol}",
@@ -88,6 +94,19 @@ async fn symbols(
     state
         .watchlists
         .symbols(id)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn merged_symbols(
+    State(state): State<AppState>,
+    Query(query): Query<WatchlistIdsQuery>,
+) -> ApiResult<Vec<TickerSymbol>> {
+    let ids = parse_watchlist_ids(&query.ids).map_err(api_error)?;
+    state
+        .watchlists
+        .merged_symbols(&ids)
         .await
         .map(Json)
         .map_err(api_error)
@@ -155,4 +174,37 @@ fn api_error(error: WatchlistServiceError) -> (StatusCode, Json<serde_json::Valu
         error!(%error, "watchlist request failed");
     }
     (status, Json(json!({"error": error.to_string()})))
+}
+
+fn parse_watchlist_ids(value: &str) -> Result<Vec<i64>, WatchlistServiceError> {
+    if value.is_empty() {
+        return Err(WatchlistServiceError::Validation(
+            "at least one watchlist ID is required".to_owned(),
+        ));
+    }
+    value
+        .split(',')
+        .map(|value| {
+            value
+                .parse::<i64>()
+                .map_err(|_| WatchlistServiceError::Validation("invalid watchlist ID".to_owned()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_watchlist_ids() {
+        assert_eq!(parse_watchlist_ids("3,1,3").unwrap(), [3, 1, 3]);
+        assert!(parse_watchlist_ids("").is_err());
+        assert!(parse_watchlist_ids("1,nope").is_err());
+    }
+
+    #[test]
+    fn constructs_watchlist_routes() {
+        let _ = router();
+    }
 }

@@ -76,27 +76,26 @@ impl Store {
         Ok(result.rows_affected() == 1)
     }
 
-    pub async fn watchlist_symbols(&self, id: i64) -> anyhow::Result<Option<Vec<TickerSymbol>>> {
-        let exists = sqlx::query_scalar!("SELECT COUNT(*) FROM watchlists WHERE id = ?", id)
-            .fetch_one(&self.pool)
-            .await
-            .context("failed to find watchlist")?
-            > 0;
-        if !exists {
-            return Ok(None);
+    pub async fn watchlist_symbols_union(&self, ids: &[i64]) -> anyhow::Result<Vec<TickerSymbol>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
         }
-        let symbols = sqlx::query_scalar!(
-            "SELECT symbol FROM watchlist_tickers WHERE watchlist_id = ? ORDER BY symbol COLLATE NOCASE",
-            id,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to load watchlist symbols")?;
-        symbols
+        let mut query = QueryBuilder::new(
+            "SELECT DISTINCT symbol FROM watchlist_tickers WHERE watchlist_id IN (",
+        );
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") ORDER BY symbol COLLATE NOCASE");
+        query
+            .build_query_scalar::<String>()
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load merged watchlist symbols")?
             .into_iter()
             .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
-            .collect::<anyhow::Result<Vec<_>>>()
-            .map(Some)
+            .collect()
     }
 
     pub async fn add_watchlist_symbol(
@@ -254,5 +253,36 @@ mod tests {
 
         assert!(store.create_watchlist("growth", "star").await.is_err());
         assert!(store.create_watchlist("Income", "rocket").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn merges_watchlist_symbols_without_duplicates() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let favourite = store.watchlists().await.unwrap().remove(0);
+        let growth = store.create_watchlist("Growth", "rocket").await.unwrap();
+        for symbol in ["BBB", "AAA"] {
+            sqlx::query!(
+                "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
+                symbol
+            )
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        }
+        for (id, symbol) in [(favourite.id, "BBB"), (growth, "BBB"), (growth, "AAA")] {
+            store
+                .add_watchlist_symbol(id, &TickerSymbol::parse(symbol).unwrap())
+                .await
+                .unwrap();
+        }
+
+        let symbols = store
+            .watchlist_symbols_union(&[favourite.id, growth])
+            .await
+            .unwrap();
+        assert_eq!(
+            symbols.iter().map(TickerSymbol::as_str).collect::<Vec<_>>(),
+            ["AAA", "BBB"]
+        );
     }
 }

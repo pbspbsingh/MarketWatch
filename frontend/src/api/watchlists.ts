@@ -34,8 +34,9 @@ export async function deleteWatchlist(id: number): Promise<void> {
   await request(`/api/watchlists/${id}`, { method: "DELETE" });
 }
 
-export async function fetchWatchlistSymbols(id: number, signal?: AbortSignal): Promise<string[]> {
-  return request(`/api/watchlists/${id}/tickers`, { signal });
+export async function fetchWatchlistSymbols(ids: number[], signal?: AbortSignal): Promise<string[]> {
+  const query = new URLSearchParams({ ids: ids.join(",") });
+  return request(`/api/watchlists/tickers?${query}`, { signal });
 }
 
 export async function fetchTickerWatchlists(symbols: string[], signal?: AbortSignal): Promise<TickerWatchlists[]> {
