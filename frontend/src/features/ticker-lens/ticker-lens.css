@@ -601,9 +601,6 @@
 }
 
 .unassigned-group {
-  position: sticky;
-  bottom: 0;
-  margin-top: auto;
   border-top: 0.0625rem solid var(--color-border);
   background: var(--color-canvas);
 }

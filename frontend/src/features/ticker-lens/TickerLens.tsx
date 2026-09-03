@@ -230,6 +230,8 @@ export function TickerLens({
   const sectorRankingsError = sectorRankingsState.request === sectorRankingsRequest
     ? sectorRankingsState.error
     : undefined;
+  const sectorRankingsLoading = sectorRankingsRequest !== undefined
+    && sectorRankingsState.request !== sectorRankingsRequest;
   const boundedSymbolsByGroup = activeGroupsState?.boundedSymbolsByGroup ?? emptySymbolsByGroup;
   const boundedSymbols = bounded
     ? activeGroupsState?.resolvedBoundedSymbols ?? sourceBoundedSymbols
@@ -367,6 +369,9 @@ export function TickerLens({
     (context: SelectedTickerContext | undefined) => setSelectedTickerContext(context),
     [],
   );
+  const revealGroupInList = useCallback((key: string) => {
+    setRevealGroup((current) => ({ value: key, revision: (current?.revision ?? 0) + 1 }));
+  }, []);
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
   useEffect(() => {
     const controller = new AbortController();
@@ -549,9 +554,11 @@ export function TickerLens({
           groups={groups}
           globalRankingGroups={globalRankingGroups}
           sectorRankings={sectorRankings}
+          sectorRankingsLoading={sectorRankingsLoading}
           loadingGroups={groupsLoading}
           groupError={groupsError}
           revealGroup={revealGroup}
+          onRevealGroup={revealGroupInList}
         />
       </div>
       <Tooltip
@@ -609,7 +616,7 @@ export function TickerLens({
             else next.add(key);
             return next;
           });
-          setRevealGroup((current) => ({ value: key, revision: (current?.revision ?? 0) + 1 }));
+          revealGroupInList(key);
         }}
         onSelectTicker={(symbol) => {
           setSelectedTicker(symbol);

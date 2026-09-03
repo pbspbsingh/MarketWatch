@@ -72,9 +72,11 @@ interface GroupPanelProps {
   groups: GroupRanking[];
   globalRankingGroups: GroupRanking[];
   sectorRankings: SectorRanking[];
+  sectorRankingsLoading: boolean;
   loadingGroups: boolean;
   groupError?: string;
   revealGroup?: RevealRequest<string>;
+  onRevealGroup: (key: string) => void;
 }
 
 export function GroupPanel({
@@ -92,9 +94,11 @@ export function GroupPanel({
   groups,
   globalRankingGroups,
   sectorRankings,
+  sectorRankingsLoading,
   loadingGroups,
   groupError,
   revealGroup,
+  onRevealGroup,
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const handledRevealGroupRevision = useRef<number | undefined>(undefined);
@@ -137,10 +141,13 @@ export function GroupPanel({
     if (requestedUnassigned) next.add(unassignedGroupKey);
     if (next.size > 0 || requestedThemeNames.length === 0) {
       setSelectedGroupKeys(next);
+      const onlyKey = next.size === 1 ? next.values().next().value : undefined;
+      if (onlyKey !== undefined) onRevealGroup(onlyKey);
     }
   }, [
     groups,
     mode,
+    onRevealGroup,
     requestedThemeNames,
     requestedUnassigned,
     setSelectedGroupKeys,
@@ -270,6 +277,7 @@ export function GroupPanel({
       && handledRevealGroupRevision.current !== revealGroup.revision
       ? revealGroup.value
       : undefined;
+    if (pendingRevealGroupKey !== undefined && sectorRankingsLoading) return;
     const scrollGroupKey = pendingRevealGroupKey ?? highlightedGroupKey;
     if (scrollGroupKey === undefined) return;
     const element = groupElements.current.get(scrollGroupKey);
@@ -278,7 +286,7 @@ export function GroupPanel({
     if (pendingRevealGroupKey !== undefined && revealGroup !== undefined) {
       handledRevealGroupRevision.current = revealGroup.revision;
     }
-  }, [highlightedGroupKey, revealGroup, visibleExpandedSectors]);
+  }, [highlightedGroupKey, revealGroup, sectorRankingsLoading, visibleExpandedSectors]);
 
   const markExplored = (groupKey: string) => {
     const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
