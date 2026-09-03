@@ -47,6 +47,7 @@ export type MarketChartLoadStatus = "loading" | "ready" | "error";
 interface MarketChartContainerProps {
   symbol: string;
   companyName?: string;
+  companyNameHref?: string;
   tradingViewSymbol?: string;
   interval: MarketChartInterval;
   className?: string;
@@ -75,6 +76,7 @@ const automaticHistoryCheckDelayMs = 500;
 export function MarketChartContainer({
   symbol,
   companyName,
+  companyNameHref,
   tradingViewSymbol,
   interval,
   className,
@@ -363,6 +365,7 @@ export function MarketChartContainer({
           key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
           companyName={companyName}
+          companyNameHref={companyNameHref}
           tradingViewSymbol={tradingViewSymbol}
           initialViewport={initialViewport}
           priceScaleBottomMargin={priceScaleBottomMargin}

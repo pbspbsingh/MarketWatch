@@ -38,7 +38,7 @@ import {
   type MarketChartLiveDelta,
   type MarketChartSessionDelta,
 } from "../../api/marketChartLive";
-import { isArrowKeyControl } from "./utils";
+import { isArrowKeyControl, tickerMarketWatchUrl } from "./utils";
 
 interface SplitLightweightChartsProps {
   topSymbol: string;
@@ -353,6 +353,7 @@ export default function SplitLightweightCharts({
             <MarketChartContainer
               symbol={bottomSymbol}
               companyName={bottomCompanyName}
+              companyNameHref={tickerMarketWatchUrl(marketDataSymbol(bottomSymbol))}
               tradingViewSymbol={bottomTradingViewSymbol}
               interval={chartInterval}
               initialViewport={initialViewport}

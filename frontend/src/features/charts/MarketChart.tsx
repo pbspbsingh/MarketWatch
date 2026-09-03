@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import {
   CandlestickSeries,
   createTextWatermark,
@@ -76,6 +77,7 @@ import { LeftPriceLineLabels } from "./priceLineLabels";
 interface MarketChartProps {
   data: MarketChartData;
   companyName?: string;
+  companyNameHref?: string;
   tradingViewSymbol?: string;
   className?: string;
   ariaLabel?: string;
@@ -115,6 +117,7 @@ function watermarkLines(symbol: string, color: string) {
 export function MarketChart({
   data,
   companyName,
+  companyNameHref,
   tradingViewSymbol,
   className,
   ariaLabel,
@@ -643,9 +646,22 @@ export function MarketChart({
       {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined) && (
         <div className="market-chart-labels">
           {companyLabel !== undefined && (
-            <div className="market-chart-company-name" title={companyName}>
-              {companyLabel}
-            </div>
+            companyNameHref === undefined ? (
+              <div className="market-chart-company-name" title={companyName}>
+                {companyLabel}
+              </div>
+            ) : (
+              <a
+                className="market-chart-company-name market-chart-company-link"
+                href={companyNameHref}
+                target="_blank"
+                rel="noreferrer"
+                title={companyName}
+              >
+                <span className="market-chart-company-link-label">{companyLabel}</span>
+                <OpenInNewIcon fontSize="inherit" />
+              </a>
+            )
           )}
           {relativeStrength !== null && relativeStrength !== undefined && (
             <button

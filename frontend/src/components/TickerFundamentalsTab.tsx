@@ -173,7 +173,10 @@ function EstimateChart({
   const forecastValues = Array<number | null>(quarters.length + 1).fill(null);
   if (quarters.length > 0) forecastValues[quarters.length - 1] = estimates.at(-1) ?? null;
   forecastValues[quarters.length] = forecast;
-  const surprises = actual.map((value, index) => surprisePercent(value, estimates[index]));
+  const quarterlyGrowth = actual.map((value, index) =>
+    growthPercent(value, actual[index - 1] ?? null),
+  );
+  const forecastGrowth = growthPercent(forecast, actual.at(-1) ?? null);
   const options = chartOptions((value) => format(Number(value)), palette);
   if (options.plugins?.tooltip?.callbacks !== undefined) {
     options.plugins.tooltip.callbacks.footer = (items) => {
@@ -188,7 +191,10 @@ function EstimateChart({
   return (
     <FundamentalChart
       title={title}
-      summary={surprises.slice(-4).map(formatPercent)}
+      summary={[
+        ...quarterlyGrowth.slice(-4).map(formatPercent),
+        `${formatPercent(forecastGrowth)} (forecast)`,
+      ]}
       configuration={{
         type: "bar",
         data: {

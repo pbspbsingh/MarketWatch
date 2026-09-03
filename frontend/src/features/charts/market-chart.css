@@ -42,6 +42,29 @@
   white-space: nowrap;
 }
 
+.market-chart-company-link {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  pointer-events: auto;
+  text-decoration: none;
+
+  & .market-chart-company-link-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  & svg {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+  }
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 .market-chart-rs-trend {
   flex-shrink: 0;
   padding: 0.1rem 0.3rem;
