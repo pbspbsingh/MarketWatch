@@ -1,86 +1,64 @@
-import { useEffect, useRef } from "react";
-import { CircularProgress, Typography } from "@mui/material";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Checkbox, FormControlLabel, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import type { ChartConfiguration, TooltipItem } from "chart.js";
 import type { QuarterFundamentals, TickerDetails } from "../api/details";
-import type { FundamentalScore } from "../api/fundamentalScores";
 import { useAppSettings } from "../app/AppSettings";
 import { appPalettes, type AppPalette } from "../app/theme";
+import { growthPercent, growthSeries, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
+
+const growthLogScaleKey = "fundamentals.growth-log-scale";
 
 interface TickerFundamentalsTabProps {
   details: TickerDetails;
-  score?: FundamentalScore;
-  scoreLoading: boolean;
 }
 
 export function TickerFundamentalsTab({
   details,
-  score,
-  scoreLoading,
 }: TickerFundamentalsTabProps) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
+  const [logScale, setLogScale] = useState(() => localStorage.getItem(growthLogScaleKey) === "true");
   const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
+  const annual = [...(details.fundamentals.annual ?? [])].sort((a, b) => a.fiscal_period.localeCompare(b.fiscal_period));
+  const reportedYears = annual.filter((period) => period.earnings_per_share !== null || period.revenue !== null);
+  const nextYear = annual.find((period) => period.fiscal_period > (reportedYears.at(-1)?.fiscal_period ?? "")
+    && (period.earnings_per_share_estimate !== null || period.revenue_estimate !== null));
 
   return (
     <div className="fundamentals-tab">
-      <section className="fundamentals-score">
-        <div className="fundamentals-score-heading">
-          <Typography component="h3">FUNDAMENTALS</Typography>
-          {scoreLoading && score === undefined ? (
-            <CircularProgress size="0.875rem" />
-          ) : score === undefined ? (
-            <Typography className="fundamentals-score-value" color="text.secondary">N/A</Typography>
-          ) : (
-            <Typography className="fundamentals-score-value">
-              {Math.round(score.score)}
-            </Typography>
-          )}
-          {score !== undefined && (
-            <Typography color="text.secondary">
-              EPS {Math.round(score.eps_score)} · Revenue {Math.round(score.revenue_score)} · Coverage {Math.round(score.coverage * 100)}%
-            </Typography>
-          )}
-        </div>
-        {score !== undefined && score.reasons.length > 0 && (
-          <div className="fundamentals-score-reasons">
-            {score.reasons.map((reason) => (
-              <Typography key={reason} color="text.secondary">{reason}</Typography>
-            ))}
-          </div>
-        )}
-      </section>
+        <Tooltip title="Percentage charts only. Symmetric logarithmic scale supports positive, zero, and negative growth. Uncheck for arithmetic scale.">
+          <FormControlLabel className="fundamentals-scale-control"
+            control={<Checkbox size="small" checked={logScale} onChange={(_, checked) => {
+              setLogScale(checked);
+              localStorage.setItem(growthLogScaleKey, String(checked));
+            }} />}
+            label="Log scale" />
+        </Tooltip>
       <div className="fundamentals-grid">
-        <EstimateChart
-          title="EPS Actual / Estimate / Forecast"
-          quarters={quarters}
-          actualField="earnings_per_share"
-          estimateField="earnings_per_share_estimate"
-          forecast={details.fundamentals.next_quarter.earnings_per_share}
-          format={(value) => value.toFixed(2)}
-        />
-        <EstimateChart
-          title="Revenue Actual / Estimate / Forecast"
-          quarters={quarters}
-          actualField="revenue"
-          estimateField="revenue_estimate"
-          forecast={details.fundamentals.next_quarter.revenue}
-          format={compact}
-        />
-        <GrowthChart
-          title="EPS YoY Growth"
-          quarters={quarters}
-          field="earnings_per_share"
-          forecast={details.fundamentals.next_quarter.earnings_per_share}
-          color={palette.accent}
-        />
-        <GrowthChart
-          title="Revenue YoY Growth"
-          quarters={quarters}
-          field="revenue"
-          forecast={details.fundamentals.next_quarter.revenue}
-          color={palette.warning}
-        />
+        {(["earnings_per_share", "revenue"] as const).map((field) => {
+          const label = field === "revenue" ? "Revenue" : "EPS";
+          const estimateField = field === "revenue" ? "revenue_estimate" : "earnings_per_share_estimate";
+          const color = field === "revenue" ? palette.warning : palette.accent;
+          const forecast = {
+            fiscal_period: details.fundamentals.next_quarter.fiscal_period,
+            value: details.fundamentals.next_quarter[field],
+          };
+          return (
+            <Fragment key={field}>
+              <EstimateChart title={`${label} Actual / Estimate`} quarters={quarters}
+                actualField={field} estimateField={estimateField} forecast={forecast.value}
+                format={field === "revenue" ? compact : (value) => value.toFixed(2)} />
+              <GrowthChart title={`${label} QoQ Growth`} periods={quarters} field={field} lag={1}
+                forecast={forecast} color={color} logScale={logScale} />
+              <GrowthChart title={`${label} YoY Growth`} periods={quarters} field={field} lag={4}
+                forecast={forecast} color={color} logScale={logScale} />
+              <GrowthChart title={`${label} Annual Growth`} periods={reportedYears} field={field} lag={1}
+                forecast={{ fiscal_period: nextYear?.fiscal_period ?? null, value: nextYear?.[estimateField] ?? null }}
+                color={color} logScale={logScale} />
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );
@@ -88,53 +66,64 @@ export function TickerFundamentalsTab({
 
 function GrowthChart({
   title,
-  quarters,
+  periods,
   field,
+  lag,
   forecast,
   color,
+  logScale,
 }: {
   title: string;
-  quarters: QuarterFundamentals[];
-  field: "earnings_per_share" | "revenue";
-  forecast: number | null;
+  periods: QuarterFundamentals[];
+  field: FundamentalField;
+  lag: number;
+  forecast: { fiscal_period: string | null; value: number | null };
   color: string;
+  logScale: boolean;
 }) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const historicalQuarters = quarters.slice(4);
-  const historical = historicalQuarters.map((quarter, index) =>
-    growthPercent(quarter[field], quarters[index]?.[field]),
-  );
-  const forecastGrowth = growthPercent(forecast, quarters.at(-4)?.[field] ?? null);
+  const series = growthSeries(periods, field, lag, forecast);
+  const historical = series.historical.map((point) => point.growth);
+  const forecastGrowth = series.forecast.growth;
   const forecastValues = Array<number | null>(historical.length + 1).fill(null);
   if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
   forecastValues[historical.length] = forecastGrowth;
-  const options = chartOptions((value) => formatPercent(Number(value)), palette);
+  const scale = (value: number | null) => value === null ? null : logScale ? symmetricLog(value) : value;
+  const options = chartOptions((value) => formatPercent(logScale ? inverseSymmetricLog(Number(value)) : Number(value)), palette);
   if (options.plugins?.tooltip !== undefined) {
     options.plugins.tooltip.filter = (item) =>
       item.dataset.label !== "Forecast" || item.dataIndex === historical.length;
+    options.plugins.tooltip.callbacks = {
+      ...options.plugins.tooltip.callbacks,
+      afterLabel: (item) => {
+        const value = item.dataIndex === historical.length ? forecast.value : series.historical[item.dataIndex]?.value;
+        return `${field === "revenue" ? "Revenue" : "EPS"}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`;
+      },
+    };
   }
 
   return (
     <FundamentalChart
       title={title}
       summary={historical.slice(-4).map(formatPercent)}
-      forecastSummary={`${formatPercent(forecastGrowth)} (forecast)`}
+      forecastSummary={forecast.fiscal_period === null ? undefined : `${formatPercent(forecastGrowth)} (forecast)`}
+      empty={historical.every((value) => value === null) && forecastGrowth === null}
       configuration={{
         type: "line",
         data: {
-          labels: [...historicalQuarters.map((quarter) => quarter.fiscal_period), "Next Q"],
+          labels: [...series.historical.map((point) => point.period), ...(forecast.fiscal_period === null ? [] : [forecast.fiscal_period])],
           datasets: [
             {
               label: "Historical",
-              data: [...historical, null],
+              data: (forecast.fiscal_period === null ? historical : [...historical, null]).map(scale),
               borderColor: color,
               backgroundColor: color,
               tension: 0.25,
             },
             {
               label: "Forecast",
-              data: forecastValues,
+              data: forecast.fiscal_period === null ? [] : forecastValues.map(scale),
               ...forecastLineStyle(palette),
               tension: 0.25,
             },
@@ -168,11 +157,16 @@ function EstimateChart({
   const forecastValues = Array<number | null>(quarters.length + 1).fill(null);
   if (quarters.length > 0) forecastValues[quarters.length - 1] = estimates.at(-1) ?? null;
   forecastValues[quarters.length] = forecast;
-  const quarterlyGrowth = actual.map((value, index) =>
-    growthPercent(value, actual[index - 1] ?? null),
-  );
-  const forecastGrowth = growthPercent(forecast, actual.at(-1) ?? null);
+  const surprises = actual.map((value, index) => growthPercent(value, estimates[index]));
   const options = chartOptions((value) => format(Number(value)), palette);
+  if (options.plugins?.legend) {
+    options.plugins.legend.title = {
+      display: true,
+      text: `${quarters.at(-1)?.fiscal_period ?? "Latest quarter"} Surprise: ${signedPercent(surprises.at(-1) ?? null)}`,
+      color: palette.muted,
+      font: { size: 10, weight: "normal" },
+    };
+  }
   if (options.plugins?.tooltip?.callbacks !== undefined) {
     options.plugins.tooltip.callbacks.footer = (items) => {
       const index = items[0]?.dataIndex;
@@ -186,9 +180,10 @@ function EstimateChart({
   return (
     <FundamentalChart
       title={title}
-      summary={quarterlyGrowth.slice(-4).map(formatPercent)}
-      forecastSummary={`${formatPercent(forecastGrowth)} (forecast)`}
-      summaryLabel="QoQ growth"
+      summary={surprises.slice(-4).map(signedPercent)}
+      forecastSummary={`${forecast === null ? "N/A" : format(forecast)} (forecast)`}
+      summaryLabel="Surprise"
+      empty={actual.every((value) => value === null) && estimates.every((value) => value === null) && forecast === null}
       configuration={{
         type: "bar",
         data: {
@@ -236,12 +231,14 @@ function FundamentalChart({
   summary,
   forecastSummary,
   summaryLabel,
+  empty = false,
   configuration,
 }: {
   title: string;
   summary: string[];
-  forecastSummary: string;
+  forecastSummary?: string;
   summaryLabel?: string;
+  empty?: boolean;
   configuration: ChartConfiguration;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -259,13 +256,14 @@ function FundamentalChart({
       cancelled = true;
       chart?.destroy();
     };
-  }, [configuration]);
+  }, [configuration, empty]);
 
   return (
     <section className="fundamentals-panel">
       <Typography component="h3">{title}</Typography>
       <div className="fundamentals-canvas-wrap">
-        <canvas ref={canvasRef} />
+        {empty ? <Typography className="fundamentals-empty" color="text.secondary">No data available</Typography>
+          : <canvas ref={canvasRef} role="img" aria-label={title} />}
       </div>
       <div className="fundamentals-summary">
         {summaryLabel && <Typography color="text.secondary">{summaryLabel}:</Typography>}
@@ -274,9 +272,9 @@ function FundamentalChart({
             {value}
           </Typography>
         ))}
-        <Typography className="fundamentals-forecast-summary" color="text.secondary">
+        {forecastSummary !== undefined && <Typography className="fundamentals-forecast-summary" color="text.secondary">
           {forecastSummary}
-        </Typography>
+        </Typography>}
       </div>
     </section>
   );
@@ -324,12 +322,6 @@ function chartOptions(
   };
 }
 
-function growthPercent(current: number | null, prior: number | null) {
-  return current === null || prior === null || prior === 0
-    ? null
-    : ((current - prior) / Math.abs(prior)) * 100;
-}
-
 function surprisePercent(actual: number | null, estimate: number | null) {
   return growthPercent(actual, estimate);
 }
@@ -341,6 +333,10 @@ function formatSurprise(actual: number | null, estimate: number | null) {
 
 function formatPercent(value: number | null) {
   return value === null ? "N/A" : `${value.toFixed(1)}%`;
+}
+
+function signedPercent(value: number | null) {
+  return `${value !== null && value > 0 ? "+" : ""}${formatPercent(value)}`;
 }
 
 function compact(value: number) {

@@ -15,10 +15,6 @@ import {
   type TickerDetails,
 } from "../api/details";
 import {
-  fetchFundamentalScores,
-  type FundamentalScore,
-} from "../api/fundamentalScores";
-import {
   fetchAiCapability,
   fetchThemeTicker,
   fetchThemes,
@@ -67,10 +63,6 @@ function OpenTickerDetailsDialog({
   onThemeChanged,
 }: Omit<TickerDetailsDialogProps, "open" | "symbol"> & { symbol: string }) {
   const [details, setDetails] = useState<TickerDetails>();
-  const [fundamentalScoreState, setFundamentalScoreState] = useState<{
-    fetchedAt: string;
-    score?: FundamentalScore;
-  }>();
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeTicker, setThemeTicker] = useState<ThemeTicker>();
   const [draftThemeIds, setDraftThemeIds] = useState<number[]>([]);
@@ -93,7 +85,6 @@ function OpenTickerDetailsDialog({
   const [suggestions, setSuggestions] = useState<ThemeSuggestion[]>([]);
   const requestRef = useRef<AbortController | undefined>(undefined);
   const themesLoading = tab === "profile-themes" && themeTicker === undefined;
-  const fundamentalsFetchedAt = details?.fundamentals.fetched_at;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -171,24 +162,6 @@ function OpenTickerDetailsDialog({
       });
     return () => controller.abort();
   }, [symbol]);
-
-  useEffect(() => {
-    const fetchedAt = fundamentalsFetchedAt;
-    if (fetchedAt === undefined) return;
-    const controller = new AbortController();
-    fetchFundamentalScores([symbol], controller.signal)
-      .then((scores) => {
-        if (!controller.signal.aborted) {
-          setFundamentalScoreState({ fetchedAt, score: scores[0] });
-        }
-      })
-      .catch((scoreError: unknown) => {
-        if (scoreError instanceof Error && scoreError.name !== "AbortError") {
-          setFundamentalScoreState({ fetchedAt });
-        }
-      });
-    return () => controller.abort();
-  }, [fundamentalsFetchedAt, symbol]);
 
   useEffect(() => {
     if (tab !== "profile-themes") return;
@@ -360,13 +333,7 @@ function OpenTickerDetailsDialog({
                   onSuggest={suggestThemes}
                 />
               ) : (
-                <TickerFundamentalsTab
-                  details={details}
-                  score={fundamentalScoreState?.fetchedAt === details.fundamentals.fetched_at
-                    ? fundamentalScoreState.score
-                    : undefined}
-                  scoreLoading={fundamentalScoreState?.fetchedAt !== details.fundamentals.fetched_at}
-                />
+                <TickerFundamentalsTab details={details} />
               )}
             </>
           ) : null}

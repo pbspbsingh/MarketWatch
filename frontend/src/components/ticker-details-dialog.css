@@ -1,5 +1,5 @@
 .ticker-details-dialog {
-  width: 80vw;
+  width: 96vw;
   height: 88vh;
   max-height: 88vh;
 
@@ -146,6 +146,7 @@
 }
 
 .fundamentals-tab {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -153,45 +154,19 @@
   gap: 0.5rem;
 }
 
-.fundamentals-score {
-  display: flex;
-  min-height: 1.75rem;
-  padding: 0.25rem 0.5rem;
-  border: 0.0625rem solid var(--color-border);
+.fundamentals-scale-control {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  z-index: 1;
+  margin: 0 !important;
+  padding-right: 0.5rem;
   border-radius: 0.25rem;
   background: var(--color-canvas);
-  flex-direction: column;
-  gap: 0.25rem;
+  white-space: nowrap;
 
-  & h3 {
-    margin: 0;
+  & .MuiFormControlLabel-label {
     font-size: 0.7rem;
-    font-weight: 600;
-  }
-
-  & p {
-    font-size: 0.7rem;
-  }
-
-  & .fundamentals-score-value {
-    color: var(--color-accent);
-    font-weight: 700;
-  }
-}
-
-.fundamentals-score-heading,
-.fundamentals-score-reasons {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.fundamentals-score-reasons {
-  flex-wrap: wrap;
-
-  & p + p {
-    padding-left: 0.5rem;
-    border-left: 0.0625rem solid var(--color-border);
   }
 }
 
@@ -199,8 +174,9 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  overflow: auto;
+  grid-template-columns: repeat(4, minmax(15rem, 1fr));
+  grid-template-rows: repeat(2, minmax(15rem, 1fr));
   gap: 0.75rem;
 }
 
@@ -230,7 +206,7 @@
 .fundamentals-summary {
   display: flex;
   min-height: 1rem;
-  overflow: hidden;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
@@ -249,4 +225,10 @@
   & .fundamentals-forecast-summary {
     opacity: 0.65;
   }
+}
+
+.fundamentals-empty {
+  display: grid;
+  height: 100%;
+  place-items: center;
 }

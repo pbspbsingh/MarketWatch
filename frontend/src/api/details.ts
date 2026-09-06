@@ -1,4 +1,4 @@
-export interface QuarterFundamentals {
+export interface FundamentalPeriod {
   fiscal_period: string;
   earnings_release_date: string | null;
   earnings_per_share: number | null;
@@ -7,10 +7,13 @@ export interface QuarterFundamentals {
   revenue_estimate: number | null;
 }
 
+export type QuarterFundamentals = FundamentalPeriod;
+
 export interface Fundamentals {
   symbol: string;
   currency: string | null;
   quarters: QuarterFundamentals[];
+  annual: FundamentalPeriod[] | null;
   next_quarter: {
     fiscal_period: string | null;
     earnings_release_date: string | null;

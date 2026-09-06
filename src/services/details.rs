@@ -192,7 +192,8 @@ impl TickerDetailsService {
 }
 
 fn fundamentals_are_fresh(fundamentals: &Fundamentals, now: DateTime<Utc>) -> bool {
-    fundamentals.fetched_at >= now - freshness_period(fundamentals, now)
+    fundamentals.annual.is_some()
+        && fundamentals.fetched_at >= now - freshness_period(fundamentals, now)
 }
 
 fn freshness_period(fundamentals: &Fundamentals, now: DateTime<Utc>) -> TimeDelta {
@@ -249,6 +250,7 @@ mod tests {
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             currency: None,
             quarters: Vec::new(),
+            annual: Some(Vec::new()),
             next_quarter: Forecast {
                 fiscal_period: None,
                 earnings_release_date: earnings_at,
@@ -257,6 +259,17 @@ mod tests {
             },
             fetched_at,
         }
+    }
+
+    #[test]
+    fn legacy_cache_refreshes_once_for_annual_data() {
+        let now = Utc::now();
+        let mut payload = serde_json::to_value(fundamentals(now, None)).unwrap();
+        payload.as_object_mut().unwrap().remove("annual");
+        let mut legacy: Fundamentals = serde_json::from_value(payload).unwrap();
+        assert!(!fundamentals_are_fresh(&legacy, now));
+        legacy.annual = Some(Vec::new());
+        assert!(fundamentals_are_fresh(&legacy, now));
     }
 
     #[test]

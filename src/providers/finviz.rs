@@ -1,6 +1,6 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::{Forecast, Fundamentals, QuarterFundamentals, TickerSymbol};
+use crate::models::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
 use crate::providers::request_throttle::RequestThrottle;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -452,6 +452,23 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
         symbol: symbol.clone(),
         currency: None,
         quarters,
+        annual: Some(
+            route_data
+                .earnings_annual_data
+                .iter()
+                .map(|period| FundamentalPeriod {
+                    fiscal_period: period.fiscal_period.clone(),
+                    earnings_release_date: period
+                        .earnings_date
+                        .as_deref()
+                        .and_then(parse_finviz_datetime),
+                    earnings_per_share: period.eps_reported_actual,
+                    earnings_per_share_estimate: period.eps_reported_estimate,
+                    revenue: period.sales_actual.map(millions),
+                    revenue_estimate: period.sales_estimate.map(millions),
+                })
+                .collect(),
+        ),
         next_quarter: Forecast {
             fiscal_period: forecast_period.map(|period| period.fiscal_period.clone()),
             earnings_release_date: forecast_period
@@ -470,6 +487,8 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
 #[serde(rename_all = "camelCase")]
 struct EarningsRouteData {
     earnings_data: Vec<EarningsPeriod>,
+    #[serde(default)]
+    earnings_annual_data: Vec<EarningsPeriod>,
 }
 
 #[derive(Deserialize)]
@@ -548,6 +567,37 @@ mod tests {
     use crate::config::Config;
 
     #[test]
+    fn parses_annual_actuals_and_estimates_in_dollars() {
+        let html = r#"<script id="route-init-data">{
+            "earningsData": [],
+            "earningsAnnualData": [
+                {"fiscalPeriod":"2025FY","epsReportedActual":7.46,"epsReportedEstimate":7.38,"salesActual":416161,"salesEstimate":415407},
+                {"fiscalPeriod":"2026FY","epsReportedEstimate":8.83,"salesEstimate":477421}
+            ]
+        }</script>"#;
+        let data = parse_fundamentals(&TickerSymbol::parse("AAPL").unwrap(), html).unwrap();
+        assert!(data.has_usable_data());
+        let annual = data.annual.unwrap();
+        assert_eq!(annual.len(), 2);
+        assert_eq!(annual[0].fiscal_period, "2025FY");
+        assert_eq!(annual[0].earnings_per_share, Some(7.46));
+        assert_eq!(annual[0].revenue, Some(416_161_000_000.0));
+        assert_eq!(annual[1].earnings_per_share, None);
+        assert_eq!(annual[1].earnings_per_share_estimate, Some(8.83));
+        assert_eq!(annual[1].revenue_estimate, Some(477_421_000_000.0));
+    }
+
+    #[test]
+    fn missing_annual_provider_data_is_an_empty_completed_fetch() {
+        let data = parse_fundamentals(
+            &TickerSymbol::parse("TEST").unwrap(),
+            r#"<script id="route-init-data">{"earningsData":[]}</script>"#,
+        )
+        .unwrap();
+        assert!(data.annual.unwrap().is_empty());
+    }
+
+    #[test]
     fn forecast_is_the_first_unreported_period_after_the_latest_report() {
         let periods = [
             earnings_period("2025Q4", None, Some(0.4)),
@@ -592,6 +642,58 @@ mod tests {
         println!("{ticker} maps to industry: {ticker_industry:?}");
         assert_eq!(ticker_industry, semiconductors.industry);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Finviz endpoints"]
+    async fn live_inspects_annual_fundamentals() -> anyhow::Result<()> {
+        let config = Config::load("config.toml")?;
+        let client = FinvizClient::new(&config.finviz, &config.providers)?;
+        let mut url = client.stock_url.clone();
+        url.query_pairs_mut()
+            .append_pair("t", "AAPL")
+            .append_pair("ty", "ea")
+            .append_pair("p", "d")
+            .append_pair("b", "1");
+        let html = client.get(url).await?;
+        let document = Html::parse_document(&html);
+        let route = document
+            .select(&selector("script#route-init-data")?)
+            .next()
+            .map(text)
+            .context("Finviz earnings route data was not found")?;
+        let data: serde_json::Value = serde_json::from_str(&route)?;
+        let annual = data["earningsAnnualData"]
+            .as_array()
+            .context("missing annual earnings data")?;
+        anyhow::ensure!(!annual.is_empty(), "annual earnings data is empty");
+        let periods: Vec<EarningsPeriod> =
+            serde_json::from_value(data["earningsAnnualData"].clone())?;
+        for period in &periods {
+            anyhow::ensure!(
+                period.fiscal_period.ends_with("FY"),
+                "unexpected annual period"
+            );
+            println!(
+                "{} eps={:?} eps_est={:?} revenue={:?} revenue_est={:?}",
+                period.fiscal_period,
+                period.eps_reported_actual,
+                period.eps_reported_estimate,
+                period.sales_actual.map(millions),
+                period.sales_estimate.map(millions),
+            );
+        }
+        assert!(periods.iter().any(|period| {
+            period.eps_reported_actual.is_some() && period.sales_actual.is_some()
+        }));
+        assert!(periods.iter().any(|period| {
+            period.eps_reported_estimate.is_some() && period.sales_estimate.is_some()
+        }));
+        // Annual data arrives alongside the quarterly data used by production.
+        let quarterly = parse_fundamentals(&TickerSymbol::parse("AAPL")?, &html)?;
+        assert!(!quarterly.quarters.is_empty());
+        assert_eq!(quarterly.annual.as_ref().map(Vec::len), Some(periods.len()));
         Ok(())
     }
 

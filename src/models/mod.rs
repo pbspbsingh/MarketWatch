@@ -22,7 +22,7 @@ pub(crate) use chart_relative_strength::{
 };
 pub use daily_notes::DailyNote;
 pub use exchange::Exchange;
-pub use fundamentals::{Forecast, Fundamentals, QuarterFundamentals};
+pub use fundamentals::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use market_health::{
     MarketHealthBenchmarkWork, MarketHealthChart, MarketHealthCsvResolution,

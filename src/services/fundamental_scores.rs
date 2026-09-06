@@ -697,6 +697,7 @@ mod tests {
         Fundamentals {
             symbol: TickerSymbol::parse("TEST").unwrap(),
             currency: None,
+            annual: Some(Vec::new()),
             quarters: vec![
                 quarter("2026Q2", 1.50, 1.30, 150.0, 140.0),
                 quarter("2026Q1", 1.10, 1.00, 110.0, 105.0),
