@@ -1,6 +1,5 @@
 use crate::app::AppState;
 use crate::models::{TickerRanking, TickerSymbol};
-use crate::services::fundamental_scores::{self, FundamentalScore};
 use crate::services::tickers::{IndustryMembershipRefreshError, IndustryMembershipRefreshResult};
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -8,7 +7,6 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -35,10 +33,6 @@ enum TickerRequest {
         include_unassigned: bool,
     },
     Symbols {
-        #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
-        symbols: Vec<TickerSymbol>,
-    },
-    FundamentalScores {
         #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
         symbols: Vec<TickerSymbol>,
     },
@@ -114,7 +108,6 @@ struct GroupSummaryItem {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum TickerStreamEvent {
     Ticker { ticker: TickerRanking },
-    FundamentalScore { score: FundamentalScore },
     Complete,
     Error { message: String },
 }
@@ -178,22 +171,12 @@ async fn handle_ticker_socket(mut socket: WebSocket, state: AppState) {
                     };
                     match command {
                         TickerSocketCommand::Stream { request_id, request } => {
-                            let next = match request {
-                                TickerRequest::FundamentalScores { symbols } => {
-                                    spawn_fundamental_score_stream(
-                                        state.details.clone(),
-                                        request_id,
-                                        symbols,
-                                        event_sender.clone(),
-                                    )
-                                }
-                                request => spawn_ticker_stream(
-                                    state.ticker_catalog.clone(),
-                                    request_id,
-                                    request,
-                                    event_sender.clone(),
-                                ),
-                            };
+                            let next = spawn_ticker_stream(
+                                state.ticker_catalog.clone(),
+                                request_id,
+                                request,
+                                event_sender.clone(),
+                            );
                             if let Some((_, previous)) = active_stream.replace((request_id, next)) {
                                 drop(previous);
                             }
@@ -245,53 +228,6 @@ fn spawn_ticker_stream(
     }
 }
 
-fn spawn_fundamental_score_stream(
-    details: Arc<crate::services::details::TickerDetailsService>,
-    request_id: u64,
-    symbols: Vec<TickerSymbol>,
-    event_sender: mpsc::Sender<TickerStreamMessage>,
-) -> AbortOnDrop {
-    let task = tokio::spawn(run_fundamental_score_stream(
-        details,
-        request_id,
-        symbols,
-        event_sender,
-    ));
-    AbortOnDrop {
-        handle: task.abort_handle(),
-    }
-}
-
-async fn run_fundamental_score_stream(
-    details: Arc<crate::services::details::TickerDetailsService>,
-    request_id: u64,
-    symbols: Vec<TickerSymbol>,
-    event_sender: mpsc::Sender<TickerStreamMessage>,
-) {
-    let stream_id = NEXT_TICKER_STREAM_ID.fetch_add(1, Ordering::Relaxed);
-    let scores = fundamental_scores::score_stream(details, symbols);
-    tokio::pin!(scores);
-    while let Some(score) = scores.next().await {
-        if event_sender
-            .send(TickerStreamMessage {
-                request_id,
-                event: TickerStreamEvent::FundamentalScore { score },
-            })
-            .await
-            .is_err()
-        {
-            return;
-        }
-    }
-    let _ = event_sender
-        .send(TickerStreamMessage {
-            request_id,
-            event: TickerStreamEvent::Complete,
-        })
-        .await;
-    info!(stream_id, "fundamental score WebSocket completed");
-}
-
 async fn run_ticker_stream(
     ticker_catalog: Arc<crate::services::tickers::TickerCatalogService>,
     request_id: u64,
@@ -320,7 +256,6 @@ async fn run_ticker_stream(
                     .stream_ranked_symbols(stream_id, &symbols, &ticker_sender)
                     .await
             }
-            TickerRequest::FundamentalScores { .. } => unreachable!(),
         }
     });
     let _producer_guard = AbortOnDrop {
@@ -665,30 +600,6 @@ mod tests {
             panic!("expected symbol stream command");
         };
         assert_eq!(request_id, 7);
-        assert_eq!(
-            symbols,
-            [
-                TickerSymbol::parse("AAPL").unwrap(),
-                TickerSymbol::parse("MSFT").unwrap(),
-            ]
-        );
-    }
-
-    #[test]
-    fn fundamental_score_stream_keeps_valid_tickers_when_one_is_invalid() {
-        let command = serde_json::from_str::<TickerSocketCommand>(
-            r#"{"type":"stream","request_id":9,"group_type":"fundamental_scores","symbols":["AAPL","bad symbol","msft"]}"#,
-        )
-        .unwrap();
-
-        let TickerSocketCommand::Stream {
-            request_id,
-            request: TickerRequest::FundamentalScores { symbols },
-        } = command
-        else {
-            panic!("expected fundamental score stream command");
-        };
-        assert_eq!(request_id, 9);
         assert_eq!(
             symbols,
             [

@@ -576,7 +576,6 @@ mod tests {
             ]
         }</script>"#;
         let data = parse_fundamentals(&TickerSymbol::parse("AAPL").unwrap(), html).unwrap();
-        assert!(data.has_usable_data());
         let annual = data.annual.unwrap();
         assert_eq!(annual.len(), 2);
         assert_eq!(annual[0].fiscal_period, "2025FY");

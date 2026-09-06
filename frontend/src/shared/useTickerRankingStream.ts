@@ -8,18 +8,16 @@ export function useTickerRankingStream({
   client,
   enabled,
   requestKey,
-  refreshKey,
   resolveSymbols,
 }: {
   client: TickerStreamClient;
   enabled: boolean;
   requestKey: string;
-  refreshKey?: number;
   resolveSymbols: (signal: AbortSignal) => Promise<string[]>;
 }) {
   const request = useMemo(
-    () => ({ client, enabled, requestKey, refreshKey, resolveSymbols }),
-    [client, enabled, refreshKey, requestKey, resolveSymbols],
+    () => ({ client, enabled, requestKey, resolveSymbols }),
+    [client, enabled, requestKey, resolveSymbols],
   );
   const [state, setState] = useState<{
     request: typeof request;

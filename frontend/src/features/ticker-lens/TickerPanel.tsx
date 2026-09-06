@@ -27,9 +27,6 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  type FundamentalScore,
-} from "../../api/fundamentalScores";
-import {
   fetchTickerRanking,
   type TickerRanking,
 } from "../../api/tickers";
@@ -51,7 +48,6 @@ import { WatchlistIcon } from "../watchlists/WatchlistIcon";
 import "../watchlists/ticker-watchlist-control.css";
 import {
   defaultTickerSortSetting,
-  fundamentalsMetricId,
   tickerSortOptions,
   tickerSortSettingKey,
 } from "./constants";
@@ -80,13 +76,10 @@ import {
 
 const tickerRowHeight = 28;
 const emptyTickers: TickerRanking[] = [];
-const fundamentalBatchIntervalMs = 250;
-const fundamentalsSortKey = metricSortKey(fundamentalsMetricId);
 
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
   bounded: boolean;
-  boundedUniverseKey: string;
   universeRevision: number;
   metrics: readonly TickerMetric[];
   defaultMetricSort?: DefaultMetricSort;
@@ -119,13 +112,6 @@ interface TickerRowProps {
 interface TickerRequestState {
   key: string;
   tickers?: TickerRanking[];
-  error?: string;
-}
-
-interface FundamentalMetricState {
-  key: string;
-  scores: ReadonlyMap<string, FundamentalScore>;
-  loading: boolean;
   error?: string;
 }
 
@@ -214,7 +200,6 @@ function TickerRow({
 export function TickerPanel({
   tickerStream,
   bounded,
-  boundedUniverseKey,
   universeRevision,
   metrics,
   defaultMetricSort,
@@ -258,45 +243,10 @@ export function TickerPanel({
         };
   });
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
-  const [fundamentalMetricState, setFundamentalMetricState] =
-    useState<FundamentalMetricState>();
-  const [rankingRefreshKey, setRankingRefreshKey] = useState(0);
   const groupKey = [...groupKeys].sort().join("\0");
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
   const metricsActive = groupKeys.size > 0 || filtersActive;
-  const fundamentalRequestKey = `${mode}\0${groupKey}\0${boundedUniverseKey}`;
-  const fundamentalsSelected = bounded && sortSetting.key === fundamentalsSortKey;
-  const activeFundamentalState = fundamentalsSelected
-    && fundamentalMetricState?.key === fundamentalRequestKey
-    ? fundamentalMetricState
-    : undefined;
-  const fundamentalLoading = fundamentalsSelected
-    && (activeFundamentalState?.loading ?? true);
-  const fundamentalMetric = useMemo<TickerMetric>(() => ({
-    id: fundamentalsMetricId,
-    label: "FUN",
-    values: new Map(
-      [...(activeFundamentalState?.scores ?? new Map())]
-        .map(([symbol, score]) => [symbol, score.score]),
-    ),
-    formatValue: (value) => Math.round(value).toString(),
-    tooltipLines: (symbol) => {
-      const score = activeFundamentalState?.scores.get(symbol);
-      if (score === undefined) return [];
-      return [
-        `FUNDAMENTALS ${Math.round(score.score)} · EPS ${Math.round(score.eps_score)} · Revenue ${Math.round(score.revenue_score)}`,
-        ...score.reasons,
-        `Data coverage ${Math.round(score.coverage * 100)}%${score.coverage < 0.7 ? " · Low confidence" : ""}`,
-      ];
-    },
-  }), [activeFundamentalState?.scores]);
-  const availableMetrics = useMemo(
-    () => !bounded
-      ? metrics
-      : [...metrics, fundamentalMetric],
-    [bounded, fundamentalMetric, metrics],
-  );
-  const activeMetric = metricForKey(availableMetrics, sortSetting.key);
+  const activeMetric = metricForKey(metrics, sortSetting.key);
   const sortActive = metricsActive || activeMetric !== undefined;
   if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) {
     setSortSetting(defaultTickerSortSetting);
@@ -316,7 +266,6 @@ export function TickerPanel({
     client: tickerStream,
     enabled: metricsActive,
     requestKey: `${mode}:${groupKey}:${universeRevision}`,
-    refreshKey: rankingRefreshKey,
     resolveSymbols: resolveRankedSymbols,
   });
   const resolvedTickerRequestKey = `${mode}\0${groupKey}\0${universeRevision}`;
@@ -326,62 +275,6 @@ export function TickerPanel({
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
   }, [panelRequestKey]);
-  const previousFundamentalsSelected = useRef(fundamentalsSelected);
-
-  useEffect(() => {
-    if (previousFundamentalsSelected.current && !fundamentalsSelected) {
-      setRankingRefreshKey((current) => current + 1);
-    }
-    previousFundamentalsSelected.current = fundamentalsSelected;
-  }, [fundamentalsSelected]);
-
-  useEffect(() => {
-    if (!fundamentalsSelected || (metricsActive && rankingStream.loading)) return;
-    const controller = new AbortController();
-    const scoresBySymbol = new Map<string, FundamentalScore>();
-    let flushTimer: number | undefined;
-    const flush = (loading: boolean) => {
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-      flushTimer = undefined;
-      if (!controller.signal.aborted) {
-        setFundamentalMetricState({
-          key: fundamentalRequestKey,
-          scores: new Map(scoresBySymbol),
-          loading,
-        });
-      }
-    };
-    const queue = (score: FundamentalScore) => {
-      scoresBySymbol.set(score.symbol, score);
-      flushTimer ??= window.setTimeout(() => flush(true), fundamentalBatchIntervalMs);
-    };
-    resolveRankedSymbols(controller.signal)
-      .then((symbols) =>
-        tickerStream.streamFundamentalScores(symbols, queue, controller.signal)
-      )
-      .then(() => flush(false))
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setFundamentalMetricState({
-            key: fundamentalRequestKey,
-            scores: new Map(scoresBySymbol),
-            loading: false,
-            error: requestError.message,
-          });
-        }
-      });
-    return () => {
-      controller.abort();
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-    };
-  }, [
-    fundamentalRequestKey,
-    fundamentalsSelected,
-    metricsActive,
-    rankingStream.loading,
-    resolveRankedSymbols,
-    tickerStream,
-  ]);
   const resolvedTickers = resolvedTickerState.key === resolvedTickerRequestKey
     ? resolvedTickerState.tickers
     : undefined;
@@ -400,14 +293,12 @@ export function TickerPanel({
     ? rankingStream.loading
     : resolvedTickerState.key !== resolvedTickerRequestKey;
   const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
-    ?? activeFundamentalState?.error
     ?? rankingStream.error
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
 
   useEffect(() => {
     if (previousSelectionContextKey.current === selectionContextKey) return;
     previousSelectionContextKey.current = selectionContextKey;
-    setFundamentalMetricState(undefined);
     setSelectedTicker(undefined);
   }, [selectionContextKey, setSelectedTicker]);
 
@@ -729,23 +620,22 @@ export function TickerPanel({
               {selectedTickerPosition}/{sortedTickers.length}
             </Typography>
           </Tooltip>
-          {(panelLoading || fundamentalLoading) && <CircularProgress size="0.75rem" />}
+          {panelLoading && <CircularProgress size="0.75rem" />}
         </div>
         <div className="metric-sort-controls">
           <Select
             size="small"
             value={sortSetting.key}
-            disabled={!bounded && !metricsActive && availableMetrics.length === 0}
+            disabled={!bounded && !metricsActive && metrics.length === 0}
             aria-label="Sort tickers by"
             onChange={(event) => {
               const key = event.target.value as TickerSortKey;
-              if (key !== fundamentalsSortKey) setFundamentalMetricState(undefined);
               setSortSetting({ key, direction: "desc" });
             }}
           >
             {[
               ...tickerSortOptions,
-              ...availableMetrics.map((metric) => ({
+              ...metrics.map((metric) => ({
                 key: metricSortKey(metric.id),
                 label: metric.label,
               })),
@@ -833,9 +723,6 @@ export function TickerPanel({
       </Menu>
       <Toast message={panelError} onClose={() => {
         setErrorState(undefined);
-        setFundamentalMetricState((current) => current === undefined
-          ? undefined
-          : { ...current, error: undefined });
         rankingStream.clearError();
         setResolvedTickerState((current) =>
           current.key === resolvedTickerRequestKey

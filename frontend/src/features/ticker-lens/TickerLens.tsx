@@ -10,7 +10,6 @@ import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
 import {
   emptyGroupKeys,
-  fundamentalsMetricId,
   groupModeKey,
   sectorGroupingKey,
   unassignedGroupKey,
@@ -579,7 +578,6 @@ export function TickerLens({
       <TickerPanel
         tickerStream={tickerStream}
         bounded={bounded}
-        boundedUniverseKey={bounded ? boundedSymbolsKey : ""}
         universeRevision={marketUniverseRevision}
         metrics={availableMetrics}
         defaultMetricSort={defaultMetricSort}
@@ -692,9 +690,6 @@ function validatedMetrics(
   const result = [...metrics, ...extensions.map((extension) => extension.metric)];
   const ids = new Set<string>();
   result.forEach((metric) => {
-    if (metric.id === fundamentalsMetricId) {
-      throw new Error(`Ticker metric ID "${metric.id}" is reserved`);
-    }
     if (ids.has(metric.id)) {
       throw new Error(`Duplicate ticker metric ID "${metric.id}"`);
     }

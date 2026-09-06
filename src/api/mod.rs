@@ -1,7 +1,6 @@
 mod chart;
 mod daily_notes;
 mod details;
-mod fundamental_scores;
 mod global_search;
 mod highest_volume;
 mod home;
@@ -29,7 +28,6 @@ pub fn router() -> Router<AppState> {
         .merge(chart::router())
         .merge(daily_notes::router())
         .merge(details::router())
-        .merge(fundamental_scores::router())
         .merge(global_search::router())
         .merge(highest_volume::router())
         .merge(home::router())
