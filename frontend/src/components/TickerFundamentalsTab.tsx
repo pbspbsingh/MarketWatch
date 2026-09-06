@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { CircularProgress, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import type { ChartConfiguration, TooltipItem } from "chart.js";
 import type { QuarterFundamentals, TickerDetails } from "../api/details";
 import type { FundamentalScore } from "../api/fundamentalScores";
@@ -50,20 +51,6 @@ export function TickerFundamentalsTab({
         )}
       </section>
       <div className="fundamentals-grid">
-        <GrowthChart
-          title="EPS YoY Growth"
-          quarters={quarters}
-          field="earnings_per_share"
-          forecast={details.fundamentals.next_quarter.earnings_per_share}
-          color={palette.accent}
-        />
-        <GrowthChart
-          title="Revenue YoY Growth"
-          quarters={quarters}
-          field="revenue"
-          forecast={details.fundamentals.next_quarter.revenue}
-          color={palette.warning}
-        />
         <EstimateChart
           title="EPS Actual / Estimate / Forecast"
           quarters={quarters}
@@ -79,6 +66,20 @@ export function TickerFundamentalsTab({
           estimateField="revenue_estimate"
           forecast={details.fundamentals.next_quarter.revenue}
           format={compact}
+        />
+        <GrowthChart
+          title="EPS YoY Growth"
+          quarters={quarters}
+          field="earnings_per_share"
+          forecast={details.fundamentals.next_quarter.earnings_per_share}
+          color={palette.accent}
+        />
+        <GrowthChart
+          title="Revenue YoY Growth"
+          quarters={quarters}
+          field="revenue"
+          forecast={details.fundamentals.next_quarter.revenue}
+          color={palette.warning}
         />
       </div>
     </div>
@@ -117,10 +118,8 @@ function GrowthChart({
   return (
     <FundamentalChart
       title={title}
-      summary={[
-        ...historical.slice(-4).map(formatPercent),
-        `${formatPercent(forecastGrowth)} (forecast)`,
-      ]}
+      summary={historical.slice(-4).map(formatPercent)}
+      forecastSummary={`${formatPercent(forecastGrowth)} (forecast)`}
       configuration={{
         type: "line",
         data: {
@@ -136,11 +135,7 @@ function GrowthChart({
             {
               label: "Forecast",
               data: forecastValues,
-              borderColor: color,
-              backgroundColor: palette.canvas,
-              borderDash: [5, 5],
-              pointBorderColor: color,
-              pointBorderWidth: 2,
+              ...forecastLineStyle(palette),
               tension: 0.25,
             },
           ],
@@ -191,10 +186,9 @@ function EstimateChart({
   return (
     <FundamentalChart
       title={title}
-      summary={[
-        ...quarterlyGrowth.slice(-4).map(formatPercent),
-        `${formatPercent(forecastGrowth)} (forecast)`,
-      ]}
+      summary={quarterlyGrowth.slice(-4).map(formatPercent)}
+      forecastSummary={`${formatPercent(forecastGrowth)} (forecast)`}
+      summaryLabel="QoQ growth"
       configuration={{
         type: "bar",
         data: {
@@ -214,12 +208,7 @@ function EstimateChart({
               type: "line",
               label: "Forecast",
               data: forecastValues,
-              borderColor: palette.muted,
-              backgroundColor: palette.canvas,
-              borderDash: [5, 5],
-              pointBorderColor: palette.muted,
-              pointBorderWidth: 2,
-              pointRadius: 2,
+              ...forecastLineStyle(palette),
               tension: 0.2,
             },
             {
@@ -245,10 +234,14 @@ function EstimateChart({
 function FundamentalChart({
   title,
   summary,
+  forecastSummary,
+  summaryLabel,
   configuration,
 }: {
   title: string;
   summary: string[];
+  forecastSummary: string;
+  summaryLabel?: string;
   configuration: ChartConfiguration;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -275,14 +268,32 @@ function FundamentalChart({
         <canvas ref={canvasRef} />
       </div>
       <div className="fundamentals-summary">
+        {summaryLabel && <Typography color="text.secondary">{summaryLabel}:</Typography>}
         {summary.map((value, index) => (
           <Typography key={`${value}-${index}`} color="text.secondary">
             {value}
           </Typography>
         ))}
+        <Typography className="fundamentals-forecast-summary" color="text.secondary">
+          {forecastSummary}
+        </Typography>
       </div>
     </section>
   );
+}
+
+function forecastLineStyle(palette: AppPalette) {
+  const color = alpha(palette.muted, 0.65);
+  return {
+    borderColor: color,
+    backgroundColor: palette.canvas,
+    borderWidth: 1,
+    borderDash: [3, 5],
+    pointBorderColor: color,
+    pointBorderWidth: 1,
+    pointRadius: 1.5,
+    pointHoverRadius: 3,
+  };
 }
 
 function chartOptions(

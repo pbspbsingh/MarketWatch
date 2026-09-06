@@ -245,4 +245,8 @@
     color: var(--color-border);
     content: "|";
   }
+
+  & .fundamentals-forecast-summary {
+    opacity: 0.65;
+  }
 }
