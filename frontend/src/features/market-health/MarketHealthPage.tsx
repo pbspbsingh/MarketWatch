@@ -13,9 +13,13 @@ import {
   TableRow,
   TableSortLabel,
   Tabs,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
+  Checkbox,
+  FormControlLabel,
+  MenuItem,
+  Popover,
+  Select,
+  Slider,
+  TablePagination,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -31,24 +35,22 @@ import {
   type MarketHealthUniverse,
 } from "../../api/marketHealth";
 import { MarketHealthChart } from "./MarketHealthChart";
+import { SplitPane } from "../../components/SplitPane";
+import { synchronizeLineChartGroup, type LineChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import {
   industryMarketWatchUrl,
-  industriesMarketWatchUrl,
   tickerMarketWatchUrl,
 } from "../ticker-lens/utils";
 import "./market-health.css";
 
 const tabs = [
-  ["overview", "Overview"],
-  ["trend_breadth", "Trend Breadth"],
-  ["highs_breadth", "Highs & Breadth"],
-  ["leadership", "Leadership"],
-  ["market_structure", "Market Structure"],
-  ["leader_lists", "Leader Lists"],
+  ["market_breadth", "Market Breadth"],
+  ["industries", "Industries"],
+  ["themes", "Themes"],
+  ["leading_stocks", "Leading Stocks"],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
-type Rs = "1m" | "3m" | "6m";
 
 export function MarketHealthPage() {
   const [universe, setUniverse] = useState<MarketHealthUniverse | null>(null);
@@ -59,9 +61,7 @@ export function MarketHealthPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string>();
-  const [tab, setTab] = useState<Tab>("overview");
-  const [rs, setRs] = useState<Rs>("3m");
-  const [threshold, setThreshold] = useState(80);
+  const [tab, setTab] = useState<Tab>("market_breadth");
   const [latestSession, setLatestSession] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -81,12 +81,6 @@ export function MarketHealthPage() {
   }, []);
 
   useProgressSocket(setSnapshot);
-
-  const leadershipSensitive = tab === "overview"
-    || tab === "leadership"
-    || tab === "leader_lists";
-  const calculationRs: Rs = leadershipSensitive ? rs : "3m";
-  const calculationThreshold = leadershipSensitive ? threshold : 80;
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -148,11 +142,7 @@ export function MarketHealthPage() {
         </Typography>
         {snapshot.phase === "ready" && (
           <ReadyControls
-            rs={rs}
-            threshold={threshold}
             tab={tab}
-            setRs={setRs}
-            setThreshold={setThreshold}
             setTab={setTab}
           />
         )}
@@ -189,8 +179,6 @@ export function MarketHealthPage() {
         <ReadyContent
           key={`${snapshot.job_id}-${tab}`}
           tab={tab}
-          rs={calculationRs}
-          threshold={calculationThreshold}
           pageError={error}
           onLatestSession={setLatestSession}
         />
@@ -238,11 +226,7 @@ function useProgressSocket(
 }
 
 interface ReadyControlsProps {
-  rs: Rs;
-  threshold: number;
   tab: Tab;
-  setRs: (value: Rs) => void;
-  setThreshold: (value: number) => void;
   setTab: (value: Tab) => void;
 }
 
@@ -265,31 +249,6 @@ function ReadyControls(props: ReadyControlsProps) {
           />
         ))}
       </Tabs>
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={props.rs}
-        onChange={(_, value: Rs | null) => value !== null && props.setRs(value)}
-      >
-        <ToggleButton value="1m">1M</ToggleButton>
-        <ToggleButton value="3m">3M</ToggleButton>
-        <ToggleButton value="6m">6M</ToggleButton>
-      </ToggleButtonGroup>
-      <label className="market-health-leader-control">
-        <span>Leader RS</span>
-        <TextField
-          size="small"
-          type="number"
-          value={props.threshold}
-          slotProps={{ htmlInput: { min: 0, max: 100, step: 1 } }}
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            if (Number.isInteger(value) && value >= 0 && value <= 100) {
-              props.setThreshold(value);
-            }
-          }}
-        />
-      </label>
     </div>
   );
 }
@@ -383,38 +342,76 @@ function Progress(props: ProgressProps) {
   );
 }
 
-function ReadyContent({ tab, rs, threshold, pageError, onLatestSession }: {
+function ReadyContent({ tab, pageError, onLatestSession }: {
   tab: Tab;
-  rs: Rs;
-  threshold: number;
   pageError?: string;
   onLatestSession: (latestSession: string) => void;
 }) {
   const [content, setContent] = useState<MarketHealthTabResponse>();
   const [error, setError] = useState<string>();
+  const [group, setGroup] = useState<string>();
+  const [leaderSessions, setLeaderSessions] = useState(63);
+  const [draftSessions, setDraftSessions] = useState(63);
+  const [lookbackAnchor, setLookbackAnchor] = useState<HTMLElement | null>(null);
+  const [groupSplit, setGroupSplit] = useState(40);
+  const requestKey = `${tab}:${group ?? ""}:${leaderSessions}`;
+  const [loadedKey, setLoadedKey] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchMarketHealthTab(tab, rs, threshold, controller.signal)
+    fetchMarketHealthTab(tab, group, controller.signal, leaderSessions)
       .then((response) => {
+        if (controller.signal.aborted) return;
         setError(undefined);
         setContent(response);
+        setLoadedKey(requestKey);
         onLatestSession(response.latest_session);
       })
       .catch((requestError: unknown) => {
-        if (!(requestError instanceof Error && requestError.name === "AbortError")) {
+        if (!controller.signal.aborted && !(requestError instanceof Error && requestError.name === "AbortError")) {
           setError(errorMessage(requestError, "Unable to calculate tab"));
         }
       });
     return () => controller.abort();
-  }, [onLatestSession, rs, tab, threshold]);
+  }, [group, leaderSessions, onLatestSession, requestKey, tab]);
 
   return (
     <div className={`market-health-content market-health-content-${tab}`}>
+      {tab === "leading_stocks" && (
+        <>
+          <Button
+            className="market-health-lookback-toggle"
+            size="small"
+            aria-label="Leader lookback"
+            aria-haspopup="dialog"
+            aria-expanded={lookbackAnchor !== null}
+            aria-controls={lookbackAnchor === null ? undefined : "leader-lookback-dialog"}
+            onClick={event => setLookbackAnchor(event.currentTarget)}
+          >
+            Lookback: {leaderSessions} sessions
+          </Button>
+          <Popover
+            open={lookbackAnchor !== null}
+            anchorEl={lookbackAnchor}
+            onClose={() => setLookbackAnchor(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+          >
+            <div id="leader-lookback-dialog" className="market-health-lookback" role="dialog" aria-labelledby="leader-lookback-label">
+              <Typography id="leader-lookback-label">Leader lookback: {draftSessions} trading sessions</Typography>
+              <Slider aria-labelledby="leader-lookback-label" min={20} max={252} step={1}
+                value={draftSessions} valueLabelDisplay="auto"
+                marks={[{value:20,label:"20"},{value:63,label:"63"},{value:126,label:"126"},{value:252,label:"252"}]}
+                onChange={(_, value) => setDraftSessions(value as number)}
+                onChangeCommitted={(_, value) => setLeaderSessions(value as number)} />
+            </div>
+          </Popover>
+        </>
+      )}
       {(pageError ?? error) !== undefined && (
         <Typography color="error">{pageError ?? error}</Typography>
       )}
-      {content === undefined ? (
+      {content === undefined || loadedKey !== requestKey ? (
         <div className="market-health-loading" role="status">
           <CircularProgress size="1.5rem" />
           <Typography color="text.secondary">
@@ -423,18 +420,54 @@ function ReadyContent({ tab, rs, threshold, pageError, onLatestSession }: {
         </div>
       ) : (
         <>
-          {content.charts.length > 0 && (
-            <div className={`market-health-chart-grid market-health-chart-grid-${tab}`}>
-              {content.charts.map((chart) => (
-                <MarketHealthChart chart={chart} key={chart.title} />
-              ))}
-            </div>
+          <Typography className="market-health-overview" variant="body2" color="text.secondary">
+            {content.selected_group !== null && <><strong>{content.groups.find(group => group.key === content.selected_group)?.name}</strong> · </>}
+            {content.eligible_count} / {content.universe_count} stocks eligible · ADV20 &gt; $10M · Benchmark: {content.benchmark}
+            {tab !== "leading_stocks" && <><br />Current membership applied historically. Changes are percentage points and include liquidity membership changes.</>}
+          </Typography>
+          {tab === "industries" || tab === "themes" ? (
+            <SplitPane
+              orientation="horizontal"
+              initialSplit={groupSplit}
+              onSplitChange={setGroupSplit}
+              first={(
+                <div className="market-health-group-panel">
+                  <GroupTable data={content} selected={group} onSelect={setGroup} />
+                  {content.selected_group !== null && (
+                    <div className="market-health-members">
+                      <Typography component="h2">Eligible group members ({content.group_members.length})</Typography>
+                      {content.group_members.map(symbol => (
+                        <a key={symbol} href={tickerMarketWatchUrl(symbol)} target="_blank" rel="noreferrer">{symbol}</a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              second={<SynchronizedCharts charts={content.charts} tab={tab} />}
+            />
+          ) : content.charts.length > 0 && (
+            <SynchronizedCharts charts={content.charts} tab={tab} />
           )}
-          {tab === "leader_lists" && <LeaderLists data={content} />}
+          {tab === "leading_stocks" && <LeadingStocks data={content} />}
         </>
       )}
     </div>
   );
+}
+
+function SynchronizedCharts({ charts, tab }: { charts: MarketHealthTabResponse["charts"]; tab: Tab }) {
+  const targets = useRef<(LineChartSyncTarget | null)[]>([]);
+  const [revision, setRevision] = useState(0);
+  const chartCount = charts.length;
+  const handlers = useMemo(() => Array.from({ length: chartCount }, (_, index) => (target: LineChartSyncTarget | null) => {
+    targets.current[index] = target;
+    setRevision(value => value + 1);
+  }), [chartCount]);
+  useEffect(() => {
+    const ready = targets.current.filter((target): target is LineChartSyncTarget => target !== null);
+    return ready.length === charts.length ? synchronizeLineChartGroup(ready) : undefined;
+  }, [charts.length, revision]);
+  return <div className={`market-health-chart-grid market-health-chart-grid-${tab}`}>{charts.map((chart,index)=><MarketHealthChart chart={chart} key={chart.title} onSyncTarget={handlers[index]}/>)}</div>;
 }
 
 function statusText(
@@ -462,32 +495,121 @@ function ProgressRow({ label, step }: { label: string; step: MarketHealthProgres
   );
 }
 
-function LeaderLists({ data }: { data: MarketHealthTabResponse }) {
+type GroupRow = MarketHealthTabResponse["groups"][number];
+const groupColumns = [
+  ["above_sma20_percent", "Above 20", "above_sma20_valid_count"],
+  ["above_sma50_percent", "Above 50", "above_sma50_valid_count"],
+  ["above_sma50_change_5d", "Δ50 · 5D", null],
+  ["above_sma50_change_20d", "Δ50 · 20D", null],
+  ["new_high_percent", "Highs", "new_high_valid_count"],
+  ["new_low_percent", "Lows", "new_low_valid_count"],
+  ["outperform_20_percent", "Beat benchmark · 20", "outperform_20_valid_count"],
+  ["outperform_63_percent", "Beat benchmark · 63", "outperform_63_valid_count"],
+] as const;
+type GroupSortColumn = "name" | "eligible_count" | (typeof groupColumns)[number][0];
+
+function GroupTable({ data, selected, onSelect }: {
+  data: MarketHealthTabResponse;
+  selected?: string;
+  onSelect: (key?: string) => void;
+}) {
+  const [sort, setSort] = useState<{ column: GroupSortColumn; direction: "asc" | "desc" }>({
+    column: "outperform_63_percent", direction: "desc",
+  });
+  const rows = [...data.groups].sort((a, b) => {
+    const left = a[sort.column], right = b[sort.column];
+    if (left === null) return right === null ? a.name.localeCompare(b.name) : 1;
+    if (right === null) return -1;
+    const result = typeof left === "number" ? left - (right as number) : left.localeCompare(right as string);
+    return (sort.direction === "asc" ? result : -result) || a.name.localeCompare(b.name);
+  });
+  const header = (column: GroupSortColumn, label: string) => (
+    <TableSortLabel active={sort.column === column} direction={sort.column === column ? sort.direction : "desc"}
+      onClick={() => setSort(current => ({ column, direction: current.column === column && current.direction === "desc" ? "asc" : "desc" }))}>
+      {label.replace("benchmark", data.benchmark)}
+    </TableSortLabel>
+  );
+  const value = (row: GroupRow, column: (typeof groupColumns)[number][0]) => {
+    const number = row[column];
+    return number === null ? "—" : `${number.toFixed(1)}${column.includes("change") ? " pp" : "%"}`;
+  };
   return (
-    <div className="market-health-leaders">
-      <LeaderList title="Leaders" leaders={data.leaders} latestSession={data.latest_session} />
-      <LeaderList title="Healthy Leaders" leaders={data.healthy_leaders} latestSession={data.latest_session} />
-    </div>
+    <section className="market-health-leader-list">
+      <Typography component="h2">{data.tab === "themes" ? "Themes" : "Industries"}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        Select a group to inspect its charts and stocks. Table percentages need ≥10 valid stocks; hover a value for its denominator.
+      </Typography>
+      {selected !== undefined && <Button size="small" onClick={() => onSelect(undefined)}>Show whole universe</Button>}
+      <div className="market-health-leader-table market-health-group-table">
+        <Table stickyHeader size="small" aria-label={data.tab === "themes" ? "Theme participation" : "Industry participation"}>
+          <TableHead><TableRow>
+            <TableCell>{header("name", "Group")}</TableCell>
+            <TableCell align="right">{header("eligible_count", "Eligible / Members")}</TableCell>
+            {groupColumns.map(([key, label]) => <TableCell key={key} align="right">{header(key, label)}</TableCell>)}
+          </TableRow></TableHead>
+          <TableBody>{rows.map(row => (
+            <TableRow key={row.key} hover selected={selected === row.key}>
+              <TableCell><Button size="small" aria-pressed={selected === row.key}
+                onClick={() => onSelect(selected === row.key ? undefined : row.key)}>
+                {row.name}{row.small_group ? " (small group)" : ""}
+              </Button></TableCell>
+              <TableCell align="right">{row.eligible_count} / {row.member_count}</TableCell>
+              {groupColumns.map(([key, , countKey]) => <TableCell key={key} align="right"
+                title={countKey === null ? "Displayed-series change; liquidity membership can change." : `${row[countKey]} valid stocks`}>
+                {value(row, key)}
+              </TableCell>)}
+            </TableRow>
+          ))}</TableBody>
+        </Table>
+      </div>
+    </section>
   );
 }
 
-function LeaderList({ title, leaders, latestSession }: {
-  title: string;
-  leaders: MarketHealthTabResponse["leaders"];
-  latestSession: string;
-}) {
+function LeadingStocks({ data }: { data: MarketHealthTabResponse }) {
   const [sort, setSort] = useState<{
     column: LeaderSortColumn;
     direction: "asc" | "desc";
-  }>({ column: "percentile", direction: "desc" });
-  const sortedLeaders = useMemo(
-    () => [...leaders].sort((left, right) => compareLeaders(left, right, sort)),
-    [leaders, sort],
-  );
+  }>({ column: "excess_selected", direction: "desc" });
+  const performanceColumns: Array<{ key: "return_20" | "return_selected" | "excess_20" | "excess_selected"; label: string }> = [
+    ...(data.leader_sessions === 20 ? [] : [{ key: "return_20" as const, label: "Return 20" }]),
+    { key: "return_selected", label: `Return ${data.leader_sessions}` },
+    ...(data.leader_sessions === 20 ? [] : [{ key: "excess_20" as const, label: "Excess 20 (pp)" }]),
+    { key: "excess_selected", label: `Excess ${data.leader_sessions} (pp)` },
+  ];
+  const [industry, setIndustry] = useState("");
+  const [theme, setTheme] = useState("");
+  const [bothRs,setBothRs]=useState(false); const [bothSma,setBothSma]=useState(false); const [newHigh,setNewHigh]=useState(false);
+  const industries=useMemo(()=>[...new Set(data.leading_stocks.map(s=>s.industry_group).filter((v):v is string=>v!==null))].sort(),[data]);
+  const themes=useMemo(()=>[...new Set(data.leading_stocks.flatMap(s=>s.themes))].sort(),[data]);
+  const sortedLeaders = useMemo(() => data.leading_stocks.filter(s=>(!industry||s.industry_group===industry)&&(!theme||s.themes.includes(theme))&&(!bothRs||s.excess_20>0)&&(!bothSma||(s.above_sma20&&s.above_sma50))&&(!newHigh||s.new_high_63)).sort((a,b)=>compareLeaders(a,b,sort)), [data,industry,theme,bothRs,bothSma,newHigh,sort]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(1);
+  const tableContainer = useRef<HTMLDivElement>(null);
+  const visiblePage = Math.min(page, Math.max(0, Math.ceil(sortedLeaders.length / rowsPerPage) - 1));
+
+  useEffect(() => {
+    const container = tableContainer.current;
+    const header = container?.querySelector("thead");
+    const row = container?.querySelector("tbody tr");
+    if (!container || !header || !row) return;
+    const measure = () => {
+      const rowHeight = row.getBoundingClientRect().height;
+      if (rowHeight <= 0) return;
+      const available = container.clientHeight - header.getBoundingClientRect().height;
+      setRowsPerPage(Math.max(1, Math.floor(available / rowHeight)));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(header);
+    observer.observe(row);
+    measure();
+    return () => observer.disconnect();
+  }, [sortedLeaders, visiblePage]);
   const changeSort = (column: LeaderSortColumn) => {
     setSort((current) => current.column === column
       ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
-      : { column, direction: column === "percentile" ? "desc" : "asc" });
+      : { column, direction: numericLeaderColumns.has(column) ? "desc" : "asc" });
   };
   const sortableHeader = (column: LeaderSortColumn, label: string) => (
     <TableSortLabel
@@ -500,45 +622,44 @@ function LeaderList({ title, leaders, latestSession }: {
   );
 
   return (
-    <section className="market-health-leader-list">
+    <section className="market-health-leader-list market-health-leading-stocks">
       <div className="market-health-leader-header">
-        <Typography component="h2">{title}</Typography>
-        <Tooltip title={`Export ${title} CSV`}>
+        <Typography component="h2">Leading Stocks vs {data.benchmark}</Typography>
+        <Typography variant="caption">Positive {data.leader_sessions}-session excess return. Relative leaders can still have negative returns.</Typography>
+        <Select size="small" inputProps={{ "aria-label": "Filter leaders by industry" }} displayEmpty value={industry} onChange={e=>setIndustry(e.target.value)}><MenuItem value="">All industries</MenuItem>{industries.map(v=><MenuItem key={v} value={v}>{v}</MenuItem>)}</Select>
+        <Select size="small" inputProps={{ "aria-label": "Filter leaders by theme" }} displayEmpty value={theme} onChange={e=>setTheme(e.target.value)}><MenuItem value="">All themes</MenuItem>{themes.map(v=><MenuItem key={v} value={v}>{v}</MenuItem>)}</Select>
+        <FormControlLabel control={<Checkbox size="small" checked={bothRs} onChange={e=>setBothRs(e.target.checked)}/>} label="Both horizons" disabled={data.leader_sessions === 20}/><FormControlLabel control={<Checkbox size="small" checked={bothSma} onChange={e=>setBothSma(e.target.checked)}/>} label="Above both SMAs"/><FormControlLabel control={<Checkbox size="small" checked={newHigh} onChange={e=>setNewHigh(e.target.checked)}/>} label="New 63-session closing high"/>
+        <Tooltip title="Export Leading Stocks CSV">
           <span>
             <IconButton
               size="small"
               disabled={sortedLeaders.length === 0}
-              aria-label={`Export ${title} CSV`}
-              onClick={() => downloadLeaderCsv(title, latestSession, sortedLeaders)}
+              aria-label="Export Leading Stocks CSV"
+              onClick={() => downloadLeaderCsv(data, sortedLeaders)}
             >
               <FileDownloadOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
       </div>
-      <div className="market-health-leader-table">
-        <Table stickyHeader size="small" aria-label={title}>
+      <div className="market-health-leader-table" ref={tableContainer}>
+        <Table stickyHeader size="small" aria-label="Leading Stocks">
           <TableHead>
             <TableRow>
               <TableCell sortDirection={sort.column === "symbol" ? sort.direction : false}>
                 {sortableHeader("symbol", "Ticker")}
               </TableCell>
-              <TableCell
-                align="right"
-                sortDirection={sort.column === "percentile" ? sort.direction : false}
-              >
-                {sortableHeader("percentile", "RS")}
-              </TableCell>
-              <TableCell sortDirection={sort.column === "sector" ? sort.direction : false}>
-                {sortableHeader("sector", "Sector")}
-              </TableCell>
-              <TableCell sortDirection={sort.column === "industry_group" ? sort.direction : false}>
-                {sortableHeader("industry_group", "Industry Group")}
-              </TableCell>
+              {performanceColumns.map(({ key, label }) => (
+                <TableCell key={key} align="right">{sortableHeader(key, label)}</TableCell>
+              ))}
+              <TableCell align="center">20/50 SMA</TableCell>
+              <TableCell align="right">{sortableHeader("distance_from_high_63", "From 63 High")}</TableCell>
+              <TableCell align="right">{sortableHeader("adv20", "ADV20")}</TableCell>
+              <TableCell>{sortableHeader("industry_group", "Industry")}</TableCell><TableCell>Themes</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {sortedLeaders.map((leader) => (
+            {sortedLeaders.slice(visiblePage * rowsPerPage, (visiblePage + 1) * rowsPerPage).map((leader) => (
               <TableRow key={leader.symbol} hover>
                 <TableCell>
                   <a
@@ -549,28 +670,14 @@ function LeaderList({ title, leaders, latestSession }: {
                     {leader.symbol}
                   </a>
                 </TableCell>
-                <TableCell align="right">
-                  <a
-                    href={tickerMarketWatchUrl(leader.symbol)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {Math.round(leader.percentile)}
-                  </a>
-                </TableCell>
-                <TableCell>
-                  {leader.sector === null || leader.sector_industry_keys.length === 0 ? (
-                    "—"
-                  ) : (
-                    <a
-                      href={industriesMarketWatchUrl(leader.sector_industry_keys)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {leader.sector}
-                    </a>
-                  )}
-                </TableCell>
+                {performanceColumns.map(({ key }) => (
+                  <TableCell align="right" key={key}>
+                    {(leader[key] * 100).toFixed(1)}{key.startsWith("excess") ? " pp" : "%"}
+                  </TableCell>
+                ))}
+                <TableCell align="center">{leader.above_sma20 ? "✓" : "—"} / {leader.above_sma50 === null ? "N/A" : leader.above_sma50 ? "✓" : "—"}</TableCell>
+                <TableCell align="right">{leader.distance_from_high_63 === null ? "—" : `${(leader.distance_from_high_63 * 100).toFixed(1)}%`}</TableCell>
+                <TableCell align="right">${(leader.adv20 / 1_000_000).toFixed(1)}M</TableCell>
                 <TableCell>
                   {leader.industry_key === null || leader.industry_group === null ? (
                     "—"
@@ -584,20 +691,24 @@ function LeaderList({ title, leaders, latestSession }: {
                     </a>
                   )}
                 </TableCell>
+                <TableCell>{leader.themes.join(", ") || "—"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+      {sortedLeaders.length === 0 && <Typography>No stocks match these filters with complete return data.</Typography>}
+      <TablePagination component="div" count={sortedLeaders.length} rowsPerPage={rowsPerPage} rowsPerPageOptions={[]} page={visiblePage} onPageChange={(_, value) => setPage(value)} />
     </section>
   );
 }
 
-type LeaderSortColumn = "symbol" | "percentile" | "sector" | "industry_group";
+type LeaderSortColumn = "symbol" | "return_20" | "return_selected" | "excess_20" | "excess_selected" | "distance_from_high_63" | "adv20" | "industry_group";
+const numericLeaderColumns = new Set<LeaderSortColumn>(["return_20","return_selected","excess_20","excess_selected","distance_from_high_63","adv20"]);
 
 function compareLeaders(
-  left: MarketHealthTabResponse["leaders"][number],
-  right: MarketHealthTabResponse["leaders"][number],
+  left: MarketHealthTabResponse["leading_stocks"][number],
+  right: MarketHealthTabResponse["leading_stocks"][number],
   sort: { column: LeaderSortColumn; direction: "asc" | "desc" },
 ) {
   const leftValue = left[sort.column];
@@ -611,29 +722,30 @@ function compareLeaders(
 }
 
 function downloadLeaderCsv(
-  title: string,
-  latestSession: string,
-  leaders: MarketHealthTabResponse["leaders"],
+  data: MarketHealthTabResponse,
+  leaders: MarketHealthTabResponse["leading_stocks"],
 ) {
   const csv = [
-    "ticker,rs,sector,industry_group",
+    `ticker,benchmark,as_of,${data.leader_sessions === 20 ? "" : "return_20_pct,"}return_${data.leader_sessions}_pct,${data.leader_sessions === 20 ? "" : "excess_20_pp,"}excess_${data.leader_sessions}_pp,above_sma20,above_sma50,distance_from_high_63_pct,new_high_63,adv20_usd,industry,themes`,
     ...leaders.map((leader) => [
-      leader.symbol,
-      String(Math.round(leader.percentile)),
-      leader.sector ?? "",
+      leader.symbol, data.benchmark, data.latest_session,
+      ...(data.leader_sessions === 20 ? [leader.return_selected, leader.excess_selected] : [leader.return_20, leader.return_selected, leader.excess_20, leader.excess_selected]).map(value => String(value * 100)),
+      String(leader.above_sma20), leader.above_sma50 === null ? "" : String(leader.above_sma50),
+      leader.distance_from_high_63 === null ? "" : String(leader.distance_from_high_63 * 100),
+      leader.new_high_63 === null ? "" : String(leader.new_high_63), String(leader.adv20),
       leader.industry_group ?? "",
+      leader.themes.join(";"),
     ].map(csvCell).join(",")),
   ].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${latestSession}-${slug(title)}.csv`;
+  link.download = `${data.latest_session}-${data.benchmark}-leaders-${data.leader_sessions}s.csv`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function csvCell(value: string) { return `"${value.replaceAll('"', '""')}"`; }
-function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
 function formatDuration(seconds: number) {
   const minutes = Math.floor(seconds / 60);

@@ -171,10 +171,16 @@ pub struct MarketHealthProviderSkip {
 #[derive(Clone, Debug, Serialize)]
 pub struct MarketHealthTabResponse {
     pub tab: String,
+    pub benchmark: TickerSymbol,
     pub latest_session: NaiveDate,
     pub charts: Vec<MarketHealthChart>,
-    pub leaders: Vec<MarketHealthLeader>,
-    pub healthy_leaders: Vec<MarketHealthLeader>,
+    pub groups: Vec<MarketHealthGroup>,
+    pub leading_stocks: Vec<MarketHealthLeadingStock>,
+    pub selected_group: Option<String>,
+    pub leader_sessions: usize,
+    pub eligible_count: usize,
+    pub universe_count: usize,
+    pub group_members: Vec<TickerSymbol>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -194,7 +200,9 @@ pub struct MarketHealthSeries {
 #[derive(Clone, Debug, Serialize)]
 pub struct MarketHealthPoint {
     pub date: NaiveDate,
-    pub value: f64,
+    pub value: Option<f64>,
+    pub matching_count: usize,
+    pub valid_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -202,14 +210,46 @@ pub struct MarketHealthSummary {
     pub current: Option<f64>,
     pub change_5d: Option<f64>,
     pub change_20d: Option<f64>,
+    pub matching_count: Option<usize>,
+    pub valid_count: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct MarketHealthLeader {
+pub struct MarketHealthGroup {
+    pub key: String,
+    pub name: String,
+    pub member_count: usize,
+    pub eligible_count: usize,
+    pub above_sma20_valid_count: usize,
+    pub above_sma50_valid_count: usize,
+    pub new_high_valid_count: usize,
+    pub new_low_valid_count: usize,
+    pub outperform_20_valid_count: usize,
+    pub outperform_63_valid_count: usize,
+    pub above_sma20_percent: Option<f64>,
+    pub above_sma50_percent: Option<f64>,
+    pub new_high_percent: Option<f64>,
+    pub new_low_percent: Option<f64>,
+    pub outperform_20_percent: Option<f64>,
+    pub outperform_63_percent: Option<f64>,
+    pub small_group: bool,
+    pub above_sma50_change_5d: Option<f64>,
+    pub above_sma50_change_20d: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MarketHealthLeadingStock {
     pub symbol: TickerSymbol,
-    pub percentile: f64,
-    pub sector: Option<String>,
-    pub sector_industry_keys: Vec<String>,
+    pub return_20: f64,
+    pub return_selected: f64,
+    pub excess_20: f64,
+    pub excess_selected: f64,
+    pub above_sma20: bool,
+    pub above_sma50: Option<bool>,
+    pub distance_from_high_63: Option<f64>,
+    pub new_high_63: Option<bool>,
+    pub adv20: f64,
     pub industry_key: Option<String>,
     pub industry_group: Option<String>,
+    pub themes: Vec<String>,
 }

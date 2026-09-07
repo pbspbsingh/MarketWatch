@@ -6,14 +6,15 @@ use crate::models::{
     MarketHealthUniverse, MarketHealthWorkItem, MarketHealthWorkPlan, TickerSymbol,
 };
 use crate::providers::{FinvizClient, YahooError};
-use crate::services::market_health_calculations::{self, CalculationInput, StockHistory};
+use crate::services::market_health_calculations::{
+    CalculationInput, PreparedAnalysis, StockHistory,
+};
 use crate::services::ticker_collections::{UploadedTickerFile, analyze_uploaded_ticker_files};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use anyhow::Context;
 use chrono::{Months, Utc};
-use futures_util::{StreamExt, TryStreamExt, stream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -150,7 +151,6 @@ enum YahooWorkerEvent {
 
 const DISPLAY_MONTHS: u32 = 12;
 const PREROLL_MONTHS: u32 = 13;
-const TAB_CANDLE_READ_CONCURRENCY: usize = 8;
 
 async fn wait_until_runnable(
     paused: &mut watch::Receiver<bool>,
@@ -291,10 +291,20 @@ impl MarketHealthService {
     pub async fn tab(
         &self,
         tab: String,
-        rs_days: usize,
-        threshold: i32,
+        selected_group: Option<String>,
+        leader_sessions: usize,
     ) -> Result<crate::models::MarketHealthTabResponse, MarketHealthError> {
-        validate_tab(&tab, rs_days, threshold)?;
+        validate_tab(&tab)?;
+        if !(20..=252).contains(&leader_sessions) {
+            return Err(MarketHealthError::InvalidRequest(
+                "leader sessions must be 20 through 252",
+            ));
+        }
+        if selected_group.is_some() && !matches!(tab.as_str(), "industries" | "themes") {
+            return Err(MarketHealthError::InvalidRequest(
+                "group requires an industries or themes tab",
+            ));
+        }
         let (reply, response) = oneshot::channel();
         self.commands
             .send(Command::CalculationContext { reply })
@@ -303,18 +313,39 @@ impl MarketHealthService {
             .await
             .map_err(|_| MarketHealthError::ActorUnavailable)?;
         let job_id = snapshot.job_id;
-        let output = calculate_tab(
+        let revision = snapshot.revision;
+        if snapshot.phase != MarketHealthPhase::Ready {
+            return Err(MarketHealthError::InvalidLifecycle {
+                action: "calculate a tab",
+                phase: snapshot.phase.as_str(),
+            });
+        }
+        let leader_sessions_only = (tab == "leading_stocks").then_some(leader_sessions);
+        let analysis = prepare_analysis(
             &self.store,
             &self.benchmark,
             universe,
             snapshot,
-            &tab,
-            rs_days,
-            threshold,
+            leader_sessions_only,
         )
         .await?;
+        let output = tokio::task::spawn_blocking(move || {
+            analysis.response(&tab, selected_group, leader_sessions)
+        })
+        .await
+        .map_err(|error| MarketHealthError::WorkPlanning(error.into()))?;
+        if output
+            .selected_group
+            .as_ref()
+            .is_some_and(|key| !output.groups.iter().any(|group| &group.key == key))
+        {
+            return Err(MarketHealthError::InvalidRequest("unknown group"));
+        }
         let current = self.snapshot();
-        if current.job_id != job_id || current.phase != MarketHealthPhase::Ready {
+        if current.job_id != job_id
+            || current.revision != revision
+            || current.phase != MarketHealthPhase::Ready
+        {
             return Err(MarketHealthError::InvalidLifecycle {
                 action: "return a superseded tab calculation",
                 phase: current.phase.as_str(),
@@ -368,25 +399,12 @@ fn parse_universe(
     })
 }
 
-fn validate_tab(tab: &str, rs_days: usize, threshold: i32) -> Result<(), MarketHealthError> {
+fn validate_tab(tab: &str) -> Result<(), MarketHealthError> {
     if !matches!(
         tab,
-        "overview"
-            | "trend_breadth"
-            | "highs_breadth"
-            | "leadership"
-            | "leader_lists"
-            | "market_structure"
+        "market_breadth" | "industries" | "themes" | "leading_stocks"
     ) {
         return Err(MarketHealthError::InvalidRequest("unknown tab"));
-    }
-    if !matches!(rs_days, 21 | 63 | 126) {
-        return Err(MarketHealthError::InvalidRequest("unsupported RS horizon"));
-    }
-    if !(0..=100).contains(&threshold) {
-        return Err(MarketHealthError::InvalidRequest(
-            "leader threshold must be 0 through 100",
-        ));
     }
     Ok(())
 }
@@ -434,23 +452,20 @@ fn set_ticker_state(
 fn usable_ticker_count(universe: &MarketHealthUniverse) -> usize {
     let skipped: std::collections::HashSet<_> = universe
         .provider_skips
-        .finviz
+        .yahoo
         .iter()
-        .chain(&universe.provider_skips.yahoo)
         .map(|skip| &skip.symbol)
         .collect();
     universe.imported_count.saturating_sub(skipped.len())
 }
 
-async fn calculate_tab(
+async fn prepare_analysis(
     store: &Store,
     benchmark_symbol: &TickerSymbol,
     universe: Option<MarketHealthUniverse>,
     snapshot: MarketHealthJobSnapshot,
-    tab: &str,
-    rs_days: usize,
-    threshold: i32,
-) -> Result<crate::models::MarketHealthTabResponse, MarketHealthError> {
+    leader_sessions: Option<usize>,
+) -> Result<PreparedAnalysis, MarketHealthError> {
     if snapshot.phase != MarketHealthPhase::Ready {
         return Err(MarketHealthError::InvalidLifecycle {
             action: "calculate a tab",
@@ -459,116 +474,109 @@ async fn calculate_tab(
     }
     let plan = snapshot.work_plan.as_ref().expect("ready job has a plan");
     let universe = universe.expect("ready job has universe");
-    let skipped: std::collections::HashSet<_> = universe
-        .provider_skips
-        .finviz
-        .iter()
-        .chain(&universe.provider_skips.yahoo)
-        .map(|skip| skip.symbol.clone())
-        .collect();
-    let end = plan
-        .range
-        .latest_session
-        .succ_opt()
-        .expect("supported date");
     let started = Instant::now();
     info!(
         job_id = snapshot.job_id,
-        tab,
-        ticker_count = universe.symbols.len() - skipped.len(),
+        ticker_count = universe.symbols.len(),
         "Market Health tab calculation started"
     );
-    let symbols: Vec<_> = universe
-        .symbols
-        .iter()
-        .filter(|symbol| !skipped.contains(*symbol))
-        .cloned()
-        .collect();
-    let leader_metadata = if tab == "leader_lists" {
-        let classifications = store
-            .industry_classifications()
-            .await
-            .map_err(MarketHealthError::WorkPlanning)?;
-        let mut sectors_by_industry = std::collections::HashMap::new();
-        let mut industries_by_sector = std::collections::HashMap::<String, Vec<String>>::new();
-        for classification in classifications {
-            industries_by_sector
-                .entry(classification.sector_name.clone())
-                .or_default()
-                .push(classification.industry_key.clone());
-            sectors_by_industry.insert(classification.industry_key, classification.sector_name);
-        }
-        for industry_keys in industries_by_sector.values_mut() {
-            industry_keys.sort_unstable();
-        }
-        let mut metadata = std::collections::HashMap::new();
-        for membership in store
+    let symbols = universe.symbols;
+    let metadata = {
+        let memberships = store
             .all_industries_for_symbols(&symbols)
             .await
-            .map_err(MarketHealthError::WorkPlanning)?
-        {
-            let sector = sectors_by_industry.get(&membership.industry_key).cloned();
-            let sector_industry_keys = sector
-                .as_ref()
-                .and_then(|name| industries_by_sector.get(name))
-                .cloned()
-                .unwrap_or_default();
-            metadata.entry(membership.symbol).or_insert((
-                sector,
-                sector_industry_keys,
-                Some(membership.industry_key),
-                Some(membership.industry_name),
-            ));
+            .map_err(MarketHealthError::WorkPlanning)?;
+        let mut by_symbol = std::collections::HashMap::<_, Vec<_>>::new();
+        for membership in memberships {
+            by_symbol
+                .entry(membership.symbol.clone())
+                .or_default()
+                .push(membership);
+        }
+        let theme_memberships = store
+            .themes_for_symbols(&symbols)
+            .await
+            .map_err(MarketHealthError::WorkPlanning)?;
+        let mut themes = std::collections::HashMap::<_, Vec<_>>::new();
+        for theme in theme_memberships {
+            themes
+                .entry(theme.symbol)
+                .or_default()
+                .push((theme.theme_id.to_string(), theme.theme_name));
+        }
+        let mut metadata = std::collections::HashMap::new();
+        for symbol in &symbols {
+            let unique = by_symbol.remove(symbol).unwrap_or_default();
+            let industry = (unique.len() == 1).then(|| unique.into_iter().next().unwrap());
+            let (industry_key, industry_group) = match industry {
+                Some(membership) => (
+                    Some(membership.industry_key),
+                    Some(membership.industry_name),
+                ),
+                None => (None, None),
+            };
+            metadata.insert(
+                symbol.clone(),
+                (
+                    industry_key,
+                    industry_group,
+                    themes.remove(symbol).unwrap_or_default(),
+                ),
+            );
         }
         metadata
-    } else {
-        std::collections::HashMap::new()
     };
-    let mut histories = stream::iter(symbols.into_iter().enumerate())
-        .map(|(index, symbol)| {
-            let (sector, sector_industry_keys, industry_key, industry_group) =
-                leader_metadata.get(&symbol).cloned().unwrap_or_default();
-            async move {
-                let candles = store
-                    .daily_candles(&symbol, plan.range.source_start, end)
-                    .await?;
-                Ok::<_, anyhow::Error>((
-                    index,
-                    StockHistory {
-                        symbol,
-                        candles,
-                        sector,
-                        sector_industry_keys,
-                        industry_key,
-                        industry_group,
-                    },
-                ))
+    let mut requested = symbols.clone();
+    if !requested.contains(benchmark_symbol) {
+        requested.push(benchmark_symbol.clone());
+    }
+    let mut candles_by_symbol: std::collections::HashMap<_, _> = store
+        .daily_candle_histories_for_symbols(
+            plan.range.source_start,
+            plan.range.latest_session,
+            &requested,
+            leader_sessions.map(|sessions| sessions.max(63) + 1),
+        )
+        .await
+        .map_err(MarketHealthError::WorkPlanning)?
+        .into_iter()
+        .collect();
+    let benchmark = candles_by_symbol
+        .get(benchmark_symbol)
+        .cloned()
+        .unwrap_or_default();
+    let histories = symbols
+        .into_iter()
+        .map(|symbol| {
+            let (industry_key, industry_group, themes) =
+                metadata.get(&symbol).cloned().unwrap_or_default();
+            StockHistory {
+                candles: candles_by_symbol.remove(&symbol).unwrap_or_default(),
+                symbol,
+                industry_key,
+                industry_group,
+                themes,
             }
         })
-        .buffer_unordered(TAB_CANDLE_READ_CONCURRENCY)
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(MarketHealthError::WorkPlanning)?;
-    histories.sort_unstable_by_key(|(index, _)| *index);
-    let histories = histories.into_iter().map(|(_, history)| history).collect();
-    let benchmark = store
-        .daily_candles(benchmark_symbol, plan.range.source_start, end)
-        .await
-        .map_err(MarketHealthError::WorkPlanning)?;
-    let output = market_health_calculations::calculate(CalculationInput {
-        tab: tab.to_owned(),
+        .collect();
+    let input = CalculationInput {
         histories,
         benchmark_symbol: benchmark_symbol.clone(),
         benchmark,
         display_start: plan.range.display_start,
         latest: plan.range.latest_session,
-        rs_days,
-        threshold,
-    });
+    };
+    let output = tokio::task::spawn_blocking(move || {
+        if leader_sessions.is_some() {
+            PreparedAnalysis::for_leaders(input)
+        } else {
+            PreparedAnalysis::new(input)
+        }
+    })
+    .await
+    .map_err(|error| MarketHealthError::WorkPlanning(error.into()))?;
     info!(
         job_id = snapshot.job_id,
-        tab,
-        chart_count = output.charts.len(),
         elapsed_ms = started.elapsed().as_millis(),
         "Market Health tab calculation completed"
     );
@@ -966,13 +974,6 @@ impl Actor {
                         .any(|item| item.symbol == symbol && item.needs_yahoo)
                         && plan.benchmark.symbol != symbol
                 });
-                let benchmark_needs_yahoo = snapshot.work_plan.as_ref().is_some_and(|plan| {
-                    plan.benchmark.symbol == symbol
-                        && plan
-                            .work_items
-                            .iter()
-                            .any(|item| item.symbol == symbol && item.needs_yahoo)
-                });
                 if let Some(progress) = snapshot.progress.as_mut() {
                     let finviz = &mut progress.finviz;
                     finviz.completed += 1;
@@ -998,16 +999,13 @@ impl Actor {
                         universe.usable_count = usable_ticker_count(universe);
                         progress.total_tickers = universe.usable_count;
                     }
-                    if skip_needs_yahoo {
-                        progress.yahoo.total = progress.yahoo.total.saturating_sub(1);
-                    }
                     info!(job_id = event_job_id, %symbol, %message, completed = finviz.completed, total = finviz.total, elapsed_seconds, "Market Health Finviz ticker skipped");
                 }
                 if let Some(progress) = snapshot.progress.as_mut() {
                     set_ticker_state(
                         progress,
                         &symbol,
-                        if benchmark_needs_yahoo {
+                        if skip_needs_yahoo {
                             MarketHealthTickerState::Pending
                         } else {
                             MarketHealthTickerState::Skipped
@@ -1063,25 +1061,12 @@ impl Actor {
         let Some(plan) = snapshot.work_plan.as_ref() else {
             return;
         };
-        let finviz_skips = self
-            .universe
-            .as_ref()
-            .map(|universe| {
-                universe
-                    .provider_skips
-                    .finviz
-                    .iter()
-                    .map(|skip| skip.symbol.clone())
-                    .collect::<std::collections::HashSet<_>>()
-            })
-            .unwrap_or_default();
         let benchmark_symbol = plan.benchmark.symbol.clone();
         let work_items = plan
             .work_items
             .iter()
             .filter(|item| {
                 item.needs_yahoo
-                    && (!finviz_skips.contains(&item.symbol) || item.symbol == benchmark_symbol)
                     && !snapshot.progress.as_ref().is_some_and(|progress| {
                         progress.yahoo.processed_symbols.contains(&item.symbol)
                     })
@@ -1292,40 +1277,8 @@ impl Actor {
                         .iter()
                         .find(|entry| entry.symbol == symbol)
                         .is_some_and(|entry| entry.benchmark);
-                    let was_skipped = self.universe.as_ref().is_some_and(|universe| {
-                        universe
-                            .provider_skips
-                            .finviz
-                            .iter()
-                            .any(|skip| skip.symbol == symbol)
-                    });
-                    if was_skipped {
-                        let message = self
-                            .universe
-                            .as_ref()
-                            .and_then(|universe| {
-                                universe
-                                    .provider_skips
-                                    .finviz
-                                    .iter()
-                                    .find(|skip| skip.symbol == symbol)
-                            })
-                            .map(|skip| skip.message.clone());
-                        set_ticker_state(
-                            progress,
-                            &symbol,
-                            MarketHealthTickerState::Skipped,
-                            message,
-                        );
-                    } else {
-                        set_ticker_state(
-                            progress,
-                            &symbol,
-                            MarketHealthTickerState::Completed,
-                            None,
-                        );
-                    }
-                    if !is_benchmark && !was_skipped {
+                    set_ticker_state(progress, &symbol, MarketHealthTickerState::Completed, None);
+                    if !is_benchmark {
                         progress.refreshed_count += 1;
                     }
                 }
@@ -1562,19 +1515,9 @@ impl Actor {
             .first()
             .map(|candle| candle.market_date);
         let required_source_session = benchmark_source_session.unwrap_or(source_start);
-        let skipped: std::collections::HashSet<_> = universe
-            .provider_skips
-            .finviz
-            .iter()
-            .chain(&universe.provider_skips.yahoo)
-            .map(|skip| skip.symbol.clone())
-            .collect();
         let mut work_items = Vec::new();
 
         for symbol in &universe.symbols {
-            if skipped.contains(symbol) {
-                continue;
-            }
             let needs_finviz = !self
                 .store
                 .ticker_has_industry(symbol)
@@ -1621,8 +1564,8 @@ impl Actor {
                 display_start,
                 latest_session,
             },
-            ticker_count: universe.usable_count,
-            cached_count: universe.usable_count - work_items.len(),
+            ticker_count: universe.symbols.len(),
+            cached_count: universe.symbols.len().saturating_sub(work_items.len()),
             work_items,
             benchmark: MarketHealthBenchmarkWork {
                 symbol: self.benchmark.clone(),
@@ -1659,5 +1602,153 @@ impl Actor {
         Ok(!has_profile
             || earliest.is_none_or(|date| date > required_source_session)
             || latest.is_none_or(|date| date < latest_session))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Supply an expendable database COPY, never the live database. This test may
+    /// run migrations on that copy, but does not call any external provider.
+    #[tokio::test]
+    #[ignore = "requires MARKET_HEALTH_TEST_DB copy and local Russell CSV"]
+    async fn validates_local_russell_snapshot() {
+        let path = std::env::var("MARKET_HEALTH_TEST_DB").expect("database copy required");
+        assert!(std::path::Path::new(&path).starts_with(std::env::temp_dir()));
+        let store = Store::connect(&format!("sqlite://{path}")).await.unwrap();
+        let config = crate::config::Config::load("config.toml").unwrap();
+        let benchmark = TickerSymbol::parse(config.market.benchmark).unwrap();
+        let universe = parse_universe(vec![UploadedTickerFile {
+            name: "russell.csv".into(),
+            content: std::fs::read_to_string("docs/russell.csv").unwrap(),
+        }])
+        .unwrap();
+        let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        let latest = date(2026, 9, 4);
+        let snapshot = MarketHealthJobSnapshot {
+            revision: 1,
+            job_id: Some(1),
+            phase: MarketHealthPhase::Ready,
+            progress: None,
+            work_plan: Some(MarketHealthWorkPlan {
+                range: MarketHealthSessionRange {
+                    source_start: date(2025, 6, 1),
+                    display_start: date(2025, 9, 4),
+                    latest_session: latest,
+                },
+                ticker_count: universe.symbols.len(),
+                cached_count: universe.symbols.len(),
+                work_items: vec![],
+                benchmark: MarketHealthBenchmarkWork {
+                    symbol: benchmark.clone(),
+                    needs_yahoo: false,
+                },
+            }),
+        };
+        let started = Instant::now();
+        let mut analysis = prepare_analysis(
+            &store,
+            &benchmark,
+            Some(universe.clone()),
+            snapshot.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        println!(
+            "Prepared {} CSV symbols in {:?}",
+            universe.symbols.len(),
+            started.elapsed()
+        );
+        let market = analysis.response("market_breadth", None, 63);
+        // Compare against direct arithmetic on this copy, not historical counts
+        // from a different database snapshot.
+        analysis.recompute_reference();
+        assert_eq!(
+            serde_json::to_value(&market).unwrap(),
+            serde_json::to_value(analysis.response("market_breadth", None, 63)).unwrap()
+        );
+        let mut fixtures = serde_json::Map::new();
+        fixtures.insert("universe".into(), serde_json::to_value(&universe).unwrap());
+        fixtures.insert("snapshot".into(), serde_json::to_value(&snapshot).unwrap());
+        fixtures.insert(
+            "market_breadth".into(),
+            serde_json::to_value(market).unwrap(),
+        );
+        for tab in ["industries", "themes"] {
+            let output = analysis.response(tab, None, 63);
+            for group in &output.groups {
+                assert!(group.eligible_count <= group.member_count);
+                let drilldown = analysis.response(tab, Some(group.key.clone()), 63);
+                assert_eq!(drilldown.group_members.len(), group.eligible_count);
+            }
+            if let Some(group) = output
+                .groups
+                .iter()
+                .find(|g| g.outperform_63_percent.is_some())
+            {
+                fixtures.insert(
+                    format!("{tab}:group"),
+                    serde_json::to_value(analysis.response(tab, Some(group.key.clone()), 63))
+                        .unwrap(),
+                );
+            }
+            fixtures.insert(tab.into(), serde_json::to_value(output).unwrap());
+        }
+        for sessions in [20, 63, 252] {
+            let output = analysis.response("leading_stocks", None, sessions);
+            let started = Instant::now();
+            let snapshot_output = prepare_analysis(
+                &store,
+                &benchmark,
+                Some(universe.clone()),
+                snapshot.clone(),
+                Some(sessions),
+            )
+            .await
+            .unwrap()
+            .response("leading_stocks", None, sessions);
+            println!(
+                "Fresh {sessions}-session leader request (DB + computation): {:?}",
+                started.elapsed()
+            );
+            // Rolling sums can differ in their last floating-point bits from a
+            // direct snapshot sum; ranking, membership and flags must agree.
+            assert_eq!(
+                snapshot_output.leading_stocks.len(),
+                output.leading_stocks.len()
+            );
+            for (snapshot, full) in snapshot_output
+                .leading_stocks
+                .iter()
+                .zip(&output.leading_stocks)
+            {
+                assert_eq!(snapshot.symbol, full.symbol);
+                assert_eq!(snapshot.excess_selected, full.excess_selected);
+                assert_eq!(snapshot.above_sma20, full.above_sma20);
+                assert_eq!(snapshot.above_sma50, full.above_sma50);
+                assert_eq!(snapshot.new_high_63, full.new_high_63);
+                assert!((snapshot.adv20 - full.adv20).abs() <= full.adv20 * 1e-10);
+            }
+            println!(
+                "{sessions}-session leaders: {}",
+                output.leading_stocks.len()
+            );
+            assert!(
+                output
+                    .leading_stocks
+                    .windows(2)
+                    .all(|rows| rows[0].excess_selected >= rows[1].excess_selected)
+            );
+            fixtures.insert(
+                format!("leading_stocks:{sessions}"),
+                serde_json::to_value(output).unwrap(),
+            );
+        }
+        if let Ok(output) = std::env::var("MARKET_HEALTH_TEST_OUTPUT") {
+            assert!(std::path::Path::new(&output).starts_with(std::env::temp_dir()));
+            std::fs::write(output, serde_json::to_vec(&fixtures).unwrap()).unwrap();
+        }
     }
 }

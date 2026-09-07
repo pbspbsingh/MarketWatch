@@ -18,6 +18,53 @@ export interface ChartSyncTarget {
   isDisposed: () => boolean;
 }
 
+export interface LineChartSyncTarget {
+  chart: IChartApi;
+  series: ISeriesApi<"Line">;
+  valueAt: (date: string) => number | undefined;
+  isDisposed: () => boolean;
+}
+
+export function synchronizeLineChartGroup(targets: LineChartSyncTarget[]): () => void {
+  if (targets.length < 2) return () => undefined;
+  let syncing = false;
+  const rangeHandlers = targets.map(source => {
+    const handler = (range: LogicalRange | null) => {
+      if (syncing || range === null || source.isDisposed()) return;
+      syncing = true;
+      try {
+        for (const target of targets) if (target !== source && !target.isDisposed()) {
+          target.chart.timeScale().setVisibleLogicalRange(range);
+        }
+      } finally { syncing = false; }
+    };
+    source.chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return handler;
+  });
+  let crosshairSyncing = false;
+  const crosshairHandlers = targets.map(source => {
+    const handler = (event: MouseEventParams<Time>) => {
+      if (crosshairSyncing) return;
+      crosshairSyncing = true;
+      try {
+        const date = event.time === undefined ? undefined : chartTimeToMarketDate(event.time);
+        for (const target of targets) if (target !== source && !target.isDisposed()) {
+          const value = date === undefined ? undefined : target.valueAt(date);
+          if (date === undefined || value === undefined) target.chart.clearCrosshairPosition();
+          else target.chart.setCrosshairPosition(value, marketDateToChartTime(date), target.series);
+        }
+      } finally { crosshairSyncing = false; }
+    };
+    source.chart.subscribeCrosshairMove(handler);
+    return handler;
+  });
+  return () => targets.forEach((target,index) => {
+    if (target.isDisposed()) return;
+    target.chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandlers[index]);
+    target.chart.unsubscribeCrosshairMove(crosshairHandlers[index]);
+  });
+}
+
 export function synchronizeCharts(
   first: ChartSyncTarget,
   second: ChartSyncTarget,

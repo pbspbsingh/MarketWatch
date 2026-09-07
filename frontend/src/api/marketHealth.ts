@@ -67,7 +67,7 @@ export interface MarketHealthProgress {
   yahoo: MarketHealthProgressStep;
 }
 
-export interface MarketHealthPoint { date: string; value: number }
+export interface MarketHealthPoint { date: string; value: number | null; matching_count: number; valid_count: number }
 export interface MarketHealthSeries {
   name: string;
   points: MarketHealthPoint[];
@@ -75,23 +75,41 @@ export interface MarketHealthSeries {
     current: number | null;
     change_5d: number | null;
     change_20d: number | null;
+    matching_count: number | null;
+    valid_count: number | null;
   };
 }
 export interface MarketHealthChart { title: string; percent: boolean; series: MarketHealthSeries[] }
-export interface MarketHealthLeader {
+export interface MarketHealthGroup {
+  key: string; name: string; member_count: number; eligible_count: number; small_group: boolean;
+  above_sma20_valid_count: number; above_sma50_valid_count: number; new_high_valid_count: number;
+  new_low_valid_count: number; outperform_20_valid_count: number; outperform_63_valid_count: number;
+  above_sma20_percent: number | null; above_sma50_percent: number | null;
+  new_high_percent: number | null; new_low_percent: number | null;
+  outperform_20_percent: number | null; outperform_63_percent: number | null;
+  above_sma50_change_5d: number | null; above_sma50_change_20d: number | null;
+}
+export interface MarketHealthLeadingStock {
   symbol: string;
-  percentile: number;
-  sector: string | null;
-  sector_industry_keys: string[];
+  return_20: number; return_selected: number; excess_20: number; excess_selected: number;
+  above_sma20: boolean; above_sma50: boolean | null; distance_from_high_63: number | null;
+  new_high_63: boolean | null; adv20: number;
   industry_key: string | null;
   industry_group: string | null;
+  themes: string[];
 }
 export interface MarketHealthTabResponse {
   tab: string;
+  benchmark: string;
   latest_session: string;
   charts: MarketHealthChart[];
-  leaders: MarketHealthLeader[];
-  healthy_leaders: MarketHealthLeader[];
+  groups: MarketHealthGroup[];
+  leading_stocks: MarketHealthLeadingStock[];
+  selected_group: string | null;
+  leader_sessions: number;
+  eligible_count: number;
+  universe_count: number;
+  group_members: string[];
 }
 
 export async function fetchMarketHealthUniverse(
@@ -123,8 +141,10 @@ export async function restartMarketHealth(action: "refresh" | "retry"): Promise<
   return response.json() as Promise<MarketHealthJobSnapshot>;
 }
 
-export async function fetchMarketHealthTab(tab: string, rs: "1m" | "3m" | "6m", threshold: number, signal?: AbortSignal): Promise<MarketHealthTabResponse> {
-  const params = new URLSearchParams({ tab, rs, threshold: String(threshold) });
+export async function fetchMarketHealthTab(tab: string, group?: string, signal?: AbortSignal, leaderSessions = 63): Promise<MarketHealthTabResponse> {
+  const params = new URLSearchParams({ tab });
+  if (group !== undefined) params.set("group", group);
+  if (tab === "leading_stocks") params.set("leader_sessions", String(leaderSessions));
   const response = await fetch(`/api/market-health/tab?${params}`, { signal });
   if (!response.ok) throw new Error(await responseError(response, "Failed to calculate Market Health tab"));
   return response.json() as Promise<MarketHealthTabResponse>;

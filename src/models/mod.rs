@@ -25,8 +25,8 @@ pub use exchange::Exchange;
 pub use fundamentals::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals};
 pub use market_data::{CompanyProfile, DailyCandle};
 pub use market_health::{
-    MarketHealthBenchmarkWork, MarketHealthChart, MarketHealthCsvResolution,
-    MarketHealthJobSnapshot, MarketHealthLeader, MarketHealthPhase, MarketHealthPoint,
+    MarketHealthBenchmarkWork, MarketHealthChart, MarketHealthCsvResolution, MarketHealthGroup,
+    MarketHealthJobSnapshot, MarketHealthLeadingStock, MarketHealthPhase, MarketHealthPoint,
     MarketHealthPreparationProgress, MarketHealthProviderSkip, MarketHealthProviderSkips,
     MarketHealthProviderStepProgress, MarketHealthProviderStepState, MarketHealthSeries,
     MarketHealthSessionRange, MarketHealthSummary, MarketHealthTabResponse,

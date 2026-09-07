@@ -12,6 +12,7 @@ struct StoredProfile {
     profile_fetched_at: NaiveDateTime,
 }
 
+#[derive(sqlx::FromRow)]
 struct StoredSymbolCandle {
     symbol: String,
     market_date: NaiveDate,
@@ -185,17 +186,65 @@ impl Store {
         start: NaiveDate,
         end: NaiveDate,
     ) -> anyhow::Result<Vec<(TickerSymbol, Vec<DailyCandle>)>> {
-        let mut rows = sqlx::query_as!(
-            StoredSymbolCandle,
-            r#"SELECT symbol, market_date AS "market_date: NaiveDate", open, high, low,
-                    close, volume
-             FROM daily_candles
-             WHERE market_date >= ? AND market_date <= ?
-             ORDER BY symbol, market_date"#,
-            start,
-            end,
-        )
-        .fetch(&self.pool);
+        self.load_daily_candle_histories(start, end, None, None)
+            .await
+    }
+
+    /// Filter in SQLite before decoding candles. An optional session limit uses
+    /// the union of observed dates for these symbols, preserving missing candles.
+    pub async fn daily_candle_histories_for_symbols(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+        symbols: &[TickerSymbol],
+        session_limit: Option<usize>,
+    ) -> anyhow::Result<Vec<(TickerSymbol, Vec<DailyCandle>)>> {
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.load_daily_candle_histories(start, end, Some(symbols), session_limit)
+            .await
+    }
+
+    async fn load_daily_candle_histories(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+        symbols: Option<&[TickerSymbol]>,
+        session_limit: Option<usize>,
+    ) -> anyhow::Result<Vec<(TickerSymbol, Vec<DailyCandle>)>> {
+        let symbols_json = symbols.map(serde_json::to_string).transpose()?;
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT symbol, market_date, open, high, low, close, volume FROM daily_candles WHERE market_date >= ",
+        );
+        query
+            .push_bind(start)
+            .push(" AND market_date <= ")
+            .push_bind(end);
+        if let Some(symbols) = &symbols_json {
+            query
+                .push(" AND symbol IN (SELECT value FROM json_each(")
+                .push_bind(symbols)
+                .push("))");
+        }
+        if let Some(limit) = session_limit {
+            query.push(" AND market_date >= (SELECT MIN(market_date) FROM (SELECT DISTINCT market_date FROM daily_candles WHERE market_date >= ")
+                .push_bind(start).push(" AND market_date <= ").push_bind(end);
+            if let Some(symbols) = &symbols_json {
+                query
+                    .push(" AND symbol IN (SELECT value FROM json_each(")
+                    .push_bind(symbols)
+                    .push("))");
+            }
+            query
+                .push(" ORDER BY market_date DESC LIMIT ")
+                .push_bind(i64::try_from(limit)?)
+                .push("))");
+        }
+        query.push(" ORDER BY symbol, market_date");
+        let mut rows = query
+            .build_query_as::<StoredSymbolCandle>()
+            .fetch(&self.pool);
 
         let mut histories = Vec::<(TickerSymbol, Vec<DailyCandle>)>::new();
         while let Some(row) = rows
@@ -347,6 +396,64 @@ mod tests {
         assert!(store.has_nyse_holidays_for_year(2026).await.unwrap());
         assert!(!store.has_nyse_holidays_for_year(2028).await.unwrap());
         assert_eq!(store.nyse_holidays().await.unwrap(), holidays);
+    }
+
+    #[tokio::test]
+    async fn bulk_history_filter_preserves_shared_sessions_and_end_date() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        for symbol in ["AAA", "BBB", "OTHER"] {
+            sqlx::query("INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')")
+                .bind(symbol)
+                .execute(&store.pool)
+                .await
+                .unwrap();
+        }
+        let a = TickerSymbol::parse("AAA").unwrap();
+        let b = TickerSymbol::parse("BBB").unwrap();
+        store
+            .upsert_daily_candles(&a, &[candle(1, 10.0), candle(3, 12.0), candle(5, 14.0)])
+            .await
+            .unwrap();
+        store
+            .upsert_daily_candles(&b, &[candle(2, 20.0), candle(4, 22.0)])
+            .await
+            .unwrap();
+        store
+            .upsert_daily_candles(&TickerSymbol::parse("OTHER").unwrap(), &[candle(6, 99.0)])
+            .await
+            .unwrap();
+        let start = candle(1, 1.0).market_date;
+        let end = candle(6, 1.0).market_date;
+        let rows = store
+            .daily_candle_histories_for_symbols(start, end, &[a.clone(), b.clone()], Some(2))
+            .await
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (a.clone(), vec![candle(5, 14.0)]),
+                (b.clone(), vec![candle(4, 22.0)])
+            ]
+        );
+        let filtered = store
+            .daily_candle_histories_for_symbols(start, end, &[a.clone(), b.clone()], None)
+            .await
+            .unwrap();
+        let all: Vec<_> = store
+            .daily_candle_histories(start, end)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|(symbol, _)| symbol == &a || symbol == &b)
+            .collect();
+        assert_eq!(filtered, all);
+        assert!(
+            store
+                .daily_candle_histories_for_symbols(start, end, &[], None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

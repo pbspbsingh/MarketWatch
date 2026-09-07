@@ -14,8 +14,9 @@ import type {
   MarketHealthPoint,
 } from "../../api/marketHealth";
 import { ChartHost } from "../../components/lightweight-chart/ChartHost";
+import type { LineChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 
-export function MarketHealthChart({ chart }: { chart: Chart }) {
+export function MarketHealthChart({ chart, onSyncTarget }: { chart: Chart; onSyncTarget?: (target: LineChartSyncTarget | null) => void }) {
   const { theme } = useAppSettings();
   const chartApiRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line">[]>([]);
@@ -36,7 +37,7 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
       if (!samePoints(pointsRef.current[index], source.points)) {
         seriesRef.current[index]?.setData(source.points.map((point) => ({
           time: point.date as Time,
-          value: point.value,
+        ...(point.value === null ? {} : { value: point.value }),
         })));
         pointsRef.current[index] = source.points;
       }
@@ -50,6 +51,9 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
       color: colors[index % colors.length],
       lineWidth: 2,
       priceLineVisible: false,
+      autoscaleInfoProvider: chart.title === "Trend Participation" || chart.title === "Outperforming Benchmark"
+        ? () => ({ priceRange: { minValue: 0, maxValue: 100 } })
+        : undefined,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
       priceFormat: chart.percent
@@ -60,8 +64,10 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
           }
         : { type: "price", precision: 2, minMove: 0.01 },
     }));
+    const first = seriesRef.current[0];
+    if (first !== undefined) onSyncTarget?.({ chart: api, series: first, valueAt: date => pointsRef.current[0]?.find(point => point.date === date)?.value ?? undefined, isDisposed: () => chartApiRef.current !== api });
     setData();
-  }, [chart.percent, chart.series, colors, setData]);
+  }, [chart, colors, onSyncTarget, setData]);
 
   useEffect(setData, [setData]);
 
@@ -102,6 +108,7 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
           chartApiRef.current = null;
           seriesRef.current = [];
           pointsRef.current = [];
+          onSyncTarget?.(null);
         }}
         options={{
           crosshair: {
@@ -116,7 +123,7 @@ export function MarketHealthChart({ chart }: { chart: Chart }) {
       <div className="market-health-summaries">
         {chart.series.map((series) => (
           <span key={series.name}>
-            {series.name}: {format(series.summary.current, chart.percent)} · 5D {change(series.summary.change_5d, chart.percent)} · 20D {change(series.summary.change_20d, chart.percent)}
+            {series.name}: {format(series.summary.current, chart.percent)} · {series.summary.matching_count === null ? `N=${series.summary.valid_count ?? "—"}` : `${series.summary.matching_count}/${series.summary.valid_count}`} · 5D {change(series.summary.change_5d, chart.percent)} · 20D {change(series.summary.change_20d, chart.percent)}
           </span>
         ))}
       </div>
@@ -144,55 +151,16 @@ function samePoints(
 
 function metricDescription(chartTitle: string, seriesName: string) {
   switch (seriesName) {
-    case "Full Trend Alignment":
-      return "Percent of eligible stocks where close ≥ EMA20 ≥ SMA50 ≥ SMA150 ≥ SMA200; shown as a 3-session average.";
-    case "Intermediate Structure":
-      return "Percent of eligible stocks where SMA50 ≥ SMA150 ≥ SMA200.";
-    case "Long-Term Structure":
-      return "Percent of eligible stocks where SMA150 ≥ SMA200.";
-    case "Intermediate Participation":
-      return "Percent of eligible stocks where close ≥ SMA50 ≥ SMA150 ≥ SMA200; shown as a 3-session average.";
-    case "Universe within 10% of 52W high":
-      return "Percent of eligible universe stocks closing within 10% of their trailing 252-session closing high.";
-    case "Healthy Leaders within 10% of 52W high":
-      return "Percent of Healthy Leaders closing within 10% of their trailing 252-session closing high.";
-    case "Above EMA20":
-      return chartTitle === "Healthy Leader Price Health"
-        ? "Percent of Healthy Leaders closing at or above EMA20; shown as a 3-session average."
-        : "Percent of eligible universe stocks closing at or above EMA20; shown as a 3-session average.";
+    case "Above SMA20":
+      return "Percent of liquid stocks closing above their 20-session simple moving average.";
     case "Above SMA50":
-      return chartTitle === "Healthy Leader Price Health"
-        ? "Percent of Healthy Leaders closing at or above SMA50; shown as a 3-session average."
-        : "Percent of eligible universe stocks closing at or above SMA50; shown as a 3-session average.";
-    case "Above SMA200":
-      return "Percent of eligible universe stocks closing at or above SMA200; shown as a 3-session average.";
-    case "Within 5%":
-    case "Within 10%":
-    case "Within 15%": {
-      const population = chartTitle === "Healthy Leaders Near Highs"
-        ? "Healthy Leaders"
-        : "eligible universe stocks";
-      return `Percent of ${population} closing ${seriesName.toLowerCase()} of their trailing 252-session closing high.`;
-    }
-    case "New 20D Highs":
-      return "Percent of eligible stocks whose high exceeds every high from the previous 19 sessions; shown as a 5-session average.";
-    case "New 20D Lows":
-      return "Percent of eligible stocks whose low falls below every low from the previous 19 sessions; shown as a 5-session average.";
-    case "New 52W Highs":
-      return "Percent of eligible stocks whose high exceeds every high from the previous 251 sessions; shown as a 5-session average.";
-    case "New 52W Lows":
-      return "Percent of eligible stocks whose low falls below every low from the previous 251 sessions; shown as a 5-session average.";
-    case "A/D Line":
-      return "Cumulative normalized net breadth: each session adds (advancers − decliners) ÷ eligible stocks, rebased to 100.";
-    case "Healthy Leader Ratio":
-      return "Healthy Leaders divided by all RS Leaders, shown as a 3-session average.";
-    case "Equal-Weight Index":
-      return "Synthetic index using the mean daily return of eligible universe stocks, rebased to 100.";
-    case "Median-Stock Index":
-      return "Synthetic index using the median daily return of eligible universe stocks, rebased to 100.";
+      return "Percent of liquid stocks closing above their 50-session simple moving average.";
+    case "New Closing Highs": return "Percent closing strictly above every close in the prior 63 sessions.";
+    case "New Closing Lows": return "Percent closing strictly below every close in the prior 63 sessions.";
+    case "High–Low Net": return "New-closing-high percentage minus new-closing-low percentage.";
+    case "20 Sessions": return "Percent whose complete 20-session return exceeds the configured benchmark return.";
+    case "63 Sessions": return "Percent whose complete 63-session return exceeds the configured benchmark return.";
     default:
-      return chartTitle === "Market Structure"
-        ? "Configured market benchmark, rebased to 100 at the first displayed session."
-        : "";
+      return chartTitle;
   }
 }

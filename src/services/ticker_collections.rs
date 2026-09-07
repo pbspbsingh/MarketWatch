@@ -358,7 +358,11 @@ fn first_field(line: &str) -> &str {
 fn normalize_symbol(value: &str) -> Option<TickerSymbol> {
     let value = value.trim().trim_start_matches('$');
     let value = value.rsplit_once(':').map_or(value, |(_, symbol)| symbol);
-    let symbol = value.trim().to_ascii_uppercase();
+    let symbol = match value.trim().to_ascii_uppercase().as_str() {
+        "BF/B" => "BF-B".to_owned(),
+        "BRK/B" => "BRK-B".to_owned(),
+        other => other.to_owned(),
+    };
     if symbol.is_empty() || matches!(symbol.as_str(), "N/A" | "NA" | "NULL") {
         return None;
     }
@@ -380,5 +384,12 @@ mod tests {
 
         assert_eq!(collection.symbols, ["AAPL", "MSFT", "NVDA"]);
         assert_eq!(collection.skipped_rows, 4);
+    }
+
+    #[test]
+    fn normalizes_known_slash_share_classes_only() {
+        assert_eq!(normalize_symbol("BF/B").unwrap().as_str(), "BF-B");
+        assert_eq!(normalize_symbol("BRK/B").unwrap().as_str(), "BRK-B");
+        assert!(normalize_symbol("OTHER/B").is_none());
     }
 }

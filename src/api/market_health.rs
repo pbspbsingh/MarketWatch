@@ -43,35 +43,17 @@ pub fn router() -> Router<AppState> {
 #[derive(Deserialize)]
 struct TabQuery {
     tab: String,
-    rs: Option<String>,
-    threshold: Option<i32>,
+    group: Option<String>,
+    leader_sessions: Option<usize>,
 }
 
 async fn tab(
     State(state): State<AppState>,
     Query(query): Query<TabQuery>,
 ) -> Result<Json<crate::models::MarketHealthTabResponse>, ApiError> {
-    let rs_days = match query.rs.as_deref().unwrap_or("3m") {
-        "1m" => 21,
-        "3m" => 63,
-        "6m" => 126,
-        _ => {
-            return Err(api_error(
-                StatusCode::BAD_REQUEST,
-                "RS must be 1m, 3m, or 6m".to_owned(),
-            ));
-        }
-    };
-    let threshold = query.threshold.unwrap_or(80);
-    if !(0..=100).contains(&threshold) {
-        return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            "Leader threshold must be an integer from 0 to 100".to_owned(),
-        ));
-    }
     state
         .market_health
-        .tab(query.tab, rs_days, threshold)
+        .tab(query.tab, query.group, query.leader_sessions.unwrap_or(63))
         .await
         .map(Json)
         .map_err(service_error)

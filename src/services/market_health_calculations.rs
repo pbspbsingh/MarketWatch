@@ -1,1019 +1,1006 @@
 use crate::models::{
-    DailyCandle, MarketHealthChart, MarketHealthLeader, MarketHealthPoint, MarketHealthSeries,
-    MarketHealthSummary, MarketHealthTabResponse, TickerSymbol,
+    DailyCandle, MarketHealthChart, MarketHealthGroup, MarketHealthLeadingStock, MarketHealthPoint,
+    MarketHealthSeries, MarketHealthSummary, MarketHealthTabResponse, TickerSymbol,
 };
 use chrono::NaiveDate;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+
+const MIN_DOLLAR_VOLUME: f64 = 10_000_000.0;
+const SMALL_GROUP_MINIMUM: usize = 10;
 
 pub struct StockHistory {
     pub symbol: TickerSymbol,
     pub candles: Vec<DailyCandle>,
-    pub sector: Option<String>,
-    pub sector_industry_keys: Vec<String>,
     pub industry_key: Option<String>,
     pub industry_group: Option<String>,
+    pub themes: Vec<(String, String)>,
 }
 
 pub struct CalculationInput {
-    pub tab: String,
     pub histories: Vec<StockHistory>,
     pub benchmark_symbol: TickerSymbol,
     pub benchmark: Vec<DailyCandle>,
     pub display_start: NaiveDate,
     pub latest: NaiveDate,
-    pub rs_days: usize,
-    pub threshold: i32,
 }
 
 struct Stock {
     symbol: TickerSymbol,
-    sector: Option<String>,
-    sector_industry_keys: Vec<String>,
     industry_key: Option<String>,
     industry_group: Option<String>,
+    themes: Vec<(String, String)>,
     candles: Vec<Option<DailyCandle>>,
-    ema20: Vec<Option<f64>>,
+    sma20: Vec<Option<f64>>,
     sma50: Vec<Option<f64>>,
-    sma150: Vec<Option<f64>>,
-    sma200: Vec<Option<f64>>,
-    high_close_252: Vec<Option<f64>>,
-    prior_high_19: Vec<Option<f64>>,
-    prior_low_19: Vec<Option<f64>>,
-    prior_high_251: Vec<Option<f64>>,
-    prior_low_251: Vec<Option<f64>>,
-}
-
-#[derive(Clone, Copy)]
-struct RequiredFeatures {
-    moving_averages: bool,
-    closing_high: bool,
-    price_extremes: bool,
-}
-
-impl RequiredFeatures {
-    fn for_tab(tab: &str) -> Self {
-        match tab {
-            "overview" | "leadership" => Self {
-                moving_averages: true,
-                closing_high: true,
-                price_extremes: false,
-            },
-            "leader_lists" => Self {
-                moving_averages: true,
-                closing_high: false,
-                price_extremes: false,
-            },
-            "trend_breadth" => Self {
-                moving_averages: true,
-                closing_high: false,
-                price_extremes: false,
-            },
-            "highs_breadth" => Self {
-                moving_averages: false,
-                closing_high: true,
-                price_extremes: true,
-            },
-            _ => Self {
-                moving_averages: false,
-                closing_high: false,
-                price_extremes: false,
-            },
-        }
-    }
+    adv20: Vec<Option<f64>>,
+    prior_high63: Vec<Option<f64>>,
+    prior_low63: Vec<Option<f64>>,
+    metrics: Vec<Metrics>,
+    complete_sessions: Vec<usize>,
 }
 
 impl Stock {
-    fn new(history: StockHistory, sessions: &[NaiveDate], required: RequiredFeatures) -> Self {
-        let mut by_date: std::collections::HashMap<_, _> = history
+    fn new(history: StockHistory, sessions: &[NaiveDate], latest_only: bool) -> Self {
+        let mut by_date: HashMap<_, _> = history
             .candles
             .into_iter()
-            .map(|candle| (candle.market_date, candle))
+            .map(|c| (c.market_date, c))
             .collect();
-        let candles: Vec<_> = sessions.iter().map(|date| by_date.remove(date)).collect();
+        let candles: Vec<_> = sessions
+            .iter()
+            .map(|date| {
+                by_date
+                    .remove(date)
+                    .filter(|c| c.close.is_finite() && c.close > 0.0 && c.volume >= 0)
+            })
+            .collect();
         let closes: Vec<_> = candles
             .iter()
-            .map(|candle| candle.as_ref().map(|candle| candle.close))
+            .map(|c| c.as_ref().map(|c| c.close))
             .collect();
-        let unavailable = || vec![None; sessions.len()];
-        let (ema20, sma50, sma150, sma200) = if required.moving_averages {
-            (
-                ema(&closes, 20),
-                sma(&closes, 50),
-                sma(&closes, 150),
-                sma(&closes, 200),
-            )
-        } else {
-            (unavailable(), unavailable(), unavailable(), unavailable())
-        };
-        let high_close_252 = if required.closing_high {
-            rolling_extreme(&closes, 252, Extreme::Maximum)
-        } else {
-            unavailable()
-        };
-        let (prior_high_19, prior_low_19, prior_high_251, prior_low_251) =
-            if required.price_extremes {
-                let highs: Vec<_> = candles
-                    .iter()
-                    .map(|candle| candle.as_ref().map(|candle| candle.high))
-                    .collect();
-                let lows: Vec<_> = candles
-                    .iter()
-                    .map(|candle| candle.as_ref().map(|candle| candle.low))
-                    .collect();
-                (
-                    prior_extreme(&highs, 19, Extreme::Maximum),
-                    prior_extreme(&lows, 19, Extreme::Minimum),
-                    prior_extreme(&highs, 251, Extreme::Maximum),
-                    prior_extreme(&lows, 251, Extreme::Minimum),
-                )
-            } else {
-                (unavailable(), unavailable(), unavailable(), unavailable())
-            };
+        let dollar_volume: Vec<_> = candles
+            .iter()
+            .map(|c| c.as_ref().map(|c| c.close * c.volume as f64))
+            .collect();
+        let complete_sessions = consecutive_valid(&closes);
         Self {
             symbol: history.symbol,
-            sector: history.sector,
-            sector_industry_keys: history.sector_industry_keys,
             industry_key: history.industry_key,
             industry_group: history.industry_group,
-            ema20,
-            sma50,
-            sma150,
-            sma200,
-            high_close_252,
-            prior_high_19,
-            prior_low_19,
-            prior_high_251,
-            prior_low_251,
+            themes: history.themes,
             candles,
+            sma20: averages(&closes, 20, latest_only),
+            sma50: averages(&closes, 50, latest_only),
+            adv20: averages(&dollar_volume, 20, latest_only),
+            prior_high63: extremes(&closes, 63, true, latest_only),
+            prior_low63: extremes(&closes, 63, false, latest_only),
+            metrics: Vec::new(),
+            complete_sessions,
         }
     }
-
-    fn candle(&self, index: usize) -> Option<&DailyCandle> {
-        self.candles.get(index)?.as_ref()
+    fn close(&self, i: usize) -> Option<f64> {
+        Some(self.candles.get(i)?.as_ref()?.close)
     }
-
-    fn close(&self, index: usize) -> Option<f64> {
-        Some(self.candle(index)?.close)
+    fn eligible(&self, i: usize) -> bool {
+        self.adv20
+            .get(i)
+            .copied()
+            .flatten()
+            .is_some_and(|v| v > MIN_DOLLAR_VOLUME)
     }
-
-    fn near(&self, index: usize, percent: f64) -> Option<bool> {
-        Some(self.close(index)? >= self.high_close_252[index]? * (1.0 - percent))
-    }
-
-    fn rs_return(&self, index: usize, sessions: usize) -> Option<f64> {
-        Some(self.close(index)? / self.close(index.checked_sub(sessions)?)? - 1.0)
-    }
-}
-
-pub fn calculate(input: CalculationInput) -> MarketHealthTabResponse {
-    let required = RequiredFeatures::for_tab(&input.tab);
-    let sessions: Vec<_> = input
-        .benchmark
-        .iter()
-        .map(|candle| candle.market_date)
-        .filter(|date| *date <= input.latest)
-        .collect();
-    let stocks: Vec<_> = input
-        .histories
-        .into_iter()
-        .map(|history| Stock::new(history, &sessions, required))
-        .collect();
-    let (charts, leaders, healthy_leaders) = match input.tab.as_str() {
-        "overview" => {
-            let ranks = RankHistory::new(&stocks, sessions.len(), input.rs_days);
-            (
-                overview(
-                    &stocks,
-                    &sessions,
-                    &ranks,
-                    input.threshold,
-                    input.display_start,
-                ),
-                Vec::new(),
-                Vec::new(),
-            )
+    fn in_group(&self, tab: &str, key: &str) -> bool {
+        match tab {
+            "industries" => self.industry_key.as_deref() == Some(key),
+            "themes" => self.themes.iter().any(|(k, _)| k == key),
+            _ => true,
         }
-        "trend_breadth" => (
-            trend(&stocks, &sessions, input.display_start),
-            Vec::new(),
-            Vec::new(),
-        ),
-        "highs_breadth" => (
-            highs(&stocks, &sessions, input.display_start),
-            Vec::new(),
-            Vec::new(),
-        ),
-        "leadership" => {
-            let ranks = RankHistory::new(&stocks, sessions.len(), input.rs_days);
-            (
-                leadership(
-                    &stocks,
-                    &sessions,
-                    &ranks,
-                    input.threshold,
-                    input.display_start,
-                ),
-                Vec::new(),
-                Vec::new(),
-            )
-        }
-        "leader_lists" => {
-            let ranks = RankHistory::new(&stocks, sessions.len(), input.rs_days);
-            let (leaders, healthy) = leader_lists(
-                &stocks,
-                &ranks,
-                sessions.len().checked_sub(1),
-                input.threshold,
-            );
-            (Vec::new(), leaders, healthy)
-        }
-        "market_structure" => (
-            structure(
-                &stocks,
-                &sessions,
-                &input.benchmark_symbol,
-                &input.benchmark,
-                input.display_start,
-            ),
-            Vec::new(),
-            Vec::new(),
-        ),
-        _ => (Vec::new(), Vec::new(), Vec::new()),
-    };
-    MarketHealthTabResponse {
-        tab: input.tab,
-        latest_session: input.latest,
-        charts,
-        leaders,
-        healthy_leaders,
     }
-}
-
-fn overview(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    ranks: &RankHistory,
-    threshold: i32,
-    start: NaiveDate,
-) -> Vec<MarketHealthChart> {
-    vec![
-        chart(
-            "Trend Health",
-            true,
-            vec![
-                series(
-                    "Full Trend Alignment",
-                    breadth(stocks, dates, full),
-                    3,
-                    start,
-                ),
-                series(
-                    "Intermediate Structure",
-                    breadth(stocks, dates, intermediate),
-                    1,
-                    start,
-                ),
-                series(
-                    "Long-Term Structure",
-                    breadth(stocks, dates, long),
-                    1,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "Breakout Readiness",
-            true,
-            vec![
-                series(
-                    "Universe within 10% of 52W high",
-                    breadth(stocks, dates, |stock, i| stock.near(i, 0.10)),
-                    3,
-                    start,
-                ),
-                series(
-                    "Healthy Leaders within 10% of 52W high",
-                    healthy_breadth(stocks, dates, ranks, threshold, |stock, i| {
-                        stock.near(i, 0.10)
-                    }),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-    ]
-}
-
-fn trend(stocks: &[Stock], dates: &[NaiveDate], start: NaiveDate) -> Vec<MarketHealthChart> {
-    vec![
-        chart(
-            "Structural Trend Hierarchy",
-            true,
-            vec![
-                series(
-                    "Long-Term Structure",
-                    breadth(stocks, dates, long),
-                    1,
-                    start,
-                ),
-                series(
-                    "Intermediate Structure",
-                    breadth(stocks, dates, intermediate),
-                    1,
-                    start,
-                ),
-                series(
-                    "Intermediate Participation",
-                    breadth(stocks, dates, participation),
-                    3,
-                    start,
-                ),
-                series(
-                    "Full Trend Alignment",
-                    breadth(stocks, dates, full),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "Fast Breadth",
-            true,
-            vec![
-                series(
-                    "Above EMA20",
-                    breadth(stocks, dates, |stock, i| {
-                        Some(stock.close(i)? >= stock.ema20[i]?)
-                    }),
-                    3,
-                    start,
-                ),
-                series(
-                    "Above SMA50",
-                    breadth(stocks, dates, |stock, i| {
-                        Some(stock.close(i)? >= stock.sma50[i]?)
-                    }),
-                    3,
-                    start,
-                ),
-                series(
-                    "Above SMA200",
-                    breadth(stocks, dates, |stock, i| {
-                        Some(stock.close(i)? >= stock.sma200[i]?)
-                    }),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-    ]
-}
-
-fn highs(stocks: &[Stock], dates: &[NaiveDate], start: NaiveDate) -> Vec<MarketHealthChart> {
-    vec![
-        chart(
-            "Near-High Participation",
-            true,
-            vec![
-                series(
-                    "Within 5%",
-                    breadth(stocks, dates, |s, i| s.near(i, 0.05)),
-                    3,
-                    start,
-                ),
-                series(
-                    "Within 10%",
-                    breadth(stocks, dates, |s, i| s.near(i, 0.10)),
-                    3,
-                    start,
-                ),
-                series(
-                    "Within 15%",
-                    breadth(stocks, dates, |s, i| s.near(i, 0.15)),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "20D Highs / Lows",
-            true,
-            vec![
-                series(
-                    "New 20D Highs",
-                    breadth(stocks, dates, |s, i| new_high(s, i, 19)),
-                    5,
-                    start,
-                ),
-                series(
-                    "New 20D Lows",
-                    breadth(stocks, dates, |s, i| new_low(s, i, 19)),
-                    5,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "52W Highs / Lows",
-            true,
-            vec![
-                series(
-                    "New 52W Highs",
-                    breadth(stocks, dates, |s, i| new_high(s, i, 251)),
-                    5,
-                    start,
-                ),
-                series(
-                    "New 52W Lows",
-                    breadth(stocks, dates, |s, i| new_low(s, i, 251)),
-                    5,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "Advance / Decline Line",
-            false,
-            vec![series(
-                "A/D Line",
-                normalize_additive(ad(stocks, dates), start),
-                1,
-                start,
-            )],
-        ),
-    ]
-}
-
-fn leadership(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    ranks: &RankHistory,
-    threshold: i32,
-    start: NaiveDate,
-) -> Vec<MarketHealthChart> {
-    vec![
-        chart(
-            "Healthy Leader Ratio",
-            true,
-            vec![series(
-                "Healthy Leader Ratio",
-                healthy_ratio(stocks, dates, ranks, threshold),
-                3,
-                start,
-            )],
-        ),
-        chart(
-            "Healthy Leaders Near Highs",
-            true,
-            vec![
-                series(
-                    "Within 5%",
-                    healthy_breadth(stocks, dates, ranks, threshold, |s, i| s.near(i, 0.05)),
-                    3,
-                    start,
-                ),
-                series(
-                    "Within 10%",
-                    healthy_breadth(stocks, dates, ranks, threshold, |s, i| s.near(i, 0.10)),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-        chart(
-            "Healthy Leader Price Health",
-            true,
-            vec![
-                series(
-                    "Above EMA20",
-                    healthy_breadth(stocks, dates, ranks, threshold, |s, i| {
-                        Some(s.close(i)? >= s.ema20[i]?)
-                    }),
-                    3,
-                    start,
-                ),
-                series(
-                    "Above SMA50",
-                    healthy_breadth(stocks, dates, ranks, threshold, |s, i| {
-                        Some(s.close(i)? >= s.sma50[i]?)
-                    }),
-                    3,
-                    start,
-                ),
-            ],
-        ),
-    ]
-}
-
-fn structure(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    benchmark_symbol: &TickerSymbol,
-    benchmark: &[DailyCandle],
-    start: NaiveDate,
-) -> Vec<MarketHealthChart> {
-    let by_date: HashMap<_, _> = benchmark
-        .iter()
-        .map(|candle| (candle.market_date, candle.close))
-        .collect();
-    let benchmark = dates
-        .iter()
-        .filter_map(|date| Some((*date, *by_date.get(date)?)))
-        .collect();
-    vec![chart(
-        "Market Structure",
-        false,
-        vec![
-            series(
-                benchmark_symbol.as_str(),
-                normalize_ratio(benchmark, start),
-                1,
-                start,
-            ),
-            series(
-                "Equal-Weight Index",
-                normalize_ratio(index(stocks, dates, false), start),
-                1,
-                start,
-            ),
-            series(
-                "Median-Stock Index",
-                normalize_ratio(index(stocks, dates, true), start),
-                1,
-                start,
-            ),
-        ],
-    )]
-}
-
-fn full(stock: &Stock, i: usize) -> Option<bool> {
-    Some(
-        stock.close(i)? >= stock.ema20[i]?
-            && stock.ema20[i]? >= stock.sma50[i]?
-            && stock.sma50[i]? >= stock.sma150[i]?
-            && stock.sma150[i]? >= stock.sma200[i]?,
-    )
-}
-
-fn intermediate(stock: &Stock, i: usize) -> Option<bool> {
-    Some(stock.sma50[i]? >= stock.sma150[i]? && stock.sma150[i]? >= stock.sma200[i]?)
-}
-
-fn long(stock: &Stock, i: usize) -> Option<bool> {
-    Some(stock.sma150[i]? >= stock.sma200[i]?)
-}
-
-fn participation(stock: &Stock, i: usize) -> Option<bool> {
-    Some(stock.close(i)? >= stock.sma50[i]? && intermediate(stock, i)?)
-}
-
-fn new_high(stock: &Stock, i: usize, previous: usize) -> Option<bool> {
-    let prior = match previous {
-        19 => stock.prior_high_19[i],
-        251 => stock.prior_high_251[i],
-        _ => None,
-    }?;
-    Some(stock.candle(i)?.high > prior)
-}
-
-fn new_low(stock: &Stock, i: usize, previous: usize) -> Option<bool> {
-    let prior = match previous {
-        19 => stock.prior_low_19[i],
-        251 => stock.prior_low_251[i],
-        _ => None,
-    }?;
-    Some(stock.candle(i)?.low < prior)
-}
-
-fn breadth(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    test: impl Fn(&Stock, usize) -> Option<bool>,
-) -> Vec<(NaiveDate, f64)> {
-    dates
-        .iter()
-        .enumerate()
-        .map(|(i, date)| {
-            let (matching, eligible) = stocks.iter().fold((0usize, 0usize), |counts, stock| {
-                let Some(value) = test(stock, i) else {
-                    return counts;
-                };
-                (counts.0 + usize::from(value), counts.1 + 1)
-            });
-            if eligible == 0 {
-                (*date, f64::NAN)
-            } else {
-                (*date, 100.0 * matching as f64 / eligible as f64)
-            }
-        })
-        .collect()
-}
-
-struct RankHistory(Vec<Vec<Option<f64>>>);
-
-impl RankHistory {
-    fn new(stocks: &[Stock], session_count: usize, days: usize) -> Self {
-        Self((0..session_count).map(|i| ranks(stocks, i, days)).collect())
-    }
-
-    fn get(&self, session: usize, stock: usize) -> Option<f64> {
-        *self.0.get(session)?.get(stock)?
-    }
-}
-
-fn ranks(stocks: &[Stock], i: usize, days: usize) -> Vec<Option<f64>> {
-    let mut values: Vec<_> = stocks
-        .iter()
-        .enumerate()
-        .filter_map(|(index, stock)| Some((index, stock.rs_return(i, days)?)))
-        .collect();
-    let mut result = vec![None; stocks.len()];
-    if values.len() < 2 {
-        return result;
-    }
-    values.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let denominator = (values.len() - 1) as f64;
-    let mut start = 0;
-    while start < values.len() {
-        let mut end = start + 1;
-        while end < values.len() && values[end].1 == values[start].1 {
-            end += 1;
-        }
-        let percentile = 100.0 * (start + end - 1) as f64 / 2.0 / denominator;
-        for (stock, _) in &values[start..end] {
-            result[*stock] = Some(percentile);
-        }
-        start = end;
-    }
-    result
-}
-
-fn healthy_breadth(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    ranks: &RankHistory,
-    threshold: i32,
-    test: impl Fn(&Stock, usize) -> Option<bool>,
-) -> Vec<(NaiveDate, f64)> {
-    dates
-        .iter()
-        .enumerate()
-        .map(|(i, date)| {
-            let (matching, eligible) = stocks
-                .iter()
-                .enumerate()
-                .filter(|(stock_index, stock)| {
-                    ranks
-                        .get(i, *stock_index)
-                        .is_some_and(|rank| rank > threshold as f64)
-                        && intermediate(stock, i) == Some(true)
-                })
-                .fold((0usize, 0usize), |counts, (_, stock)| {
-                    let Some(value) = test(stock, i) else {
-                        return counts;
-                    };
-                    (counts.0 + usize::from(value), counts.1 + 1)
-                });
-            if eligible == 0 {
-                (*date, f64::NAN)
-            } else {
-                (*date, 100.0 * matching as f64 / eligible as f64)
-            }
-        })
-        .collect()
-}
-
-fn healthy_ratio(
-    stocks: &[Stock],
-    dates: &[NaiveDate],
-    ranks: &RankHistory,
-    threshold: i32,
-) -> Vec<(NaiveDate, f64)> {
-    dates
-        .iter()
-        .enumerate()
-        .map(|(i, date)| {
-            let (healthy, eligible) = stocks
-                .iter()
-                .enumerate()
-                .filter(|(stock_index, _)| {
-                    ranks
-                        .get(i, *stock_index)
-                        .is_some_and(|rank| rank > threshold as f64)
-                })
-                .fold((0usize, 0usize), |counts, (_, stock)| {
-                    let Some(value) = intermediate(stock, i) else {
-                        return counts;
-                    };
-                    (counts.0 + usize::from(value), counts.1 + 1)
-                });
-            if eligible == 0 {
-                (*date, f64::NAN)
-            } else {
-                (*date, 100.0 * healthy as f64 / eligible as f64)
-            }
-        })
-        .collect()
-}
-
-fn leader_lists(
-    stocks: &[Stock],
-    ranks: &RankHistory,
-    latest: Option<usize>,
-    threshold: i32,
-) -> (Vec<MarketHealthLeader>, Vec<MarketHealthLeader>) {
-    let Some(i) = latest else {
-        return (Vec::new(), Vec::new());
-    };
-    let mut leaders: Vec<_> = stocks
-        .iter()
-        .enumerate()
-        .filter_map(|(stock_index, stock)| {
-            let percentile = ranks.get(i, stock_index)?;
-            (percentile > threshold as f64).then(|| {
-                (
-                    stock_index,
-                    MarketHealthLeader {
-                        symbol: stock.symbol.clone(),
-                        percentile,
-                        sector: stock.sector.clone(),
-                        sector_industry_keys: stock.sector_industry_keys.clone(),
-                        industry_key: stock.industry_key.clone(),
-                        industry_group: stock.industry_group.clone(),
-                    },
-                )
-            })
-        })
-        .collect();
-    leaders.sort_by(|left, right| {
-        right
-            .1
-            .percentile
-            .total_cmp(&left.1.percentile)
-            .then_with(|| left.1.symbol.as_str().cmp(right.1.symbol.as_str()))
-    });
-    let healthy = leaders
-        .iter()
-        .filter(|(stock_index, _)| intermediate(&stocks[*stock_index], i) == Some(true))
-        .map(|(_, leader)| leader.clone())
-        .collect();
-    (
-        leaders.into_iter().map(|(_, leader)| leader).collect(),
-        healthy,
-    )
-}
-
-fn ad(stocks: &[Stock], dates: &[NaiveDate]) -> Vec<(NaiveDate, f64)> {
-    let mut cumulative = 0.0;
-    dates
-        .iter()
-        .enumerate()
-        .map(|(i, date)| {
-            let Some(previous) = i.checked_sub(1) else {
-                return (*date, f64::NAN);
-            };
-            let changes: Vec<_> = stocks
-                .iter()
-                .filter_map(|stock| {
-                    let (current, prior) = (stock.close(i)?, stock.close(previous)?);
-                    Some(if current > prior {
-                        1.0
-                    } else if current < prior {
-                        -1.0
-                    } else {
-                        0.0
-                    })
-                })
-                .collect();
-            if changes.is_empty() {
-                (*date, f64::NAN)
-            } else {
-                cumulative += changes.iter().sum::<f64>() / changes.len() as f64;
-                (*date, cumulative)
-            }
-        })
-        .collect()
-}
-
-fn index(stocks: &[Stock], dates: &[NaiveDate], median: bool) -> Vec<(NaiveDate, f64)> {
-    let mut value = 100.0;
-    let mut output = Vec::new();
-    for (i, date) in dates.iter().enumerate() {
-        let Some(previous) = i.checked_sub(1) else {
-            output.push((*date, value));
-            continue;
-        };
-        let mut returns: Vec<_> = stocks
-            .iter()
-            .filter_map(|stock| Some(stock.close(i)? / stock.close(previous)? - 1.0))
-            .collect();
-        if returns.is_empty() {
-            output.push((*date, f64::NAN));
-            continue;
-        }
-        returns.sort_by(f64::total_cmp);
-        let daily_return = if median {
-            let middle = returns.len() / 2;
-            if returns.len() % 2 == 0 {
-                (returns[middle - 1] + returns[middle]) / 2.0
-            } else {
-                returns[middle]
-            }
-        } else {
-            returns.iter().sum::<f64>() / returns.len() as f64
-        };
-        value *= 1.0 + daily_return;
-        output.push((*date, value));
-    }
-    output
-}
-
-fn normalize_additive(values: Vec<(NaiveDate, f64)>, start: NaiveDate) -> Vec<(NaiveDate, f64)> {
-    let Some(base) = values
-        .iter()
-        .find(|(date, value)| *date >= start && value.is_finite())
-        .map(|(_, value)| *value)
-    else {
-        return Vec::new();
-    };
-    values
-        .into_iter()
-        .map(|(date, value)| (date, 100.0 + value - base))
-        .collect()
-}
-
-fn normalize_ratio(values: Vec<(NaiveDate, f64)>, start: NaiveDate) -> Vec<(NaiveDate, f64)> {
-    let Some(base) = values
-        .iter()
-        .find(|(date, value)| *date >= start && value.is_finite())
-        .map(|(_, value)| *value)
-    else {
-        return Vec::new();
-    };
-    values
-        .into_iter()
-        .map(|(date, value)| (date, 100.0 * value / base))
-        .collect()
 }
 
 #[derive(Clone, Copy)]
-enum Extreme {
-    Minimum,
-    Maximum,
+struct Metrics {
+    above20: Option<bool>,
+    above50: Option<bool>,
+    high63: Option<bool>,
+    low63: Option<bool>,
+    outperform20: Option<bool>,
+    outperform63: Option<bool>,
 }
 
-fn rolling_extreme(values: &[Option<f64>], periods: usize, extreme: Extreme) -> Vec<Option<f64>> {
-    let mut output = vec![None; values.len()];
-    let mut candidates = VecDeque::<(usize, f64)>::new();
-    let mut missing = 0usize;
-    for (index, value) in values.iter().copied().enumerate() {
-        if let Some(value) = value {
-            while candidates
-                .back()
-                .is_some_and(|(_, candidate)| match extreme {
-                    Extreme::Maximum => *candidate <= value,
-                    Extreme::Minimum => *candidate >= value,
-                })
-            {
-                candidates.pop_back();
-            }
-            candidates.push_back((index, value));
-        } else {
-            missing += 1;
-        }
+pub struct PreparedAnalysis {
+    stocks: Vec<Stock>,
+    sessions: Vec<NaiveDate>,
+    benchmark: Vec<Option<f64>>,
+    benchmark_symbol: TickerSymbol,
+    display_start: NaiveDate,
+    latest: NaiveDate,
+}
 
-        if index >= periods {
-            let expired = index - periods;
-            if values[expired].is_none() {
-                missing -= 1;
-            }
-            if candidates
-                .front()
-                .is_some_and(|(candidate_index, _)| *candidate_index == expired)
-            {
-                candidates.pop_front();
-            }
-        }
-        if index + 1 >= periods && missing == 0 {
-            output[index] = candidates.front().map(|(_, value)| *value);
+impl PreparedAnalysis {
+    /// Direct-scan test oracle, independent of rolling-window state.
+    #[cfg(test)]
+    pub fn recompute_reference(&mut self) {
+        let average = |values: &[Option<f64>], period: usize| {
+            (0..values.len())
+                .map(|i| {
+                    (i + 1).checked_sub(period).and_then(|start| {
+                        values[start..=i]
+                            .iter()
+                            .copied()
+                            .sum::<Option<f64>>()
+                            .map(|v| v / period as f64)
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let extreme = |values: &[Option<f64>], maximum: bool| {
+            (0..values.len())
+                .map(|i| {
+                    i.checked_sub(63).and_then(|start| {
+                        let window = &values[start..i];
+                        if window.iter().any(Option::is_none) {
+                            None
+                        } else {
+                            window
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .reduce(|a, b| if maximum { a.max(b) } else { a.min(b) })
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        for stock in &mut self.stocks {
+            let closes: Vec<_> = stock
+                .candles
+                .iter()
+                .map(|c| c.as_ref().map(|c| c.close))
+                .collect();
+            let volumes: Vec<_> = stock
+                .candles
+                .iter()
+                .map(|c| c.as_ref().map(|c| c.close * c.volume as f64))
+                .collect();
+            stock.sma20 = average(&closes, 20);
+            stock.sma50 = average(&closes, 50);
+            stock.adv20 = average(&volumes, 20);
+            stock.prior_high63 = extreme(&closes, true);
+            stock.prior_low63 = extreme(&closes, false);
+            stock.metrics = (0..self.sessions.len())
+                .map(|i| {
+                    calculate_metrics(
+                        stock,
+                        i,
+                        [20, 63].map(|period| complete_return(&self.benchmark, i, period)),
+                    )
+                })
+                .collect();
         }
     }
-    output
+
+    pub fn new(input: CalculationInput) -> Self {
+        Self::prepare(input, false)
+    }
+
+    pub fn for_leaders(input: CalculationInput) -> Self {
+        Self::prepare(input, true)
+    }
+
+    fn prepare(input: CalculationInput, latest_only: bool) -> Self {
+        // Use the union of observed stock and benchmark sessions. A missing benchmark candle
+        // makes relative strength unavailable without compressing stock lookback windows.
+        let mut session_set = BTreeSet::new();
+        for date in input.benchmark.iter().map(|c| c.market_date).chain(
+            input
+                .histories
+                .iter()
+                .flat_map(|h| h.candles.iter().map(|c| c.market_date)),
+        ) {
+            if date <= input.latest {
+                session_set.insert(date);
+            }
+        }
+        session_set.insert(input.latest);
+        let sessions: Vec<_> = session_set.into_iter().collect();
+        let benchmark_by_date: HashMap<_, _> = input
+            .benchmark
+            .iter()
+            .map(|c| (c.market_date, c.close))
+            .collect();
+        let benchmark: Vec<_> = sessions
+            .iter()
+            .map(|date| benchmark_by_date.get(date).copied())
+            .collect();
+        let benchmark_complete = consecutive_valid(&benchmark);
+        let benchmark_returns: Vec<_> = if latest_only {
+            Vec::new()
+        } else {
+            (0..sessions.len())
+                .map(|i| {
+                    [20, 63].map(|period| window_return(&benchmark, &benchmark_complete, i, period))
+                })
+                .collect()
+        };
+        let stocks: Vec<_> = input
+            .histories
+            .into_iter()
+            .map(|h| {
+                let mut stock = Stock::new(h, &sessions, latest_only);
+                if !latest_only {
+                    stock.metrics = benchmark_returns
+                        .iter()
+                        .enumerate()
+                        .map(|(i, returns)| calculate_metrics(&stock, i, *returns))
+                        .collect();
+                }
+                stock
+            })
+            .collect();
+        Self {
+            stocks,
+            sessions,
+            benchmark,
+            benchmark_symbol: input.benchmark_symbol,
+            display_start: input.display_start,
+            latest: input.latest,
+        }
+    }
+
+    pub fn response(
+        &self,
+        tab: &str,
+        selected_group: Option<String>,
+        leader_sessions: usize,
+    ) -> MarketHealthTabResponse {
+        let stocks = &self.stocks;
+        let sessions = &self.sessions;
+        let benchmark = &self.benchmark;
+        let selected: Vec<_> = match selected_group.as_deref() {
+            Some(key) if matches!(tab, "industries" | "themes") => {
+                stocks.iter().filter(|s| s.in_group(tab, key)).collect()
+            }
+            _ => stocks.iter().collect(),
+        };
+        let charts = if tab == "leading_stocks" {
+            Vec::new()
+        } else {
+            breadth_charts(&selected, sessions, benchmark, self.display_start)
+        };
+        let groups = if matches!(tab, "industries" | "themes") {
+            group_rows(stocks, tab, sessions.len().checked_sub(1), benchmark)
+        } else {
+            Vec::new()
+        };
+        let leading_stocks = if tab == "leading_stocks" {
+            leaders(
+                stocks,
+                sessions.len().checked_sub(1),
+                benchmark,
+                leader_sessions,
+            )
+        } else {
+            Vec::new()
+        };
+        MarketHealthTabResponse {
+            tab: tab.to_owned(),
+            benchmark: self.benchmark_symbol.clone(),
+            latest_session: self.latest,
+            charts,
+            groups,
+            leading_stocks,
+            group_members: if selected_group.is_some() {
+                selected
+                    .iter()
+                    .filter(|s| s.eligible(sessions.len() - 1))
+                    .map(|s| s.symbol.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            selected_group,
+            leader_sessions,
+            eligible_count: selected
+                .iter()
+                .filter(|s| s.eligible(sessions.len() - 1))
+                .count(),
+            universe_count: selected.len(),
+        }
+    }
 }
 
-fn prior_extreme(values: &[Option<f64>], periods: usize, extreme: Extreme) -> Vec<Option<f64>> {
-    let rolling = rolling_extreme(values, periods, extreme);
-    (0..values.len())
-        .map(|index| index.checked_sub(1).and_then(|prior| rolling[prior]))
+fn metrics(stock: &Stock, i: usize, _benchmark: &[Option<f64>]) -> Metrics {
+    stock.metrics[i]
+}
+
+fn calculate_metrics(stock: &Stock, i: usize, benchmark_returns: [Option<f64>; 2]) -> Metrics {
+    if !stock.eligible(i) {
+        return Metrics {
+            above20: None,
+            above50: None,
+            high63: None,
+            low63: None,
+            outperform20: None,
+            outperform63: None,
+        };
+    }
+    let close = stock.close(i);
+    Metrics {
+        above20: close
+            .zip(stock.sma20[i])
+            .zip(stock.sma50[i])
+            .map(|((a, b), _)| a > b),
+        above50: close.zip(stock.sma50[i]).map(|(a, b)| a > b),
+        high63: close.zip(stock.prior_high63[i]).map(|(a, b)| a > b),
+        low63: close.zip(stock.prior_low63[i]).map(|(a, b)| a < b),
+        outperform20: complete_stock_return(stock, i, 20)
+            .zip(benchmark_returns[0])
+            .map(|(a, b)| a > b),
+        outperform63: complete_stock_return(stock, i, 63)
+            .zip(benchmark_returns[1])
+            .map(|(a, b)| a > b),
+    }
+}
+
+fn breadth_charts(
+    stocks: &[&Stock],
+    dates: &[NaiveDate],
+    benchmark: &[Option<f64>],
+    start: NaiveDate,
+) -> Vec<MarketHealthChart> {
+    // Count all six measures together; the net reuses the high/low counts.
+    let counts: Vec<[(usize, usize); 6]> = (0..dates.len())
+        .map(|i| {
+            let mut counts = [(0, 0); 6];
+            for stock in stocks {
+                let m = metrics(stock, i, benchmark);
+                for (count, value) in counts.iter_mut().zip([
+                    m.above20,
+                    m.above50,
+                    m.high63,
+                    m.low63,
+                    m.outperform20,
+                    m.outperform63,
+                ]) {
+                    if let Some(matches) = value {
+                        count.0 += usize::from(matches);
+                        count.1 += 1;
+                    }
+                }
+            }
+            counts
+        })
+        .collect();
+    vec![
+        chart(
+            "Trend Participation",
+            vec![
+                series("Above SMA20", &counts, dates, start, 0),
+                series("Above SMA50", &counts, dates, start, 1),
+            ],
+        ),
+        chart(
+            "63-Session Closing Highs / Lows",
+            vec![
+                series("New Closing Highs", &counts, dates, start, 2),
+                series("New Closing Lows", &counts, dates, start, 3),
+                net_series(&counts, dates, start),
+            ],
+        ),
+        chart(
+            "Outperforming Benchmark",
+            vec![
+                series("20 Sessions", &counts, dates, start, 4),
+                series("63 Sessions", &counts, dates, start, 5),
+            ],
+        ),
+    ]
+}
+
+fn series(
+    name: &str,
+    counts: &[[(usize, usize); 6]],
+    dates: &[NaiveDate],
+    start: NaiveDate,
+    metric: usize,
+) -> MarketHealthSeries {
+    let all: Vec<_> = dates
+        .iter()
+        .enumerate()
+        .map(|(i, date)| {
+            let (matching, valid) = counts[i][metric];
+            (*date, matching, valid)
+        })
+        .collect();
+    let points = all
+        .iter()
+        .filter(|(date, _, _)| *date >= start)
+        .map(|(date, matching, valid)| MarketHealthPoint {
+            date: *date,
+            value: (*valid > 0).then(|| percent(*matching, *valid)),
+            matching_count: *matching,
+            valid_count: *valid,
+        })
+        .collect();
+    let at = |offset: usize| {
+        all.len()
+            .checked_sub(1 + offset)
+            .and_then(|i| all.get(i))
+            .and_then(|(_, m, v)| (*v > 0).then_some((percent(*m, *v), *m, *v)))
+    };
+    let current = at(0);
+    MarketHealthSeries {
+        name: name.into(),
+        points,
+        summary: MarketHealthSummary {
+            current: current.map(|v| v.0),
+            change_5d: current.zip(at(5)).map(|(a, b)| a.0 - b.0),
+            change_20d: current.zip(at(20)).map(|(a, b)| a.0 - b.0),
+            matching_count: current.map(|v| v.1),
+            valid_count: current.map(|v| v.2),
+        },
+    }
+}
+
+fn net_series(
+    counts: &[[(usize, usize); 6]],
+    dates: &[NaiveDate],
+    start: NaiveDate,
+) -> MarketHealthSeries {
+    let points: Vec<_> = dates
+        .iter()
+        .enumerate()
+        .filter(|(_, date)| **date >= start)
+        .map(|(i, date)| {
+            let (highs, high_valid) = counts[i][2];
+            let (lows, low_valid) = counts[i][3];
+            let valid = high_valid.min(low_valid);
+            let value = (valid > 0).then(|| percent(highs, high_valid) - percent(lows, low_valid));
+            MarketHealthPoint {
+                date: *date,
+                value,
+                matching_count: 0,
+                valid_count: valid,
+            }
+        })
+        .collect();
+    let current = points.last().and_then(|p| p.value);
+    let change_5d = current
+        .zip(points.len().checked_sub(6).and_then(|i| points[i].value))
+        .map(|(a, b)| a - b);
+    let change_20d = current
+        .zip(points.len().checked_sub(21).and_then(|i| points[i].value))
+        .map(|(a, b)| a - b);
+    let valid = points.last().map(|p| p.valid_count);
+    MarketHealthSeries {
+        name: "High–Low Net".into(),
+        points,
+        summary: MarketHealthSummary {
+            current,
+            change_5d,
+            change_20d,
+            matching_count: None,
+            valid_count: valid,
+        },
+    }
+}
+
+fn chart(title: &str, series: Vec<MarketHealthSeries>) -> MarketHealthChart {
+    MarketHealthChart {
+        title: title.into(),
+        percent: true,
+        series,
+    }
+}
+fn percent(matching: usize, valid: usize) -> f64 {
+    100.0 * matching as f64 / valid as f64
+}
+
+fn group_rows(
+    stocks: &[Stock],
+    tab: &str,
+    latest: Option<usize>,
+    benchmark: &[Option<f64>],
+) -> Vec<MarketHealthGroup> {
+    let Some(i) = latest else { return Vec::new() };
+    let mut groups = BTreeMap::<(String, String), Vec<&Stock>>::new();
+    for stock in stocks {
+        if tab == "industries" {
+            if let (Some(key), Some(name)) = (&stock.industry_key, &stock.industry_group) {
+                groups
+                    .entry((key.clone(), name.clone()))
+                    .or_default()
+                    .push(stock);
+            }
+        } else {
+            for (key, name) in &stock.themes {
+                let members = groups.entry((key.clone(), name.clone())).or_default();
+                if !members.iter().any(|s| s.symbol == stock.symbol) {
+                    members.push(stock);
+                }
+            }
+        }
+    }
+    groups
+        .into_iter()
+        .map(|((key, name), members)| {
+            let values: Vec<_> = members.iter().map(|s| metrics(s, i, benchmark)).collect();
+            let eligible_count = members.iter().filter(|s| s.eligible(i)).count();
+            let valid_count =
+                |pick: fn(Metrics) -> Option<bool>| values.iter().filter_map(|m| pick(*m)).count();
+            let pct = |pick: fn(Metrics) -> Option<bool>| {
+                let valid: Vec<_> = values.iter().filter_map(|m| pick(*m)).collect();
+                (valid.len() >= SMALL_GROUP_MINIMUM)
+                    .then(|| percent(valid.iter().filter(|v| **v).count(), valid.len()))
+            };
+            let historical_sma50 = |offset: usize| {
+                i.checked_sub(offset).and_then(|index| {
+                    let valid: Vec<_> = members
+                        .iter()
+                        .filter_map(|s| metrics(s, index, benchmark).above50)
+                        .collect();
+                    (valid.len() >= SMALL_GROUP_MINIMUM)
+                        .then(|| percent(valid.iter().filter(|v| **v).count(), valid.len()))
+                })
+            };
+            let current_sma50 = pct(|m| m.above50);
+            MarketHealthGroup {
+                key,
+                name,
+                member_count: members.len(),
+                eligible_count,
+                above_sma20_valid_count: valid_count(|m| m.above20),
+                above_sma50_valid_count: valid_count(|m| m.above50),
+                new_high_valid_count: valid_count(|m| m.high63),
+                new_low_valid_count: valid_count(|m| m.low63),
+                outperform_20_valid_count: valid_count(|m| m.outperform20),
+                outperform_63_valid_count: valid_count(|m| m.outperform63),
+                above_sma20_percent: pct(|m| m.above20),
+                above_sma50_percent: current_sma50,
+                new_high_percent: pct(|m| m.high63),
+                new_low_percent: pct(|m| m.low63),
+                outperform_20_percent: pct(|m| m.outperform20),
+                outperform_63_percent: pct(|m| m.outperform63),
+                small_group: eligible_count < SMALL_GROUP_MINIMUM,
+                above_sma50_change_5d: current_sma50.zip(historical_sma50(5)).map(|(a, b)| a - b),
+                above_sma50_change_20d: current_sma50.zip(historical_sma50(20)).map(|(a, b)| a - b),
+            }
+        })
         .collect()
+}
+
+fn leaders(
+    stocks: &[Stock],
+    latest: Option<usize>,
+    benchmark: &[Option<f64>],
+    leader_sessions: usize,
+) -> Vec<MarketHealthLeadingStock> {
+    let Some(i) = latest else { return Vec::new() };
+    let benchmark_20 = complete_return(benchmark, i, 20);
+    let benchmark_selected = complete_return(benchmark, i, leader_sessions);
+    let mut output: Vec<_> = stocks
+        .iter()
+        .filter_map(|s| {
+            if !s.eligible(i) {
+                return None;
+            }
+            let close = s.close(i)?;
+            let return_20 = complete_stock_return(s, i, 20)?;
+            let return_selected = complete_stock_return(s, i, leader_sessions)?;
+            let excess_20 = return_20 - benchmark_20?;
+            let excess_selected = return_selected - benchmark_selected?;
+            if excess_selected <= 0.0 {
+                return None;
+            }
+            let high = s.prior_high63[i];
+            Some(MarketHealthLeadingStock {
+                symbol: s.symbol.clone(),
+                return_20,
+                return_selected,
+                excess_20,
+                excess_selected,
+                above_sma20: close > s.sma20[i]?,
+                above_sma50: s.sma50[i].map(|v| close > v),
+                distance_from_high_63: high.map(|v| close / v - 1.0),
+                new_high_63: high.map(|v| close > v),
+                adv20: s.adv20[i]?,
+                industry_key: s.industry_key.clone(),
+                industry_group: s.industry_group.clone(),
+                themes: s.themes.iter().map(|(_, name)| name.clone()).collect(),
+            })
+        })
+        .collect();
+    output.sort_by(|a, b| {
+        b.excess_selected
+            .total_cmp(&a.excess_selected)
+            .then_with(|| a.symbol.as_str().cmp(b.symbol.as_str()))
+    });
+    output
 }
 
 fn sma(values: &[Option<f64>], periods: usize) -> Vec<Option<f64>> {
     let mut output = vec![None; values.len()];
     let mut sum = 0.0;
-    let mut missing = 0usize;
-    for (index, value) in values.iter().copied().enumerate() {
+    let mut valid = 0;
+    for (i, value) in values.iter().enumerate() {
+        if i >= periods
+            && let Some(old) = values[i - periods]
+        {
+            sum -= old;
+            valid -= 1;
+        }
         if let Some(value) = value {
             sum += value;
-        } else {
-            missing += 1;
+            valid += 1;
         }
-        if index >= periods {
-            if let Some(value) = values[index - periods] {
-                sum -= value;
-            } else {
-                missing -= 1;
-            }
-        }
-        if index + 1 >= periods && missing == 0 {
-            output[index] = Some(sum / periods as f64);
+        if i + 1 >= periods && valid == periods {
+            output[i] = Some(sum / periods as f64);
         }
     }
     output
 }
-
-fn ema(values: &[Option<f64>], periods: usize) -> Vec<Option<f64>> {
+fn prior_extreme(values: &[Option<f64>], periods: usize, maximum: bool) -> Vec<Option<f64>> {
     let mut output = vec![None; values.len()];
-    let multiplier = 2.0 / (periods as f64 + 1.0);
-    let mut current = None;
-    let mut consecutive = 0;
-    for i in 0..values.len() {
-        let Some(value) = values[i] else {
-            current = None;
-            consecutive = 0;
-            continue;
-        };
-        consecutive += 1;
-        current = match current {
-            Some(previous) => Some(value * multiplier + previous * (1.0 - multiplier)),
-            None if consecutive >= periods => {
-                Some(values[i + 1 - periods..=i].iter().flatten().sum::<f64>() / periods as f64)
+    let mut candidates = VecDeque::<(usize, f64)>::new();
+    let mut valid_run = 0;
+    for i in 1..values.len() {
+        if let Some(value) = values[i - 1] {
+            valid_run += 1;
+            while candidates.back().is_some_and(|(_, old)| {
+                if maximum {
+                    *old <= value
+                } else {
+                    *old >= value
+                }
+            }) {
+                candidates.pop_back();
             }
-            None => None,
-        };
-        output[i] = current;
+            candidates.push_back((i - 1, value));
+        } else {
+            valid_run = 0;
+            candidates.clear();
+        }
+        while candidates
+            .front()
+            .is_some_and(|(index, _)| *index < i.saturating_sub(periods))
+        {
+            candidates.pop_front();
+        }
+        if valid_run >= periods {
+            output[i] = candidates.front().map(|(_, value)| *value);
+        }
     }
     output
 }
+fn complete_return(values: &[Option<f64>], i: usize, periods: usize) -> Option<f64> {
+    let start = i.checked_sub(periods)?;
+    let window = values.get(start..=i)?;
+    if !window
+        .iter()
+        .all(|v| v.is_some_and(|n| n.is_finite() && n > 0.0))
+    {
+        return None;
+    }
+    Some(window[periods]? / window[0]? - 1.0)
+}
+fn complete_stock_return(stock: &Stock, i: usize, periods: usize) -> Option<f64> {
+    let start = i.checked_sub(periods)?;
+    if *stock.complete_sessions.get(i)? <= periods {
+        return None;
+    }
+    Some(stock.close(i)? / stock.close(start)? - 1.0)
+}
 
-fn smooth(values: Vec<(NaiveDate, f64)>, periods: usize) -> Vec<(NaiveDate, f64)> {
+fn consecutive_valid(values: &[Option<f64>]) -> Vec<usize> {
+    let mut run = 0;
     values
         .iter()
-        .enumerate()
-        .map(|(i, (date, _))| {
-            let Some(start) = (i + 1).checked_sub(periods) else {
-                return (*date, f64::NAN);
-            };
-            let window = &values[start..=i];
-            if window.iter().all(|(_, value)| value.is_finite()) {
-                (
-                    *date,
-                    window.iter().map(|(_, value)| value).sum::<f64>() / periods as f64,
-                )
+        .map(|value| {
+            run = if value.is_some_and(|value| value.is_finite() && value > 0.0) {
+                run + 1
             } else {
-                (*date, f64::NAN)
-            }
+                0
+            };
+            run
         })
         .collect()
 }
 
-fn series(
-    name: &str,
-    values: Vec<(NaiveDate, f64)>,
-    smoothing: usize,
-    start: NaiveDate,
-) -> MarketHealthSeries {
-    let values = smooth(values, smoothing);
-    let points: Vec<_> = values
-        .iter()
-        .copied()
-        .filter(|(date, value)| *date >= start && value.is_finite())
-        .map(|(date, value)| MarketHealthPoint { date, value })
-        .collect();
-    let current_index = values.len().checked_sub(1);
-    let value_at = |index: Option<usize>| {
-        index
-            .and_then(|index| values.get(index))
-            .map(|(_, value)| *value)
-            .filter(|value| value.is_finite())
-    };
-    let current = value_at(current_index);
-    let change = |sessions: usize| Some(current? - value_at(current_index?.checked_sub(sessions))?);
-    MarketHealthSeries {
-        name: name.into(),
-        summary: MarketHealthSummary {
-            current,
-            change_5d: change(5),
-            change_20d: change(20),
-        },
-        points,
+fn window_return(
+    values: &[Option<f64>],
+    complete: &[usize],
+    i: usize,
+    periods: usize,
+) -> Option<f64> {
+    if *complete.get(i)? <= periods {
+        return None;
     }
+    Some(values[i]? / values[i - periods]? - 1.0)
 }
 
-fn chart(title: &str, percent: bool, series: Vec<MarketHealthSeries>) -> MarketHealthChart {
-    MarketHealthChart {
-        title: title.into(),
-        percent,
-        series,
+// Snapshot requests only need the final window, not historical indicator arrays.
+fn averages(values: &[Option<f64>], periods: usize, latest_only: bool) -> Vec<Option<f64>> {
+    if !latest_only {
+        return sma(values, periods);
+    }
+    let mut result = vec![None; values.len()];
+    if let Some(start) = values.len().checked_sub(periods) {
+        result[values.len() - 1] = values[start..]
+            .iter()
+            .copied()
+            .sum::<Option<f64>>()
+            .map(|sum| sum / periods as f64);
+    }
+    result
+}
+
+fn extremes(
+    values: &[Option<f64>],
+    periods: usize,
+    maximum: bool,
+    latest_only: bool,
+) -> Vec<Option<f64>> {
+    if !latest_only {
+        return prior_extreme(values, periods, maximum);
+    }
+    let mut result = vec![None; values.len()];
+    if let Some(start) = values.len().checked_sub(periods + 1) {
+        let window = &values[start..values.len() - 1];
+        if window.iter().all(Option::is_some) {
+            result[values.len() - 1] = window
+                .iter()
+                .flatten()
+                .copied()
+                .reduce(|a, b| if maximum { a.max(b) } else { a.min(b) });
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Days;
+
+    fn candles(count: usize, slope: f64, volume: i64) -> Vec<DailyCandle> {
+        let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        (0..count)
+            .map(|i| {
+                let close = 100.0 + slope * i as f64;
+                DailyCandle {
+                    market_date: start.checked_add_days(Days::new(i as u64)).unwrap(),
+                    open: close,
+                    high: close,
+                    low: close,
+                    close,
+                    volume,
+                }
+            })
+            .collect()
+    }
+
+    fn history(symbol: &str, candles: Vec<DailyCandle>) -> StockHistory {
+        StockHistory {
+            symbol: TickerSymbol::parse(symbol).unwrap(),
+            candles,
+            industry_key: None,
+            industry_group: None,
+            themes: vec![("1".into(), "Theme".into()), ("1".into(), "Theme".into())],
+        }
+    }
+    #[test]
+    fn strict_threshold_and_missing_window() {
+        let mut v = vec![Some(1.0); 20];
+        v[3] = None;
+        assert_eq!(sma(&v, 20)[19], None);
+    }
+
+    #[test]
+    fn rolling_windows_match_direct_calculation_with_gaps() {
+        let values: Vec<_> = (0..400)
+            .map(|i| {
+                if i == 75 || i == 170 {
+                    None
+                } else {
+                    Some(100.0 + ((i * 37) % 89) as f64 / 8.0)
+                }
+            })
+            .collect();
+        let complete = consecutive_valid(&values);
+        for periods in [20, 50, 63, 252] {
+            let average = sma(&values, periods);
+            let highs = prior_extreme(&values, periods, true);
+            let lows = prior_extreme(&values, periods, false);
+            for i in 0..values.len() {
+                let expected = (i + 1).checked_sub(periods).and_then(|start| {
+                    values[start..=i]
+                        .iter()
+                        .copied()
+                        .sum::<Option<f64>>()
+                        .map(|v| v / periods as f64)
+                });
+                assert_eq!(average[i], expected);
+                for (actual, maximum) in [(highs[i], true), (lows[i], false)] {
+                    let expected = i.checked_sub(periods).and_then(|start| {
+                        let window = &values[start..i];
+                        if window.iter().any(Option::is_none) {
+                            None
+                        } else {
+                            window
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .reduce(|a, b| if maximum { a.max(b) } else { a.min(b) })
+                        }
+                    });
+                    assert_eq!(actual, expected);
+                }
+                assert_eq!(
+                    window_return(&values, &complete, i, periods),
+                    complete_return(&values, i, periods)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn snapshot_leaders_match_full_history_calculation() {
+        for count in [21, 50, 64, 300] {
+            let input = || CalculationInput {
+                histories: vec![history("FAST", candles(count, 1.0, 200_000))],
+                benchmark_symbol: TickerSymbol::parse("QQQ").unwrap(),
+                benchmark: candles(count, 0.1, 200_000),
+                display_start: candles(count, 0.0, 0)[0].market_date,
+                latest: candles(count, 0.0, 0)[count - 1].market_date,
+            };
+            let full = PreparedAnalysis::new(input());
+            let snapshot = PreparedAnalysis::for_leaders(input());
+            for horizon in [20, 63, 252] {
+                assert_eq!(
+                    serde_json::to_value(full.response("leading_stocks", None, horizon)).unwrap(),
+                    serde_json::to_value(snapshot.response("leading_stocks", None, horizon))
+                        .unwrap()
+                );
+            }
+        }
+    }
+    #[test]
+    fn breakout_needs_current_plus_63_prior() {
+        let v: Vec<_> = (1..=64).map(|n| Some(n as f64)).collect();
+        let h = prior_extreme(&v, 63, true);
+        assert_eq!(h[62], None);
+        assert_eq!(h[63], Some(63.0));
+    }
+
+    #[test]
+    fn calculation_uses_configured_benchmark_and_keeps_missing_benchmark_gap() {
+        let mut benchmark = candles(70, 0.1, 1_000_000);
+        benchmark.remove(40);
+        let latest = candles(70, 0.0, 0).last().unwrap().market_date;
+        let response = PreparedAnalysis::new(CalculationInput {
+            histories: vec![history("FAST", candles(70, 1.0, 200_000))],
+            benchmark_symbol: TickerSymbol::parse("QQQ").unwrap(),
+            benchmark,
+            display_start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            latest,
+        });
+        let response = response.response("market_breadth", None, 63);
+        assert_eq!(response.benchmark.as_str(), "QQQ");
+        assert!(response.charts[0].series[0].summary.current.is_some());
+        assert_eq!(response.charts[2].series[1].summary.current, None);
+    }
+
+    #[test]
+    fn theme_membership_is_deduplicated_and_strict_liquidity_is_excluded() {
+        let benchmark = candles(70, 0.1, 1_000_000);
+        let latest = benchmark.last().unwrap().market_date;
+        let response = PreparedAnalysis::new(CalculationInput {
+            histories: vec![history("EXACT", candles(70, 0.0, 100_000))],
+            benchmark_symbol: TickerSymbol::parse("DIA").unwrap(),
+            benchmark,
+            display_start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            latest,
+        });
+        let response = response.response("themes", None, 63);
+        assert_eq!(response.groups.len(), 1);
+        assert_eq!(response.groups[0].member_count, 1);
+        assert_eq!(response.groups[0].eligible_count, 0);
+    }
+
+    fn prepared(histories: Vec<StockHistory>, benchmark: Vec<DailyCandle>) -> PreparedAnalysis {
+        let latest = benchmark.last().unwrap().market_date;
+        PreparedAnalysis::new(CalculationInput {
+            histories,
+            benchmark_symbol: TickerSymbol::parse("VTI").unwrap(),
+            display_start: benchmark[0].market_date,
+            latest,
+            benchmark,
+        })
+    }
+
+    #[test]
+    fn leader_horizon_changes_membership_and_order_without_changing_breadth() {
+        let mut recent = candles(70, 0.0, 1_000_000);
+        let mut established = recent.clone();
+        for (i, candle) in recent.iter_mut().enumerate() {
+            candle.close += i.saturating_sub(49) as f64 * 2.0;
+        }
+        for (i, candle) in established.iter_mut().enumerate() {
+            candle.close += i.min(49) as f64 * 2.0;
+        }
+        let analysis = prepared(
+            vec![
+                history("RECENT", recent),
+                history("ESTABLISHED", established),
+            ],
+            candles(70, 0.1, 1_000_000),
+        );
+        let long = analysis.response("leading_stocks", None, 63);
+        assert_eq!(long.leading_stocks.len(), 2);
+        assert_eq!(long.leading_stocks[0].symbol.as_str(), "ESTABLISHED");
+        let short = analysis.response("leading_stocks", None, 20);
+        assert_eq!(short.leader_sessions, 20);
+        assert_eq!(short.leading_stocks.len(), 1);
+        assert_eq!(short.leading_stocks[0].symbol.as_str(), "RECENT");
+        assert_eq!(
+            serde_json::to_value(analysis.response("market_breadth", None, 20).charts).unwrap(),
+            serde_json::to_value(analysis.response("market_breadth", None, 252).charts).unwrap()
+        );
+        assert!(
+            analysis
+                .response("leading_stocks", None, 252)
+                .leading_stocks
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn recent_leaders_do_not_require_unrelated_63_session_context() {
+        let analysis = prepared(
+            vec![history("NEW", candles(21, 1.0, 1_000_000))],
+            candles(21, 0.0, 1_000_000),
+        );
+        let short = analysis.response("leading_stocks", None, 20);
+        assert_eq!(short.leading_stocks.len(), 1);
+        assert_eq!(short.leading_stocks[0].above_sma50, None);
+        assert_eq!(short.leading_stocks[0].distance_from_high_63, None);
+    }
+
+    #[test]
+    fn liquidity_is_average_of_products_and_missing_latest_is_not_relabelled() {
+        let mut data = candles(70, 0.0, 0);
+        for (i, c) in data.iter_mut().enumerate() {
+            c.close = if i % 2 == 0 { 10.0 } else { 100.0 };
+            c.volume = if i % 2 == 0 { 1_000_000 } else { 100_000 };
+        }
+        let analysis = prepared(vec![history("EXACT", data)], candles(70, 0.0, 1_000_000));
+        assert_eq!(
+            analysis.response("market_breadth", None, 63).eligible_count,
+            0
+        );
+        let analysis = prepared(
+            vec![history("STALE", candles(69, 1.0, 1_000_000))],
+            candles(70, 0.0, 1_000_000),
+        );
+        let response = analysis.response("market_breadth", None, 63);
+        assert_eq!(response.eligible_count, 0);
+        let last = response.charts[0].series[0].points.last().unwrap();
+        assert_eq!(last.date, response.latest_session);
+        assert_eq!(last.value, None);
+    }
+
+    #[test]
+    fn small_group_coverage_and_equality_are_explicit() {
+        let stocks = (0..10)
+            .map(|i| history(&format!("S{i}"), candles(70, 0.0, 1_000_000)))
+            .collect();
+        let analysis = prepared(stocks, candles(70, 0.0, 1_000_000));
+        let response = analysis.response("themes", Some("1".into()), 63);
+        assert_eq!(response.groups[0].member_count, 10);
+        assert_eq!(response.groups[0].outperform_63_valid_count, 10);
+        assert_eq!(response.groups[0].outperform_63_percent, Some(0.0));
+        assert_eq!(response.group_members.len(), 10);
+        assert_eq!(response.charts[1].series[0].summary.current, Some(0.0));
+        assert_eq!(response.charts[1].series[1].summary.current, Some(0.0));
     }
 }

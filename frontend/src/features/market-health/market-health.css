@@ -32,41 +32,6 @@
   gap: 0.75rem;
 }
 
-.market-health-header .MuiToggleButtonGroup-root {
-  height: 1.65rem;
-  flex-shrink: 0;
-}
-
-.market-health-header .MuiToggleButton-root {
-  padding: 0 0.5rem;
-  font-size: 0.65rem;
-  line-height: 1;
-}
-
-.market-health-leader-control {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.65rem;
-  font-weight: 400;
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.market-health-leader-control .MuiTextField-root {
-  width: 3.5rem;
-}
-
-.market-health-leader-control .MuiInputBase-root {
-  height: 1.65rem;
-  font-size: 0.65rem;
-}
-
-.market-health-leader-control .MuiInputBase-input {
-  padding: 0 0.35rem;
-}
-
 .market-health-upload-wrapper {
   margin-left: auto;
 }
@@ -161,36 +126,15 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: repeat(auto-fit, minmax(min(32rem, 100%), 1fr));
-  grid-auto-rows: minmax(20rem, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
-}
-
-@media (max-width: 1900px) {
-  .market-health-chart-grid:not(.market-health-chart-grid-highs_breadth) {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.market-health-chart-grid-highs_breadth {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-
-.market-health-content-highs_breadth {
-  overflow: hidden;
-}
-
-.market-health-chart-grid-highs_breadth .market-health-chart,
-.market-health-chart-grid-highs_breadth .market-health-chart-host {
-  min-height: 0;
-  overflow: hidden;
 }
 
 .market-health-chart {
   display: flex;
   min-width: 0;
-  min-height: 20rem;
+  min-height: 0;
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.75rem;
@@ -206,14 +150,14 @@
 }
 
 .market-health-chart h2,
-.market-health-leaders h2 {
+.market-health-leader-list h2 {
   margin: 0;
   font-size: 0.8rem;
 }
 
 .market-health-chart-host {
   width: 100%;
-  min-height: 14rem;
+  min-height: 0;
   flex: 1;
 }
 
@@ -254,16 +198,9 @@
   text-decoration: line-through;
 }
 
-.market-health-leaders {
-  display: grid;
-  min-height: 0;
-  flex: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
 .market-health-leader-list {
   display: flex;
+  flex: 0 0 auto;
   min-height: 0;
   flex-direction: column;
   gap: 0.4rem;
@@ -275,6 +212,8 @@
 
 .market-health-leader-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
   align-items: center;
   justify-content: space-between;
 }
@@ -303,4 +242,49 @@
   font-weight: 600;
   font-size: 0.72rem;
   text-decoration: none;
+}
+
+.market-health-lookback {
+  width: min(24rem, calc(100vw - 4rem));
+  padding: 0.75rem 1.25rem;
+}
+
+.market-health-content-leading_stocks { position: relative; overflow: hidden; }
+.market-health-leading-stocks { flex: 1; }
+.market-health-leading-stocks > .market-health-leader-header,
+.market-health-leading-stocks > .MuiTablePagination-root { flex-shrink: 0; }
+.market-health-leading-stocks > .market-health-leader-table {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.market-health-lookback-toggle.MuiButton-root {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.8rem;
+  z-index: 1;
+}
+.market-health-content-leading_stocks .market-health-overview { padding-right: 12rem; }
+
+.market-health-lookback .MuiTypography-root { font-size: 0.75rem; }
+.market-health-group-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 0.75rem;
+}
+
+.market-health-group-panel > .market-health-leader-list { flex: 1; }
+.market-health-group-panel .market-health-members { max-height: 30%; overflow: auto; }
+.market-health-group-table { flex: 1; }
+.market-health-content > .split-pane > .split-pane-slot { padding-left: 0.75rem; }
+.market-health-group-table .MuiTableCell-root { white-space: nowrap; }
+.market-health-leading-stocks .MuiTableCell-root { white-space: nowrap; }
+.market-health-members { display: flex; flex-wrap: wrap; gap: 0.5rem; font-size: 0.75rem; }
+.market-health-members h2 { flex-basis: 100%; font-size: 0.8rem; }
+
+@media (max-width: 1279px) {
+  .market-health-header { flex-wrap: wrap; }
 }
