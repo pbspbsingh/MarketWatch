@@ -16,6 +16,7 @@ import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
 import {
   Drawer,
   IconButton,
@@ -40,6 +41,7 @@ const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
+  ["Market Explorer", "/market-explorer", TravelExploreOutlinedIcon, "blue"],
   ["Highest Volume", "/highest-volume", BarChartIcon, "indigo"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],

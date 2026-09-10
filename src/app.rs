@@ -10,6 +10,7 @@ use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::maintenance;
 use crate::services::market_chart::MarketChartService;
+use crate::services::market_explorer::MarketExplorerService;
 use crate::services::nyse_calendar;
 use crate::services::sector_analysis::SectorAnalysisService;
 use crate::services::study::StudyService;
@@ -55,6 +56,7 @@ pub struct AppState {
     pub ticker_strength: Arc<TickerStrengthService>,
     pub market_schedule: MarketSchedule,
     pub market_chart: Arc<MarketChartService>,
+    pub market_explorer: Arc<MarketExplorerService>,
     pub sector_analysis: Arc<SectorAnalysisService>,
     pub themes: Arc<ThemeService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
@@ -117,6 +119,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_live.clone(),
         market_repositioning_dates.clone(),
     ));
+    let market_explorer = Arc::new(MarketExplorerService::new(store.clone(), yahoo.clone()));
     let sector_analysis = Arc::new(SectorAnalysisService::new(
         store.clone(),
         yahoo.clone(),
@@ -171,6 +174,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         ticker_strength,
         market_schedule,
         market_chart,
+        market_explorer,
         sector_analysis,
         themes,
         theme_analysis,

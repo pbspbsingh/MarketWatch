@@ -1,0 +1,177 @@
+import { useEffect, useState } from "react";
+import { Button, CircularProgress, LinearProgress, Typography } from "@mui/material";
+import {
+  fetchMarketExplorerCandleStatus,
+  pauseMarketExplorerCandleFetch,
+  retryFailedMarketExplorerCandleFetch,
+  startMarketExplorerCandleFetch,
+  type MarketExplorerCandleStatus,
+} from "../../api/marketExplorer";
+import { Toast } from "../../components/Toast";
+import "./market-explorer.css";
+
+export function MarketExplorerPage() {
+  const [status, setStatus] = useState<MarketExplorerCandleStatus>();
+  const [loading, setLoading] = useState(true);
+  const [actionPending, setActionPending] = useState(false);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    let firstRequest = true;
+    const refresh = () => fetchMarketExplorerCandleStatus(controller.signal, firstRequest)
+      .then((next) => {
+        firstRequest = false;
+        if (active) setStatus(next);
+      })
+      .catch((requestError: unknown) => {
+        if (active && requestError instanceof Error && requestError.name !== "AbortError") {
+          setError(requestError.message);
+        }
+      });
+    void refresh().finally(() => {
+      if (active) setLoading(false);
+    });
+    const interval = window.setInterval(() => void refresh(), 1_000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const runAction = async (action: () => Promise<MarketExplorerCandleStatus>) => {
+    setActionPending(true);
+    setError(undefined);
+    try {
+      setStatus(await action());
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Market Explorer request failed");
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  return (
+    <section className="workspace-panel market-explorer-page" aria-label="Market Explorer">
+      <header className="panel-header market-explorer-header">
+        <Typography component="h1">Market Explorer</Typography>
+      </header>
+      {loading && status === undefined ? (
+        <div className="panel-status">
+          <CircularProgress size="1rem" />
+          <Typography color="text.secondary">Checking industry ticker candles</Typography>
+        </div>
+      ) : status !== undefined ? (
+        <div className="market-explorer-landing">
+          <section className="market-explorer-candle-card" aria-labelledby="market-explorer-candle-title">
+            <div className="market-explorer-candle-heading">
+              <div>
+                <Typography id="market-explorer-candle-title" component="h2">
+                  Daily candle readiness
+                </Typography>
+                <Typography color="text.secondary">
+                  Latest completed trading day: {status.target_date}
+                </Typography>
+              </div>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={actionPending
+                  || status.phase === "completed"
+                  || (status.requires_fetch === 0 && status.phase !== "running")}
+                onClick={() => void runAction(
+                  status.phase === "running"
+                    ? pauseMarketExplorerCandleFetch
+                    : startMarketExplorerCandleFetch,
+                )}
+              >
+                {fetchButtonLabel(status, actionPending)}
+              </Button>
+            </div>
+
+            <dl className="market-explorer-summary">
+              <Summary label="Industry-mapped tickers" value={status.industry_mapped_tickers} />
+              <Summary label="Total tickers in system" value={status.total_tickers} />
+              <Summary label="Tickers with latest candle" value={status.latest_candle_tickers} />
+              <Summary label="Tickers requiring candle fetch" value={status.requires_fetch} />
+            </dl>
+
+            <div className="market-explorer-progress-row">
+              <LinearProgress
+                className="market-explorer-progress"
+                variant="determinate"
+                value={progressPercent(status)}
+                aria-label="Daily candle fetch progress"
+              />
+              <Typography className="market-explorer-timer" component="span">
+                {formatElapsed(status.elapsed_seconds)}
+              </Typography>
+            </div>
+            <Typography className="market-explorer-progress-caption" color="text.secondary">
+              {status.processed}/{status.fetch_total} processed
+              {status.current_symbol === null ? "" : ` · Fetching ${status.current_symbol}`}
+              {status.failed === 0 ? "" : ` · ${status.failed} failed`}
+            </Typography>
+
+            {status.messages.length > 0 && (
+              <section className="market-explorer-messages" aria-label="Candle fetch failures">
+                <div className="market-explorer-messages-heading">
+                  <Typography component="h3">Progress messages</Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={actionPending || status.phase !== "completed"}
+                    onClick={() => void runAction(retryFailedMarketExplorerCandleFetch)}
+                  >
+                    Retry failed tickers
+                  </Button>
+                </div>
+                <div role="log" aria-live="polite">
+                  {status.messages.map((message, index) => (
+                    <Typography key={`${message.symbol}:${index}`} component="p">
+                      <strong>{message.symbol}</strong> failed: {message.error}
+                    </Typography>
+                  ))}
+                </div>
+              </section>
+            )}
+          </section>
+        </div>
+      ) : null}
+      <Toast message={error} onClose={() => setError(undefined)} />
+    </section>
+  );
+}
+
+function Summary({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value.toLocaleString()}</dd>
+    </div>
+  );
+}
+
+function progressPercent(status: MarketExplorerCandleStatus) {
+  return status.fetch_total === 0 ? 100 : Math.min(100, 100 * status.processed / status.fetch_total);
+}
+
+function fetchButtonLabel(status: MarketExplorerCandleStatus, actionPending: boolean) {
+  if (actionPending) return "Working…";
+  if (status.phase === "running") return "Pause fetching";
+  if (status.phase === "paused") return "Resume fetching";
+  if (status.requires_fetch === 0) return "Up to date";
+  if (status.phase === "completed") return "Fetching completed";
+  return "Start fetching";
+}
+
+function formatElapsed(seconds: number) {
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}

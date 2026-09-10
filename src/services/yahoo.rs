@@ -135,6 +135,10 @@ impl YahooService {
             .await
     }
 
+    pub fn latest_completed_candle_date(&self) -> NaiveDate {
+        self.market_schedule.recent_trading_day(Utc::now())
+    }
+
     pub async fn daily_candles_for_duration(
         &self,
         symbol: &TickerSymbol,
