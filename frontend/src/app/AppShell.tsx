@@ -4,7 +4,6 @@ import BookmarkIcon from "@mui/icons-material/Bookmark";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import MenuIcon from "@mui/icons-material/Menu";
-import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
@@ -39,7 +38,6 @@ import {
 const homeDestination = ["Home", "/", HomeOutlinedIcon, "blue"] as const;
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
-  ["Market Health", "/market-health", MonitorHeartOutlinedIcon, "teal"],
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Highest Volume", "/highest-volume", BarChartIcon, "indigo"],

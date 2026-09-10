@@ -13,20 +13,6 @@ use tracing::{debug, warn};
 
 const HEADER_VALUES: &[&str] = &["ticker", "tickers", "symbol", "symbols", "stock", "stocks"];
 
-pub(crate) struct ParsedTickerFiles {
-    pub collection: TickerCollection,
-    pub valid_rows: usize,
-    pub skipped_rows: usize,
-    pub duplicate_rows: usize,
-    pub malformed_rows: usize,
-}
-
-enum ParsedTickerLine {
-    Symbol(TickerSymbol),
-    Skipped,
-    Malformed,
-}
-
 pub struct UploadedTickerFile {
     pub name: String,
     pub content: String,
@@ -96,7 +82,7 @@ impl TickerCollectionService {
         if files.is_empty() {
             return Err(TickerCollectionError::EmptyUpload);
         }
-        let collection = parse_uploaded_ticker_files(files);
+        let collection = parse_csv_files(files);
         *self
             .last_collection
             .lock()
@@ -245,19 +231,11 @@ impl TickerCollectionService {
     }
 }
 
-pub(crate) fn parse_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
-    analyze_uploaded_ticker_files(files).collection
-}
-
-pub(crate) fn analyze_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> ParsedTickerFiles {
+fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
     let mut seen = HashSet::new();
     let mut symbols = Vec::new();
     let mut summaries = Vec::with_capacity(files.len());
     let mut skipped_rows = 0;
-    let mut valid_rows = 0;
-    let mut ignored_rows = 0;
-    let mut duplicate_rows = 0;
-    let mut malformed_rows = 0;
 
     for file in files {
         let mut row_count = 0;
@@ -266,35 +244,18 @@ pub(crate) fn analyze_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> P
 
         for line in file.content.lines() {
             row_count += 1;
-            match parse_ticker_line(line) {
-                ParsedTickerLine::Symbol(symbol) => {
-                    valid_rows += 1;
-                    if seen.insert(symbol.clone()) {
-                        symbols.push(symbol);
-                        extracted_count += 1;
-                    } else {
-                        duplicate_rows += 1;
-                        debug!(file = file.name, row = row_count, %symbol, "ignored duplicate ticker row");
-                    }
-                }
-                ParsedTickerLine::Skipped => {
-                    ignored_rows += 1;
-                    file_skipped_rows += 1;
-                    debug!(
-                        file = file.name,
-                        row = row_count,
-                        "skipped ticker collection row"
-                    );
-                }
-                ParsedTickerLine::Malformed => {
-                    malformed_rows += 1;
-                    file_skipped_rows += 1;
-                    debug!(
-                        file = file.name,
-                        row = row_count,
-                        "rejected malformed ticker row"
-                    );
-                }
+            let Some(symbol) = symbol_from_line(line) else {
+                debug!(
+                    file = file.name,
+                    row = row_count,
+                    "skipped ticker collection row"
+                );
+                file_skipped_rows += 1;
+                continue;
+            };
+            if seen.insert(symbol.clone()) {
+                symbols.push(symbol);
+                extracted_count += 1;
             }
         }
 
@@ -307,40 +268,32 @@ pub(crate) fn analyze_uploaded_ticker_files(files: Vec<UploadedTickerFile>) -> P
         });
     }
 
-    ParsedTickerFiles {
-        collection: TickerCollection {
-            version: 1,
-            source: TickerCollectionSource::Csv { files: summaries },
-            symbols,
-            skipped_rows,
-            created_at: Utc::now(),
-        },
-        valid_rows,
-        skipped_rows: ignored_rows,
-        duplicate_rows,
-        malformed_rows,
+    TickerCollection {
+        version: 1,
+        source: TickerCollectionSource::Csv { files: summaries },
+        symbols,
+        skipped_rows,
+        created_at: Utc::now(),
     }
 }
 
-fn parse_ticker_line(line: &str) -> ParsedTickerLine {
+fn symbol_from_line(line: &str) -> Option<TickerSymbol> {
     let line = line.trim().trim_start_matches('\u{feff}');
     if line.is_empty() || line.starts_with('#') || line.starts_with("//") || line.starts_with("--")
     {
-        return ParsedTickerLine::Skipped;
+        return None;
     }
 
     let first = first_field(line)
         .trim()
         .trim_matches('"')
         .trim_matches('\'');
-    let Some(symbol) = normalize_symbol(first) else {
-        return ParsedTickerLine::Malformed;
-    };
+    let symbol = normalize_symbol(first)?;
     let lower = symbol.as_str().to_ascii_lowercase();
     if HEADER_VALUES.contains(&lower.as_str()) {
-        return ParsedTickerLine::Skipped;
+        return None;
     }
-    ParsedTickerLine::Symbol(symbol)
+    Some(symbol)
 }
 
 fn first_field(line: &str) -> &str {
@@ -358,11 +311,7 @@ fn first_field(line: &str) -> &str {
 fn normalize_symbol(value: &str) -> Option<TickerSymbol> {
     let value = value.trim().trim_start_matches('$');
     let value = value.rsplit_once(':').map_or(value, |(_, symbol)| symbol);
-    let symbol = match value.trim().to_ascii_uppercase().as_str() {
-        "BF/B" => "BF-B".to_owned(),
-        "BRK/B" => "BRK-B".to_owned(),
-        other => other.to_owned(),
-    };
+    let symbol = value.trim().to_ascii_uppercase();
     if symbol.is_empty() || matches!(symbol.as_str(), "N/A" | "NA" | "NULL") {
         return None;
     }
@@ -375,7 +324,7 @@ mod tests {
 
     #[test]
     fn parses_first_column_and_skips_noise() {
-        let collection = parse_uploaded_ticker_files(vec![UploadedTickerFile {
+        let collection = parse_csv_files(vec![UploadedTickerFile {
             name: "watchlist.csv".to_owned(),
             content:
                 "Ticker,Name\n# comment\nAAPL,Apple\n$msft\nNASDAQ:NVDA\n// skip\nbad value\nAAPL\n"
@@ -384,12 +333,5 @@ mod tests {
 
         assert_eq!(collection.symbols, ["AAPL", "MSFT", "NVDA"]);
         assert_eq!(collection.skipped_rows, 4);
-    }
-
-    #[test]
-    fn normalizes_known_slash_share_classes_only() {
-        assert_eq!(normalize_symbol("BF/B").unwrap().as_str(), "BF-B");
-        assert_eq!(normalize_symbol("BRK/B").unwrap().as_str(), "BRK-B");
-        assert!(normalize_symbol("OTHER/B").is_none());
     }
 }
