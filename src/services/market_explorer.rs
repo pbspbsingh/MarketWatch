@@ -1,4 +1,7 @@
 use crate::models::TickerSymbol;
+use crate::services::highest_volume::{
+    HighestVolumeError, HighestVolumeRequest, HighestVolumeResult, HighestVolumeService,
+};
 use crate::services::yahoo::YahooService;
 use crate::store::{MarketExplorerCandleSummary, Store};
 use chrono::NaiveDate;
@@ -63,6 +66,7 @@ struct CandleFetchJob {
 pub struct MarketExplorerService {
     store: Store,
     yahoo: Arc<YahooService>,
+    highest_volume: HighestVolumeService,
     job: Mutex<Option<CandleFetchJob>>,
     resumed: Notify,
 }
@@ -85,11 +89,21 @@ enum WorkerAction {
 impl MarketExplorerService {
     pub fn new(store: Store, yahoo: Arc<YahooService>) -> Self {
         Self {
+            highest_volume: HighestVolumeService::new(store.clone()),
             store,
             yahoo,
             job: Mutex::new(None),
             resumed: Notify::new(),
         }
+    }
+
+    pub async fn highest_volume(
+        &self,
+        request: HighestVolumeRequest,
+    ) -> Result<HighestVolumeResult, HighestVolumeError> {
+        self.highest_volume
+            .scan(request, self.yahoo.latest_completed_candle_date())
+            .await
     }
 
     pub async fn status(

@@ -13,7 +13,6 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
-import BarChartIcon from "@mui/icons-material/BarChart";
 import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
@@ -42,7 +41,6 @@ const destinations = [
   ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
   ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
   ["Market Explorer", "/market-explorer", TravelExploreOutlinedIcon, "blue"],
-  ["Highest Volume", "/highest-volume", BarChartIcon, "indigo"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
   ["Watchlists", "/watchlists", BookmarkIcon, "yellow"],

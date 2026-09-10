@@ -5,7 +5,6 @@ use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
 use crate::services::global_search::GlobalSearchService;
-use crate::services::highest_volume::HighestVolumeService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::maintenance;
@@ -48,7 +47,6 @@ pub struct AppState {
     pub daily_notes: Arc<DailyNotesService>,
     pub details: Arc<TickerDetailsService>,
     pub global_search: Arc<GlobalSearchService>,
-    pub highest_volume: Arc<HighestVolumeService>,
     pub home_tickers: [crate::models::TickerSymbol; 4],
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub study: Arc<StudyService>,
@@ -92,10 +90,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         market_schedule.clone(),
     ));
     let global_search = Arc::new(GlobalSearchService::new(store.clone()));
-    let highest_volume = Arc::new(HighestVolumeService::new(
-        store.clone(),
-        market_schedule.clone(),
-    ));
     let industry_analysis = Arc::new(IndustryAnalysisService::new(store.clone()));
     let ticker_catalog = Arc::new(TickerCatalogService::new(
         store.clone(),
@@ -166,7 +160,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         daily_notes,
         details,
         global_search,
-        highest_volume,
         home_tickers: config.home.tickers.clone(),
         industry_analysis,
         study,

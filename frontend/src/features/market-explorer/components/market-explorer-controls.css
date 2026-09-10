@@ -1,0 +1,41 @@
+.market-explorer-dollar-volume-slider {
+  display: flex;
+  width: 10rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.4rem;
+
+  & .MuiTypography-root {
+    min-width: 2.4rem;
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  & .MuiTypography-root:last-child {
+    min-width: 2.5rem;
+    color: var(--color-text);
+    text-align: right;
+  }
+
+  & .MuiSlider-root {
+    min-width: 0;
+    padding-block: 0.65rem;
+    flex: 1;
+  }
+
+  & .MuiSlider-valueLabel {
+    top: calc(100% + 0.4rem);
+    transform: scale(0);
+    transform-origin: top center;
+
+    &::before {
+      top: 0;
+      bottom: auto;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    &.MuiSlider-valueLabelOpen {
+      transform: scale(1);
+    }
+  }
+}

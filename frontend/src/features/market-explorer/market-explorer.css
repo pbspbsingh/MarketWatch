@@ -3,10 +3,35 @@
   height: 100%;
 }
 
-.market-explorer-header h1 {
-  margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
+.market-explorer-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  gap: 1rem;
+  white-space: nowrap;
+}
+
+.market-explorer-view-select {
+  flex-shrink: 0;
+  color: var(--color-muted) !important;
+  font-size: 0.75rem !important;
+  font-weight: 650 !important;
+  text-transform: uppercase;
+
+  &::before,
+  &::after {
+    border-bottom: 0 !important;
+  }
+}
+
+.market-explorer-toolbar-slot {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
+  overflow: visible;
 }
 
 .market-explorer-landing {
@@ -17,13 +42,26 @@
   overflow: auto;
 }
 
-.market-explorer-candle-card {
+.market-explorer-landing-content {
+  display: flex;
   width: min(46rem, 100%);
   margin: auto;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.market-explorer-candle-card,
+.market-explorer-view-list {
   padding: 1.25rem;
   border: 0.0625rem solid var(--color-border);
   border-radius: 0.4rem;
   background: var(--color-surface);
+}
+
+.market-explorer-view-list h2 {
+  margin: 0 0 0.75rem;
+  color: var(--color-text);
+  font-size: 0.85rem;
 }
 
 .market-explorer-candle-heading,

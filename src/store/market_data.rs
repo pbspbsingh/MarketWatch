@@ -180,20 +180,33 @@ impl Store {
         .context("failed to load daily candles")
     }
 
-    pub async fn daily_candle_histories(
+    pub async fn market_explorer_daily_candle_histories(
         &self,
         start: NaiveDate,
         end: NaiveDate,
+        target_date: NaiveDate,
     ) -> anyhow::Result<Vec<(TickerSymbol, Vec<DailyCandle>)>> {
         let mut rows = sqlx::query_as!(
             StoredSymbolCandle,
-            r#"SELECT symbol, market_date AS "market_date: NaiveDate", open, high, low,
+            r#"SELECT daily_candles.symbol, market_date AS "market_date: NaiveDate", open, high, low,
                     close, volume
              FROM daily_candles
              WHERE market_date >= ? AND market_date <= ?
+               AND EXISTS (
+                    SELECT 1
+                    FROM industry_membership_tickers
+                    WHERE industry_membership_tickers.symbol = daily_candles.symbol
+               )
+               AND EXISTS (
+                    SELECT 1
+                    FROM daily_candles AS target_candle
+                    WHERE target_candle.symbol = daily_candles.symbol
+                      AND target_candle.market_date = ?
+               )
              ORDER BY symbol, market_date"#,
             start,
             end,
+            target_date,
         )
         .fetch(&self.pool);
 
@@ -201,7 +214,7 @@ impl Store {
         while let Some(row) = rows
             .try_next()
             .await
-            .context("failed to load daily candle histories")?
+            .context("failed to load Market Explorer daily candle histories")?
         {
             let symbol = TickerSymbol::try_from(row.symbol)
                 .context("stored daily candle has an invalid ticker symbol")?;

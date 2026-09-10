@@ -1,7 +1,9 @@
-.highest-volume-page {
+.market-explorer-highest-volume {
+  display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;
+  flex-direction: column;
 
   & > .ticker-lens {
     flex: 1;
@@ -9,35 +11,27 @@
   }
 }
 
-.highest-volume-header,
-.highest-volume-controls,
-.highest-volume-slider,
-.highest-volume-number {
+.market-explorer-highest-volume-controls,
+.market-explorer-highest-volume-slider,
+.market-explorer-highest-volume-number {
   display: flex;
   align-items: center;
 }
 
-.highest-volume-header {
-  min-height: 1.55rem;
-  padding-top: 0.125rem;
-  padding-bottom: 0.125rem;
-  gap: 0.5rem;
-
-  & h1 {
-    flex-shrink: 0;
-    margin: 0;
-    font-size: 0.72rem;
-    font-weight: 700;
-  }
-}
-
-.highest-volume-controls {
+.market-explorer-highest-volume-controls {
   min-width: 0;
-  margin-left: auto;
+  flex-shrink: 0;
   gap: 1rem;
 }
 
-.highest-volume-slider {
+.market-explorer-highest-volume-loading {
+  display: inline-flex;
+  width: 0.8rem;
+  height: 0.8rem;
+  flex-shrink: 0;
+}
+
+.market-explorer-highest-volume-slider {
   width: 9rem;
   flex-shrink: 0;
   gap: 0.4rem;
@@ -77,7 +71,7 @@
   }
 }
 
-.highest-volume-number {
+.market-explorer-highest-volume-number {
   flex-shrink: 0;
   gap: 0.3rem;
 
@@ -96,19 +90,7 @@
   }
 }
 
-.panel-header .MuiTypography-root.highest-volume-summary {
-  font-size: 0.6rem;
-  font-weight: 400;
+.market-explorer-highest-volume-summary {
+  font-size: 0.6rem !important;
   white-space: nowrap;
-}
-
-@media (max-width: 1200px) {
-  .highest-volume-header,
-  .highest-volume-controls {
-    flex-wrap: wrap;
-  }
-
-  .highest-volume-controls {
-    justify-content: flex-end;
-  }
 }

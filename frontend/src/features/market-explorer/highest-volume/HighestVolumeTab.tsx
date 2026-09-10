@@ -1,25 +1,28 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { CircularProgress, Slider, TextField, Typography } from "@mui/material";
 import {
-  fetchHighestVolume,
+  fetchMarketExplorerHighestVolume,
   type HighestVolumeLimit,
   type HighestVolumeLookback,
   type HighestVolumeResult,
   type HighestVolumeScanRange,
   type HighestVolumeSettings,
-} from "../../api/highestVolume";
-import { Toast } from "../../components/Toast";
-import { TickerLens } from "../ticker-lens/TickerLens";
-import type { TickerMetric } from "../ticker-lens/types";
-import "./highest-volume.css";
+} from "../../../api/marketExplorer";
+import { Toast } from "../../../components/Toast";
+import { TickerLens } from "../../ticker-lens/TickerLens";
+import type { TickerMetric } from "../../ticker-lens/types";
+import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
+import "./highest-volume-tab.css";
 
-const storagePrefix = "market-watch.highest-volume.";
+const storagePrefix = "market-watch.market-explorer.highest-volume.";
 const defaults: HighestVolumeSettings = {
   scanRange: "month1",
   lookback: "year1",
   limit: 100,
   minimumRvol: 2,
   minimumRangeAtr: 1,
+  minimumDollarVolume: 0,
 };
 const scanRanges: ReadonlyArray<{ value: HighestVolumeScanRange; label: string }> = [
   { value: "month1", label: "1M" },
@@ -40,7 +43,7 @@ const limits: ReadonlyArray<{ value: HighestVolumeLimit; label: string }> = [
 ];
 const defaultMetricSort = { metricId: "event-score", direction: "desc" } as const;
 
-export function HighestVolumePage() {
+export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLElement | null }) {
   const [settings, setSettings] = useState(readSettings);
   const [result, setResult] = useState<HighestVolumeResult>();
   const [loading, setLoading] = useState(true);
@@ -48,7 +51,7 @@ export function HighestVolumePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchHighestVolume(settings, controller.signal)
+    fetchMarketExplorerHighestVolume(settings, controller.signal)
       .then((next) => {
         if (!controller.signal.aborted) setResult(next);
       })
@@ -69,7 +72,6 @@ export function HighestVolumePage() {
   ) => {
     localStorage.setItem(`${storagePrefix}${key}`, String(value));
     if (settings[key] === value) return;
-    setResult(undefined);
     setError(undefined);
     setLoading(true);
     setSettings((current) => ({ ...current, [key]: value }));
@@ -86,11 +88,18 @@ export function HighestVolumePage() {
   const symbols = result?.events.map((event) => event.symbol) ?? [];
 
   return (
-    <section className="workspace-panel highest-volume-page" aria-label="Highest Volume">
-      <header className="panel-header highest-volume-header">
-        <Typography component="h1">Highest Volume</Typography>
-        <div className="highest-volume-controls">
-          {loading && <CircularProgress size="0.8rem" />}
+    <section className="market-explorer-highest-volume" aria-label="Highest Volume">
+      {toolbarContainer !== null && createPortal(
+        <div className="market-explorer-highest-volume-controls">
+          {result !== undefined && (
+            <Typography className="market-explorer-highest-volume-summary">
+              {result.events.length} events · {result.as_of}
+            </Typography>
+          )}
+          <DollarVolumeSlider
+            value={settings.minimumDollarVolume}
+            onCommit={(value) => update("minimumDollarVolume", value)}
+          />
           <NumberControl
             label="Min Range"
             value={settings.minimumRangeAtr}
@@ -122,13 +131,12 @@ export function HighestVolumePage() {
             value={settings.limit}
             onCommit={(value) => update("limit", value)}
           />
-          {result !== undefined && (
-            <Typography className="highest-volume-summary">
-              {result.events.length} events · {result.as_of}
-            </Typography>
-          )}
-        </div>
-      </header>
+          <span className="market-explorer-highest-volume-loading" aria-hidden={!loading}>
+            {loading && <CircularProgress size="0.8rem" />}
+          </span>
+        </div>,
+        toolbarContainer,
+      )}
       {result === undefined ? (
         <div className="panel-status">
           {loading && <CircularProgress size="1rem" />}
@@ -166,7 +174,7 @@ function DiscreteSlider<Value extends string | number>({
   const indexValue = (next: number | number[]) => Array.isArray(next) ? next[0] : next;
 
   return (
-    <label className="highest-volume-slider">
+    <label className="market-explorer-highest-volume-slider">
       <Typography component="span">{label}</Typography>
       <Slider
         size="small"
@@ -221,7 +229,7 @@ function NumberControl({
   };
 
   return (
-    <label className="highest-volume-number">
+    <label className="market-explorer-highest-volume-number">
       <Typography component="span">{label}</Typography>
       <TextField
         size="small"
@@ -244,6 +252,7 @@ function readSettings(): HighestVolumeSettings {
     limit: readOption("limit", limits, defaults.limit),
     minimumRvol: readNumber("minimumRvol", defaults.minimumRvol),
     minimumRangeAtr: readNumber("minimumRangeAtr", defaults.minimumRangeAtr),
+    minimumDollarVolume: readNumber("minimumDollarVolume", defaults.minimumDollarVolume),
   };
 }
 

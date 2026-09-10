@@ -1,7 +1,6 @@
 use crate::models::{DailyCandle, TickerSymbol};
 use crate::store::Store;
-use crate::utils::MarketSchedule;
-use chrono::{Months, NaiveDate, Utc};
+use chrono::{Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -58,6 +57,7 @@ pub struct HighestVolumeRequest {
     pub limit: usize,
     pub minimum_rvol: f64,
     pub minimum_range_atr: f64,
+    pub minimum_dollar_volume: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -68,6 +68,7 @@ pub struct HighestVolumeEvent {
     pub average_volume: f64,
     pub rvol: f64,
     pub range_atr: f64,
+    pub dollar_volume: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -88,24 +89,20 @@ pub enum HighestVolumeError {
 
 pub struct HighestVolumeService {
     store: Store,
-    market_schedule: MarketSchedule,
 }
 
 impl HighestVolumeService {
-    pub fn new(store: Store, market_schedule: MarketSchedule) -> Self {
-        Self {
-            store,
-            market_schedule,
-        }
+    pub fn new(store: Store) -> Self {
+        Self { store }
     }
 
     pub async fn scan(
         &self,
         request: HighestVolumeRequest,
+        as_of: NaiveDate,
     ) -> Result<HighestVolumeResult, HighestVolumeError> {
         let started_at = Instant::now();
         validate_request(request)?;
-        let as_of = self.market_schedule.recent_trading_day(Utc::now());
         let scan_start = subtract_months(as_of, request.scan_range.months())?;
         let earliest_lookback = subtract_months(scan_start, request.lookback.months())?;
         let fetch_start = subtract_months(earliest_lookback, HISTORY_PADDING_MONTHS)?;
@@ -115,6 +112,7 @@ impl HighestVolumeService {
             limit = request.limit,
             minimum_rvol = request.minimum_rvol,
             minimum_range_atr = request.minimum_range_atr,
+            minimum_dollar_volume = request.minimum_dollar_volume,
             %scan_start,
             %as_of,
             "starting highest-volume scan"
@@ -122,7 +120,7 @@ impl HighestVolumeService {
         let load_started_at = Instant::now();
         let histories = self
             .store
-            .daily_candle_histories(fetch_start, as_of)
+            .market_explorer_daily_candle_histories(fetch_start, as_of, as_of)
             .await
             .map_err(HighestVolumeError::Persistence)?;
         let ticker_count = histories.len();
@@ -171,6 +169,7 @@ fn scan_histories(
                 request.lookback.months(),
                 request.minimum_rvol,
                 request.minimum_range_atr,
+                request.minimum_dollar_volume,
             )
         })
         .collect::<Vec<_>>();
@@ -188,6 +187,7 @@ fn validate_request(request: HighestVolumeRequest) -> Result<(), HighestVolumeEr
     for (label, value) in [
         ("minimum RVOL", request.minimum_rvol),
         ("minimum ATR range", request.minimum_range_atr),
+        ("minimum dollar volume", request.minimum_dollar_volume),
     ] {
         if !value.is_finite() || value < 0.0 {
             return Err(HighestVolumeError::Validation(format!(
@@ -221,6 +221,7 @@ fn best_event(
     lookback_months: u32,
     minimum_rvol: f64,
     minimum_range_atr: f64,
+    minimum_dollar_volume: f64,
 ) -> Option<HighestVolumeEvent> {
     let measured = measure_candles(candles, minimum_rvol, minimum_range_atr);
     let first_date = candles.first()?.market_date;
@@ -228,7 +229,9 @@ fn best_event(
     let mut volume_highs = VecDeque::<usize>::new();
 
     for (index, candle) in measured.iter().enumerate() {
+        let dollar_volume = candles[index].close * candle.average_volume;
         if candle.event
+            && dollar_volume >= minimum_dollar_volume
             && candle.market_date >= scan_start
             && let Some(lookback_start) = candle
                 .market_date
@@ -252,6 +255,7 @@ fn best_event(
                     average_volume: candle.average_volume,
                     rvol: candle.rvol,
                     range_atr: candle.range_atr,
+                    dollar_volume,
                 };
                 if best
                     .as_ref()
@@ -419,7 +423,8 @@ mod tests {
         values[430].volume = 300;
         let symbol = TickerSymbol::parse("TEST").unwrap();
 
-        let event = best_event(&symbol, &values, values[400].market_date, 12, 2.0, 1.0).unwrap();
+        let event =
+            best_event(&symbol, &values, values[400].market_date, 12, 2.0, 1.0, 0.0).unwrap();
 
         assert_eq!(event.event_date, values[430].market_date);
     }
@@ -435,9 +440,44 @@ mod tests {
         values[430].volume = 420;
         let symbol = TickerSymbol::parse("TEST").unwrap();
 
-        let event = best_event(&symbol, &values, values[400].market_date, 12, 2.0, 1.0).unwrap();
+        let event =
+            best_event(&symbol, &values, values[400].market_date, 12, 2.0, 1.0, 0.0).unwrap();
 
         assert_eq!(event.event_date, values[410].market_date);
         assert!(event.rvol > 3.9);
+    }
+
+    #[test]
+    fn filters_events_by_close_times_prior_average_volume() {
+        let mut values = candles(450);
+        values[430].high = 102.0;
+        values[430].low = 98.0;
+        values[430].close = 125.0;
+        values[430].volume = 300;
+        let symbol = TickerSymbol::parse("TEST").unwrap();
+
+        let event = best_event(
+            &symbol,
+            &values,
+            values[400].market_date,
+            12,
+            2.0,
+            1.0,
+            12_500.0,
+        )
+        .unwrap();
+        assert!((event.dollar_volume - 12_500.0).abs() < f64::EPSILON);
+        assert!(
+            best_event(
+                &symbol,
+                &values,
+                values[400].market_date,
+                12,
+                2.0,
+                1.0,
+                12_500.01,
+            )
+            .is_none()
+        );
     }
 }
