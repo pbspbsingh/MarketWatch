@@ -47,6 +47,11 @@
   white-space: nowrap;
 }
 
+.market-explorer-filter-reset {
+  flex-shrink: 0;
+  font-size: 0.62rem !important;
+}
+
 .market-explorer-checkbox-menu .MuiPaper-root {
   width: 17rem;
   max-height: min(32rem, 75vh);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CircularProgress, TextField, Typography } from "@mui/material";
+import { Button, CircularProgress, TextField, Typography } from "@mui/material";
 import {
   fetchMarketExplorerHighestReturn,
   type HighestReturnResult,
@@ -9,8 +9,10 @@ import {
 import { Toast } from "../../../components/Toast";
 import { TickerLens } from "../../ticker-lens/TickerLens";
 import type { TickerMetric } from "../../ticker-lens/types";
+import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import { SteppedSlider } from "../components/SteppedSlider";
+import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
 import "./highest-return-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.highest-return.";
@@ -21,11 +23,17 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
   const [result, setResult] = useState<HighestReturnResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
   const today = formatDate(new Date());
+  const requestSettings = useMemo<HighestReturnSettings>(() => ({
+    ...settings,
+    ...groupFilters.selection,
+  }), [groupFilters.selection, settings]);
 
   useEffect(() => {
+    if (!groupFilters.ready) return;
     const controller = new AbortController();
-    fetchMarketExplorerHighestReturn(settings, controller.signal)
+    fetchMarketExplorerHighestReturn(requestSettings, controller.signal)
       .then((next) => {
         if (!controller.signal.aborted) setResult(next);
       })
@@ -38,7 +46,7 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [settings]);
+  }, [groupFilters.ready, requestSettings]);
 
   const update = <Key extends keyof HighestReturnSettings>(
     key: Key,
@@ -72,6 +80,26 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
     },
   }], [eventsBySymbol, result]);
   const symbols = result?.events.map((event) => event.symbol) ?? [];
+  const busy = groupFilters.loading || (groupFilters.ready && loading);
+  const commitIndustrySelection = (selected: Set<string>) => {
+    groupFilters.commitIndustrySelection(selected);
+    setError(undefined);
+    setLoading(true);
+  };
+  const commitThemeSelection = (selected: Set<number>) => {
+    groupFilters.commitThemeSelection(selected);
+    setError(undefined);
+    setLoading(true);
+  };
+  const resetFilters = () => {
+    for (const key of ["startDate", "endDate", "limit", "minimumDollarVolume"]) {
+      localStorage.removeItem(`${storagePrefix}${key}`);
+    }
+    groupFilters.reset();
+    setSettings(defaultSettings());
+    setError(undefined);
+    setLoading(true);
+  };
 
   return (
     <section className="market-explorer-highest-return" aria-label="Highest Return">
@@ -82,6 +110,18 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
               {result.events.length} tickers
             </Typography>
           )}
+          <CheckboxDropdown
+            label="Industries"
+            options={groupFilters.industryOptions}
+            selectedValues={groupFilters.selectedIndustryKeys}
+            onCommit={commitIndustrySelection}
+          />
+          <CheckboxDropdown
+            label="Themes"
+            options={groupFilters.themeOptions}
+            selectedValues={groupFilters.selectedThemeIds}
+            onCommit={commitThemeSelection}
+          />
           <DollarVolumeSlider
             value={settings.minimumDollarVolume}
             onCommit={(value) => update("minimumDollarVolume", value)}
@@ -107,15 +147,18 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
             step={50}
             onCommit={(value) => update("limit", value)}
           />
-          <span className="market-explorer-highest-return-loading" aria-hidden={!loading}>
-            {loading && <CircularProgress size="0.8rem" />}
+          <Button className="market-explorer-filter-reset" size="small" onClick={resetFilters}>
+            Reset
+          </Button>
+          <span className="market-explorer-highest-return-loading" aria-hidden={!busy}>
+            {busy && <CircularProgress size="0.8rem" />}
           </span>
         </div>,
         toolbarContainer,
       )}
       {result === undefined ? (
         <div className="panel-status">
-          {loading && <CircularProgress size="1rem" />}
+          {busy && <CircularProgress size="1rem" />}
         </div>
       ) : symbols.length === 0 ? (
         <div className="panel-status">
@@ -129,7 +172,13 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
           defaultMetricSort={defaultMetricSort}
         />
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={error ?? groupFilters.error}
+        onClose={() => {
+          setError(undefined);
+          groupFilters.clearError();
+        }}
+      />
     </section>
   );
 }
@@ -164,8 +213,9 @@ function DateControl({
 }
 
 function readSettings(): HighestReturnSettings {
+  const defaults = defaultSettings();
   const today = formatDate(new Date());
-  const defaultStart = formatDate(oneMonthBefore(new Date()));
+  const defaultStart = defaults.startDate;
   const storedEnd = readDate("endDate") ?? today;
   const endDate = storedEnd > today ? today : storedEnd;
   const fallbackStart = endDate === today
@@ -176,8 +226,18 @@ function readSettings(): HighestReturnSettings {
   return {
     startDate,
     endDate,
-    limit: readSteppedNumber("limit", 100, 50, 500, 50),
-    minimumDollarVolume: readNumber("minimumDollarVolume", 0),
+    limit: readSteppedNumber("limit", defaults.limit, 50, 500, 50),
+    minimumDollarVolume: readNumber("minimumDollarVolume", defaults.minimumDollarVolume),
+  };
+}
+
+function defaultSettings(): HighestReturnSettings {
+  const now = new Date();
+  return {
+    startDate: formatDate(oneMonthBefore(now)),
+    endDate: formatDate(now),
+    limit: 100,
+    minimumDollarVolume: 0,
   };
 }
 

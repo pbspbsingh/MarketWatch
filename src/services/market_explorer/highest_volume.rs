@@ -3,10 +3,12 @@ use crate::store::Store;
 use chrono::{Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
 use thiserror::Error;
 use tracing::info;
+
+use super::selection::{MarketExplorerSelection, includes_symbol, selected_symbols};
 
 const VOLUME_AVERAGE_SESSIONS: usize = 50;
 const ATR_SESSIONS: usize = 14;
@@ -99,6 +101,7 @@ impl HighestVolumeService {
     pub async fn scan(
         &self,
         request: HighestVolumeRequest,
+        selection: MarketExplorerSelection,
         as_of: NaiveDate,
     ) -> Result<HighestVolumeResult, HighestVolumeError> {
         let started_at = Instant::now();
@@ -106,6 +109,15 @@ impl HighestVolumeService {
         let scan_start = subtract_months(as_of, request.scan_range.months())?;
         let earliest_lookback = subtract_months(scan_start, request.lookback.months())?;
         let fetch_start = subtract_months(earliest_lookback, HISTORY_PADDING_MONTHS)?;
+        let selected_symbols = selected_symbols(&self.store, &selection)
+            .await
+            .map_err(HighestVolumeError::Persistence)?;
+        if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
+            return Ok(HighestVolumeResult {
+                as_of,
+                events: Vec::new(),
+            });
+        }
         info!(
             scan_range = ?request.scan_range,
             lookback = ?request.lookback,
@@ -136,10 +148,11 @@ impl HighestVolumeService {
             "loaded highest-volume candle histories"
         );
         let computation_started_at = Instant::now();
-        let events =
-            tokio::task::spawn_blocking(move || scan_histories(histories, scan_start, request))
-                .await
-                .map_err(HighestVolumeError::Computation)?;
+        let events = tokio::task::spawn_blocking(move || {
+            scan_histories(histories, selected_symbols.as_ref(), scan_start, request)
+        })
+        .await
+        .map_err(HighestVolumeError::Computation)?;
         let computation_time = computation_started_at.elapsed();
         let total_time = started_at.elapsed();
         info!(
@@ -156,11 +169,13 @@ impl HighestVolumeService {
 
 fn scan_histories(
     histories: Vec<(TickerSymbol, Vec<DailyCandle>)>,
+    selected_symbols: Option<&HashSet<TickerSymbol>>,
     scan_start: NaiveDate,
     request: HighestVolumeRequest,
 ) -> Vec<HighestVolumeEvent> {
     let mut events = histories
         .iter()
+        .filter(|(symbol, _)| includes_symbol(selected_symbols, symbol))
         .filter_map(|(symbol, candles)| {
             best_event(
                 symbol,

@@ -10,28 +10,22 @@ import {
   type SelectChangeEvent,
 } from "@mui/material";
 import { fetchHomeCharts } from "../../../api/home";
-import { fetchIndustries } from "../../../api/industries";
 import {
   fetchMarketExplorerHighRs,
   type HighRsResult,
   type HighRsSettings,
 } from "../../../api/marketExplorer";
-import { fetchThemes } from "../../../api/themes";
 import { Toast } from "../../../components/Toast";
 import { TickerLens } from "../../ticker-lens/TickerLens";
 import type { TickerMetric } from "../../ticker-lens/types";
 import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import { SteppedSlider } from "../components/SteppedSlider";
+import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
 import "./high-rs-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.high-rs.";
 const defaultMetricSort = { metricId: "percent-from-top", direction: "asc" } as const;
-type FilterOption<Value extends string | number> = {
-  value: Value;
-  label: string;
-  group?: string;
-};
 
 export function HighRsTab({
   toolbarContainer,
@@ -42,44 +36,17 @@ export function HighRsTab({
 }) {
   const [settings, setSettings] = useState(() => readSettings(asOf));
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
-  const [industryOptions, setIndustryOptions] = useState<FilterOption<string>[]>([]);
-  const [themeOptions, setThemeOptions] = useState<FilterOption<number>[]>([]);
-  const [excludedIndustryKeys, setExcludedIndustryKeys] = useState(
-    () => readStoredSet<string>("excludedIndustryKeys", isString),
-  );
-  const [excludedThemeIds, setExcludedThemeIds] = useState(
-    () => readStoredSet<number>("excludedThemeIds", isNumber),
-  );
-  const [catalogsLoaded, setCatalogsLoaded] = useState(false);
+  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
   const [result, setResult] = useState<HighRsResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetchHomeCharts(controller.signal),
-      fetchIndustries(controller.signal),
-      fetchThemes(controller.signal),
-    ])
-      .then(([{ tickers }, industries, themes]) => {
+    fetchHomeCharts(controller.signal)
+      .then(({ tickers }) => {
         if (controller.signal.aborted) return;
         setBenchmarks(tickers);
-        const nextIndustryOptions = industries
-          .map(({ key, name, sector_name }) => ({
-            value: key,
-            label: name,
-            group: sector_name ?? "Unclassified",
-          }))
-          .sort(compareOptions);
-        const nextThemeOptions = themes
-          .map(({ id, name }) => ({ value: id, label: name }))
-          .sort(compareOptions);
-        setIndustryOptions(nextIndustryOptions);
-        setThemeOptions(nextThemeOptions);
-        setExcludedIndustryKeys((current) => retainKnown(current, nextIndustryOptions));
-        setExcludedThemeIds((current) => retainKnown(current, nextThemeOptions));
-        setCatalogsLoaded(true);
         setSettings((current) => {
           const benchmark = tickers.includes(current.benchmark) ? current.benchmark : tickers[0];
           if (benchmark === current.benchmark) return current;
@@ -96,24 +63,13 @@ export function HighRsTab({
     return () => controller.abort();
   }, []);
 
-  const selectedIndustryKeys = useMemo(
-    () => selectedValues(industryOptions, excludedIndustryKeys),
-    [excludedIndustryKeys, industryOptions],
-  );
-  const selectedThemeIds = useMemo(
-    () => selectedValues(themeOptions, excludedThemeIds),
-    [excludedThemeIds, themeOptions],
-  );
   const requestSettings = useMemo<HighRsSettings>(() => ({
     ...settings,
-    industryKeys: selectedIndustryKeys.size === industryOptions.length
-      ? undefined
-      : [...selectedIndustryKeys],
-    themeIds: selectedThemeIds.size === themeOptions.length ? undefined : [...selectedThemeIds],
-  }), [industryOptions.length, selectedIndustryKeys, selectedThemeIds, settings, themeOptions.length]);
+    ...groupFilters.selection,
+  }), [groupFilters.selection, settings]);
 
   useEffect(() => {
-    if (!catalogsLoaded || !benchmarks.includes(requestSettings.benchmark)) return;
+    if (!groupFilters.ready || !benchmarks.includes(requestSettings.benchmark)) return;
     const controller = new AbortController();
     fetchMarketExplorerHighRs(requestSettings, controller.signal)
       .then((next) => {
@@ -128,7 +84,7 @@ export function HighRsTab({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [benchmarks, catalogsLoaded, requestSettings]);
+  }, [benchmarks, groupFilters.ready, requestSettings]);
 
   const update = <Key extends keyof HighRsSettings>(
     key: Key,
@@ -162,19 +118,16 @@ export function HighRsTab({
     },
   }], [eventsBySymbol, result]);
   const symbols = result?.events.map((event) => event.symbol) ?? [];
+  const busy = groupFilters.loading || (groupFilters.ready && loading);
   const commitIndustrySelection = (selected: Set<string>) => {
-    const excluded = excludedValues(industryOptions, selected);
-    storeSet("excludedIndustryKeys", excluded);
+    groupFilters.commitIndustrySelection(selected);
     setError(undefined);
     setLoading(true);
-    setExcludedIndustryKeys(excluded);
   };
   const commitThemeSelection = (selected: Set<number>) => {
-    const excluded = excludedValues(themeOptions, selected);
-    storeSet("excludedThemeIds", excluded);
+    groupFilters.commitThemeSelection(selected);
     setError(undefined);
     setLoading(true);
-    setExcludedThemeIds(excluded);
   };
   const resetFilters = () => {
     for (const key of [
@@ -183,14 +136,11 @@ export function HighRsTab({
       "maximumPercentFromTop",
       "limit",
       "minimumDollarVolume",
-      "excludedIndustryKeys",
-      "excludedThemeIds",
     ]) {
       localStorage.removeItem(`${storagePrefix}${key}`);
     }
     setSettings(defaultSettings(asOf, benchmarks[0] ?? ""));
-    setExcludedIndustryKeys(new Set());
-    setExcludedThemeIds(new Set());
+    groupFilters.reset();
     setError(undefined);
     setLoading(true);
   };
@@ -206,14 +156,14 @@ export function HighRsTab({
           )}
           <CheckboxDropdown
             label="Industries"
-            options={industryOptions}
-            selectedValues={selectedIndustryKeys}
+            options={groupFilters.industryOptions}
+            selectedValues={groupFilters.selectedIndustryKeys}
             onCommit={commitIndustrySelection}
           />
           <CheckboxDropdown
             label="Themes"
-            options={themeOptions}
-            selectedValues={selectedThemeIds}
+            options={groupFilters.themeOptions}
+            selectedValues={groupFilters.selectedThemeIds}
             onCommit={commitThemeSelection}
           />
           <DollarVolumeSlider
@@ -264,22 +214,22 @@ export function HighRsTab({
             onCommit={(value) => update("limit", value)}
           />
           <Button
-            className="market-explorer-high-rs-reset"
+            className="market-explorer-filter-reset"
             size="small"
             disabled={benchmarks.length === 0}
             onClick={resetFilters}
           >
             Reset
           </Button>
-          <span className="market-explorer-high-rs-loading" aria-hidden={!loading}>
-            {loading && <CircularProgress size="0.8rem" />}
+          <span className="market-explorer-high-rs-loading" aria-hidden={!busy}>
+            {busy && <CircularProgress size="0.8rem" />}
           </span>
         </div>,
         toolbarContainer,
       )}
       {result === undefined ? (
         <div className="panel-status">
-          {loading && <CircularProgress size="1rem" />}
+          {busy && <CircularProgress size="1rem" />}
         </div>
       ) : symbols.length === 0 ? (
         <div className="panel-status">
@@ -293,7 +243,13 @@ export function HighRsTab({
           defaultMetricSort={defaultMetricSort}
         />
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={error ?? groupFilters.error}
+        onClose={() => {
+          setError(undefined);
+          groupFilters.clearError();
+        }}
+      />
     </section>
   );
 }
@@ -376,58 +332,4 @@ function monthsBefore(date: Date, months: number) {
 
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
-}
-
-function compareOptions<Value extends string | number>(
-  left: FilterOption<Value>,
-  right: FilterOption<Value>,
-) {
-  return (left.group ?? "").localeCompare(right.group ?? "")
-    || left.label.localeCompare(right.label);
-}
-
-function selectedValues<Value extends string | number>(
-  options: ReadonlyArray<FilterOption<Value>>,
-  excluded: ReadonlySet<Value>,
-) {
-  return new Set(options.map((option) => option.value).filter((value) => !excluded.has(value)));
-}
-
-function excludedValues<Value extends string | number>(
-  options: ReadonlyArray<FilterOption<Value>>,
-  selected: ReadonlySet<Value>,
-) {
-  return new Set(options.map((option) => option.value).filter((value) => !selected.has(value)));
-}
-
-function retainKnown<Value extends string | number>(
-  values: ReadonlySet<Value>,
-  options: ReadonlyArray<FilterOption<Value>>,
-) {
-  const known = new Set(options.map((option) => option.value));
-  return new Set([...values].filter((value) => known.has(value)));
-}
-
-function readStoredSet<Value extends string | number>(
-  key: string,
-  valid: (value: unknown) => value is Value,
-) {
-  try {
-    const stored = JSON.parse(localStorage.getItem(`${storagePrefix}${key}`) ?? "[]") as unknown;
-    return new Set(Array.isArray(stored) ? stored.filter(valid) : []);
-  } catch {
-    return new Set<Value>();
-  }
-}
-
-function storeSet<Value extends string | number>(key: string, values: ReadonlySet<Value>) {
-  localStorage.setItem(`${storagePrefix}${key}`, JSON.stringify([...values]));
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-
-function isNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value);
 }

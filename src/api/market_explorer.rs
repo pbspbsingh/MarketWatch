@@ -4,6 +4,7 @@ use crate::services::market_explorer::{
     HighRsError, HighRsRequest, HighRsResult, HighestReturnError, HighestReturnRequest,
     HighestReturnResult, HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest,
     HighestVolumeResult, HighestVolumeScanRange, MarketExplorerCandleStatus, MarketExplorerError,
+    MarketExplorerSelection,
 };
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -20,8 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/market-explorer/candles/pause", post(pause))
         .route("/market-explorer/candles/retry-failed", post(retry_failed))
         .route("/market-explorer/highest-rs", post(high_rs))
-        .route("/market-explorer/highest-return", get(highest_return))
-        .route("/market-explorer/highest-volume", get(highest_volume))
+        .route("/market-explorer/highest-return", post(highest_return))
+        .route("/market-explorer/highest-volume", post(highest_volume))
 }
 
 #[derive(Default, Deserialize)]
@@ -31,21 +32,25 @@ struct StatusQuery {
 }
 
 #[derive(Deserialize)]
-struct HighestVolumeQuery {
+struct HighestVolumeInput {
     scan_range: HighestVolumeScanRange,
     lookback: HighestVolumeLookback,
     limit: usize,
     minimum_rvol: f64,
     minimum_range_atr: f64,
     minimum_dollar_volume: f64,
+    #[serde(flatten)]
+    selection: SelectionInput,
 }
 
 #[derive(Deserialize)]
-struct HighestReturnQuery {
+struct HighestReturnInput {
     start_date: chrono::NaiveDate,
     end_date: chrono::NaiveDate,
     limit: usize,
     minimum_dollar_volume: f64,
+    #[serde(flatten)]
+    selection: SelectionInput,
 }
 
 #[derive(Deserialize)]
@@ -55,8 +60,23 @@ struct HighRsInput {
     maximum_percent_from_top: f64,
     limit: usize,
     minimum_dollar_volume: f64,
+    #[serde(flatten)]
+    selection: SelectionInput,
+}
+
+#[derive(Default, Deserialize)]
+struct SelectionInput {
     industry_keys: Option<Vec<String>>,
     theme_ids: Option<Vec<i64>>,
+}
+
+impl From<SelectionInput> for MarketExplorerSelection {
+    fn from(input: SelectionInput) -> Self {
+        Self {
+            industry_keys: input.industry_keys,
+            theme_ids: input.theme_ids,
+        }
+    }
 }
 
 async fn status(
@@ -105,18 +125,21 @@ async fn retry_failed(
 
 async fn highest_volume(
     State(state): State<AppState>,
-    Query(query): Query<HighestVolumeQuery>,
+    Json(input): Json<HighestVolumeInput>,
 ) -> Result<Json<HighestVolumeResult>, (StatusCode, Json<Value>)> {
     let result = state
         .market_explorer
-        .highest_volume(HighestVolumeRequest {
-            scan_range: query.scan_range,
-            lookback: query.lookback,
-            limit: query.limit,
-            minimum_rvol: query.minimum_rvol,
-            minimum_range_atr: query.minimum_range_atr,
-            minimum_dollar_volume: query.minimum_dollar_volume,
-        })
+        .highest_volume(
+            HighestVolumeRequest {
+                scan_range: input.scan_range,
+                lookback: input.lookback,
+                limit: input.limit,
+                minimum_rvol: input.minimum_rvol,
+                minimum_range_atr: input.minimum_range_atr,
+                minimum_dollar_volume: input.minimum_dollar_volume,
+            },
+            input.selection.into(),
+        )
         .await
         .map_err(highest_volume_error)?;
     info!(
@@ -129,16 +152,19 @@ async fn highest_volume(
 
 async fn highest_return(
     State(state): State<AppState>,
-    Query(query): Query<HighestReturnQuery>,
+    Json(input): Json<HighestReturnInput>,
 ) -> Result<Json<HighestReturnResult>, (StatusCode, Json<Value>)> {
     state
         .market_explorer
-        .highest_return(HighestReturnRequest {
-            start_date: query.start_date,
-            end_date: query.end_date,
-            limit: query.limit,
-            minimum_dollar_volume: query.minimum_dollar_volume,
-        })
+        .highest_return(
+            HighestReturnRequest {
+                start_date: input.start_date,
+                end_date: input.end_date,
+                limit: input.limit,
+                minimum_dollar_volume: input.minimum_dollar_volume,
+            },
+            input.selection.into(),
+        )
         .await
         .map(Json)
         .map_err(highest_return_error)
@@ -155,15 +181,16 @@ async fn high_rs(
     }
     state
         .market_explorer
-        .high_rs(HighRsRequest {
-            start_date: input.start_date,
-            benchmark: input.benchmark,
-            maximum_percent_from_top: input.maximum_percent_from_top,
-            limit: input.limit,
-            minimum_dollar_volume: input.minimum_dollar_volume,
-            industry_keys: input.industry_keys,
-            theme_ids: input.theme_ids,
-        })
+        .high_rs(
+            HighRsRequest {
+                start_date: input.start_date,
+                benchmark: input.benchmark,
+                maximum_percent_from_top: input.maximum_percent_from_top,
+                limit: input.limit,
+                minimum_dollar_volume: input.minimum_dollar_volume,
+            },
+            input.selection.into(),
+        )
         .await
         .map(Json)
         .map_err(high_rs_error)

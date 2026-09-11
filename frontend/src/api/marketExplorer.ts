@@ -40,7 +40,12 @@ export interface HighestVolumeResult {
   events: HighestVolumeEvent[];
 }
 
-export interface HighestVolumeSettings {
+export interface MarketExplorerGroupSelection {
+  industryKeys?: string[];
+  themeIds?: number[];
+}
+
+export interface HighestVolumeSettings extends MarketExplorerGroupSelection {
   scanRange: HighestVolumeScanRange;
   lookback: HighestVolumeLookback;
   limit: HighestVolumeLimit;
@@ -64,7 +69,7 @@ export interface HighestReturnResult {
   events: HighestReturnEvent[];
 }
 
-export interface HighestReturnSettings {
+export interface HighestReturnSettings extends MarketExplorerGroupSelection {
   startDate: string;
   endDate: string;
   limit: number;
@@ -88,14 +93,12 @@ export interface HighRsResult {
   events: HighRsEvent[];
 }
 
-export interface HighRsSettings {
+export interface HighRsSettings extends MarketExplorerGroupSelection {
   startDate: string;
   benchmark: string;
   maximumPercentFromTop: number;
   limit: number;
   minimumDollarVolume: number;
-  industryKeys?: string[];
-  themeIds?: number[];
 }
 
 export const fetchMarketExplorerCandleStatus = (signal?: AbortSignal, refresh = false) =>
@@ -114,15 +117,21 @@ export async function fetchMarketExplorerHighestVolume(
   settings: HighestVolumeSettings,
   signal?: AbortSignal,
 ): Promise<HighestVolumeResult> {
-  const query = new URLSearchParams({
-    scan_range: settings.scanRange,
-    lookback: settings.lookback,
-    limit: String(settings.limit),
-    minimum_rvol: String(settings.minimumRvol),
-    minimum_range_atr: String(settings.minimumRangeAtr),
-    minimum_dollar_volume: String(settings.minimumDollarVolume),
+  const response = await fetch("/api/market-explorer/highest-volume", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scan_range: settings.scanRange,
+      lookback: settings.lookback,
+      limit: settings.limit,
+      minimum_rvol: settings.minimumRvol,
+      minimum_range_atr: settings.minimumRangeAtr,
+      minimum_dollar_volume: settings.minimumDollarVolume,
+      industry_keys: settings.industryKeys,
+      theme_ids: settings.themeIds,
+    }),
+    signal,
   });
-  const response = await fetch(`/api/market-explorer/highest-volume?${query}`, { signal });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? `Highest-volume scan failed: HTTP ${response.status}`);
@@ -134,13 +143,19 @@ export async function fetchMarketExplorerHighestReturn(
   settings: HighestReturnSettings,
   signal?: AbortSignal,
 ): Promise<HighestReturnResult> {
-  const query = new URLSearchParams({
-    start_date: settings.startDate,
-    end_date: settings.endDate,
-    limit: String(settings.limit),
-    minimum_dollar_volume: String(settings.minimumDollarVolume),
+  const response = await fetch("/api/market-explorer/highest-return", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      start_date: settings.startDate,
+      end_date: settings.endDate,
+      limit: settings.limit,
+      minimum_dollar_volume: settings.minimumDollarVolume,
+      industry_keys: settings.industryKeys,
+      theme_ids: settings.themeIds,
+    }),
+    signal,
   });
-  const response = await fetch(`/api/market-explorer/highest-return?${query}`, { signal });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? `Highest-return scan failed: HTTP ${response.status}`);

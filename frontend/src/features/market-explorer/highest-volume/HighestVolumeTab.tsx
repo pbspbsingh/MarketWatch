@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CircularProgress, TextField, Typography } from "@mui/material";
+import { Button, CircularProgress, TextField, Typography } from "@mui/material";
 import {
   fetchMarketExplorerHighestVolume,
   type HighestVolumeLimit,
@@ -12,8 +12,10 @@ import {
 import { Toast } from "../../../components/Toast";
 import { TickerLens } from "../../ticker-lens/TickerLens";
 import type { TickerMetric } from "../../ticker-lens/types";
+import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DiscreteSlider } from "../components/DiscreteSlider";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
+import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
 import "./highest-volume-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.highest-volume.";
@@ -49,10 +51,16 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
   const [result, setResult] = useState<HighestVolumeResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
+  const requestSettings = useMemo<HighestVolumeSettings>(() => ({
+    ...settings,
+    ...groupFilters.selection,
+  }), [groupFilters.selection, settings]);
 
   useEffect(() => {
+    if (!groupFilters.ready) return;
     const controller = new AbortController();
-    fetchMarketExplorerHighestVolume(settings, controller.signal)
+    fetchMarketExplorerHighestVolume(requestSettings, controller.signal)
       .then((next) => {
         if (!controller.signal.aborted) setResult(next);
       })
@@ -65,7 +73,7 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [settings]);
+  }, [groupFilters.ready, requestSettings]);
 
   const update = <Key extends keyof HighestVolumeSettings>(
     key: Key,
@@ -87,6 +95,33 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
     }];
   }, [result]);
   const symbols = result?.events.map((event) => event.symbol) ?? [];
+  const busy = groupFilters.loading || (groupFilters.ready && loading);
+  const commitIndustrySelection = (selected: Set<string>) => {
+    groupFilters.commitIndustrySelection(selected);
+    setError(undefined);
+    setLoading(true);
+  };
+  const commitThemeSelection = (selected: Set<number>) => {
+    groupFilters.commitThemeSelection(selected);
+    setError(undefined);
+    setLoading(true);
+  };
+  const resetFilters = () => {
+    for (const key of [
+      "scanRange",
+      "lookback",
+      "limit",
+      "minimumRvol",
+      "minimumRangeAtr",
+      "minimumDollarVolume",
+    ]) {
+      localStorage.removeItem(`${storagePrefix}${key}`);
+    }
+    groupFilters.reset();
+    setSettings(defaults);
+    setError(undefined);
+    setLoading(true);
+  };
 
   return (
     <section className="market-explorer-highest-volume" aria-label="Highest Volume">
@@ -97,6 +132,18 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
               {result.events.length} events · {result.as_of}
             </Typography>
           )}
+          <CheckboxDropdown
+            label="Industries"
+            options={groupFilters.industryOptions}
+            selectedValues={groupFilters.selectedIndustryKeys}
+            onCommit={commitIndustrySelection}
+          />
+          <CheckboxDropdown
+            label="Themes"
+            options={groupFilters.themeOptions}
+            selectedValues={groupFilters.selectedThemeIds}
+            onCommit={commitThemeSelection}
+          />
           <DollarVolumeSlider
             value={settings.minimumDollarVolume}
             onCommit={(value) => update("minimumDollarVolume", value)}
@@ -132,15 +179,18 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
             value={settings.limit}
             onCommit={(value) => update("limit", value)}
           />
-          <span className="market-explorer-highest-volume-loading" aria-hidden={!loading}>
-            {loading && <CircularProgress size="0.8rem" />}
+          <Button className="market-explorer-filter-reset" size="small" onClick={resetFilters}>
+            Reset
+          </Button>
+          <span className="market-explorer-highest-volume-loading" aria-hidden={!busy}>
+            {busy && <CircularProgress size="0.8rem" />}
           </span>
         </div>,
         toolbarContainer,
       )}
       {result === undefined ? (
         <div className="panel-status">
-          {loading && <CircularProgress size="1rem" />}
+          {busy && <CircularProgress size="1rem" />}
         </div>
       ) : symbols.length === 0 ? (
         <div className="panel-status">
@@ -154,7 +204,13 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
           defaultMetricSort={defaultMetricSort}
         />
       )}
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast
+        message={error ?? groupFilters.error}
+        onClose={() => {
+          setError(undefined);
+          groupFilters.clearError();
+        }}
+      />
     </section>
   );
 }

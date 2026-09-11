@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use thiserror::Error;
 
+use super::selection::{MarketExplorerSelection, includes_symbol, selected_symbols};
+
 const VOLUME_AVERAGE_SESSIONS: usize = 50;
 const NORMALIZATION_MONTHS: u32 = 12;
 const WINDOW_PADDING_MONTHS: u32 = 1;
@@ -19,8 +21,6 @@ pub struct HighRsRequest {
     pub maximum_percent_from_top: f64,
     pub limit: usize,
     pub minimum_dollar_volume: f64,
-    pub industry_keys: Option<Vec<String>>,
-    pub theme_ids: Option<Vec<i64>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -67,6 +67,7 @@ impl HighRsService {
     pub async fn scan(
         &self,
         request: HighRsRequest,
+        selection: MarketExplorerSelection,
         as_of: NaiveDate,
     ) -> Result<HighRsResult, HighRsError> {
         validate_request(&request, as_of)?;
@@ -76,7 +77,9 @@ impl HighRsService {
         let fetch_end = as_of
             .succ_opt()
             .ok_or_else(|| HighRsError::Validation("date range is out of bounds".to_owned()))?;
-        let selected_symbols = self.selected_symbols(&request).await?;
+        let selected_symbols = selected_symbols(&self.store, &selection)
+            .await
+            .map_err(HighRsError::Persistence)?;
         if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
             return Ok(HighRsResult {
                 benchmark: request.benchmark,
@@ -115,43 +118,6 @@ impl HighRsService {
             as_of,
             events,
         })
-    }
-
-    async fn selected_symbols(
-        &self,
-        request: &HighRsRequest,
-    ) -> Result<Option<HashSet<TickerSymbol>>, HighRsError> {
-        let mut selected = None;
-        if let Some(industry_keys) = &request.industry_keys {
-            let symbols = if industry_keys.is_empty() {
-                HashSet::new()
-            } else {
-                self.store
-                    .tickers_for_industries(industry_keys)
-                    .await
-                    .map_err(HighRsError::Persistence)?
-                    .into_iter()
-                    .collect()
-            };
-            selected = Some(symbols);
-        }
-        if let Some(theme_ids) = &request.theme_ids {
-            let theme_symbols = if theme_ids.is_empty() {
-                HashSet::new()
-            } else {
-                self.store
-                    .tickers_for_themes(theme_ids, false)
-                    .await
-                    .map_err(HighRsError::Persistence)?
-                    .into_iter()
-                    .collect()
-            };
-            match &mut selected {
-                Some(symbols) => symbols.retain(|symbol| theme_symbols.contains(symbol)),
-                None => selected = Some(theme_symbols),
-            }
-        }
-        Ok(selected)
     }
 }
 
@@ -196,7 +162,7 @@ fn scan_histories(
     let mut events = histories
         .iter()
         .filter(|(symbol, _)| symbol != &request.benchmark)
-        .filter(|(symbol, _)| selected_symbols.is_none_or(|selected| selected.contains(symbol)))
+        .filter(|(symbol, _)| includes_symbol(selected_symbols, symbol))
         .filter_map(|(symbol, candles)| {
             event_for_history(symbol, candles, benchmark_candles, request, as_of)
         })
@@ -306,8 +272,6 @@ mod tests {
             maximum_percent_from_top,
             limit: 50,
             minimum_dollar_volume: 0.0,
-            industry_keys: None,
-            theme_ids: None,
         }
     }
 

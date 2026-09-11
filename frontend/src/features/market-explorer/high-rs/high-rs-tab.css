@@ -60,11 +60,6 @@
   flex-shrink: 0;
 }
 
-.market-explorer-high-rs-reset {
-  flex-shrink: 0;
-  font-size: 0.62rem !important;
-}
-
 .market-explorer-high-rs-summary {
   font-size: 0.6rem !important;
   white-space: nowrap;

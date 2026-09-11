@@ -2,7 +2,10 @@ use crate::models::{DailyCandle, TickerSymbol};
 use crate::store::Store;
 use chrono::{Months, NaiveDate};
 use serde::Serialize;
+use std::collections::HashSet;
 use thiserror::Error;
+
+use super::selection::{MarketExplorerSelection, includes_symbol, selected_symbols};
 
 const VOLUME_AVERAGE_SESSIONS: usize = 50;
 const ATR_SESSIONS: usize = 14;
@@ -55,6 +58,7 @@ impl HighestReturnService {
     pub async fn scan(
         &self,
         request: HighestReturnRequest,
+        selection: MarketExplorerSelection,
         successful_candle_date: NaiveDate,
     ) -> Result<HighestReturnResult, HighestReturnError> {
         validate_request(request)?;
@@ -62,6 +66,12 @@ impl HighestReturnService {
             .start_date
             .checked_sub_months(Months::new(HISTORY_PADDING_MONTHS))
             .ok_or_else(|| HighestReturnError::Validation("date range is out of bounds".into()))?;
+        let selected_symbols = selected_symbols(&self.store, &selection)
+            .await
+            .map_err(HighestReturnError::Persistence)?;
+        if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
+            return Ok(HighestReturnResult { events: Vec::new() });
+        }
         let histories = self
             .store
             .market_explorer_daily_candle_histories(
@@ -71,9 +81,11 @@ impl HighestReturnService {
             )
             .await
             .map_err(HighestReturnError::Persistence)?;
-        let events = tokio::task::spawn_blocking(move || scan_histories(histories, request))
-            .await
-            .map_err(HighestReturnError::Computation)?;
+        let events = tokio::task::spawn_blocking(move || {
+            scan_histories(histories, selected_symbols.as_ref(), request)
+        })
+        .await
+        .map_err(HighestReturnError::Computation)?;
         Ok(HighestReturnResult { events })
     }
 }
@@ -99,10 +111,12 @@ fn validate_request(request: HighestReturnRequest) -> Result<(), HighestReturnEr
 
 fn scan_histories(
     histories: Vec<(TickerSymbol, Vec<DailyCandle>)>,
+    selected_symbols: Option<&HashSet<TickerSymbol>>,
     request: HighestReturnRequest,
 ) -> Vec<HighestReturnEvent> {
     let mut events = histories
         .iter()
+        .filter(|(symbol, _)| includes_symbol(selected_symbols, symbol))
         .filter_map(|(symbol, candles)| event_for_history(symbol, candles, request))
         .collect::<Vec<_>>();
     events.sort_by(|left, right| {
@@ -240,7 +254,7 @@ mod tests {
             minimum_dollar_volume: 0.0,
         };
 
-        let events = scan_histories(histories, request);
+        let events = scan_histories(histories, None, request);
         assert_eq!(
             events
                 .iter()
