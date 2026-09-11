@@ -1,6 +1,7 @@
-.market-explorer-dollar-volume-slider {
+.market-explorer-dollar-volume-slider,
+.market-explorer-discrete-slider,
+.market-explorer-stepped-slider {
   display: flex;
-  width: 10rem;
   flex-shrink: 0;
   align-items: center;
   gap: 0.4rem;
@@ -37,5 +38,25 @@
     &.MuiSlider-valueLabelOpen {
       transform: scale(1);
     }
+  }
+}
+
+.market-explorer-dollar-volume-slider {
+  width: 10rem;
+}
+
+.market-explorer-discrete-slider {
+  width: 10rem;
+
+  & .MuiTypography-root:last-child {
+    min-width: 1.5rem;
+  }
+}
+
+.market-explorer-stepped-slider {
+  width: 10rem;
+
+  & .MuiTypography-root:last-child {
+    min-width: 1.8rem;
   }
 }

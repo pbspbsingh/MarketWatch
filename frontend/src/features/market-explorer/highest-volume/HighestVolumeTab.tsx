@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CircularProgress, Slider, TextField, Typography } from "@mui/material";
+import { CircularProgress, TextField, Typography } from "@mui/material";
 import {
   fetchMarketExplorerHighestVolume,
   type HighestVolumeLimit,
@@ -12,6 +12,7 @@ import {
 import { Toast } from "../../../components/Toast";
 import { TickerLens } from "../../ticker-lens/TickerLens";
 import type { TickerMetric } from "../../ticker-lens/types";
+import { DiscreteSlider } from "../components/DiscreteSlider";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import "./highest-volume-tab.css";
 
@@ -155,45 +156,6 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
       )}
       <Toast message={error} onClose={() => setError(undefined)} />
     </section>
-  );
-}
-
-function DiscreteSlider<Value extends string | number>({
-  label,
-  options,
-  value,
-  onCommit,
-}: {
-  label: string;
-  options: ReadonlyArray<{ value: Value; label: string }>;
-  value: Value;
-  onCommit: (value: Value) => void;
-}) {
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
-  const [draftIndex, setDraftIndex] = useState(selectedIndex);
-  const indexValue = (next: number | number[]) => Array.isArray(next) ? next[0] : next;
-
-  return (
-    <label className="market-explorer-highest-volume-slider">
-      <Typography component="span">{label}</Typography>
-      <Slider
-        size="small"
-        min={0}
-        max={options.length - 1}
-        step={1}
-        marks
-        value={draftIndex}
-        valueLabelDisplay="auto"
-        valueLabelFormat={(index) => options[index]?.label ?? ""}
-        aria-label={label}
-        onChange={(_, next) => setDraftIndex(indexValue(next))}
-        onChangeCommitted={(_, next) => {
-          const option = options[indexValue(next)];
-          if (option !== undefined) onCommit(option.value);
-        }}
-      />
-      <Typography component="span">{options[draftIndex]?.label}</Typography>
-    </label>
   );
 }
 

@@ -1,4 +1,4 @@
-.market-explorer-highest-volume {
+.market-explorer-highest-return {
   display: flex;
   width: 100%;
   height: 100%;
@@ -11,26 +11,31 @@
   }
 }
 
-.market-explorer-highest-volume-controls,
-.market-explorer-highest-volume-number {
+.market-explorer-highest-return-controls,
+.market-explorer-date-control {
   display: flex;
   align-items: center;
 }
 
-.market-explorer-highest-volume-controls {
+.market-explorer-highest-return-controls {
   min-width: 0;
   flex-shrink: 0;
   gap: 1rem;
 }
 
-.market-explorer-highest-volume-loading {
+.market-explorer-highest-return-loading {
   display: inline-flex;
   width: 0.8rem;
   height: 0.8rem;
   flex-shrink: 0;
 }
 
-.market-explorer-highest-volume-number {
+.market-explorer-highest-return-summary {
+  font-size: 0.6rem !important;
+  white-space: nowrap;
+}
+
+.market-explorer-date-control {
   flex-shrink: 0;
   gap: 0.3rem;
 
@@ -40,16 +45,11 @@
   }
 
   & .MuiTextField-root {
-    width: 3.5rem;
+    width: 8rem;
   }
 
   & .MuiInputBase-input {
     padding: 0.125rem 0.25rem;
     font-size: 0.68rem;
   }
-}
-
-.market-explorer-highest-volume-summary {
-  font-size: 0.6rem !important;
-  white-space: nowrap;
 }

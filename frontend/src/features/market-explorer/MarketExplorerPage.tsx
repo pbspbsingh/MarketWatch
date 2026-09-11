@@ -24,7 +24,13 @@ const HighestVolumeTab = lazy(() =>
   })),
 );
 
-type MarketExplorerView = "market-explorer" | "highest-volume";
+const HighestReturnTab = lazy(() =>
+  import("./highest-return/HighestReturnTab").then(({ HighestReturnTab }) => ({
+    default: HighestReturnTab,
+  })),
+);
+
+type MarketExplorerView = "market-explorer" | "highest-volume" | "highest-return";
 
 export function MarketExplorerPage() {
   const [status, setStatus] = useState<MarketExplorerCandleStatus>();
@@ -92,12 +98,17 @@ export function MarketExplorerPage() {
         >
           <MenuItem value="market-explorer">Market Explorer</MenuItem>
           <MenuItem value="highest-volume" disabled={!viewsEnabled}>Highest Volume</MenuItem>
+          <MenuItem value="highest-return" disabled={!viewsEnabled}>Highest Return</MenuItem>
         </Select>
         <div className="market-explorer-toolbar-slot" ref={setToolbarContainer} />
       </header>
       {viewsEnabled && activeView === "highest-volume" ? (
         <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
           <HighestVolumeTab toolbarContainer={toolbarContainer} />
+        </Suspense>
+      ) : viewsEnabled && activeView === "highest-return" ? (
+        <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
+          <HighestReturnTab toolbarContainer={toolbarContainer} />
         </Suspense>
       ) : loading && status === undefined ? (
         <div className="panel-status">
@@ -190,6 +201,13 @@ export function MarketExplorerPage() {
                 onClick={() => setActiveView("highest-volume")}
               >
                 Highest Volume
+              </Button>
+              <Button
+                variant="outlined"
+                disabled={!viewsEnabled}
+                onClick={() => setActiveView("highest-return")}
+              >
+                Highest Return
               </Button>
             </section>
           </div>

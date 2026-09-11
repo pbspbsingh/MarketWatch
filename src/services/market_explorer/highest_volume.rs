@@ -9,7 +9,7 @@ use thiserror::Error;
 use tracing::info;
 
 const VOLUME_AVERAGE_SESSIONS: usize = 50;
-const ATR_SESSIONS: usize = 20;
+const ATR_SESSIONS: usize = 14;
 const HISTORY_PADDING_MONTHS: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -401,14 +401,14 @@ mod tests {
         for (index, candle) in values.iter_mut().enumerate() {
             candle.volume = index as i64 + 1;
         }
-        values[30].high = 103.0;
-        values[30].low = 97.0;
+        values[36].high = 103.0;
+        values[36].low = 97.0;
 
         let measured = measure_candles(&values, 0.0, 0.0);
 
         assert!((measured[50].average_volume - 25.5).abs() < f64::EPSILON);
         assert!((measured[51].average_volume - 26.5).abs() < f64::EPSILON);
-        assert!((measured[50].range_atr - (2.0 / 2.2)).abs() < f64::EPSILON);
+        assert!((measured[50].range_atr - (2.0 / (32.0 / 14.0))).abs() < f64::EPSILON);
         assert!((measured[51].range_atr - 1.0).abs() < f64::EPSILON);
     }
 

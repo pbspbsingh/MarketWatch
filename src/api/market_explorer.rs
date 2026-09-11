@@ -1,9 +1,9 @@
 use crate::app::AppState;
-use crate::services::highest_volume::{
-    HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest, HighestVolumeResult,
-    HighestVolumeScanRange,
+use crate::services::market_explorer::{
+    HighestReturnError, HighestReturnRequest, HighestReturnResult, HighestVolumeError,
+    HighestVolumeLookback, HighestVolumeRequest, HighestVolumeResult, HighestVolumeScanRange,
+    MarketExplorerCandleStatus, MarketExplorerError,
 };
-use crate::services::market_explorer::{MarketExplorerCandleStatus, MarketExplorerError};
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/market-explorer/candles/start", post(start))
         .route("/market-explorer/candles/pause", post(pause))
         .route("/market-explorer/candles/retry-failed", post(retry_failed))
+        .route("/market-explorer/highest-return", get(highest_return))
         .route("/market-explorer/highest-volume", get(highest_volume))
 }
 
@@ -34,6 +35,14 @@ struct HighestVolumeQuery {
     limit: usize,
     minimum_rvol: f64,
     minimum_range_atr: f64,
+    minimum_dollar_volume: f64,
+}
+
+#[derive(Deserialize)]
+struct HighestReturnQuery {
+    start_date: chrono::NaiveDate,
+    end_date: chrono::NaiveDate,
+    limit: usize,
     minimum_dollar_volume: f64,
 }
 
@@ -105,6 +114,23 @@ async fn highest_volume(
     Ok(Json(result))
 }
 
+async fn highest_return(
+    State(state): State<AppState>,
+    Query(query): Query<HighestReturnQuery>,
+) -> Result<Json<HighestReturnResult>, (StatusCode, Json<Value>)> {
+    state
+        .market_explorer
+        .highest_return(HighestReturnRequest {
+            start_date: query.start_date,
+            end_date: query.end_date,
+            limit: query.limit,
+            minimum_dollar_volume: query.minimum_dollar_volume,
+        })
+        .await
+        .map(Json)
+        .map_err(highest_return_error)
+}
+
 fn api_error(error: MarketExplorerError) -> StatusCode {
     if matches!(error, MarketExplorerError::RetryUnavailable) {
         return StatusCode::CONFLICT;
@@ -122,6 +148,19 @@ fn highest_volume_error(error_value: HighestVolumeError) -> (StatusCode, Json<Va
     };
     if status.is_server_error() {
         error!(error = %error_value, "Market Explorer highest-volume scan failed");
+    }
+    (status, Json(json!({ "error": error_value.to_string() })))
+}
+
+fn highest_return_error(error_value: HighestReturnError) -> (StatusCode, Json<Value>) {
+    let status = match &error_value {
+        HighestReturnError::Validation(_) => StatusCode::BAD_REQUEST,
+        HighestReturnError::Persistence(_) | HighestReturnError::Computation(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    };
+    if status.is_server_error() {
+        error!(error = %error_value, "Market Explorer highest-return scan failed");
     }
     (status, Json(json!({ "error": error_value.to_string() })))
 }

@@ -1,7 +1,4 @@
 use crate::models::TickerSymbol;
-use crate::services::highest_volume::{
-    HighestVolumeError, HighestVolumeRequest, HighestVolumeResult, HighestVolumeService,
-};
 use crate::services::yahoo::YahooService;
 use crate::store::{MarketExplorerCandleSummary, Store};
 use chrono::NaiveDate;
@@ -12,6 +9,17 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::Notify;
 use tracing::warn;
+
+mod highest_return;
+mod highest_volume;
+
+use highest_return::HighestReturnService;
+pub use highest_return::{HighestReturnError, HighestReturnRequest, HighestReturnResult};
+use highest_volume::HighestVolumeService;
+pub use highest_volume::{
+    HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest, HighestVolumeResult,
+    HighestVolumeScanRange,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +74,7 @@ struct CandleFetchJob {
 pub struct MarketExplorerService {
     store: Store,
     yahoo: Arc<YahooService>,
+    highest_return: HighestReturnService,
     highest_volume: HighestVolumeService,
     job: Mutex<Option<CandleFetchJob>>,
     resumed: Notify,
@@ -89,12 +98,22 @@ enum WorkerAction {
 impl MarketExplorerService {
     pub fn new(store: Store, yahoo: Arc<YahooService>) -> Self {
         Self {
+            highest_return: HighestReturnService::new(store.clone()),
             highest_volume: HighestVolumeService::new(store.clone()),
             store,
             yahoo,
             job: Mutex::new(None),
             resumed: Notify::new(),
         }
+    }
+
+    pub async fn highest_return(
+        &self,
+        request: HighestReturnRequest,
+    ) -> Result<HighestReturnResult, HighestReturnError> {
+        self.highest_return
+            .scan(request, self.yahoo.latest_completed_candle_date())
+            .await
     }
 
     pub async fn highest_volume(

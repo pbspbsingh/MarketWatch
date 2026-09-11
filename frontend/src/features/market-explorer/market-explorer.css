@@ -64,6 +64,10 @@
   font-size: 0.85rem;
 }
 
+.market-explorer-view-list .MuiButton-root + .MuiButton-root {
+  margin-left: 0.75rem;
+}
+
 .market-explorer-candle-heading,
 .market-explorer-progress-row {
   display: flex;

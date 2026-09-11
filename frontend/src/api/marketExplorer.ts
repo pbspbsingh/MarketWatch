@@ -49,6 +49,28 @@ export interface HighestVolumeSettings {
   minimumDollarVolume: number;
 }
 
+export interface HighestReturnEvent {
+  symbol: string;
+  start_date: string;
+  end_date: string;
+  start_close: number;
+  end_close: number;
+  return_percent: number;
+  return_atr: number;
+  dollar_volume: number;
+}
+
+export interface HighestReturnResult {
+  events: HighestReturnEvent[];
+}
+
+export interface HighestReturnSettings {
+  startDate: string;
+  endDate: string;
+  limit: number;
+  minimumDollarVolume: number;
+}
+
 export const fetchMarketExplorerCandleStatus = (signal?: AbortSignal, refresh = false) =>
   request(`/api/market-explorer/candles${refresh ? "?refresh=true" : ""}`, { signal });
 
@@ -79,6 +101,24 @@ export async function fetchMarketExplorerHighestVolume(
     throw new Error(body?.error ?? `Highest-volume scan failed: HTTP ${response.status}`);
   }
   return response.json() as Promise<HighestVolumeResult>;
+}
+
+export async function fetchMarketExplorerHighestReturn(
+  settings: HighestReturnSettings,
+  signal?: AbortSignal,
+): Promise<HighestReturnResult> {
+  const query = new URLSearchParams({
+    start_date: settings.startDate,
+    end_date: settings.endDate,
+    limit: String(settings.limit),
+    minimum_dollar_volume: String(settings.minimumDollarVolume),
+  });
+  const response = await fetch(`/api/market-explorer/highest-return?${query}`, { signal });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Highest-return scan failed: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<HighestReturnResult>;
 }
 
 async function request(url: string, init?: RequestInit): Promise<MarketExplorerCandleStatus> {
