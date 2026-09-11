@@ -389,6 +389,11 @@ function sessionAfterRegularUpdate(
   regular: MarketChartLiveDelta,
 ): SessionDeltaState | undefined {
   if (regular.interval !== "daily") return current;
+  if (current?.delta.session === "pre_market"
+    && current.delta.symbol === regular.symbol
+    && regular.candle.date < current.delta.date) {
+    return current;
+  }
   const matchesPostMarketSession = current?.delta.session === "post_market"
     && current.delta.symbol === regular.symbol
     && current.delta.date === regular.candle.date;

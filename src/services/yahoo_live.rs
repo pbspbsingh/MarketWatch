@@ -10,13 +10,14 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, MissedTickBehavior, sleep_until};
+use tokio::time::{Instant, MissedTickBehavior, sleep, sleep_until};
 use tracing::warn;
 
 pub(crate) const MAX_ACTIVE_SYMBOLS: usize = 128;
 const PRICING_BUFFER_SIZE: usize = 256;
 const IDLE_GRACE_PERIOD: Duration = Duration::from_mins(10);
 const MARKET_SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(15);
+const REGULAR_SESSION_SEED_GRACE_PERIOD: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct YahooLiveCandle {
@@ -100,6 +101,9 @@ enum Command {
         symbol: YahooSymbol,
         result: Box<Result<IntradaySessionSeed, String>>,
     },
+    RecoverRegular {
+        market_date: chrono::NaiveDate,
+    },
 }
 
 struct YahooLiveActor {
@@ -117,6 +121,7 @@ struct YahooLiveActor {
     pre_market_cache: HashMap<YahooSymbol, CachedCandle>,
     post_market_cache: HashMap<YahooSymbol, YahooLivePrice>,
     latest_frame_at: HashMap<YahooSymbol, DateTime<Utc>>,
+    market_session: MarketSession,
     live_enabled: bool,
     lru_clock: u64,
 }
@@ -139,7 +144,8 @@ impl YahooLiveHandle {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (pricing_sender, pricing) = mpsc::channel(PRICING_BUFFER_SIZE);
         let (desired, desired_receiver) = watch::channel(Vec::new());
-        let live_enabled = schedule.session(Utc::now()) != MarketSession::Closed;
+        let market_session = schedule.session(Utc::now());
+        let live_enabled = market_session != MarketSession::Closed;
         spawn_transport(desired_receiver, pricing_sender);
         tokio::spawn(
             YahooLiveActor {
@@ -157,6 +163,7 @@ impl YahooLiveHandle {
                 pre_market_cache: HashMap::new(),
                 post_market_cache: HashMap::new(),
                 latest_frame_at: HashMap::new(),
+                market_session,
                 live_enabled,
                 lru_clock: 0,
             }
@@ -333,6 +340,9 @@ impl YahooLiveActor {
                     Err(_) => {}
                 }
             }
+            Command::RecoverRegular { market_date } => {
+                self.recover_missing_regular_candles(market_date);
+            }
         }
     }
 
@@ -415,7 +425,19 @@ impl YahooLiveActor {
     }
 
     fn refresh_live_state(&mut self) {
-        let live_enabled = self.schedule.session(Utc::now()) != MarketSession::Closed;
+        let now = Utc::now();
+        let previous_session = self.market_session;
+        let market_session = self.schedule.session(now);
+        if market_session == previous_session {
+            return;
+        }
+        self.market_session = market_session;
+        if previous_session == MarketSession::PreMarket && market_session == MarketSession::Regular
+        {
+            self.schedule_regular_recovery(self.schedule.market_date(now));
+        }
+
+        let live_enabled = market_session != MarketSession::Closed;
         if live_enabled == self.live_enabled {
             return;
         }
@@ -441,6 +463,39 @@ impl YahooLiveActor {
             .subscriptions
             .keys()
             .chain(self.idle_subscriptions.keys())
+            .cloned()
+            .collect::<Vec<_>>();
+        for symbol in symbols {
+            self.start_seed(&symbol);
+        }
+    }
+
+    fn schedule_regular_recovery(&self, market_date: chrono::NaiveDate) {
+        let commands = self.command_sender.clone();
+        tokio::spawn(async move {
+            sleep(REGULAR_SESSION_SEED_GRACE_PERIOD).await;
+            let _ = commands.send(Command::RecoverRegular { market_date });
+        });
+    }
+
+    fn recover_missing_regular_candles(&mut self, market_date: chrono::NaiveDate) {
+        let now = Utc::now();
+        if self.schedule.session(now) != MarketSession::Regular
+            || self.schedule.market_date(now) != market_date
+        {
+            return;
+        }
+        let symbols = self
+            .subscriptions
+            .keys()
+            .filter(|symbol| !self.seed_tasks.contains_key(*symbol))
+            .filter(|symbol| {
+                needs_regular_recovery(
+                    self.pre_market_cache.get(*symbol),
+                    self.cache.get(*symbol),
+                    market_date,
+                )
+            })
             .cloned()
             .collect::<Vec<_>>();
         for symbol in symbols {
@@ -758,6 +813,16 @@ fn accept_frame_timestamp(
     true
 }
 
+fn needs_regular_recovery(
+    pre_market: Option<&CachedCandle>,
+    regular: Option<&CachedCandle>,
+    market_date: chrono::NaiveDate,
+) -> bool {
+    pre_market.is_some_and(|candle| candle.market_date == market_date && candle.published.is_some())
+        && !regular
+            .is_some_and(|candle| candle.market_date == market_date && candle.published.is_some())
+}
+
 impl CachedCandle {
     fn new(market_date: chrono::NaiveDate, updated_at: DateTime<Utc>, touched: u64) -> Self {
         Self {
@@ -1029,6 +1094,33 @@ mod tests {
         assert_eq!(cached.low, Some(99.0));
         assert_eq!(cached.close, Some(101.5));
         assert_eq!(cached.volume, Some(10_000));
+    }
+
+    #[test]
+    fn regular_recovery_requires_current_premarket_and_missing_regular_candle() {
+        let market_date = chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        let updated_at = Utc.with_ymd_and_hms(2026, 7, 16, 13, 0, 0).unwrap();
+        let published = DailyCandle {
+            market_date,
+            open: 100.0,
+            high: 102.0,
+            low: 99.0,
+            close: 101.0,
+            volume: 10_000,
+        };
+        let mut pre_market = CachedCandle::new(market_date, updated_at, 1);
+        pre_market.published = Some(published.clone());
+
+        assert!(needs_regular_recovery(Some(&pre_market), None, market_date));
+
+        let mut regular = CachedCandle::new(market_date, updated_at, 2);
+        regular.published = Some(published);
+        assert!(!needs_regular_recovery(
+            Some(&pre_market),
+            Some(&regular),
+            market_date,
+        ));
+        assert!(!needs_regular_recovery(None, None, market_date));
     }
 
     #[test]
