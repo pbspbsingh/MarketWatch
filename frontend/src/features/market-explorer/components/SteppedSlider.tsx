@@ -8,6 +8,7 @@ export function SteppedSlider({
   minimum,
   maximum,
   step,
+  formatValue,
   onCommit,
 }: {
   label: string;
@@ -15,6 +16,7 @@ export function SteppedSlider({
   minimum: number;
   maximum: number;
   step: number;
+  formatValue?: (value: number) => string;
   onCommit: (value: number) => void;
 }) {
   const [draft, setDraft] = useState<number>();
@@ -30,6 +32,7 @@ export function SteppedSlider({
         step={step}
         value={displayed}
         valueLabelDisplay="auto"
+        valueLabelFormat={formatValue}
         aria-label={label}
         onChange={(_, next) => setDraft(singleValue(next))}
         onChangeCommitted={(_, next) => {
@@ -37,7 +40,7 @@ export function SteppedSlider({
           onCommit(singleValue(next));
         }}
       />
-      <Typography component="span">{displayed}</Typography>
+      <Typography component="span">{formatValue?.(displayed) ?? displayed}</Typography>
     </label>
   );
 }

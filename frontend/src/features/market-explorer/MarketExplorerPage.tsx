@@ -30,7 +30,13 @@ const HighestReturnTab = lazy(() =>
   })),
 );
 
-type MarketExplorerView = "market-explorer" | "highest-volume" | "highest-return";
+const HighRsTab = lazy(() =>
+  import("./high-rs/HighRsTab").then(({ HighRsTab }) => ({
+    default: HighRsTab,
+  })),
+);
+
+type MarketExplorerView = "market-explorer" | "highest-volume" | "highest-return" | "high-rs";
 
 export function MarketExplorerPage() {
   const [status, setStatus] = useState<MarketExplorerCandleStatus>();
@@ -99,6 +105,7 @@ export function MarketExplorerPage() {
           <MenuItem value="market-explorer">Market Explorer</MenuItem>
           <MenuItem value="highest-volume" disabled={!viewsEnabled}>Highest Volume</MenuItem>
           <MenuItem value="highest-return" disabled={!viewsEnabled}>Highest Return</MenuItem>
+          <MenuItem value="high-rs" disabled={!viewsEnabled}>Highest RS</MenuItem>
         </Select>
         <div className="market-explorer-toolbar-slot" ref={setToolbarContainer} />
       </header>
@@ -109,6 +116,10 @@ export function MarketExplorerPage() {
       ) : viewsEnabled && activeView === "highest-return" ? (
         <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
           <HighestReturnTab toolbarContainer={toolbarContainer} />
+        </Suspense>
+      ) : viewsEnabled && activeView === "high-rs" && status !== undefined ? (
+        <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
+          <HighRsTab toolbarContainer={toolbarContainer} asOf={status.target_date} />
         </Suspense>
       ) : loading && status === undefined ? (
         <div className="panel-status">
@@ -195,20 +206,29 @@ export function MarketExplorerPage() {
               <Typography id="market-explorer-views-title" component="h2">
                 Explorer tabs
               </Typography>
-              <Button
-                variant="outlined"
-                disabled={!viewsEnabled}
-                onClick={() => setActiveView("highest-volume")}
-              >
-                Highest Volume
-              </Button>
-              <Button
-                variant="outlined"
-                disabled={!viewsEnabled}
-                onClick={() => setActiveView("highest-return")}
-              >
-                Highest Return
-              </Button>
+              <div className="market-explorer-view-buttons">
+                <Button
+                  variant="outlined"
+                  disabled={!viewsEnabled}
+                  onClick={() => setActiveView("highest-volume")}
+                >
+                  Highest Volume
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={!viewsEnabled}
+                  onClick={() => setActiveView("highest-return")}
+                >
+                  Highest Return
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={!viewsEnabled}
+                  onClick={() => setActiveView("high-rs")}
+                >
+                  Highest RS
+                </Button>
+              </div>
             </section>
           </div>
         </div>

@@ -71,6 +71,33 @@ export interface HighestReturnSettings {
   minimumDollarVolume: number;
 }
 
+export interface HighRsEvent {
+  symbol: string;
+  as_of: string;
+  latest_rs: number;
+  top_date: string;
+  top_rs: number;
+  percent_from_top: number;
+  dollar_volume: number;
+}
+
+export interface HighRsResult {
+  benchmark: string;
+  start_date: string;
+  as_of: string;
+  events: HighRsEvent[];
+}
+
+export interface HighRsSettings {
+  startDate: string;
+  benchmark: string;
+  maximumPercentFromTop: number;
+  limit: number;
+  minimumDollarVolume: number;
+  industryKeys?: string[];
+  themeIds?: number[];
+}
+
 export const fetchMarketExplorerCandleStatus = (signal?: AbortSignal, refresh = false) =>
   request(`/api/market-explorer/candles${refresh ? "?refresh=true" : ""}`, { signal });
 
@@ -119,6 +146,31 @@ export async function fetchMarketExplorerHighestReturn(
     throw new Error(body?.error ?? `Highest-return scan failed: HTTP ${response.status}`);
   }
   return response.json() as Promise<HighestReturnResult>;
+}
+
+export async function fetchMarketExplorerHighRs(
+  settings: HighRsSettings,
+  signal?: AbortSignal,
+): Promise<HighRsResult> {
+  const response = await fetch("/api/market-explorer/highest-rs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      start_date: settings.startDate,
+      benchmark: settings.benchmark,
+      maximum_percent_from_top: settings.maximumPercentFromTop,
+      limit: settings.limit,
+      minimum_dollar_volume: settings.minimumDollarVolume,
+      industry_keys: settings.industryKeys,
+      theme_ids: settings.themeIds,
+    }),
+    signal,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Highest RS scan failed: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<HighRsResult>;
 }
 
 async function request(url: string, init?: RequestInit): Promise<MarketExplorerCandleStatus> {

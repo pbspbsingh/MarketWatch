@@ -10,9 +10,12 @@ use thiserror::Error;
 use tokio::sync::Notify;
 use tracing::warn;
 
+mod high_rs;
 mod highest_return;
 mod highest_volume;
 
+use high_rs::HighRsService;
+pub use high_rs::{HighRsError, HighRsRequest, HighRsResult};
 use highest_return::HighestReturnService;
 pub use highest_return::{HighestReturnError, HighestReturnRequest, HighestReturnResult};
 use highest_volume::HighestVolumeService;
@@ -76,6 +79,7 @@ pub struct MarketExplorerService {
     yahoo: Arc<YahooService>,
     highest_return: HighestReturnService,
     highest_volume: HighestVolumeService,
+    high_rs: HighRsService,
     job: Mutex<Option<CandleFetchJob>>,
     resumed: Notify,
 }
@@ -100,6 +104,7 @@ impl MarketExplorerService {
         Self {
             highest_return: HighestReturnService::new(store.clone()),
             highest_volume: HighestVolumeService::new(store.clone()),
+            high_rs: HighRsService::new(store.clone(), yahoo.clone()),
             store,
             yahoo,
             job: Mutex::new(None),
@@ -121,6 +126,12 @@ impl MarketExplorerService {
         request: HighestVolumeRequest,
     ) -> Result<HighestVolumeResult, HighestVolumeError> {
         self.highest_volume
+            .scan(request, self.yahoo.latest_completed_candle_date())
+            .await
+    }
+
+    pub async fn high_rs(&self, request: HighRsRequest) -> Result<HighRsResult, HighRsError> {
+        self.high_rs
             .scan(request, self.yahoo.latest_completed_candle_date())
             .await
     }

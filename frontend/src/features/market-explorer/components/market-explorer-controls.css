@@ -41,6 +41,38 @@
   }
 }
 
+.market-explorer-checkbox-dropdown {
+  flex-shrink: 0;
+  font-size: 0.62rem !important;
+  white-space: nowrap;
+}
+
+.market-explorer-checkbox-menu .MuiPaper-root {
+  width: 17rem;
+  max-height: min(32rem, 75vh);
+}
+
+.market-explorer-checkbox-menu-header {
+  display: flex;
+  padding: 0.5rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--color-surface);
+}
+
+.market-explorer-checkbox-menu-actions {
+  display: flex;
+  justify-content: space-between;
+}
+
+.market-explorer-checkbox-menu-group {
+  color: var(--color-muted) !important;
+  font-size: 0.65rem !important;
+  font-weight: 700 !important;
+  line-height: 1.75rem !important;
+  text-transform: uppercase;
+}
+
 .market-explorer-dollar-volume-slider {
   width: 10rem;
 }

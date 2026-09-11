@@ -1,0 +1,71 @@
+.market-explorer-high-rs {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+
+  & > .ticker-lens {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.market-explorer-high-rs-controls,
+.market-explorer-high-rs-date,
+.market-explorer-high-rs-benchmark {
+  display: flex;
+  align-items: center;
+}
+
+.market-explorer-high-rs-controls {
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 1rem;
+}
+
+.market-explorer-high-rs-date,
+.market-explorer-high-rs-benchmark {
+  flex-shrink: 0;
+  gap: 0.3rem;
+
+  & .MuiTypography-root {
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+}
+
+.market-explorer-high-rs-date {
+  & .MuiTextField-root {
+    width: 8rem;
+  }
+
+  & .MuiInputBase-input {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.68rem;
+  }
+}
+
+.market-explorer-high-rs-benchmark .MuiSelect-select {
+  min-width: 3rem;
+  padding-block: 0.125rem;
+  padding-inline-start: 0.45rem;
+  font-size: 0.68rem;
+}
+
+.market-explorer-high-rs-loading {
+  display: inline-flex;
+  width: 0.8rem;
+  height: 0.8rem;
+  flex-shrink: 0;
+}
+
+.market-explorer-high-rs-reset {
+  flex-shrink: 0;
+  font-size: 0.62rem !important;
+}
+
+.market-explorer-high-rs-summary {
+  font-size: 0.6rem !important;
+  white-space: nowrap;
+}

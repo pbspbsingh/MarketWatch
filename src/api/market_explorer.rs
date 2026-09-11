@@ -1,8 +1,9 @@
 use crate::app::AppState;
+use crate::models::TickerSymbol;
 use crate::services::market_explorer::{
-    HighestReturnError, HighestReturnRequest, HighestReturnResult, HighestVolumeError,
-    HighestVolumeLookback, HighestVolumeRequest, HighestVolumeResult, HighestVolumeScanRange,
-    MarketExplorerCandleStatus, MarketExplorerError,
+    HighRsError, HighRsRequest, HighRsResult, HighestReturnError, HighestReturnRequest,
+    HighestReturnResult, HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest,
+    HighestVolumeResult, HighestVolumeScanRange, MarketExplorerCandleStatus, MarketExplorerError,
 };
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -18,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/market-explorer/candles/start", post(start))
         .route("/market-explorer/candles/pause", post(pause))
         .route("/market-explorer/candles/retry-failed", post(retry_failed))
+        .route("/market-explorer/highest-rs", post(high_rs))
         .route("/market-explorer/highest-return", get(highest_return))
         .route("/market-explorer/highest-volume", get(highest_volume))
 }
@@ -44,6 +46,17 @@ struct HighestReturnQuery {
     end_date: chrono::NaiveDate,
     limit: usize,
     minimum_dollar_volume: f64,
+}
+
+#[derive(Deserialize)]
+struct HighRsInput {
+    start_date: chrono::NaiveDate,
+    benchmark: TickerSymbol,
+    maximum_percent_from_top: f64,
+    limit: usize,
+    minimum_dollar_volume: f64,
+    industry_keys: Option<Vec<String>>,
+    theme_ids: Option<Vec<i64>>,
 }
 
 async fn status(
@@ -131,6 +144,31 @@ async fn highest_return(
         .map_err(highest_return_error)
 }
 
+async fn high_rs(
+    State(state): State<AppState>,
+    Json(input): Json<HighRsInput>,
+) -> Result<Json<HighRsResult>, (StatusCode, Json<Value>)> {
+    if !state.home_tickers.contains(&input.benchmark) {
+        return Err(high_rs_error(HighRsError::Validation(
+            "benchmark must be one of the configured Home symbols".to_owned(),
+        )));
+    }
+    state
+        .market_explorer
+        .high_rs(HighRsRequest {
+            start_date: input.start_date,
+            benchmark: input.benchmark,
+            maximum_percent_from_top: input.maximum_percent_from_top,
+            limit: input.limit,
+            minimum_dollar_volume: input.minimum_dollar_volume,
+            industry_keys: input.industry_keys,
+            theme_ids: input.theme_ids,
+        })
+        .await
+        .map(Json)
+        .map_err(high_rs_error)
+}
+
 fn api_error(error: MarketExplorerError) -> StatusCode {
     if matches!(error, MarketExplorerError::RetryUnavailable) {
         return StatusCode::CONFLICT;
@@ -161,6 +199,19 @@ fn highest_return_error(error_value: HighestReturnError) -> (StatusCode, Json<Va
     };
     if status.is_server_error() {
         error!(error = %error_value, "Market Explorer highest-return scan failed");
+    }
+    (status, Json(json!({ "error": error_value.to_string() })))
+}
+
+fn high_rs_error(error_value: HighRsError) -> (StatusCode, Json<Value>) {
+    let status = match &error_value {
+        HighRsError::Validation(_) => StatusCode::BAD_REQUEST,
+        HighRsError::Benchmark(_) | HighRsError::Persistence(_) | HighRsError::Computation(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    };
+    if status.is_server_error() {
+        error!(error = %error_value, "Market Explorer high-RS scan failed");
     }
     (status, Json(json!({ "error": error_value.to_string() })))
 }
