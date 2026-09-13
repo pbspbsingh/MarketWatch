@@ -45,6 +45,7 @@ import {
   chartRightOffsetPixels,
   candleSeriesOptions,
   defaultChartBarSpacing,
+  fiveEmaColor,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthLineStyle,
@@ -63,6 +64,7 @@ import {
 import {
   movingAverageSeriesCount,
   movingAverageSpecs,
+  type MovingAverageSpec,
 } from "../charts/chartSeries";
 import {
   relativeStrengthLineData,
@@ -102,7 +104,12 @@ export function StudyCharts({
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
 }) {
-  const { candlePalette, relativeStrengthLineStyle: rsLineStyle, theme } = useAppSettings();
+  const {
+    candlePalette,
+    fiveEmaOpacity,
+    relativeStrengthLineStyle: rsLineStyle,
+    theme,
+  } = useAppSettings();
   const palette = appPalettes[theme];
   const chartColors = useMemo(() => getChartColors(theme), [theme]);
   const topRef = useRef<HTMLDivElement>(null);
@@ -115,6 +122,7 @@ export function StudyCharts({
   const markerSeriesRef = useRef<ISeriesMarkersPluginApi<Time>[]>([]);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>[]>([]);
   const candlePaletteRef = useRef(candlePalette);
+  const fiveEmaOpacityRef = useRef(fiveEmaOpacity);
   const appearanceRef = useRef({ chartColors, palette });
   const candlesByDateRef = useRef<Array<Map<string, StudyCandle>>>([]);
   const datesRef = useRef<string[]>([]);
@@ -176,6 +184,19 @@ export function StudyCharts({
       series.applyOptions(candleSeriesOptions(candlePalette));
     });
   }, [candlePalette]);
+
+  useEffect(() => {
+    fiveEmaOpacityRef.current = fiveEmaOpacity;
+    const specs = movingAverageSpecs(result.interval);
+    movingAverageSeriesRef.current.forEach((averages) => {
+      averages.forEach((line, index) => {
+        const spec = specs[index];
+        if (spec !== undefined) {
+          line.applyOptions({ color: studyMovingAverageColor(spec, fiveEmaOpacity) });
+        }
+      });
+    });
+  }, [fiveEmaOpacity, result.interval]);
 
   useEffect(() => {
     appearanceRef.current = { chartColors, palette };
@@ -332,8 +353,9 @@ export function StudyCharts({
       volumeAverageSeries.push(chart.addSeries(LineSeries, volumeAverageSeriesOptions));
       const averages: ISeriesApi<"Line">[] = [];
       for (let averageIndex = 0; averageIndex < movingAverageSeriesCount; averageIndex += 1) {
+        const spec = movingAverageSpecs("daily")[averageIndex]!;
         const line = chart.addSeries(LineSeries, {
-          color: movingAverageSpecs("daily")[averageIndex]!.color,
+          color: studyMovingAverageColor(spec, fiveEmaOpacityRef.current),
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -527,7 +549,9 @@ export function StudyCharts({
           if (spec === undefined) {
             line.setData([]);
           } else {
-            line.applyOptions({ color: spec.color });
+            line.applyOptions({
+              color: studyMovingAverageColor(spec, fiveEmaOpacityRef.current),
+            });
             line.setData(averagesByPeriod.get(spec.period)?.points.map(
               (point) => ({ time: point.date, value: point.value }),
             ) ?? []);
@@ -628,6 +652,12 @@ export function StudyCharts({
       />
     </>
   );
+}
+
+function studyMovingAverageColor(spec: MovingAverageSpec, fiveEmaOpacity: number) {
+  return spec.period === 5 && spec.type === "EMA"
+    ? fiveEmaColor(fiveEmaOpacity)
+    : spec.color;
 }
 
 function timeKey(time: Time) {
