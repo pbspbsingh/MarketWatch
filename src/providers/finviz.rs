@@ -16,7 +16,7 @@ const QUOTE_URL: &str = "https://finviz.com/quote";
 const STOCK_URL: &str = "https://finviz.com/stock";
 const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
-const FUNDAMENTAL_QUARTERS: usize = 8;
+const FUNDAMENTAL_QUARTERS: usize = 16;
 const FINVIZ_SECTOR_COUNT: usize = 11;
 
 pub struct FinvizClient {

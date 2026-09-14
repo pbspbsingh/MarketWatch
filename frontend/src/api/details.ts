@@ -23,6 +23,29 @@ export interface Fundamentals {
   fetched_at: string;
 }
 
+export interface FundamentalGrowthPoint {
+  period: string;
+  value: number | null;
+  growth: number | null;
+  sma_2: number | null;
+}
+
+export interface FundamentalGrowthSeries {
+  historical: FundamentalGrowthPoint[];
+  forecast: {
+    period: string | null;
+    value: number | null;
+    growth: number | null;
+    sma_2: number | null;
+  };
+}
+
+export interface FundamentalGrowthMetric {
+  qoq: FundamentalGrowthSeries;
+  yoy: FundamentalGrowthSeries;
+  annual: FundamentalGrowthSeries;
+}
+
 export interface TickerDetails {
   profile: {
     symbol: string;
@@ -31,6 +54,7 @@ export interface TickerDetails {
     description: string | null;
   };
   fundamentals: Fundamentals;
+  fundamental_growth: Record<"earnings_per_share" | "revenue", FundamentalGrowthMetric>;
   stale_fundamentals: boolean;
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import {
   CircularProgress,
@@ -86,33 +86,8 @@ function OpenTickerDetailsDialog({
   const requestRef = useRef<AbortController | undefined>(undefined);
   const themesLoading = tab === "profile-themes" && themeTicker === undefined;
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        isKeyboardInput(event.target) ||
-        (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setTab((current) => {
-        const index = detailsTabs.indexOf(current);
-        const direction = event.key === "ArrowRight" ? 1 : -1;
-        return detailsTabs[
-          (index + direction + detailsTabs.length) % detailsTabs.length
-        ];
-      });
-    };
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
-
-  const refreshDetails = () => {
+  const refreshDetails = useCallback(() => {
+    if (details === undefined || refreshing) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
@@ -130,7 +105,39 @@ function OpenTickerDetailsDialog({
           setRefreshing(false);
         }
       });
-  };
+  }, [details, refreshing, symbol]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isKeyboardInput(event.target)
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        event.stopPropagation();
+        refreshDetails();
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setTab((current) => {
+        const index = detailsTabs.indexOf(current);
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        return detailsTabs[
+          (index + direction + detailsTabs.length) % detailsTabs.length
+        ];
+      });
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [refreshDetails]);
 
   const loadThemes = async () => {
     try {

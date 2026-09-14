@@ -2,12 +2,14 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Checkbox, FormControlLabel, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import type { ChartConfiguration, TooltipItem } from "chart.js";
-import type { QuarterFundamentals, TickerDetails } from "../api/details";
+import type { FundamentalGrowthSeries, QuarterFundamentals, TickerDetails } from "../api/details";
 import { useAppSettings } from "../app/AppSettings";
-import { appPalettes, type AppPalette } from "../app/theme";
-import { growthPercent, growthSeries, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
+import { appPalettes, featureAccents, type AppPalette } from "../app/theme";
+import { growthPercent, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
 
 const growthLogScaleKey = "fundamentals.growth-log-scale";
+const growthSmaKey = "fundamentals.growth-2-sma";
+const qoqGrowthVisibleKey = "fundamentals.qoq-growth-visible";
 
 interface TickerFundamentalsTabProps {
   details: TickerDetails;
@@ -19,14 +21,13 @@ export function TickerFundamentalsTab({
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
   const [logScale, setLogScale] = useState(() => localStorage.getItem(growthLogScaleKey) === "true");
+  const [smaVisible, setSmaVisible] = useState(() => localStorage.getItem(growthSmaKey) === "true");
+  const [qoqVisible, setQoqVisible] = useState(() => localStorage.getItem(qoqGrowthVisibleKey) !== "false");
   const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
-  const annual = [...(details.fundamentals.annual ?? [])].sort((a, b) => a.fiscal_period.localeCompare(b.fiscal_period));
-  const reportedYears = annual.filter((period) => period.earnings_per_share !== null || period.revenue !== null);
-  const nextYear = annual.find((period) => period.fiscal_period > (reportedYears.at(-1)?.fiscal_period ?? "")
-    && (period.earnings_per_share_estimate !== null || period.revenue_estimate !== null));
 
   return (
     <div className="fundamentals-tab">
+      <div className="fundamentals-controls">
         <Tooltip title="Percentage charts only. Symmetric logarithmic scale supports positive, zero, and negative growth. Uncheck for arithmetic scale.">
           <FormControlLabel className="fundamentals-scale-control"
             control={<Checkbox size="small" checked={logScale} onChange={(_, checked) => {
@@ -35,7 +36,24 @@ export function TickerFundamentalsTab({
             }} />}
             label="Log scale" />
         </Tooltip>
-      <div className="fundamentals-grid">
+        <Tooltip title="Show the backend-calculated two-period simple moving average on growth charts.">
+          <FormControlLabel className="fundamentals-scale-control"
+            control={<Checkbox size="small" checked={smaVisible} onChange={(_, checked) => {
+              setSmaVisible(checked);
+              localStorage.setItem(growthSmaKey, String(checked));
+            }} />}
+            label="2 SMA" />
+        </Tooltip>
+        <Tooltip title="Show quarter-over-quarter growth charts.">
+          <FormControlLabel className="fundamentals-scale-control"
+            control={<Checkbox size="small" checked={qoqVisible} onChange={(_, checked) => {
+              setQoqVisible(checked);
+              localStorage.setItem(qoqGrowthVisibleKey, String(checked));
+            }} />}
+            label="QoQ Growth" />
+        </Tooltip>
+      </div>
+      <div className={`fundamentals-grid${qoqVisible ? "" : " fundamentals-grid-no-qoq"}`}>
         {(["earnings_per_share", "revenue"] as const).map((field) => {
           const label = field === "revenue" ? "Revenue" : "EPS";
           const estimateField = field === "revenue" ? "revenue_estimate" : "earnings_per_share_estimate";
@@ -44,18 +62,18 @@ export function TickerFundamentalsTab({
             fiscal_period: details.fundamentals.next_quarter.fiscal_period,
             value: details.fundamentals.next_quarter[field],
           };
+          const growth = details.fundamental_growth[field];
           return (
             <Fragment key={field}>
               <EstimateChart title={`${label} Actual / Estimate`} quarters={quarters}
                 actualField={field} estimateField={estimateField} forecast={forecast.value}
                 format={field === "revenue" ? compact : (value) => value.toFixed(2)} />
-              <GrowthChart title={`${label} QoQ Growth`} periods={quarters} field={field} lag={1}
-                forecast={forecast} color={color} logScale={logScale} />
-              <GrowthChart title={`${label} YoY Growth`} periods={quarters} field={field} lag={4}
-                forecast={forecast} color={color} logScale={logScale} />
-              <GrowthChart title={`${label} Annual Growth`} periods={reportedYears} field={field} lag={1}
-                forecast={{ fiscal_period: nextYear?.fiscal_period ?? null, value: nextYear?.[estimateField] ?? null }}
-                color={color} logScale={logScale} />
+              <GrowthChart title={`${label} YoY Growth`} series={growth.yoy} field={field}
+                color={color} logScale={logScale} smaVisible={smaVisible} />
+              {qoqVisible && <GrowthChart title={`${label} QoQ Growth`} series={growth.qoq} field={field}
+                color={color} logScale={logScale} smaVisible={smaVisible} />}
+              <GrowthChart title={`${label} Annual Growth`} series={growth.annual} field={field}
+                color={color} logScale={logScale} smaVisible={smaVisible} />
             </Fragment>
           );
         })}
@@ -66,29 +84,38 @@ export function TickerFundamentalsTab({
 
 function GrowthChart({
   title,
-  periods,
+  series,
   field,
-  lag,
-  forecast,
   color,
   logScale,
+  smaVisible,
 }: {
   title: string;
-  periods: QuarterFundamentals[];
+  series: FundamentalGrowthSeries;
   field: FundamentalField;
-  lag: number;
-  forecast: { fiscal_period: string | null; value: number | null };
   color: string;
   logScale: boolean;
+  smaVisible: boolean;
 }) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const series = growthSeries(periods, field, lag, forecast);
   const historical = series.historical.map((point) => point.growth);
   const forecastGrowth = series.forecast.growth;
   const forecastValues = Array<number | null>(historical.length + 1).fill(null);
   if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
   forecastValues[historical.length] = forecastGrowth;
+  const smaValues = [
+    ...series.historical.map((point) => point.sma_2),
+    ...(series.forecast.period === null ? [] : [series.forecast.sma_2]),
+  ];
+  const summaryValues = smaVisible
+    ? series.historical.map((point) => point.sma_2)
+    : historical;
+  const forecastSummaryValue = smaVisible ? series.forecast.sma_2 : forecastGrowth;
+  const historicalColor = alpha(color, smaVisible ? 0.25 : 1);
+  const smaColor = field === "earnings_per_share"
+    ? featureAccents[theme].purple
+    : featureAccents[theme].amber;
   const scale = (value: number | null) => value === null ? null : logScale ? symmetricLog(value) : value;
   const options = chartOptions((value) => formatPercent(logScale ? inverseSymmetricLog(Number(value)) : Number(value)), palette);
   if (options.plugins?.tooltip !== undefined) {
@@ -97,7 +124,8 @@ function GrowthChart({
     options.plugins.tooltip.callbacks = {
       ...options.plugins.tooltip.callbacks,
       afterLabel: (item) => {
-        const value = item.dataIndex === historical.length ? forecast.value : series.historical[item.dataIndex]?.value;
+        if (item.dataset.label === "2 SMA") return "";
+        const value = item.dataIndex === historical.length ? series.forecast.value : series.historical[item.dataIndex]?.value;
         return `${field === "revenue" ? "Revenue" : "EPS"}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`;
       },
     };
@@ -106,25 +134,37 @@ function GrowthChart({
   return (
     <FundamentalChart
       title={title}
-      summary={historical.slice(-4).map(formatPercent)}
-      forecastSummary={forecast.fiscal_period === null ? undefined : `${formatPercent(forecastGrowth)} (forecast)`}
+      summary={summaryValues.slice(-4).map(formatPercent)}
+      forecastSummary={series.forecast.period === null ? undefined : `${formatPercent(forecastSummaryValue)} (forecast)`}
+      summarySeparator="arrow"
       empty={historical.every((value) => value === null) && forecastGrowth === null}
       configuration={{
         type: "line",
         data: {
-          labels: [...series.historical.map((point) => point.period), ...(forecast.fiscal_period === null ? [] : [forecast.fiscal_period])],
+          labels: [...series.historical.map((point) => point.period), ...(series.forecast.period === null ? [] : [series.forecast.period])],
           datasets: [
             {
               label: "Historical",
-              data: (forecast.fiscal_period === null ? historical : [...historical, null]).map(scale),
-              borderColor: color,
-              backgroundColor: color,
+              data: (series.forecast.period === null ? historical : [...historical, null]).map(scale),
+              borderColor: historicalColor,
+              backgroundColor: historicalColor,
               tension: 0.25,
             },
+            ...(smaVisible ? [{
+              label: "2 SMA",
+              data: smaValues.map(scale),
+              borderColor: smaColor,
+              backgroundColor: smaColor,
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 3,
+              spanGaps: false,
+              tension: 0.25,
+            }] : []),
             {
               label: "Forecast",
-              data: forecast.fiscal_period === null ? [] : forecastValues.map(scale),
-              ...forecastLineStyle(palette),
+              data: series.forecast.period === null ? [] : forecastValues.map(scale),
+              ...forecastLineStyle(palette, smaVisible ? 0.25 : 0.65),
               tension: 0.25,
             },
           ],
@@ -231,6 +271,7 @@ function FundamentalChart({
   summary,
   forecastSummary,
   summaryLabel,
+  summarySeparator = "divider",
   empty = false,
   configuration,
 }: {
@@ -238,6 +279,7 @@ function FundamentalChart({
   summary: string[];
   forecastSummary?: string;
   summaryLabel?: string;
+  summarySeparator?: "divider" | "arrow";
   empty?: boolean;
   configuration: ChartConfiguration;
 }) {
@@ -265,7 +307,7 @@ function FundamentalChart({
         {empty ? <Typography className="fundamentals-empty" color="text.secondary">No data available</Typography>
           : <canvas ref={canvasRef} role="img" aria-label={title} />}
       </div>
-      <div className="fundamentals-summary">
+      <div className={`fundamentals-summary fundamentals-summary-${summarySeparator}`}>
         {summaryLabel && <Typography color="text.secondary">{summaryLabel}:</Typography>}
         {summary.map((value, index) => (
           <Typography key={`${value}-${index}`} color="text.secondary">
@@ -280,8 +322,8 @@ function FundamentalChart({
   );
 }
 
-function forecastLineStyle(palette: AppPalette) {
-  const color = alpha(palette.muted, 0.65);
+function forecastLineStyle(palette: AppPalette, opacity = 0.65) {
+  const color = alpha(palette.muted, opacity);
   return {
     borderColor: color,
     backgroundColor: palette.canvas,

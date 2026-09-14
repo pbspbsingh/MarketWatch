@@ -1,10 +1,11 @@
-use crate::models::{CompanyProfile, Fundamentals, TickerSymbol};
+use crate::models::{CompanyProfile, FundamentalPeriod, Fundamentals, TickerSymbol};
 use crate::providers::FinvizClient;
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -27,7 +28,43 @@ pub struct TickerDetailsService {
 pub struct TickerDetails {
     pub profile: ProfileDetails,
     pub fundamentals: Fundamentals,
+    pub fundamental_growth: FundamentalGrowthDetails,
     pub stale_fundamentals: bool,
+}
+
+#[derive(Serialize)]
+pub struct FundamentalGrowthDetails {
+    pub earnings_per_share: FundamentalGrowthMetric,
+    pub revenue: FundamentalGrowthMetric,
+}
+
+#[derive(Serialize)]
+pub struct FundamentalGrowthMetric {
+    pub qoq: FundamentalGrowthSeries,
+    pub yoy: FundamentalGrowthSeries,
+    pub annual: FundamentalGrowthSeries,
+}
+
+#[derive(Serialize)]
+pub struct FundamentalGrowthSeries {
+    pub historical: Vec<FundamentalGrowthPoint>,
+    pub forecast: FundamentalGrowthForecast,
+}
+
+#[derive(Serialize)]
+pub struct FundamentalGrowthPoint {
+    pub period: String,
+    pub value: Option<f64>,
+    pub growth: Option<f64>,
+    pub sma_2: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct FundamentalGrowthForecast {
+    pub period: Option<String>,
+    pub value: Option<f64>,
+    pub growth: Option<f64>,
+    pub sma_2: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -74,9 +111,11 @@ impl TickerDetailsService {
         let profile = self.yahoo.profile(symbol).await?;
         let (fundamentals, stale_fundamentals) =
             self.load_fundamentals(symbol, force_refresh).await?;
+        let fundamental_growth = fundamental_growth(&fundamentals);
         Ok(TickerDetails {
             profile: ProfileDetails::from(profile),
             fundamentals,
+            fundamental_growth,
             stale_fundamentals,
         })
     }
@@ -189,6 +228,202 @@ impl TickerDetailsService {
         }
         Err(last_error.expect("Finviz fundamentals retry loop stores retryable errors"))
     }
+}
+
+#[derive(Clone, Copy)]
+enum FundamentalField {
+    EarningsPerShare,
+    Revenue,
+}
+
+impl FundamentalField {
+    fn actual(self, period: &FundamentalPeriod) -> Option<f64> {
+        match self {
+            Self::EarningsPerShare => period.earnings_per_share,
+            Self::Revenue => period.revenue,
+        }
+    }
+
+    fn estimate(self, period: &FundamentalPeriod) -> Option<f64> {
+        match self {
+            Self::EarningsPerShare => period.earnings_per_share_estimate,
+            Self::Revenue => period.revenue_estimate,
+        }
+    }
+}
+
+fn fundamental_growth(fundamentals: &Fundamentals) -> FundamentalGrowthDetails {
+    let mut quarters = fundamentals.quarters.iter().collect::<Vec<_>>();
+    quarters.sort_unstable_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+    let mut annual = fundamentals
+        .annual
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|period| period.earnings_per_share.is_some() || period.revenue.is_some())
+        .collect::<Vec<_>>();
+    annual.sort_unstable_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+    let latest_year = annual.last().map(|period| period.fiscal_period.as_str());
+    let next_year = fundamentals
+        .annual
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|period| latest_year.is_none_or(|latest| period.fiscal_period.as_str() > latest))
+        .filter(|period| {
+            period.earnings_per_share_estimate.is_some() || period.revenue_estimate.is_some()
+        })
+        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+
+    FundamentalGrowthDetails {
+        earnings_per_share: growth_metric(
+            fundamentals,
+            &quarters,
+            &annual,
+            next_year,
+            FundamentalField::EarningsPerShare,
+        ),
+        revenue: growth_metric(
+            fundamentals,
+            &quarters,
+            &annual,
+            next_year,
+            FundamentalField::Revenue,
+        ),
+    }
+}
+
+fn growth_metric(
+    fundamentals: &Fundamentals,
+    quarters: &[&FundamentalPeriod],
+    annual: &[&FundamentalPeriod],
+    next_year: Option<&FundamentalPeriod>,
+    field: FundamentalField,
+) -> FundamentalGrowthMetric {
+    let quarter_forecast = match field {
+        FundamentalField::EarningsPerShare => fundamentals.next_quarter.earnings_per_share,
+        FundamentalField::Revenue => fundamentals.next_quarter.revenue,
+    };
+    FundamentalGrowthMetric {
+        qoq: growth_series(
+            quarters,
+            field,
+            1,
+            fundamentals.next_quarter.fiscal_period.as_deref(),
+            quarter_forecast,
+        ),
+        yoy: growth_series(
+            quarters,
+            field,
+            4,
+            fundamentals.next_quarter.fiscal_period.as_deref(),
+            quarter_forecast,
+        ),
+        annual: growth_series(
+            annual,
+            field,
+            1,
+            next_year.map(|period| period.fiscal_period.as_str()),
+            next_year.and_then(|period| field.estimate(period)),
+        ),
+    }
+}
+
+fn growth_series(
+    periods: &[&FundamentalPeriod],
+    field: FundamentalField,
+    lag: i32,
+    forecast_period: Option<&str>,
+    forecast_value: Option<f64>,
+) -> FundamentalGrowthSeries {
+    let values = periods
+        .iter()
+        .filter_map(|period| Some((period_index(&period.fiscal_period)?, field.actual(period))))
+        .collect::<HashMap<_, _>>();
+    let mut points = periods
+        .iter()
+        .map(|period| {
+            let index = period_index(&period.fiscal_period);
+            let value = field.actual(period);
+            let growth = index.and_then(|index| {
+                growth_percent(value, values.get(&(index - lag)).copied().flatten())
+            });
+            (
+                index,
+                FundamentalGrowthPoint {
+                    period: period.fiscal_period.clone(),
+                    value,
+                    growth,
+                    sma_2: None,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    for index in 1..points.len() {
+        let consecutive = points[index - 1]
+            .0
+            .zip(points[index].0)
+            .is_some_and(|(previous, current)| current == previous + 1);
+        if consecutive
+            && let (Some(previous), Some(current)) =
+                (points[index - 1].1.growth, points[index].1.growth)
+        {
+            points[index].1.sma_2 = Some((previous + current) / 2.0);
+        }
+    }
+    let forecast_index = forecast_period.and_then(period_index);
+    let forecast_growth = forecast_index.and_then(|index| {
+        growth_percent(
+            forecast_value,
+            values.get(&(index - lag)).copied().flatten(),
+        )
+    });
+    let forecast_sma_2 = points.last().and_then(|(last_index, last)| {
+        let consecutive = last_index
+            .zip(forecast_index)
+            .is_some_and(|(previous, current)| current == previous + 1);
+        match (consecutive, last.growth, forecast_growth) {
+            (true, Some(previous), Some(current)) => Some((previous + current) / 2.0),
+            _ => None,
+        }
+    });
+    let first = points.iter().position(|(_, point)| point.growth.is_some());
+    let historical = first.map_or_else(Vec::new, |first| {
+        let start = first.max(points.len().saturating_sub(12));
+        points
+            .into_iter()
+            .skip(start)
+            .map(|(_, point)| point)
+            .collect()
+    });
+
+    FundamentalGrowthSeries {
+        historical,
+        forecast: FundamentalGrowthForecast {
+            period: forecast_period.map(str::to_owned),
+            value: forecast_value,
+            growth: forecast_growth,
+            sma_2: forecast_sma_2,
+        },
+    }
+}
+
+fn growth_percent(current: Option<f64>, prior: Option<f64>) -> Option<f64> {
+    match (current, prior) {
+        (Some(current), Some(prior)) if prior != 0.0 => {
+            Some((current - prior) / prior.abs() * 100.0)
+        }
+        _ => None,
+    }
+}
+
+fn period_index(period: &str) -> Option<i32> {
+    if let Some((year, quarter)) = period.split_once('Q') {
+        let year = year.parse::<i32>().ok()?;
+        let quarter = quarter.parse::<i32>().ok()?;
+        return (1..=4).contains(&quarter).then_some(year * 4 + quarter - 1);
+    }
+    period.strip_suffix("FY")?.parse::<i32>().ok()
 }
 
 fn fundamentals_are_fresh(fundamentals: &Fundamentals, now: DateTime<Utc>) -> bool {
@@ -339,5 +574,81 @@ mod tests {
 
         assert_eq!(upcoming_earnings_date(Some(at(4)), today), Some(today));
         assert_eq!(upcoming_earnings_date(Some(at(3)), today), None);
+    }
+
+    #[test]
+    fn calculates_growth_and_two_period_sma_without_bridging_gaps() {
+        let periods = [
+            period("2024Q4", 100.0),
+            period("2025Q1", 110.0),
+            period("2025Q2", 132.0),
+            period("2025Q4", 198.0),
+            period("2026Q1", 220.0),
+        ];
+        let refs = periods.iter().collect::<Vec<_>>();
+        let series = growth_series(
+            &refs,
+            FundamentalField::EarningsPerShare,
+            1,
+            Some("2026Q2"),
+            Some(242.0),
+        );
+
+        assert_eq!(series.historical[0].period, "2025Q1");
+        assert_eq!(series.historical[0].growth, Some(10.0));
+        assert_eq!(series.historical[0].sma_2, None);
+        assert_eq!(series.historical[1].growth, Some(20.0));
+        assert_eq!(series.historical[1].sma_2, Some(15.0));
+        assert_eq!(series.historical[2].growth, None);
+        assert_eq!(series.historical[3].sma_2, None);
+        assert_eq!(series.forecast.growth, Some(10.0));
+        assert!((series.forecast.sma_2.unwrap() - 10.555_555_555_555_555).abs() < 1e-10);
+    }
+
+    #[test]
+    fn calculates_yoy_and_annual_growth_by_fiscal_period() {
+        let quarters = [
+            period("2024Q1", 2.0),
+            period("2024Q2", 4.0),
+            period("2025Q1", 3.0),
+        ];
+        let quarter_refs = quarters.iter().collect::<Vec<_>>();
+        let yoy = growth_series(
+            &quarter_refs,
+            FundamentalField::Revenue,
+            4,
+            Some("2025Q2"),
+            Some(6.0),
+        );
+        assert_eq!(yoy.historical[0].growth, Some(50.0));
+        assert_eq!(yoy.forecast.growth, Some(50.0));
+
+        let years = [
+            period("2022FY", 2.0),
+            period("2023FY", 3.0),
+            period("2025FY", 6.0),
+        ];
+        let year_refs = years.iter().collect::<Vec<_>>();
+        let annual = growth_series(
+            &year_refs,
+            FundamentalField::EarningsPerShare,
+            1,
+            Some("2026FY"),
+            Some(9.0),
+        );
+        assert_eq!(annual.historical[0].growth, Some(50.0));
+        assert_eq!(annual.historical[1].growth, None);
+        assert_eq!(annual.forecast.growth, Some(50.0));
+    }
+
+    fn period(fiscal_period: &str, value: f64) -> FundamentalPeriod {
+        FundamentalPeriod {
+            fiscal_period: fiscal_period.into(),
+            earnings_release_date: None,
+            earnings_per_share: Some(value),
+            earnings_per_share_estimate: None,
+            revenue: Some(value),
+            revenue_estimate: None,
+        }
     }
 }
