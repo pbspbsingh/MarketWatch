@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from "react";
-import { Checkbox, FormControlLabel, Tooltip, Typography } from "@mui/material";
+import { Fragment, useCallback, useMemo, useState } from "react";
+import { Checkbox, FormControlLabel, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import type { ChartConfiguration, TooltipItem } from "chart.js";
 import type { FundamentalGrowthSeries, QuarterFundamentals, TickerDetails } from "../api/details";
 import { useAppSettings } from "../app/AppSettings";
-import { appPalettes, featureAccents, type AppPalette } from "../app/theme";
+import { appPalettes, featureAccents } from "../app/theme";
+import { FundamentalChart, type FundamentalChartModel } from "./FundamentalChart";
 import { growthPercent, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
 
 const growthLogScaleKey = "fundamentals.growth-log-scale";
@@ -23,7 +23,10 @@ export function TickerFundamentalsTab({
   const [logScale, setLogScale] = useState(() => localStorage.getItem(growthLogScaleKey) === "true");
   const [smaVisible, setSmaVisible] = useState(() => localStorage.getItem(growthSmaKey) === "true");
   const [qoqVisible, setQoqVisible] = useState(() => localStorage.getItem(qoqGrowthVisibleKey) === "true");
-  const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
+  const quarters = useMemo(
+    () => details.fundamentals.quarters.slice(0, 16).reverse(),
+    [details.fundamentals.quarters],
+  );
 
   return (
     <div className="fundamentals-tab">
@@ -66,8 +69,7 @@ export function TickerFundamentalsTab({
           return (
             <Fragment key={field}>
               <EstimateChart title={`${label} Actual / Estimate`} quarters={quarters}
-                actualField={field} estimateField={estimateField} forecast={forecast.value}
-                format={field === "revenue" ? compact : (value) => value.toFixed(2)} />
+                actualField={field} estimateField={estimateField} forecast={forecast.value} />
               <GrowthChart title={`${label} YoY Growth`} series={growth.yoy} field={field}
                 color={color} logScale={logScale} smaVisible={smaVisible} />
               {qoqVisible && <GrowthChart title={`${label} QoQ Growth`} series={growth.qoq} field={field}
@@ -99,38 +101,112 @@ function GrowthChart({
 }) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const historical = series.historical.map((point) => point.growth);
+  const historical = useMemo(
+    () => series.historical.map((point) => point.growth),
+    [series.historical],
+  );
   const forecastGrowth = series.forecast.growth;
-  const forecastValues = Array<number | null>(historical.length + 1).fill(null);
-  if (historical.length > 0) forecastValues[historical.length - 1] = historical.at(-1) ?? null;
-  forecastValues[historical.length] = forecastGrowth;
-  const smaValues = [
+  const forecastValues = useMemo(() => {
+    const values = Array<number | null>(historical.length + 1).fill(null);
+    if (historical.length > 0) values[historical.length - 1] = historical.at(-1) ?? null;
+    values[historical.length] = forecastGrowth;
+    return values;
+  }, [forecastGrowth, historical]);
+  const smaValues = useMemo(() => [
     ...series.historical.map((point) => point.sma_2),
     ...(series.forecast.period === null ? [] : [series.forecast.sma_2]),
-  ];
-  const summaryValues = smaVisible
-    ? series.historical.map((point) => point.sma_2)
-    : historical;
+  ], [series.forecast.period, series.forecast.sma_2, series.historical]);
+  const summaryValues = useMemo(
+    () => smaVisible ? series.historical.map((point) => point.sma_2) : historical,
+    [historical, series.historical, smaVisible],
+  );
   const forecastSummaryValue = smaVisible ? series.forecast.sma_2 : forecastGrowth;
   const metricLabel = field === "revenue" ? "Revenue" : "EPS";
   const historicalColor = alpha(color, smaVisible ? 0.25 : 1);
   const smaColor = field === "earnings_per_share"
     ? featureAccents[theme].purple
     : featureAccents[theme].amber;
-  const scale = (value: number | null) => value === null ? null : logScale ? symmetricLog(value) : value;
-  const options = chartOptions((value) => formatPercent(logScale ? inverseSymmetricLog(Number(value)) : Number(value)), palette);
-  if (options.plugins?.tooltip !== undefined) {
-    options.plugins.tooltip.filter = (item) =>
-      item.dataset.label !== "Forecast" || item.dataIndex === historical.length;
-    options.plugins.tooltip.callbacks = {
-      ...options.plugins.tooltip.callbacks,
-      afterLabel: (item) => {
-        if (item.dataset.label === "2 SMA") return "";
-        const value = item.dataIndex === historical.length ? series.forecast.value : series.historical[item.dataIndex]?.value;
-        return `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`;
-      },
+  const scale = useCallback(
+    (value: number | null) => value === null ? null : logScale ? symmetricLog(value) : value,
+    [logScale],
+  );
+  const formatChartValue = useCallback(
+    (value: number) => formatPercent(logScale ? inverseSymmetricLog(value) : value),
+    [logScale],
+  );
+  const model = useMemo<FundamentalChartModel>(() => {
+    const periods = [
+      ...series.historical.map((point) => point.period),
+      ...(series.forecast.period === null ? [] : [series.forecast.period]),
+    ];
+    const historicalData = (
+      series.forecast.period === null ? historical : [...historical, null]
+    ).map(scale);
+    const tooltipRows = periods.map((_, index) => {
+      const forecastIndex = series.historical.length;
+      const historicalPoint = series.historical[index];
+      const isForecast = series.forecast.period !== null && index === forecastIndex;
+      const lines = [];
+      if (historicalPoint?.growth !== null && historicalPoint?.growth !== undefined) {
+        lines.push({ label: "Historical", value: formatPercent(historicalPoint.growth), color: historicalColor });
+      }
+      const sma = isForecast ? series.forecast.sma_2 : historicalPoint?.sma_2;
+      if (smaVisible && sma !== null && sma !== undefined) {
+        lines.push({ label: "2 SMA", value: formatPercent(sma), color: smaColor });
+      }
+      if (isForecast && series.forecast.growth !== null) {
+        lines.push({ label: "Forecast", value: formatPercent(series.forecast.growth), color: palette.muted });
+      }
+      const value = isForecast ? series.forecast.value : historicalPoint?.value;
+      return {
+        lines,
+        detail: `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`,
+      };
+    });
+    return {
+      periods,
+      minMove: logScale ? 0.001 : 0.1,
+      formatValue: formatChartValue,
+      tooltipRows,
+      series: [
+        {
+          kind: "line",
+          label: "Historical",
+          color: historicalColor,
+          data: historicalData,
+        },
+        ...(smaVisible ? [{
+          kind: "line" as const,
+          label: "2 SMA",
+          color: smaColor,
+          width: 2 as const,
+          data: smaValues.map(scale),
+        }] : []),
+        {
+          kind: "line",
+          label: "Forecast",
+          color: alpha(palette.muted, smaVisible ? 0.25 : 0.65),
+          data: series.forecast.period === null ? [] : forecastValues.map(scale),
+          dashed: true,
+          width: 1,
+        },
+      ],
     };
-  }
+  }, [
+    field,
+    formatChartValue,
+    historical,
+    historicalColor,
+    logScale,
+    metricLabel,
+    palette.muted,
+    scale,
+    series,
+    smaColor,
+    smaValues,
+    smaVisible,
+    forecastValues,
+  ]);
 
   return (
     <FundamentalChart
@@ -140,39 +216,7 @@ function GrowthChart({
       summaryLabel={smaVisible ? "Growth MA" : "Growth"}
       summarySeparator="arrow"
       empty={historical.every((value) => value === null) && forecastGrowth === null}
-      configuration={{
-        type: "line",
-        data: {
-          labels: [...series.historical.map((point) => point.period), ...(series.forecast.period === null ? [] : [series.forecast.period])],
-          datasets: [
-            {
-              label: "Historical",
-              data: (series.forecast.period === null ? historical : [...historical, null]).map(scale),
-              borderColor: historicalColor,
-              backgroundColor: historicalColor,
-              tension: 0.25,
-            },
-            ...(smaVisible ? [{
-              label: "2 SMA",
-              data: smaValues.map(scale),
-              borderColor: smaColor,
-              backgroundColor: smaColor,
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 3,
-              spanGaps: false,
-              tension: 0.25,
-            }] : []),
-            {
-              label: "Forecast",
-              data: series.forecast.period === null ? [] : forecastValues.map(scale),
-              ...forecastLineStyle(palette, smaVisible ? 0.25 : 0.65),
-              tension: 0.25,
-            },
-          ],
-        },
-        options,
-      }}
+      model={model}
     />
   );
 }
@@ -183,187 +227,108 @@ function EstimateChart({
   actualField,
   estimateField,
   forecast,
-  format,
 }: {
   title: string;
   quarters: QuarterFundamentals[];
   actualField: "earnings_per_share" | "revenue";
   estimateField: "earnings_per_share_estimate" | "revenue_estimate";
   forecast: number | null;
-  format: (value: number) => string;
 }) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const actual = quarters.map((quarter) => quarter[actualField]);
-  const estimates = quarters.map((quarter) => quarter[estimateField]);
-  const forecastValues = Array<number | null>(quarters.length + 1).fill(null);
-  if (quarters.length > 0) forecastValues[quarters.length - 1] = estimates.at(-1) ?? null;
-  forecastValues[quarters.length] = forecast;
-  const surprises = actual.map((value, index) => growthPercent(value, estimates[index]));
-  const options = chartOptions((value) => format(Number(value)), palette);
-  if (options.plugins?.legend) {
-    options.plugins.legend.title = {
-      display: true,
-      text: `${quarters.at(-1)?.fiscal_period ?? "Latest quarter"} Surprise: ${signedPercent(surprises.at(-1) ?? null)}`,
-      color: palette.muted,
-      font: { size: 10, weight: "normal" },
+  const format = useCallback(
+    (value: number) => actualField === "revenue" ? compact(value) : value.toFixed(2),
+    [actualField],
+  );
+  const actual = useMemo(
+    () => quarters.map((quarter) => quarter[actualField]),
+    [actualField, quarters],
+  );
+  const estimates = useMemo(
+    () => quarters.map((quarter) => quarter[estimateField]),
+    [estimateField, quarters],
+  );
+  const forecastValues = useMemo(() => {
+    const values = Array<number | null>(quarters.length + 1).fill(null);
+    if (quarters.length > 0) values[quarters.length - 1] = estimates.at(-1) ?? null;
+    values[quarters.length] = forecast;
+    return values;
+  }, [estimates, forecast, quarters.length]);
+  const surprises = useMemo(
+    () => actual.map((value, index) => growthPercent(value, estimates[index])),
+    [actual, estimates],
+  );
+  const model = useMemo<FundamentalChartModel>(() => {
+    const periods = [...quarters.map((quarter) => quarter.fiscal_period), "Next Q"];
+    const actualColors = actual.map((value, index) =>
+      value === null || estimates[index] === null
+        ? palette.muted
+        : value >= estimates[index]!
+          ? palette.positive
+          : palette.negative
+    );
+    const tooltipRows = periods.map((_, index) => {
+      const lines = [];
+      const estimate = estimates[index];
+      const actualValue = actual[index];
+      if (estimate !== null && estimate !== undefined) {
+        lines.push({ label: "Estimate", value: format(estimate), color: palette.muted });
+      }
+      if (actualValue !== null && actualValue !== undefined) {
+        lines.push({ label: "Actual", value: format(actualValue), color: actualColors[index] });
+      }
+      if (index === quarters.length && forecast !== null) {
+        lines.push({ label: "Forecast", value: format(forecast), color: palette.muted });
+      }
+      return {
+        lines,
+        detail: index < quarters.length
+          ? `Surprise: ${formatSurprise(actualValue ?? null, estimate ?? null)}`
+          : undefined,
+      };
+    });
+    return {
+      periods,
+      formatValue: format,
+      minMove: actualField === "revenue" ? 1 : 0.01,
+      tooltipRows,
+      series: [
+        {
+          kind: "line",
+          label: "Estimate",
+          color: palette.muted,
+          data: [...estimates, null],
+        },
+        {
+          kind: "line",
+          label: "Forecast",
+          color: alpha(palette.muted, 0.65),
+          data: forecastValues,
+          dashed: true,
+          width: 1,
+        },
+        {
+          kind: "histogram",
+          label: "Actual",
+          color: palette.positive,
+          colors: [...actualColors, palette.muted],
+          data: [...actual, null],
+        },
+      ],
     };
-  }
-  if (options.plugins?.tooltip?.callbacks !== undefined) {
-    options.plugins.tooltip.callbacks.footer = (items) => {
-      const index = items[0]?.dataIndex;
-      if (index === undefined || index >= quarters.length) return "";
-      return `Surprise: ${formatSurprise(actual[index], estimates[index])}`;
-    };
-    options.plugins.tooltip.filter = (item) =>
-      item.dataset.label !== "Forecast" || item.dataIndex === quarters.length;
-  }
+  }, [actual, actualField, estimates, forecast, forecastValues, format, palette, quarters]);
 
   return (
     <FundamentalChart
       title={title}
       summary={surprises.slice(-4).map(signedPercent)}
       forecastSummary={`${forecast === null ? "N/A" : format(forecast)} (forecast)`}
+      legendTitle={`${quarters.at(-1)?.fiscal_period ?? "Latest quarter"} Surprise: ${signedPercent(surprises.at(-1) ?? null)}`}
       summaryLabel="Surprise"
       empty={actual.every((value) => value === null) && estimates.every((value) => value === null) && forecast === null}
-      configuration={{
-        type: "bar",
-        data: {
-          labels: [...quarters.map((quarter) => quarter.fiscal_period), "Next Q"],
-          datasets: [
-            {
-              type: "line",
-              label: "Estimate",
-              data: [...estimates, null],
-              borderColor: palette.muted,
-              backgroundColor: palette.muted,
-              borderWidth: 2,
-              pointRadius: 2,
-              tension: 0.2,
-            },
-            {
-              type: "line",
-              label: "Forecast",
-              data: forecastValues,
-              ...forecastLineStyle(palette),
-              tension: 0.2,
-            },
-            {
-              label: "Actual",
-              barPercentage: 0.7,
-              data: [...actual, null],
-              backgroundColor: actual.map((value, index) =>
-                value === null || estimates[index] === null
-                  ? palette.muted
-                  : value >= estimates[index]!
-                    ? palette.positive
-                    : palette.negative,
-              ),
-            },
-          ],
-        },
-        options,
-      }}
+      model={model}
     />
   );
-}
-
-function FundamentalChart({
-  title,
-  summary,
-  forecastSummary,
-  summaryLabel,
-  summarySeparator = "divider",
-  empty = false,
-  configuration,
-}: {
-  title: string;
-  summary: string[];
-  forecastSummary?: string;
-  summaryLabel?: string;
-  summarySeparator?: "divider" | "arrow";
-  empty?: boolean;
-  configuration: ChartConfiguration;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    if (canvasRef.current === null) return;
-    let chart: { destroy: () => void } | undefined;
-    let cancelled = false;
-    void import("chart.js/auto").then(({ default: Chart }) => {
-      if (!cancelled && canvasRef.current !== null) {
-        chart = new Chart(canvasRef.current, configuration);
-      }
-    });
-    return () => {
-      cancelled = true;
-      chart?.destroy();
-    };
-  }, [configuration, empty]);
-
-  return (
-    <section className="fundamentals-panel">
-      <Typography component="h3">{title}</Typography>
-      <div className="fundamentals-canvas-wrap">
-        {empty ? <Typography className="fundamentals-empty" color="text.secondary">No data available</Typography>
-          : <canvas ref={canvasRef} role="img" aria-label={title} />}
-      </div>
-      <div className={`fundamentals-summary fundamentals-summary-${summarySeparator}`}>
-        {summaryLabel && <Typography className="fundamentals-summary-label" color="text.secondary">{summaryLabel}:</Typography>}
-        {summary.map((value, index) => (
-          <Typography key={`${value}-${index}`} color="text.secondary">
-            {value}
-          </Typography>
-        ))}
-        {forecastSummary !== undefined && <Typography className="fundamentals-forecast-summary" color="text.secondary">
-          {forecastSummary}
-        </Typography>}
-      </div>
-    </section>
-  );
-}
-
-function forecastLineStyle(palette: AppPalette, opacity = 0.65) {
-  const color = alpha(palette.muted, opacity);
-  return {
-    borderColor: color,
-    backgroundColor: palette.canvas,
-    borderWidth: 1,
-    borderDash: [3, 5],
-    pointBorderColor: color,
-    pointBorderWidth: 1,
-    pointRadius: 1.5,
-    pointHoverRadius: 3,
-  };
-}
-
-function chartOptions(
-  format: (value: string | number) => string,
-  palette: AppPalette,
-): NonNullable<ChartConfiguration["options"]> {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    interaction: { mode: "index", intersect: false },
-    plugins: {
-      legend: { labels: { color: palette.muted, boxWidth: 10, font: { size: 10 } } },
-      tooltip: {
-        callbacks: {
-          label: (context: TooltipItem<"line" | "bar">) =>
-            `${context.dataset.label}: ${context.raw === null ? "N/A" : format(context.raw as number)}`,
-        },
-      },
-    },
-    scales: {
-      x: { ticks: { color: palette.muted, font: { size: 10 } }, grid: { color: palette.border } },
-      y: {
-        ticks: { color: palette.muted, callback: (value) => format(value), font: { size: 10 } },
-        grid: { color: palette.border },
-      },
-    },
-  };
 }
 
 function surprisePercent(actual: number | null, estimate: number | null) {
