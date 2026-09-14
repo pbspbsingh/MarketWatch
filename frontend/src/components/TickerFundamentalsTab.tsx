@@ -6,6 +6,7 @@ import { useAppSettings } from "../app/AppSettings";
 import { appPalettes, featureAccents } from "../app/theme";
 import { FundamentalChart, type FundamentalChartModel } from "./FundamentalChart";
 import { growthPercent, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
+import { visualizationColors } from "./lightweight-chart/chartOptions";
 
 const growthLogScaleKey = "fundamentals.growth-log-scale";
 const growthSmaKey = "fundamentals.growth-2-sma";
@@ -264,8 +265,8 @@ function EstimateChart({
       value === null || estimates[index] === null
         ? palette.muted
         : value >= estimates[index]!
-          ? palette.positive
-          : palette.negative
+          ? visualizationColors.up
+          : visualizationColors.down
     );
     const tooltipRows = periods.map((_, index) => {
       const lines = [];
@@ -310,7 +311,7 @@ function EstimateChart({
         {
           kind: "histogram",
           label: "Actual",
-          color: palette.positive,
+          color: visualizationColors.up,
           colors: [...actualColors, palette.muted],
           data: [...actual, null],
         },
