@@ -236,6 +236,12 @@ enum FundamentalField {
     Revenue,
 }
 
+#[derive(Clone, Copy)]
+enum GrowthSmoothing {
+    None,
+    TwoPeriodSma,
+}
+
 impl FundamentalField {
     fn actual(self, period: &FundamentalPeriod) -> Option<f64> {
         match self {
@@ -309,6 +315,7 @@ fn growth_metric(
             quarters,
             field,
             1,
+            GrowthSmoothing::TwoPeriodSma,
             fundamentals.next_quarter.fiscal_period.as_deref(),
             quarter_forecast,
         ),
@@ -316,6 +323,7 @@ fn growth_metric(
             quarters,
             field,
             4,
+            GrowthSmoothing::TwoPeriodSma,
             fundamentals.next_quarter.fiscal_period.as_deref(),
             quarter_forecast,
         ),
@@ -323,6 +331,7 @@ fn growth_metric(
             annual,
             field,
             1,
+            GrowthSmoothing::None,
             next_year.map(|period| period.fiscal_period.as_str()),
             next_year.and_then(|period| field.estimate(period)),
         ),
@@ -333,6 +342,7 @@ fn growth_series(
     periods: &[&FundamentalPeriod],
     field: FundamentalField,
     lag: i32,
+    smoothing: GrowthSmoothing,
     forecast_period: Option<&str>,
     forecast_value: Option<f64>,
 ) -> FundamentalGrowthSeries {
@@ -359,16 +369,18 @@ fn growth_series(
             )
         })
         .collect::<Vec<_>>();
-    for index in 1..points.len() {
-        let consecutive = points[index - 1]
-            .0
-            .zip(points[index].0)
-            .is_some_and(|(previous, current)| current == previous + 1);
-        if consecutive
-            && let (Some(previous), Some(current)) =
-                (points[index - 1].1.growth, points[index].1.growth)
-        {
-            points[index].1.sma_2 = Some((previous + current) / 2.0);
+    if matches!(smoothing, GrowthSmoothing::TwoPeriodSma) {
+        for index in 1..points.len() {
+            let consecutive = points[index - 1]
+                .0
+                .zip(points[index].0)
+                .is_some_and(|(previous, current)| current == previous + 1);
+            if consecutive
+                && let (Some(previous), Some(current)) =
+                    (points[index - 1].1.growth, points[index].1.growth)
+            {
+                points[index].1.sma_2 = Some((previous + current) / 2.0);
+            }
         }
     }
     let forecast_index = forecast_period.and_then(period_index);
@@ -378,15 +390,18 @@ fn growth_series(
             values.get(&(index - lag)).copied().flatten(),
         )
     });
-    let forecast_sma_2 = points.last().and_then(|(last_index, last)| {
-        let consecutive = last_index
-            .zip(forecast_index)
-            .is_some_and(|(previous, current)| current == previous + 1);
-        match (consecutive, last.growth, forecast_growth) {
-            (true, Some(previous), Some(current)) => Some((previous + current) / 2.0),
-            _ => None,
-        }
-    });
+    let forecast_sma_2 = match smoothing {
+        GrowthSmoothing::None => None,
+        GrowthSmoothing::TwoPeriodSma => points.last().and_then(|(last_index, last)| {
+            let consecutive = last_index
+                .zip(forecast_index)
+                .is_some_and(|(previous, current)| current == previous + 1);
+            match (consecutive, last.growth, forecast_growth) {
+                (true, Some(previous), Some(current)) => Some((previous + current) / 2.0),
+                _ => None,
+            }
+        }),
+    };
     let first = points.iter().position(|(_, point)| point.growth.is_some());
     let historical = first.map_or_else(Vec::new, |first| {
         let start = first.max(points.len().saturating_sub(12));
@@ -590,6 +605,7 @@ mod tests {
             &refs,
             FundamentalField::EarningsPerShare,
             1,
+            GrowthSmoothing::TwoPeriodSma,
             Some("2026Q2"),
             Some(242.0),
         );
@@ -617,6 +633,7 @@ mod tests {
             &quarter_refs,
             FundamentalField::Revenue,
             4,
+            GrowthSmoothing::TwoPeriodSma,
             Some("2025Q2"),
             Some(6.0),
         );
@@ -633,12 +650,15 @@ mod tests {
             &year_refs,
             FundamentalField::EarningsPerShare,
             1,
+            GrowthSmoothing::None,
             Some("2026FY"),
             Some(9.0),
         );
         assert_eq!(annual.historical[0].growth, Some(50.0));
         assert_eq!(annual.historical[1].growth, None);
         assert_eq!(annual.forecast.growth, Some(50.0));
+        assert!(annual.historical.iter().all(|point| point.sma_2.is_none()));
+        assert_eq!(annual.forecast.sma_2, None);
     }
 
     fn period(fiscal_period: &str, value: f64) -> FundamentalPeriod {

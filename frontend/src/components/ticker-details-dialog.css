@@ -235,6 +235,11 @@
     content: "→";
   }
 
+  & p.fundamentals-summary-label + p::before {
+    margin-right: 0;
+    content: "";
+  }
+
   & .fundamentals-forecast-summary {
     opacity: 0.65;
   }

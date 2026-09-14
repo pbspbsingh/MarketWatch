@@ -22,7 +22,7 @@ export function TickerFundamentalsTab({
   const palette = appPalettes[theme];
   const [logScale, setLogScale] = useState(() => localStorage.getItem(growthLogScaleKey) === "true");
   const [smaVisible, setSmaVisible] = useState(() => localStorage.getItem(growthSmaKey) === "true");
-  const [qoqVisible, setQoqVisible] = useState(() => localStorage.getItem(qoqGrowthVisibleKey) !== "false");
+  const [qoqVisible, setQoqVisible] = useState(() => localStorage.getItem(qoqGrowthVisibleKey) === "true");
   const quarters = details.fundamentals.quarters.slice(0, 16).reverse();
 
   return (
@@ -36,7 +36,7 @@ export function TickerFundamentalsTab({
             }} />}
             label="Log scale" />
         </Tooltip>
-        <Tooltip title="Show the backend-calculated two-period simple moving average on growth charts.">
+        <Tooltip title="Show the backend-calculated two-period simple moving average on quarterly growth charts.">
           <FormControlLabel className="fundamentals-scale-control"
             control={<Checkbox size="small" checked={smaVisible} onChange={(_, checked) => {
               setSmaVisible(checked);
@@ -73,7 +73,7 @@ export function TickerFundamentalsTab({
               {qoqVisible && <GrowthChart title={`${label} QoQ Growth`} series={growth.qoq} field={field}
                 color={color} logScale={logScale} smaVisible={smaVisible} />}
               <GrowthChart title={`${label} Annual Growth`} series={growth.annual} field={field}
-                color={color} logScale={logScale} smaVisible={smaVisible} />
+                color={color} logScale={logScale} smaVisible={false} />
             </Fragment>
           );
         })}
@@ -112,6 +112,7 @@ function GrowthChart({
     ? series.historical.map((point) => point.sma_2)
     : historical;
   const forecastSummaryValue = smaVisible ? series.forecast.sma_2 : forecastGrowth;
+  const metricLabel = field === "revenue" ? "Revenue" : "EPS";
   const historicalColor = alpha(color, smaVisible ? 0.25 : 1);
   const smaColor = field === "earnings_per_share"
     ? featureAccents[theme].purple
@@ -126,7 +127,7 @@ function GrowthChart({
       afterLabel: (item) => {
         if (item.dataset.label === "2 SMA") return "";
         const value = item.dataIndex === historical.length ? series.forecast.value : series.historical[item.dataIndex]?.value;
-        return `${field === "revenue" ? "Revenue" : "EPS"}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`;
+        return `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`;
       },
     };
   }
@@ -136,6 +137,7 @@ function GrowthChart({
       title={title}
       summary={summaryValues.slice(-4).map(formatPercent)}
       forecastSummary={series.forecast.period === null ? undefined : `${formatPercent(forecastSummaryValue)} (forecast)`}
+      summaryLabel={smaVisible ? "Growth MA" : "Growth"}
       summarySeparator="arrow"
       empty={historical.every((value) => value === null) && forecastGrowth === null}
       configuration={{
@@ -308,7 +310,7 @@ function FundamentalChart({
           : <canvas ref={canvasRef} role="img" aria-label={title} />}
       </div>
       <div className={`fundamentals-summary fundamentals-summary-${summarySeparator}`}>
-        {summaryLabel && <Typography color="text.secondary">{summaryLabel}:</Typography>}
+        {summaryLabel && <Typography className="fundamentals-summary-label" color="text.secondary">{summaryLabel}:</Typography>}
         {summary.map((value, index) => (
           <Typography key={`${value}-${index}`} color="text.secondary">
             {value}
