@@ -31,6 +31,7 @@ async fn trades(
     State(state): State<AppState>,
     Query(filters): Query<TradeFilters>,
 ) -> ApiResult<impl serde::Serialize> {
+    filters.validate().map_err(bad_request)?;
     state
         .trade_analyzer
         .snapshot(&filters)

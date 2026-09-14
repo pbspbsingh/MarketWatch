@@ -49,7 +49,7 @@ export function TradeExecutionEditor({
       </div>}
       {executions.map((execution, index) => (
         <div className={`import-execution-fields${onRemove === undefined ? "" : " import-execution-fields-removable"}`} key={execution.key}>
-          <TextField size="small" type="datetime-local" label="Timestamp" value={execution.timestamp} onChange={(event) => onExecutionChange(index, { timestamp: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField size="small" type="datetime-local" label="Timestamp" value={execution.timestamp} onChange={(event) => onExecutionChange(index, { timestamp: event.target.value })} slotProps={{ inputLabel: { shrink: true }, htmlInput: { step: 1 } }} />
           <Select size="small" value={execution.side} aria-label={`${labelPrefix} execution ${index + 1} side`} onChange={(event) => onExecutionChange(index, { side: event.target.value as EditableTradeExecution["side"] })}>
             <MenuItem value="buy">Buy</MenuItem><MenuItem value="sell">Sell</MenuItem>
           </Select>

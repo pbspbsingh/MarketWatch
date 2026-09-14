@@ -29,6 +29,7 @@ export function TradeAnalyzerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [debouncedQuery, setDebouncedQuery] = useState(filters.query);
   const [importOpen, setImportOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<AnalyzerTrade>();
@@ -37,11 +38,37 @@ export function TradeAnalyzerPage() {
     return stored === null ? window.innerWidth >= 900 : stored !== "false";
   });
   const [workspaceSplit, setWorkspaceSplit] = useState(() => finiteNumber(localStorage.getItem(workspaceSplitKey), 52));
+  const tagIdsKey = filters.tagIds?.join(",");
+  const requestFilters = useMemo(
+    (): TradeFilters => ({
+      account: filters.account,
+      monthFrom: filters.monthFrom,
+      monthTo: filters.monthTo,
+      status: filters.status,
+      query: debouncedQuery,
+      tagIds: tagIdsKey?.split(",").map(Number),
+      tagMode: filters.tagMode,
+    }),
+    [
+      debouncedQuery,
+      filters.account,
+      filters.monthFrom,
+      filters.monthTo,
+      filters.status,
+      filters.tagMode,
+      tagIdsKey,
+    ],
+  );
+  useEffect(() => {
+    if (filters.query === debouncedQuery) return;
+    const timeout = window.setTimeout(() => setDebouncedQuery(filters.query), 300);
+    return () => window.clearTimeout(timeout);
+  }, [debouncedQuery, filters.query]);
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTradeAnalyzer(filters, controller.signal)
+    void fetchTradeAnalyzer(requestFilters, controller.signal)
       .then((next) => {
-        if (next.accounts.length > 0 && !next.accounts.some(({ id }) => id === filters.account)) {
+        if (next.accounts.length > 0 && !next.accounts.some(({ id }) => id === requestFilters.account)) {
           setSearchParams((current) => {
             const params = new URLSearchParams(current);
             params.set("account", String(next.accounts[0].id));
@@ -59,26 +86,27 @@ export function TradeAnalyzerPage() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [filters, setSearchParams]);
+  }, [requestFilters, setSearchParams]);
 
   const selectedTrade = useMemo(
     () => snapshot?.trades.find(({ id }) => id === selectedTradeId),
     [selectedTradeId, snapshot?.trades],
   );
 
-  const changeFilters = useCallback((next: TradeFilters) => {
+  const changeFilters = useCallback((next: TradeFilters, replace = false) => {
     setLoading(true);
     setSearchParams((current) => {
       const params = new URLSearchParams(current);
       setOptional(params, "account", next.account);
-      setOptional(params, "month", next.month);
+      setOptional(params, "from", next.monthFrom);
+      setOptional(params, "to", next.monthTo);
       setOptional(params, "status", next.status);
       setOptional(params, "q", next.query);
       setOptional(params, "tags", next.tagIds?.join(","));
       setOptional(params, "tagMode", next.tagIds?.length ? next.tagMode : undefined);
       params.delete("trade");
       return params;
-    });
+    }, { replace });
   }, [setSearchParams]);
 
   const selectTrade = useCallback((tradeId: number) => {
@@ -128,10 +156,14 @@ export function TradeAnalyzerPage() {
       <AnalyzerToolbar
         accounts={accounts}
         tags={tags}
-        months={months}
         filters={filters}
+        searchQuery={filters.query ?? ""}
         chartVisible={chartVisible}
         onFiltersChange={changeFilters}
+        onSearchQueryChange={(query) => changeFilters({
+          ...filters,
+          query: query || undefined,
+        }, true)}
         onClearFilters={() => changeFilters({ account: filters.account })}
         onImport={() => setImportOpen(true)}
         onAddManual={() => setManualOpen(true)}
@@ -185,7 +217,8 @@ function filtersFromSearch(params: URLSearchParams): TradeFilters {
   const tagIds = params.get("tags")?.split(",").map(Number).filter(Number.isFinite);
   return {
     account: optionalNumber(params.get("account")),
-    month: params.get("month") || undefined,
+    monthFrom: params.get("from") || undefined,
+    monthTo: params.get("to") || undefined,
     status: params.get("status") || undefined,
     query: params.get("q") || undefined,
     tagIds: tagIds?.length ? tagIds : undefined,

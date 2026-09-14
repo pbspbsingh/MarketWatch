@@ -36,7 +36,7 @@
 .trade-filter-account { width: 9.5rem; }
 .trade-filter-search { width: clamp(12rem, 24vw, 22rem); }
 .trade-filter-status { width: 8.5rem; }
-.trade-filter-month { width: 8.5rem; }
+.trade-filter-month { width: 8rem; }
 .trade-filter-tags { width: 7rem; }
 .trade-filter-tag-mode { width: 7.5rem; }
 .trade-toolbar-spacer { min-width: 0; flex: 1; }
@@ -272,7 +272,6 @@
 
 @media (max-width: 1180px) {
   .trade-analyzer-title span { display: none; }
-  .trade-filter-month,
   .trade-filter-tag-mode { display: none !important; }
 }
 

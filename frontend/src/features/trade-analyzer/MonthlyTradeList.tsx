@@ -234,6 +234,9 @@ function TradeRows({
   onEditTrade: (trade: AnalyzerTrade) => void;
 }) {
   const markOrExit = trade.position_status === "open" ? trade.current_mark : trade.average_exit;
+  const markOrExitDate = trade.position_status === "open"
+    ? trade.mark_date
+    : trade.closed_at === null ? null : localDate(trade.closed_at, timezone);
   return (
     <>
       <tr
@@ -297,7 +300,7 @@ function TradeRows({
         <td>{decimal(trade.remaining_quantity)} / {decimal(trade.quantity)}</td>
         <td>{money(trade.average_entry)}</td>
         <td>{money(trade.active_stop)}<small>initial {money(trade.initial_stop)}</small></td>
-        <td>{money(markOrExit)}<small>{trade.mark_date ?? ""}</small></td>
+        <td>{money(markOrExit)}<small>{markOrExitDate ?? ""}</small></td>
         <td className={pnlClass(trade.total_pnl)}>
           <strong>{signedMoney(trade.total_pnl)}</strong>
           <small>{decimal(trade.pnl_percent, "%")}</small>

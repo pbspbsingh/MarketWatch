@@ -160,12 +160,19 @@ pub struct SnapshotDto {
 #[derive(Default, Deserialize)]
 pub struct TradeFilters {
     pub account: Option<i64>,
-    pub month: Option<String>,
+    pub month_from: Option<String>,
+    pub month_to: Option<String>,
     pub status: Option<String>,
     #[serde(rename = "q")]
     pub query: Option<String>,
     pub tag_ids: Option<String>,
     pub tag_mode: Option<String>,
+}
+
+impl TradeFilters {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_month_range(self.month_from.as_deref(), self.month_to.as_deref())
+    }
 }
 
 #[derive(Serialize)]
@@ -382,6 +389,7 @@ impl TradeAnalyzerService {
 
     pub async fn snapshot(&self, filters: &TradeFilters) -> anyhow::Result<SnapshotDto> {
         let _guard = self.mutation_lock.lock().await;
+        filters.validate()?;
         for account_id in self.repo.pending_rebuild_accounts().await? {
             self.rebuild(account_id).await?;
         }
@@ -413,55 +421,70 @@ impl TradeAnalyzerService {
             .unwrap_or("")
             .split(',')
             .filter_map(|v| v.parse::<i64>().ok())
-            .collect::<HashSet<_>>();
-        let trade_rows = self.repo.trades().await?;
-        let account_ids = trade_rows
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let position_status = filters
+            .status
+            .as_deref()
+            .filter(|status| matches!(*status, "open" | "closed"));
+        let history_quality = filters
+            .status
+            .as_deref()
+            .filter(|status| matches!(*status, "incomplete" | "conflicted"));
+        let trade_rows = self
+            .repo
+            .filtered_trades(
+                filters.account,
+                filters.month_from.as_deref(),
+                filters.month_to.as_deref(),
+                position_status,
+                history_quality,
+                filters.status.as_deref() == Some("unprotected"),
+                filters.query.as_deref(),
+                &tag_filter,
+                filters.tag_mode.as_deref() == Some("all"),
+            )
+            .await?;
+        let trade_ids = trade_rows.iter().map(|trade| trade.id).collect::<Vec<_>>();
+        let execution_ids = trade_rows
             .iter()
-            .map(|trade| trade.account_id)
-            .collect::<HashSet<_>>();
-        let mut executions_by_id = HashMap::new();
+            .flat_map(|trade| {
+                serde_json::from_str::<Vec<i64>>(&trade.execution_ids_json).unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        let executions_by_id = self
+            .repo
+            .executions_by_ids(&execution_ids)
+            .await?
+            .into_iter()
+            .map(|execution| (execution.id, execution))
+            .collect::<HashMap<_, _>>();
         let mut stops_by_trade = HashMap::<(i64, String, String), Vec<AnalyzerStopRow>>::new();
-        for account_id in account_ids {
-            executions_by_id.extend(
-                self.repo
-                    .executions(account_id)
-                    .await?
-                    .into_iter()
-                    .map(|execution| (execution.id, execution)),
-            );
-            for stop in self.repo.stops(account_id).await? {
-                stops_by_trade
-                    .entry((
-                        account_id,
-                        stop.symbol.clone(),
-                        stop.trade_opened_at_utc.clone(),
-                    ))
-                    .or_default()
-                    .push(stop);
-            }
+        for stop in self.repo.stops_for_trade_ids(&trade_ids).await? {
+            stops_by_trade
+                .entry((
+                    stop.account_id,
+                    stop.symbol.clone(),
+                    stop.trade_opened_at_utc.clone(),
+                ))
+                .or_default()
+                .push(stop);
         }
         let mut marks_by_symbol = HashMap::<String, (Option<f64>, Option<String>)>::new();
         let journals = self
             .repo
-            .journals()
+            .journals_for_trade_ids(&trade_ids)
             .await?
             .into_iter()
             .map(|journal| (journal.trade_id, journal))
             .collect::<HashMap<_, _>>();
         let mut tags_by_trade = HashMap::<i64, Vec<AnalyzerTradeTagRow>>::new();
-        for tag in self.repo.trade_tags_all().await? {
+        for tag in self.repo.trade_tags_for_trade_ids(&trade_ids).await? {
             tags_by_trade.entry(tag.trade_id).or_default().push(tag);
         }
         let mut trades = Vec::new();
         for row in trade_rows {
-            if filters.account.is_some_and(|v| v != row.account_id)
-                || filters
-                    .month
-                    .as_ref()
-                    .is_some_and(|v| v != &row.opening_month)
-            {
-                continue;
-            }
             let journal =
                 journals
                     .get(&row.id)
@@ -484,33 +507,6 @@ impl TradeAnalyzerService {
                     name: t.name,
                 })
                 .collect::<Vec<_>>();
-            let matched = tags.iter().filter(|t| tag_filter.contains(&t.id)).count();
-            if !tag_filter.is_empty()
-                && if filters.tag_mode.as_deref() == Some("all") {
-                    matched != tag_filter.len()
-                } else {
-                    matched == 0
-                }
-            {
-                continue;
-            }
-            let haystack = format!(
-                "{} {} {}",
-                row.symbol,
-                journal.comment,
-                tags.iter()
-                    .map(|t| t.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            )
-            .to_lowercase();
-            if filters
-                .query
-                .as_ref()
-                .is_some_and(|q| !haystack.contains(&q.to_lowercase()))
-            {
-                continue;
-            }
             let ids = serde_json::from_str::<Vec<i64>>(&row.execution_ids_json).unwrap_or_default();
             let executions = ids
                 .iter()
@@ -545,12 +541,16 @@ impl TradeAnalyzerService {
             let entry = row.average_entry_micros.map(to_f64);
             let realized = row.realized_pnl_micros.map(to_f64);
             // Marks are deliberately read only from completed persisted daily candles. Missing data is non-fatal.
-            let (mark, mark_date) = match marks_by_symbol.get(&row.symbol) {
-                Some(mark) => mark.clone(),
-                None => {
-                    let mark = self.latest_mark(&row.symbol).await.unwrap_or((None, None));
-                    marks_by_symbol.insert(row.symbol.clone(), mark.clone());
-                    mark
+            let (mark, mark_date) = if remaining <= 0.0 {
+                (None, None)
+            } else {
+                match marks_by_symbol.get(&row.symbol) {
+                    Some(mark) => mark.clone(),
+                    None => {
+                        let mark = self.latest_mark(&row.symbol).await.unwrap_or((None, None));
+                        marks_by_symbol.insert(row.symbol.clone(), mark.clone());
+                        mark
+                    }
                 }
             };
             let unrealized = match (entry, mark) {
@@ -572,19 +572,6 @@ impl TradeAnalyzerService {
             };
             let stop = row.initial_stop_micros.map(to_f64);
             let active_stop = row.active_stop_micros.map(to_f64);
-            if filters
-                .status
-                .as_deref()
-                .is_some_and(|status| match status {
-                    "open" | "closed" => status != row.position_status,
-                    "incomplete" => row.history_quality != "incomplete",
-                    "conflicted" => row.history_quality != "conflicted",
-                    "unprotected" => row.position_status != "open" || active_stop.is_some(),
-                    _ => false,
-                })
-            {
-                continue;
-            }
             let (risk_stop, protected_quantity) = (
                 active_stop,
                 if active_stop.is_some() {
@@ -776,6 +763,7 @@ impl TradeAnalyzerService {
             new_stops.push(stop);
             stops.push(AnalyzerStopRow {
                 id: -(index as i64 + 1),
+                account_id: account_id.unwrap_or(0),
                 trade_opened_at_utc: stop.trade_opened_at_utc.clone(),
                 placed_at_utc: stop.placed_at_utc.clone(),
                 market_date: stop.market_date.clone(),
@@ -1778,6 +1766,7 @@ impl TradeAnalyzerService {
                 .enumerate()
                 .map(|(index, stop)| AnalyzerStopRow {
                     id: -(index as i64 + 1),
+                    account_id: account_id.unwrap_or(0),
                     trade_opened_at_utc: stop.trade_opened_at_utc.clone(),
                     placed_at_utc: stop.placed_at_utc.clone(),
                     market_date: stop.market_date.clone(),
@@ -2883,6 +2872,16 @@ fn month_label(key: &str) -> String {
         .map(|d| format!("{} {}", d.format("%B"), d.year()))
         .unwrap_or_else(|_| key.into())
 }
+fn validate_month_range(month_from: Option<&str>, month_to: Option<&str>) -> anyhow::Result<()> {
+    for value in [month_from, month_to].into_iter().flatten() {
+        NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d")
+            .with_context(|| format!("invalid month: {value}"))?;
+    }
+    if month_from.zip(month_to).is_some_and(|(from, to)| from > to) {
+        bail!("month_from must not be after month_to");
+    }
+    Ok(())
+}
 fn ema(candles: &[IntradayCandleDto], period: usize) -> Vec<EmaPointDto> {
     if candles.len() < period {
         warn!(
@@ -3046,6 +3045,13 @@ mod tests {
     #[test]
     fn rejects_negative_money() {
         assert!(micros_or_zero("-0.01").is_err());
+    }
+
+    #[test]
+    fn validates_month_ranges() {
+        assert!(validate_month_range(Some("2026-08"), Some("2026-09")).is_ok());
+        assert!(validate_month_range(Some("2026-09"), Some("2026-08")).is_err());
+        assert!(validate_month_range(Some("2026-13"), None).is_err());
     }
 
     #[test]

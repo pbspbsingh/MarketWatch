@@ -100,6 +100,7 @@ pub(crate) struct NewAnalyzerStop {
 #[derive(Clone)]
 pub(crate) struct AnalyzerStopRow {
     pub id: i64,
+    pub account_id: i64,
     pub trade_opened_at_utc: String,
     pub placed_at_utc: String,
     pub market_date: String,
@@ -331,6 +332,27 @@ impl TradeAnalyzerRepository {
         .context("failed to load trade executions")
     }
 
+    pub async fn executions_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> anyhow::Result<Vec<AnalyzerExecutionRow>> {
+        let ids = serde_json::to_string(ids)?;
+        sqlx::query_as!(
+            AnalyzerExecutionRow,
+            r#"SELECT id, event_key, origin,
+                      executed_at_utc AS "executed_at_utc!: String", executed_at_local,
+                      market_date AS "market_date!: String", symbol, side, position_effect,
+                      quantity_micros, price_micros, fee_micros, source_sequence
+               FROM trade_executions
+               WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+               ORDER BY executed_at_utc, source_sequence, id"#,
+            ids,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load filtered trade executions")
+    }
+
     pub async fn apply_import(&self, import: NewAnalyzerImport<'_>) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
         sqlx::query!(
@@ -408,7 +430,7 @@ impl TradeAnalyzerRepository {
     pub async fn stops(&self, account_id: i64) -> anyhow::Result<Vec<AnalyzerStopRow>> {
         sqlx::query_as!(
             AnalyzerStopRow,
-            r#"SELECT id, trade_opened_at_utc AS "trade_opened_at_utc!: String",
+            r#"SELECT id, account_id, trade_opened_at_utc AS "trade_opened_at_utc!: String",
                       placed_at_utc AS "placed_at_utc!: String",
                       market_date AS "market_date!: String", symbol,
                       price_micros, kind
@@ -420,6 +442,32 @@ impl TradeAnalyzerRepository {
         .fetch_all(&self.pool)
         .await
         .context("failed to load trade stops")
+    }
+
+    pub async fn stops_for_trade_ids(
+        &self,
+        trade_ids: &[i64],
+    ) -> anyhow::Result<Vec<AnalyzerStopRow>> {
+        let trade_ids = serde_json::to_string(trade_ids)?;
+        sqlx::query_as!(
+            AnalyzerStopRow,
+            r#"SELECT s.id, s.account_id,
+                      s.trade_opened_at_utc AS "trade_opened_at_utc!: String",
+                      s.placed_at_utc AS "placed_at_utc!: String",
+                      s.market_date AS "market_date!: String", s.symbol,
+                      s.price_micros, s.kind
+               FROM trade_risk_stops s
+               JOIN analyzer_trades t
+                 ON t.account_id = s.account_id
+                AND t.symbol = s.symbol
+                AND t.opened_at = s.trade_opened_at_utc
+               WHERE t.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+               ORDER BY s.placed_at_utc, s.id"#,
+            trade_ids,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load filtered trade stops")
     }
 
     pub async fn latest_mark(&self, symbol: &str) -> anyhow::Result<Option<(String, f64)>> {
@@ -602,6 +650,89 @@ impl TradeAnalyzerRepository {
         Ok(())
     }
 
+    pub async fn filtered_trades(
+        &self,
+        account: Option<i64>,
+        month_from: Option<&str>,
+        month_to: Option<&str>,
+        position_status: Option<&str>,
+        history_quality: Option<&str>,
+        unprotected: bool,
+        search: Option<&str>,
+        tag_ids: &[i64],
+        match_all_tags: bool,
+    ) -> anyhow::Result<Vec<AnalyzerTradeRow>> {
+        let tag_count = tag_ids.len() as i64;
+        let tag_ids = serde_json::to_string(tag_ids)?;
+        let match_all_tags = i64::from(match_all_tags);
+        let unprotected = i64::from(unprotected);
+        sqlx::query_as!(
+            AnalyzerTradeRow,
+            r#"SELECT t.id, t.lifecycle_key, t.account_id, t.symbol, t.direction,
+                      t.position_status, t.history_quality,
+                      t.opened_at AS "opened_at?: String", t.opened_at_local,
+                      t.opening_month, t.closed_at AS "closed_at?: String", t.quantity_micros,
+                      t.remaining_quantity_micros, t.average_entry_micros,
+                      t.average_exit_micros, t.initial_stop_micros, t.active_stop_micros,
+                      t.realized_pnl_micros, t.execution_ids_json, t.revision
+               FROM analyzer_trades t
+               WHERE (? IS NULL OR t.account_id = ?)
+                 AND (? IS NULL OR t.opening_month >= ?)
+                 AND (? IS NULL OR t.opening_month <= ?)
+                 AND (? IS NULL OR t.position_status = ?)
+                 AND (? IS NULL OR t.history_quality = ?)
+                 AND (? = 0 OR (t.position_status = 'open' AND t.active_stop_micros IS NULL))
+                 AND (? IS NULL
+                      OR instr(lower(t.symbol), lower(?)) > 0
+                      OR EXISTS (
+                          SELECT 1 FROM trade_journals j
+                          WHERE j.trade_id = t.id AND instr(lower(j.comment), lower(?)) > 0
+                      )
+                      OR EXISTS (
+                          SELECT 1 FROM trade_tag_assignments a
+                          JOIN trade_tags tag ON tag.id = a.tag_id
+                          WHERE a.trade_id = t.id AND instr(lower(tag.name), lower(?)) > 0
+                      ))
+                 AND (? = 0
+                      OR (? = 1 AND (
+                          SELECT COUNT(DISTINCT a.tag_id)
+                          FROM trade_tag_assignments a
+                          WHERE a.trade_id = t.id
+                            AND a.tag_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+                      ) = ?)
+                      OR (? = 0 AND EXISTS (
+                          SELECT 1 FROM trade_tag_assignments a
+                          WHERE a.trade_id = t.id
+                            AND a.tag_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+                      )))
+               ORDER BY t.opening_month DESC, t.opened_at DESC, t.id DESC"#,
+            account,
+            account,
+            month_from,
+            month_from,
+            month_to,
+            month_to,
+            position_status,
+            position_status,
+            history_quality,
+            history_quality,
+            unprotected,
+            search,
+            search,
+            search,
+            search,
+            tag_count,
+            match_all_tags,
+            tag_ids,
+            tag_count,
+            match_all_tags,
+            tag_ids,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load filtered analyzer trades")
+    }
+
     pub async fn trades(&self) -> anyhow::Result<Vec<AnalyzerTradeRow>> {
         sqlx::query_as!(
             AnalyzerTradeRow,
@@ -621,10 +752,15 @@ impl TradeAnalyzerRepository {
         .context("failed to load analyzer trades")
     }
 
-    pub async fn journals(&self) -> anyhow::Result<Vec<AnalyzerJournalEntryRow>> {
+    pub async fn journals_for_trade_ids(
+        &self,
+        trade_ids: &[i64],
+    ) -> anyhow::Result<Vec<AnalyzerJournalEntryRow>> {
+        let trade_ids = serde_json::to_string(trade_ids)?;
         Ok(sqlx::query_as!(
             AnalyzerJournalEntryRow,
-            "SELECT trade_id, comment, strategy, edges, lessons, mistakes, rating FROM trade_journals",
+            "SELECT trade_id, comment, strategy, edges, lessons, mistakes, rating FROM trade_journals WHERE trade_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))",
+            trade_ids,
         )
         .fetch_all(&self.pool)
         .await?)
@@ -639,10 +775,15 @@ impl TradeAnalyzerRepository {
         .await?)
     }
 
-    pub async fn trade_tags_all(&self) -> anyhow::Result<Vec<AnalyzerTradeTagRow>> {
+    pub async fn trade_tags_for_trade_ids(
+        &self,
+        trade_ids: &[i64],
+    ) -> anyhow::Result<Vec<AnalyzerTradeTagRow>> {
+        let trade_ids = serde_json::to_string(trade_ids)?;
         Ok(sqlx::query_as!(
             AnalyzerTradeTagRow,
-            "SELECT a.trade_id, t.id, t.name FROM trade_tags t JOIN trade_tag_assignments a ON a.tag_id = t.id ORDER BY t.name COLLATE NOCASE",
+            "SELECT a.trade_id, t.id, t.name FROM trade_tags t JOIN trade_tag_assignments a ON a.tag_id = t.id WHERE a.trade_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)) ORDER BY t.name COLLATE NOCASE",
+            trade_ids,
         )
         .fetch_all(&self.pool)
         .await?)
@@ -988,5 +1129,145 @@ impl TradeAnalyzerRepository {
         .await?;
         tx.commit().await?;
         Ok(Some(trade.account_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+
+    #[tokio::test]
+    async fn filters_trade_snapshots_in_sql() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        sqlx::query!(
+            "INSERT INTO trade_accounts (id, broker, external_key, label, timezone) VALUES (1, 'test', 'test', 'Test', 'America/Los_Angeles')",
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        let repo = store.trade_analyzer();
+        repo.replace_trades(
+            1,
+            &[
+                trade("aug", "AUG", "2026-08", "closed"),
+                trade("sep", "SEP", "2026-09", "open"),
+            ],
+        )
+        .await
+        .unwrap();
+        let rows = repo.trades().await.unwrap();
+        let aug_id = rows.iter().find(|row| row.symbol == "AUG").unwrap().id;
+        let sep_id = rows.iter().find(|row| row.symbol == "SEP").unwrap().id;
+        sqlx::query!(
+            "INSERT INTO trade_journals (trade_id, comment) VALUES (?, 'Breakout setup')",
+            aug_id,
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        sqlx::query!("INSERT INTO trade_tags (id, name) VALUES (1, 'swing'), (2, 'reviewed')")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        for (trade_id, tag_id) in [(aug_id, 1), (aug_id, 2), (sep_id, 1)] {
+            sqlx::query!(
+                "INSERT INTO trade_tag_assignments (trade_id, tag_id) VALUES (?, ?)",
+                trade_id,
+                tag_id,
+            )
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        }
+
+        let september = repo
+            .filtered_trades(
+                None,
+                Some("2026-09"),
+                Some("2026-09"),
+                None,
+                None,
+                false,
+                None,
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(september.len(), 1);
+        assert_eq!(september[0].symbol, "SEP");
+        assert_eq!(
+            repo.filtered_trades(
+                None,
+                None,
+                None,
+                Some("closed"),
+                None,
+                false,
+                None,
+                &[],
+                false
+            )
+            .await
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(
+            repo.filtered_trades(
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                Some("breakout"),
+                &[],
+                false
+            )
+            .await
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(
+            repo.filtered_trades(None, None, None, None, None, false, None, &[1, 2], true)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            repo.filtered_trades(None, None, None, None, None, false, None, &[1], false)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    fn trade(key: &str, symbol: &str, month: &str, status: &str) -> NewAnalyzerTrade {
+        NewAnalyzerTrade {
+            lifecycle_key: key.into(),
+            account_id: 1,
+            symbol: symbol.into(),
+            direction: "long".into(),
+            position_status: status.into(),
+            history_quality: "complete".into(),
+            opened_at: Some(format!("{month}-01T16:00:00+00:00")),
+            opened_at_local: Some(format!("{month}-01T09:00:00")),
+            opening_month: month.into(),
+            closed_at: (status == "closed").then(|| format!("{month}-02T16:00:00+00:00")),
+            quantity_micros: 1_000_000,
+            remaining_quantity_micros: if status == "closed" { 0 } else { 1_000_000 },
+            average_entry_micros: Some(10_000_000),
+            average_exit_micros: (status == "closed").then_some(11_000_000),
+            initial_stop_micros: Some(9_000_000),
+            active_stop_micros: (status == "open").then_some(9_000_000),
+            realized_pnl_micros: Some(if status == "closed" { 1_000_000 } else { 0 }),
+            fees_micros: 0,
+            execution_ids_json: "[]".into(),
+        }
     }
 }

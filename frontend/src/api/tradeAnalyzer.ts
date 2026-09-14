@@ -113,7 +113,8 @@ export interface TradeAnalyzerSnapshot {
 
 export interface TradeFilters {
   account?: number;
-  month?: string;
+  monthFrom?: string;
+  monthTo?: string;
   status?: string;
   query?: string;
   tagIds?: number[];
@@ -206,7 +207,8 @@ export async function fetchTradeAnalyzer(
 ): Promise<TradeAnalyzerSnapshot> {
   const query = new URLSearchParams();
   if (filters.account !== undefined) query.set("account", String(filters.account));
-  if (filters.month) query.set("month", filters.month);
+  if (filters.monthFrom) query.set("month_from", filters.monthFrom);
+  if (filters.monthTo) query.set("month_to", filters.monthTo);
   if (filters.status) query.set("status", filters.status);
   if (filters.query) query.set("q", filters.query);
   if (filters.tagIds?.length) query.set("tag_ids", filters.tagIds.join(","));

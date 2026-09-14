@@ -82,7 +82,7 @@ export function ManualTradeDialog({
       key: String(execution.id),
       id: execution.id,
       origin: execution.origin,
-      timestamp: execution.timestamp_local.slice(0, 16),
+      timestamp: execution.timestamp_local.slice(0, 19),
       side: execution.side,
       position_effect: execution.position_effect,
       quantity: execution.quantity,

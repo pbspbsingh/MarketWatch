@@ -14,15 +14,16 @@ import {
   ToggleButton,
   Tooltip,
 } from "@mui/material";
-import type { TradeAccount, TradeFilters, TradeMonthSummary, TradeTag } from "../../api/tradeAnalyzer";
+import type { TradeAccount, TradeFilters, TradeTag } from "../../api/tradeAnalyzer";
 
 interface AnalyzerToolbarProps {
   accounts: TradeAccount[];
   tags: TradeTag[];
-  months: TradeMonthSummary[];
   filters: TradeFilters;
+  searchQuery: string;
   chartVisible: boolean;
   onFiltersChange: (filters: TradeFilters) => void;
+  onSearchQueryChange: (query: string) => void;
   onClearFilters: () => void;
   onImport: () => void;
   onAddManual: () => void;
@@ -32,17 +33,19 @@ interface AnalyzerToolbarProps {
 export function AnalyzerToolbar({
   accounts,
   tags,
-  months,
   filters,
+  searchQuery,
   chartVisible,
   onFiltersChange,
+  onSearchQueryChange,
   onClearFilters,
   onImport,
   onAddManual,
   onToggleChart,
 }: AnalyzerToolbarProps) {
   const hasActiveFilters = filters.status !== undefined
-    || filters.month !== undefined
+    || filters.monthFrom !== undefined
+    || filters.monthTo !== undefined
     || filters.query !== undefined
     || (filters.tagIds?.length ?? 0) > 0;
 
@@ -70,7 +73,7 @@ export function AnalyzerToolbar({
       <TextField
         className="trade-filter-search"
         size="small"
-        value={filters.query ?? ""}
+        value={searchQuery}
         placeholder="Search symbols, comments, tags…"
         slotProps={{
           htmlInput: { "aria-label": "Search trades" },
@@ -80,7 +83,7 @@ export function AnalyzerToolbar({
             ),
           },
         }}
-        onChange={(event) => onFiltersChange({ ...filters, query: event.target.value || undefined })}
+        onChange={(event) => onSearchQueryChange(event.target.value)}
       />
       <FormControl size="small" className="trade-filter-status">
         <Select
@@ -99,21 +102,38 @@ export function AnalyzerToolbar({
           <MenuItem value="unprotected">Unprotected</MenuItem>
         </Select>
       </FormControl>
-      <FormControl size="small" className="trade-filter-month">
-        <Select
-          value={filters.month ?? "all"}
-          aria-label="Opening month"
-          onChange={(event) => onFiltersChange({
-            ...filters,
-            month: event.target.value === "all" ? undefined : String(event.target.value),
-          })}
-        >
-          <MenuItem value="all">All months</MenuItem>
-          {[...new Map(months.map((month) => [month.key, month])).values()].map((month) => (
-            <MenuItem key={month.key} value={month.key}>{month.label}</MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+      <TextField
+        className="trade-filter-month"
+        size="small"
+        type="month"
+        label="From"
+        value={filters.monthFrom ?? ""}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.monthTo } }}
+        onChange={(event) => onFiltersChange({
+          ...filters,
+          monthFrom: event.target.value || undefined,
+          monthTo: event.target.value !== "" && filters.monthTo !== undefined
+            && event.target.value > filters.monthTo
+            ? event.target.value
+            : filters.monthTo,
+        })}
+      />
+      <TextField
+        className="trade-filter-month"
+        size="small"
+        type="month"
+        label="To"
+        value={filters.monthTo ?? ""}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.monthFrom } }}
+        onChange={(event) => onFiltersChange({
+          ...filters,
+          monthFrom: event.target.value !== "" && filters.monthFrom !== undefined
+            && event.target.value < filters.monthFrom
+            ? event.target.value
+            : filters.monthFrom,
+          monthTo: event.target.value || undefined,
+        })}
+      />
       <FormControl size="small" className="trade-filter-tags">
         <Select
           multiple
