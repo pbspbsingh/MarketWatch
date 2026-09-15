@@ -183,11 +183,18 @@
 .automatic-job-list {
   display: flex;
   min-height: 0;
-  padding: 0.5rem;
+  padding: 0;
   border: 0.0625rem solid var(--color-border);
   border-radius: 0.25rem;
   background: var(--color-canvas);
   flex-direction: column;
+}
+
+.automatic-job-header {
+  flex: 0 0 auto;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 0.0625rem solid var(--color-border);
+  background: var(--color-raised);
 }
 
 .automatic-job-detail {

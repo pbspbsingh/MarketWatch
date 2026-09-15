@@ -3,7 +3,7 @@ use crate::models::{AssignmentSource, ThemeSuggestion, TickerSymbol};
 use crate::services::themes::{AiCapability, ThemeServiceError};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
@@ -61,6 +61,7 @@ pub fn router() -> Router<AppState> {
         .route("/theme-ai/parse", post(parse))
         .route("/theme-ai/suggest", post(suggest))
         .route("/theme-ai/jobs", get(ai_jobs).post(create_ai_jobs))
+        .route("/theme-ai/jobs/applied", delete(delete_applied_ai_jobs))
         .route("/theme-ai/jobs/{id}", get(ai_job).delete(delete_ai_job))
         .route("/theme-ai/jobs/{id}/apply", post(apply_ai_job))
         .route("/theme-ai/jobs/{id}/retry", post(retry_ai_job))
@@ -289,6 +290,15 @@ async fn delete_ai_job(
         .delete_ai_job(id)
         .await
         .map(|()| Json(json!({ "ok": true })))
+        .map_err(api_error)
+}
+
+async fn delete_applied_ai_jobs(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
+    state
+        .themes
+        .delete_applied_ai_jobs()
+        .await
+        .map(|deleted_count| Json(json!({ "deleted_count": deleted_count })))
         .map_err(api_error)
 }
 

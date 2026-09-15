@@ -161,6 +161,9 @@ export const applyThemeAiJob = (id: number) =>
 export const deleteThemeAiJob = (id: number) =>
   request<{ ok: boolean }>(`/api/theme-ai/jobs/${id}`, { method: "DELETE" });
 
+export const deleteAppliedThemeAiJobs = () =>
+  request<{ deleted_count: number }>("/api/theme-ai/jobs/applied", { method: "DELETE" });
+
 export const retryThemeAiJob = (id: number) =>
   request<{ id: number }>(`/api/theme-ai/jobs/${id}/retry`, { method: "POST" });
 

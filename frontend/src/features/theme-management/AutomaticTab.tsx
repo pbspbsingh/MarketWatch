@@ -1,8 +1,12 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
-import { Button, Chip, TextField, Typography } from "@mui/material";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import { Button, Chip, IconButton, TextField, Tooltip, Typography } from "@mui/material";
 import {
   applyThemeAiJob,
   createAutomaticJobs,
+  deleteAppliedThemeAiJobs,
   deleteThemeAiJob,
   fetchThemeAiJob,
   fetchThemeAiJobs,
@@ -211,20 +215,51 @@ export function AutomaticTab({
         </section>
         <section className="automatic-job-review">
           <aside className="automatic-job-list">
-            <div className="theme-pane-header">
+            <div className="theme-pane-header automatic-job-header">
               <Typography component="h2">Jobs ({visibleJobs.length})</Typography>
               {appliedJobCount > 0 && (
-                <Button
-                  size="small"
-                  onClick={() => {
-                    if (showAppliedJobs && selectedSummary?.status === "applied") {
-                      setSelectedId(undefined);
-                    }
-                    setShowAppliedJobs((current) => !current);
-                  }}
-                >
-                  {showAppliedJobs ? "Hide Applied" : `Show Applied (${appliedJobCount})`}
-                </Button>
+                <div className="bulk-actions">
+                  <Tooltip title={`${showAppliedJobs ? "Hide" : "Show"} ${appliedJobCount} applied jobs`}>
+                    <IconButton
+                      size="small"
+                      aria-label={`${showAppliedJobs ? "Hide" : "Show"} applied jobs`}
+                      onClick={() => {
+                        if (showAppliedJobs && selectedSummary?.status === "applied") {
+                          setSelectedId(undefined);
+                        }
+                        setShowAppliedJobs((current) => !current);
+                      }}
+                    >
+                      {showAppliedJobs ? (
+                        <VisibilityOffIcon fontSize="small" />
+                      ) : (
+                        <VisibilityIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={`Delete ${appliedJobCount} applied job records`}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        disabled={busy}
+                        aria-label="Delete all applied jobs"
+                        onClick={() => {
+                          if (!window.confirm(`Delete ${appliedJobCount} applied job records?`)) return;
+                          void run(async () => {
+                            const result = await deleteAppliedThemeAiJobs();
+                            if (selectedSummary?.status === "applied") setSelectedId(undefined);
+                            setShowAppliedJobs(false);
+                            await reloadJobs();
+                            onMessage(`${result.deleted_count} applied job records deleted`);
+                          });
+                        }}
+                      >
+                        <DeleteSweepIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </div>
               )}
             </div>
             <ol className="theme-management-list">

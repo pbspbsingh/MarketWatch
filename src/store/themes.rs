@@ -800,6 +800,14 @@ impl Store {
         .map(|result| result.rows_affected() > 0)
     }
 
+    pub async fn delete_applied_theme_ai_jobs(&self) -> anyhow::Result<u64> {
+        sqlx::query!("DELETE FROM theme_ai_jobs WHERE status = 'applied'")
+            .execute(&self.pool)
+            .await
+            .context("failed to delete applied theme AI jobs")
+            .map(|result| result.rows_affected())
+    }
+
     pub async fn theme_ai_jobs(&self) -> anyhow::Result<Vec<ThemeAiJobSummary>> {
         let jobs = sqlx::query_as!(
             StoredThemeAiJobSummary,
@@ -1277,6 +1285,71 @@ mod tests {
             .unwrap();
         assert!(!ticker.automatic_processed);
         assert!(ticker.assignments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn deletes_only_applied_ai_job_history() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: ticker("APPLIED"),
+                name: None,
+                exchange: Exchange::Nasdaq,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let theme_id = store
+            .create_theme("AI", &ticker("AIQ"), None)
+            .await
+            .unwrap();
+        let ids = store
+            .create_theme_ai_jobs(
+                "test-model",
+                &[
+                    (vec![ticker("APPLIED")], "applied prompt".to_owned()),
+                    (vec![ticker("COMPLETED")], "completed prompt".to_owned()),
+                ],
+            )
+            .await
+            .unwrap();
+        for id in &ids {
+            store
+                .finish_theme_ai_job(*id, "response", &[], &[])
+                .await
+                .unwrap();
+        }
+        store
+            .apply_theme_ai_job(
+                ids[0],
+                &[(ticker("APPLIED"), vec![theme_id], None)],
+                "test-model",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(store.delete_applied_theme_ai_jobs().await.unwrap(), 1);
+        assert!(store.theme_ai_job(ids[0]).await.unwrap().is_none());
+        assert!(store.theme_ai_job(ids[1]).await.unwrap().is_some());
+        let ticker = store
+            .theme_tickers()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|ticker| ticker.symbol == "APPLIED")
+            .unwrap();
+        assert!(ticker.automatic_processed);
+        assert_eq!(ticker.assignments.len(), 1);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT job_id FROM theme_ai_processed_symbols WHERE symbol = 'APPLIED'"
+            )
+            .fetch_one(&store.pool)
+            .await
+            .unwrap(),
+            None,
+        );
     }
 
     #[tokio::test]

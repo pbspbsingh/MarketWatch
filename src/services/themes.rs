@@ -359,6 +359,13 @@ impl ThemeService {
             })
     }
 
+    pub async fn delete_applied_ai_jobs(&self) -> Result<u64, ThemeServiceError> {
+        self.store
+            .delete_applied_theme_ai_jobs()
+            .await
+            .map_err(ThemeServiceError::Persistence)
+    }
+
     async fn run_automatic_job(&self, id: i64, prompt: String) -> Result<(), ThemeServiceError> {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
