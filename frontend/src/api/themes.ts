@@ -53,6 +53,7 @@ export interface ThemeAiJob {
   symbols: string[];
   model: string;
   prompt: string;
+  reasoning: string | null;
   response: string | null;
   suggestions: ThemeSuggestion[] | null;
   validation_errors: ThemeSuggestionError[];

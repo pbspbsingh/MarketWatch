@@ -59,6 +59,7 @@ pub struct ThemeAiJob {
     pub symbols: Vec<TickerSymbol>,
     pub model: String,
     pub prompt: String,
+    pub reasoning: Option<String>,
     pub response: Option<String>,
     pub suggestions: Option<Vec<ThemeSuggestion>>,
     pub validation_errors: Vec<ThemeSuggestionError>,

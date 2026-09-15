@@ -33,6 +33,10 @@ export function AutomaticTab({
   industries,
   selectedIndustryKeys,
   setSelectedIndustryKeys,
+  unassignedOnly,
+  setUnassignedOnly,
+  unprocessedOnly,
+  setUnprocessedOnly,
   capability,
   onChanged,
   onError,
@@ -42,14 +46,16 @@ export function AutomaticTab({
   industries: IndustryFilterOption[];
   selectedIndustryKeys: Set<string>;
   setSelectedIndustryKeys: Dispatch<SetStateAction<Set<string> | undefined>>;
+  unassignedOnly: boolean;
+  setUnassignedOnly: Dispatch<SetStateAction<boolean>>;
+  unprocessedOnly: boolean;
+  setUnprocessedOnly: Dispatch<SetStateAction<boolean>>;
   capability: AiCapability;
   onChanged: () => void;
   onError: (message: string) => void;
   onMessage: (message: string) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [unassignedOnly, setUnassignedOnly] = useState(true);
-  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<ThemeAiJobSummary[]>([]);
   const [selectedJob, setSelectedJob] = useState<ThemeAiJob>();
@@ -62,6 +68,8 @@ export function AutomaticTab({
   const selected = selectedJob?.id === selectedSummary?.id ? selectedJob : undefined;
   const selectedJobId = selectedSummary?.id;
   const selectedJobUpdatedAt = selectedSummary?.updated_at;
+  const selectedJobIsActive =
+    selectedSummary?.status === "pending" || selectedSummary?.status === "running";
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return tickers.filter(
@@ -101,17 +109,32 @@ export function AutomaticTab({
   useEffect(() => {
     if (selectedJobId === undefined) return;
     let active = true;
-    fetchThemeAiJob(selectedJobId)
-      .then((job) => {
-        if (active) setSelectedJob(job);
-      })
-      .catch((loadError: unknown) => {
-        if (active) onError(errorMessage(loadError));
-      });
+    let timeout: number | undefined;
+    let errorReported = false;
+    const load = async () => {
+      try {
+        const job = await fetchThemeAiJob(selectedJobId);
+        if (!active) return;
+        setSelectedJob(job);
+        errorReported = false;
+        if (job.status === "pending" || job.status === "running") {
+          timeout = window.setTimeout(load, 2_500);
+        }
+      } catch (loadError) {
+        if (!active) return;
+        if (!errorReported) {
+          onError(errorMessage(loadError));
+          errorReported = true;
+        }
+        if (selectedJobIsActive) timeout = window.setTimeout(load, 2_500);
+      }
+    };
+    void load();
     return () => {
       active = false;
+      if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [onError, selectedJobId, selectedJobUpdatedAt]);
+  }, [onError, selectedJobId, selectedJobIsActive, selectedJobUpdatedAt]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -290,7 +313,7 @@ export function AutomaticTab({
                 <Typography component="h2">Select an automatic job</Typography>
               </section>
             ) : (
-              <section className="assignment-card">
+              <section className="assignment-card automatic-job-card">
                 <div className="bulk-assignment-heading">
                   <Typography component="h2">Job #{selected.id}</Typography>
                   <div className="bulk-actions">
@@ -348,41 +371,52 @@ export function AutomaticTab({
                     )}
                   </div>
                 </div>
-                <Typography color="text.secondary">{selected.symbols.join(", ")}</Typography>
-                {selected.error && <Typography color="error">{selected.error}</Typography>}
-                {selected.suggestions !== null && selected.suggestions.length > 0 && (
-                  <div className="suggestion-preview ai-job-suggestions">
-                    {selected.suggestions.map((suggestion) => (
-                      <div key={suggestion.symbol} className="suggestion-row">
-                        <strong>{suggestion.symbol}</strong>
-                        <span>{suggestion.themes.length > 0 ? suggestion.themes.join(", ") : "No theme"}</span>
-                        <small>{suggestion.reasoning}</small>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {selected.validation_errors.length > 0 && (
-                  <div className="suggestion-preview ai-job-errors">
-                    {selected.validation_errors.map((validationError, index) => (
-                      <div
-                        key={`${validationError.symbol ?? "unknown"}-${index}`}
-                        className="suggestion-row suggestion-error-row"
-                      >
-                        <strong>{validationError.symbol ?? "Unknown ticker"}</strong>
-                        <span>{validationError.error}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {selected.response && (
-                  <TextField
-                    multiline
-                    minRows={8}
-                    label="Raw response"
-                    value={selected.response}
-                    slotProps={{ input: { readOnly: true } }}
-                  />
-                )}
+                <div className="automatic-job-content">
+                  <Typography color="text.secondary">{selected.symbols.join(", ")}</Typography>
+                  {selected.error && <Typography color="error">{selected.error}</Typography>}
+                  {selected.suggestions !== null && selected.suggestions.length > 0 && (
+                    <div className="suggestion-preview ai-job-suggestions">
+                      {selected.suggestions.map((suggestion) => (
+                        <div key={suggestion.symbol} className="suggestion-row">
+                          <strong>{suggestion.symbol}</strong>
+                          <span>{suggestion.themes.length > 0 ? suggestion.themes.join(", ") : "No theme"}</span>
+                          <small>{suggestion.reasoning}</small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selected.validation_errors.length > 0 && (
+                    <div className="suggestion-preview ai-job-errors">
+                      {selected.validation_errors.map((validationError, index) => (
+                        <div
+                          key={`${validationError.symbol ?? "unknown"}-${index}`}
+                          className="suggestion-row suggestion-error-row"
+                        >
+                          <strong>{validationError.symbol ?? "Unknown ticker"}</strong>
+                          <span>{validationError.error}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selected.reasoning && (
+                    <TextField
+                      className="ai-job-stream"
+                      multiline
+                      label="Live reasoning"
+                      value={selected.reasoning}
+                      slotProps={{ input: { readOnly: true } }}
+                    />
+                  )}
+                  {selected.response && (
+                    <TextField
+                      className="ai-job-stream"
+                      multiline
+                      label={selected.status === "running" ? "Live response" : "Raw response"}
+                      value={selected.response}
+                      slotProps={{ input: { readOnly: true } }}
+                    />
+                  )}
+                </div>
               </section>
             )}
           </div>

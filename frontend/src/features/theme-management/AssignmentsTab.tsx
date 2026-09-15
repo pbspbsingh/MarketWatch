@@ -28,6 +28,10 @@ export function AssignmentsTab({
   industries,
   selectedIndustryKeys,
   setSelectedIndustryKeys,
+  unassignedOnly,
+  setUnassignedOnly,
+  unprocessedOnly,
+  setUnprocessedOnly,
   onChanged,
   onError,
   onMessage,
@@ -37,14 +41,16 @@ export function AssignmentsTab({
   industries: IndustryFilterOption[];
   selectedIndustryKeys: Set<string>;
   setSelectedIndustryKeys: Dispatch<SetStateAction<Set<string> | undefined>>;
+  unassignedOnly: boolean;
+  setUnassignedOnly: Dispatch<SetStateAction<boolean>>;
+  unprocessedOnly: boolean;
+  setUnprocessedOnly: Dispatch<SetStateAction<boolean>>;
   onChanged: () => void;
   onError: (message: string) => void;
   onMessage: (message: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [newSymbol, setNewSymbol] = useState("");
-  const [unassignedOnly, setUnassignedOnly] = useState(true);
-  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const [selectedSymbol, setSelectedSymbol] = useState<string>();
   const [batchSymbols, setBatchSymbols] = useState<Set<string>>(new Set());
   const [themeDraft, setThemeDraft] = useState<TickerThemeDraft>({ themeIds: [] });

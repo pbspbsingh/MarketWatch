@@ -2,20 +2,32 @@ use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeSuggestion,
     ThemeSuggestionError, ThemeTicker, TickerSymbol,
 };
-use crate::providers::{AiClient, AiError};
+use crate::providers::{AiClient, AiError, AiStreamDelta};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::error;
+use tokio::sync::{RwLock, mpsc};
+use tracing::{error, trace};
 
 const MAX_THEMES_PER_TICKER: usize = 2;
 
 struct AutomaticValidation {
     suggestions: Vec<ThemeSuggestion>,
     errors: Vec<ThemeSuggestionError>,
+}
+
+enum AutomaticStreamDelta {
+    Content(String),
+    Reasoning(String),
+}
+
+#[derive(Default)]
+struct RunningAiStream {
+    reasoning: String,
+    response: String,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +42,7 @@ pub struct ThemeService {
     store: Store,
     ai: Option<Arc<AiClient>>,
     ticker_catalog: Arc<TickerCatalogService>,
+    running_streams: RwLock<HashMap<i64, RunningAiStream>>,
 }
 
 #[derive(Serialize)]
@@ -67,6 +80,7 @@ impl ThemeService {
             store,
             ai,
             ticker_catalog,
+            running_streams: RwLock::new(HashMap::new()),
         }
     }
 
@@ -311,11 +325,17 @@ impl ThemeService {
     }
 
     pub async fn ai_job(&self, id: i64) -> Result<ThemeAiJob, ThemeServiceError> {
-        self.store
+        let mut job = self
+            .store
             .theme_ai_job(id)
             .await
             .map_err(ThemeServiceError::Persistence)?
-            .ok_or_else(|| ThemeServiceError::Validation("AI job does not exist".to_owned()))
+            .ok_or_else(|| ThemeServiceError::Validation("AI job does not exist".to_owned()))?;
+        if let Some(stream) = self.running_streams.read().await.get(&id) {
+            job.reasoning = (!stream.reasoning.is_empty()).then(|| stream.reasoning.clone());
+            job.response = (!stream.response.is_empty()).then(|| stream.response.clone());
+        }
+        Ok(job)
     }
 
     pub async fn apply_ai_job(&self, id: i64) -> Result<(), ThemeServiceError> {
@@ -374,7 +394,7 @@ impl ThemeService {
             .set_theme_ai_job_running(id)
             .await
             .map_err(ThemeServiceError::Persistence)?;
-        let response = ai.complete(&prompt).await?;
+        let response = self.stream_automatic_response(id, ai, &prompt).await?;
         let job = self.ai_job(id).await?;
         let validation = self
             .validate_automatic_response(&response, &job.symbols)
@@ -385,10 +405,72 @@ impl ThemeService {
             .map_err(ThemeServiceError::Persistence)
     }
 
+    async fn stream_automatic_response(
+        &self,
+        id: i64,
+        ai: &AiClient,
+        prompt: &str,
+    ) -> Result<String, ThemeServiceError> {
+        self.running_streams
+            .write()
+            .await
+            .insert(id, RunningAiStream::default());
+        let (response_tx, mut response_rx) = mpsc::unbounded_channel::<AutomaticStreamDelta>();
+        let completion = ai.complete_with_updates(prompt, move |delta| {
+            let delta = match delta {
+                AiStreamDelta::Content(delta) => AutomaticStreamDelta::Content(delta.to_owned()),
+                AiStreamDelta::Reasoning(delta) => {
+                    AutomaticStreamDelta::Reasoning(delta.to_owned())
+                }
+            };
+            let _ = response_tx.send(delta);
+        });
+        tokio::pin!(completion);
+
+        loop {
+            tokio::select! {
+                result = &mut completion => {
+                    while let Ok(delta) = response_rx.try_recv() {
+                        self.append_automatic_stream_delta(id, delta).await;
+                    }
+                    return result.map_err(ThemeServiceError::Ai);
+                }
+                Some(delta) = response_rx.recv() => {
+                    self.append_automatic_stream_delta(id, delta).await;
+                }
+            }
+        }
+    }
+
+    async fn append_automatic_stream_delta(&self, id: i64, delta: AutomaticStreamDelta) {
+        let mut streams = self.running_streams.write().await;
+        let stream = streams.entry(id).or_default();
+        match delta {
+            AutomaticStreamDelta::Content(delta) => {
+                trace!(
+                    job_id = id,
+                    delta_bytes = delta.len(),
+                    "received theme AI response delta"
+                );
+                stream.response.push_str(&delta);
+            }
+            AutomaticStreamDelta::Reasoning(delta) => {
+                trace!(
+                    job_id = id,
+                    delta_bytes = delta.len(),
+                    "received theme AI reasoning delta"
+                );
+                stream.reasoning.push_str(&delta);
+            }
+        }
+    }
+
     fn spawn_automatic_job(self: &Arc<Self>, job_id: i64, prompt: String) {
         let service = self.clone();
         tokio::spawn(async move {
-            if let Err(job_error) = service.run_automatic_job(job_id, prompt).await {
+            let result = service.run_automatic_job(job_id, prompt).await;
+            service.running_streams.write().await.remove(&job_id);
+            if let Err(job_error) = result {
                 error!(job_id, %job_error, "theme AI job failed");
                 if let Err(persistence_error) = service
                     .store

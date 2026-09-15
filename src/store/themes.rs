@@ -861,6 +861,7 @@ fn parse_theme_ai_job(job: StoredThemeAiJob) -> anyhow::Result<ThemeAiJob> {
         symbols: serde_json::from_str(&job.symbols).context("invalid stored job symbols")?,
         model: job.model,
         prompt: job.prompt,
+        reasoning: None,
         response: job.response,
         suggestions: job
             .suggestions

@@ -1,4 +1,4 @@
-use super::{AiError, ChatRequest, ResponseExt, append_deltas};
+use super::{AiError, AiStreamDelta, ChatRequest, ResponseExt, append_deltas};
 use futures_util::StreamExt;
 use reqwest::{Client, Response};
 use serde::Deserialize;
@@ -20,7 +20,7 @@ impl OllamaProvider {
         on_delta: &mut F,
     ) -> Result<String, AiError>
     where
-        F: FnMut(&str) + Send,
+        F: FnMut(AiStreamDelta<'_>) + Send,
     {
         let response = http
             .post(&self.endpoint)
@@ -45,7 +45,7 @@ struct ChatContent {
 
 async fn read_stream<F>(response: Response, on_delta: &mut F) -> Result<String, AiError>
 where
-    F: FnMut(&str) + Send,
+    F: FnMut(AiStreamDelta<'_>) + Send,
 {
     let mut stream = response.bytes_stream();
     let mut decoder = OllamaStreamDecoder::default();

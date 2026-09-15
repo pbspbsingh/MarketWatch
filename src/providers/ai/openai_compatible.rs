@@ -1,4 +1,4 @@
-use super::{AiError, ChatRequest, ResponseExt, append_deltas};
+use super::{AiError, AiStreamDelta, ChatRequest, ResponseExt};
 use futures_util::StreamExt;
 use reqwest::{Client, Response};
 use serde::Deserialize;
@@ -21,7 +21,7 @@ impl OpenAiCompatibleProvider {
         on_delta: &mut F,
     ) -> Result<String, AiError>
     where
-        F: FnMut(&str) + Send,
+        F: FnMut(AiStreamDelta<'_>) + Send,
     {
         let request = http.post(&self.endpoint);
         let request = match &self.api_key {
@@ -48,14 +48,15 @@ struct StreamChoice {
     delta: StreamDelta,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 struct StreamDelta {
     content: Option<String>,
+    reasoning_content: Option<String>,
 }
 
 async fn read_stream<F>(response: Response, on_delta: &mut F) -> Result<String, AiError>
 where
-    F: FnMut(&str) + Send,
+    F: FnMut(AiStreamDelta<'_>) + Send,
 {
     let mut stream = response.bytes_stream();
     let mut decoder = StreamDecoder::default();
@@ -71,6 +72,21 @@ where
     Ok(content)
 }
 
+fn append_deltas<F>(deltas: Vec<StreamDelta>, content: &mut String, on_delta: &mut F)
+where
+    F: FnMut(AiStreamDelta<'_>),
+{
+    for delta in deltas {
+        if let Some(reasoning) = delta.reasoning_content {
+            on_delta(AiStreamDelta::Reasoning(&reasoning));
+        }
+        if let Some(response) = delta.content {
+            on_delta(AiStreamDelta::Content(&response));
+            content.push_str(&response);
+        }
+    }
+}
+
 #[derive(Default)]
 struct StreamDecoder {
     buffer: Vec<u8>,
@@ -78,7 +94,7 @@ struct StreamDecoder {
 }
 
 impl StreamDecoder {
-    fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>, AiError> {
+    fn push(&mut self, chunk: &[u8]) -> Result<Vec<StreamDelta>, AiError> {
         self.buffer.extend_from_slice(chunk);
         let mut deltas = Vec::new();
         while let Some((event_end, delimiter_len)) = sse_event_boundary(&self.buffer) {
@@ -93,7 +109,7 @@ impl StreamDecoder {
         Ok(deltas)
     }
 
-    fn finish(&mut self) -> Result<Vec<String>, AiError> {
+    fn finish(&mut self) -> Result<Vec<StreamDelta>, AiError> {
         if self.done || self.buffer.is_empty() {
             return Ok(Vec::new());
         }
@@ -101,7 +117,7 @@ impl StreamDecoder {
         self.decode_event(&event)
     }
 
-    fn decode_event(&mut self, event: &[u8]) -> Result<Vec<String>, AiError> {
+    fn decode_event(&mut self, event: &[u8]) -> Result<Vec<StreamDelta>, AiError> {
         let event = std::str::from_utf8(event)
             .map_err(|error| AiError::InvalidStream(error.to_string()))?;
         let data = event
@@ -122,7 +138,11 @@ impl StreamDecoder {
                 response
                     .choices
                     .into_iter()
-                    .filter_map(|choice| choice.delta.content)
+                    .filter_map(|choice| {
+                        let delta = choice.delta;
+                        (delta.content.is_some() || delta.reasoning_content.is_some())
+                            .then_some(delta)
+                    })
                     .collect()
             })
             .map_err(|error| AiError::InvalidStream(error.to_string()))
@@ -167,7 +187,19 @@ mod tests {
         let deltas = decoder.push(
             b"lo\"}}]}\r\n\r\ndata: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
         )?;
-        assert_eq!(deltas, ["hello", " world"]);
+        assert_eq!(
+            deltas,
+            [
+                StreamDelta {
+                    content: Some("hello".to_owned()),
+                    reasoning_content: None,
+                },
+                StreamDelta {
+                    content: Some(" world".to_owned()),
+                    reasoning_content: None,
+                },
+            ]
+        );
         assert!(decoder.push(b"data: [DONE]\n\n")?.is_empty());
 
         assert!(decoder.done);
@@ -183,7 +215,30 @@ mod tests {
               data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}\n\n",
         )?;
 
-        assert_eq!(deltas, ["answer"]);
+        assert_eq!(
+            deltas,
+            [StreamDelta {
+                content: Some("answer".to_owned()),
+                reasoning_content: None,
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stream_decodes_reasoning_separately_from_content() -> anyhow::Result<()> {
+        let mut decoder = StreamDecoder::default();
+        let deltas = decoder.push(
+            b"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\",\"content\":null}}]}\n\n",
+        )?;
+
+        assert_eq!(
+            deltas,
+            [StreamDelta {
+                content: None,
+                reasoning_content: Some("thinking".to_owned()),
+            }]
+        );
         Ok(())
     }
 

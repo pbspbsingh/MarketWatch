@@ -30,6 +30,8 @@ export function ThemeManagementPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
+  const [unassignedOnly, setUnassignedOnly] = useState(true);
+  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
   const industries = useMemo(
     () => industryFilterOptions(themeIndustries, tickers),
     [themeIndustries, tickers],
@@ -100,6 +102,10 @@ export function ThemeManagementPage() {
           industries={industries}
           selectedIndustryKeys={selectedIndustries}
           setSelectedIndustryKeys={setSelectedIndustryKeys}
+          unassignedOnly={unassignedOnly}
+          setUnassignedOnly={setUnassignedOnly}
+          unprocessedOnly={unprocessedOnly}
+          setUnprocessedOnly={setUnprocessedOnly}
           onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
           onError={setError}
           onMessage={setMessage}
@@ -110,6 +116,10 @@ export function ThemeManagementPage() {
           industries={industries}
           selectedIndustryKeys={selectedIndustries}
           setSelectedIndustryKeys={setSelectedIndustryKeys}
+          unassignedOnly={unassignedOnly}
+          setUnassignedOnly={setUnassignedOnly}
+          unprocessedOnly={unprocessedOnly}
+          setUnprocessedOnly={setUnprocessedOnly}
           capability={capability}
           onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
           onError={setError}

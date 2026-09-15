@@ -17,6 +17,11 @@ pub struct AiClient {
     permits: Semaphore,
 }
 
+pub(crate) enum AiStreamDelta<'a> {
+    Content(&'a str),
+    Reasoning(&'a str),
+}
+
 enum Provider {
     Ollama(ollama::OllamaProvider),
     OpenAiCompatible(openai_compatible::OpenAiCompatibleProvider),
@@ -38,7 +43,7 @@ impl Provider {
         on_delta: &mut F,
     ) -> Result<String, AiError>
     where
-        F: FnMut(&str) + Send,
+        F: FnMut(AiStreamDelta<'_>) + Send,
     {
         match self {
             Self::Ollama(provider) => provider.complete(http, model, prompt, on_delta).await,
@@ -152,13 +157,13 @@ impl AiClient {
         self.complete_with_updates(prompt, |_| {}).await
     }
 
-    pub async fn complete_with_updates<F>(
+    pub(crate) async fn complete_with_updates<F>(
         &self,
         prompt: &str,
         mut on_delta: F,
     ) -> Result<String, AiError>
     where
-        F: FnMut(&str) + Send,
+        F: FnMut(AiStreamDelta<'_>) + Send,
     {
         let _permit = self
             .permits
@@ -212,10 +217,10 @@ fn bounded_error_body(body: &str) -> String {
 
 fn append_deltas<F>(deltas: Vec<String>, content: &mut String, on_delta: &mut F)
 where
-    F: FnMut(&str),
+    F: FnMut(AiStreamDelta<'_>),
 {
     for delta in deltas {
-        on_delta(&delta);
+        on_delta(AiStreamDelta::Content(&delta));
         content.push_str(&delta);
     }
 }
