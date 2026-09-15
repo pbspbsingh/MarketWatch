@@ -98,10 +98,11 @@ pub enum AiConfig {
         max_concurrent_requests: usize,
         request_timeout_secs: u64,
     },
-    DeepSeek {
+    #[serde(rename = "openai_compatible")]
+    OpenAiCompatible {
         endpoint: String,
         model: String,
-        api_key: String,
+        api_key: Option<String>,
         batch_size: usize,
         max_concurrent_requests: usize,
         request_timeout_secs: u64,
@@ -204,7 +205,7 @@ impl AiConfig {
                 max_concurrent_requests,
                 request_timeout_secs,
             }
-            | Self::DeepSeek {
+            | Self::OpenAiCompatible {
                 endpoint,
                 model,
                 batch_size,
@@ -227,8 +228,12 @@ impl AiConfig {
             "ai.max_concurrent_requests must be positive"
         );
         anyhow::ensure!(*timeout > 0, "ai.request_timeout_secs must be positive");
-        if let Self::DeepSeek { api_key, .. } = self {
-            anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key is required");
+        if let Self::OpenAiCompatible {
+            api_key: Some(api_key),
+            ..
+        } = self
+        {
+            anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key cannot be empty");
         }
         Ok(())
     }
@@ -270,5 +275,39 @@ mod tests {
 
         let error = toml::from_str::<Config>(&config).unwrap_err();
         assert!(error.to_string().contains("unknown field `unknown`"));
+    }
+
+    #[test]
+    fn openai_compatible_api_key_is_optional() {
+        let config = toml::from_str::<AiConfig>(
+            r#"provider = "openai_compatible"
+endpoint = "http://localhost:8080/v1/chat/completions"
+model = "local-model"
+batch_size = 10
+max_concurrent_requests = 2
+request_timeout_secs = 60"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config,
+            AiConfig::OpenAiCompatible { api_key: None, .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_removed_deep_seek_provider_name() {
+        let error = toml::from_str::<AiConfig>(
+            r#"provider = "deep_seek"
+endpoint = "https://example.com/chat/completions"
+model = "model"
+api_key = "key"
+batch_size = 10
+max_concurrent_requests = 2
+request_timeout_secs = 60"#,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("unknown variant `deep_seek`"));
     }
 }
