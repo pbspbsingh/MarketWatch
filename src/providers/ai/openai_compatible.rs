@@ -2,6 +2,7 @@ use super::{AiError, AiStreamDelta, ChatRequest, ResponseExt};
 use futures_util::StreamExt;
 use reqwest::{Client, Response};
 use serde::Deserialize;
+use tracing::{info, warn};
 
 pub(super) struct OpenAiCompatibleProvider {
     endpoint: String,
@@ -34,7 +35,7 @@ impl OpenAiCompatibleProvider {
             .await?
             .require_success()
             .await?;
-        read_stream(response, on_delta).await
+        read_stream(response, model, on_delta).await
     }
 }
 
@@ -46,6 +47,7 @@ struct StreamResponse {
 #[derive(Deserialize)]
 struct StreamChoice {
     delta: StreamDelta,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -54,7 +56,11 @@ struct StreamDelta {
     reasoning_content: Option<String>,
 }
 
-async fn read_stream<F>(response: Response, on_delta: &mut F) -> Result<String, AiError>
+async fn read_stream<F>(
+    response: Response,
+    model: &str,
+    on_delta: &mut F,
+) -> Result<String, AiError>
 where
     F: FnMut(AiStreamDelta<'_>) + Send,
 {
@@ -69,6 +75,28 @@ where
         }
     }
     append_deltas(decoder.finish()?, &mut content, on_delta);
+    let finish_reason = decoder.finish_reason.as_deref();
+    match finish_reason {
+        Some(reason) => info!(
+            model,
+            finish_reason = reason,
+            response_bytes = content.len(),
+            "AI streaming response finished"
+        ),
+        None => warn!(
+            model,
+            response_bytes = content.len(),
+            "AI streaming response finished without a finish_reason"
+        ),
+    }
+    if let Some(reason) = finish_reason
+        && reason != "stop"
+    {
+        return Err(AiError::IncompleteResponse {
+            finish_reason: reason.to_owned(),
+            content_bytes: content.len(),
+        });
+    }
     Ok(content)
 }
 
@@ -91,6 +119,7 @@ where
 struct StreamDecoder {
     buffer: Vec<u8>,
     done: bool,
+    finish_reason: Option<String>,
 }
 
 impl StreamDecoder {
@@ -133,19 +162,19 @@ impl StreamDecoder {
             self.done = true;
             return Ok(Vec::new());
         }
-        serde_json::from_str::<StreamResponse>(&data)
-            .map(|response| {
-                response
-                    .choices
-                    .into_iter()
-                    .filter_map(|choice| {
-                        let delta = choice.delta;
-                        (delta.content.is_some() || delta.reasoning_content.is_some())
-                            .then_some(delta)
-                    })
-                    .collect()
-            })
-            .map_err(|error| AiError::InvalidStream(error.to_string()))
+        let response = serde_json::from_str::<StreamResponse>(&data)
+            .map_err(|error| AiError::InvalidStream(error.to_string()))?;
+        let mut deltas = Vec::new();
+        for choice in response.choices {
+            if let Some(reason) = choice.finish_reason {
+                self.finish_reason = Some(reason);
+            }
+            let delta = choice.delta;
+            if delta.content.is_some() || delta.reasoning_content.is_some() {
+                deltas.push(delta);
+            }
+        }
+        Ok(deltas)
     }
 }
 
@@ -239,6 +268,18 @@ mod tests {
                 reasoning_content: Some("thinking".to_owned()),
             }]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn stream_records_terminal_finish_reason() -> anyhow::Result<()> {
+        let mut decoder = StreamDecoder::default();
+        let deltas = decoder.push(
+            b"data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{\"content\":null}}]}\n\n",
+        )?;
+
+        assert!(deltas.is_empty());
+        assert_eq!(decoder.finish_reason.as_deref(), Some("length"));
         Ok(())
     }
 

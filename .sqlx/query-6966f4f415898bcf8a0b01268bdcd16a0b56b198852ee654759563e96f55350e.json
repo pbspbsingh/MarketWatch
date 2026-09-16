@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT theme_id FROM theme_stocks WHERE symbol = ? ORDER BY theme_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "theme_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "theme_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6966f4f415898bcf8a0b01268bdcd16a0b56b198852ee654759563e96f55350e"
+}

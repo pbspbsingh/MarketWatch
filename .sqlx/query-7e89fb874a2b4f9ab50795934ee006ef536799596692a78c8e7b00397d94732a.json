@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT theme_ai_processed_symbols.symbol\n               FROM theme_ai_processed_symbols\n               WHERE NOT EXISTS (\n                   SELECT 1\n                   FROM theme_stocks\n                   WHERE theme_stocks.symbol = theme_ai_processed_symbols.symbol\n                     AND theme_stocks.source IN ('manual', 'manual_ai')\n               )\n               UNION\n               SELECT theme_stocks.symbol\n               FROM theme_stocks\n               WHERE ? AND theme_stocks.source IN ('manual', 'manual_ai')\n               ORDER BY symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_processed_symbols",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7e89fb874a2b4f9ab50795934ee006ef536799596692a78c8e7b00397d94732a"
+}

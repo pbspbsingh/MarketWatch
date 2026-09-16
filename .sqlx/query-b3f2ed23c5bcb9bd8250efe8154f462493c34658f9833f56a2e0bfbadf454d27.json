@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO theme_audits (\n                       symbol, current_themes, suggested_themes, status, confidence,\n                       reasoning, model, input_fingerprint, audited_at\n                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "b3f2ed23c5bcb9bd8250efe8154f462493c34658f9833f56a2e0bfbadf454d27"
+}

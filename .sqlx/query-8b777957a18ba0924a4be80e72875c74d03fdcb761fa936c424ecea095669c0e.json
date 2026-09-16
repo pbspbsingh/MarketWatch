@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE theme_audits\n               SET status = 'accepted', processed_at = ?\n               WHERE symbol = ? AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "8b777957a18ba0924a4be80e72875c74d03fdcb761fa936c424ecea095669c0e"
+}

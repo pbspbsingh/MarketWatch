@@ -96,7 +96,8 @@ pub enum AiConfig {
         model: String,
         batch_size: usize,
         max_concurrent_requests: usize,
-        request_timeout_secs: u64,
+        #[serde(alias = "request_timeout_secs")]
+        read_timeout_secs: u64,
     },
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible {
@@ -105,7 +106,8 @@ pub enum AiConfig {
         api_key: Option<String>,
         batch_size: usize,
         max_concurrent_requests: usize,
-        request_timeout_secs: u64,
+        #[serde(alias = "request_timeout_secs")]
+        read_timeout_secs: u64,
     },
 }
 
@@ -203,21 +205,21 @@ impl AiConfig {
                 model,
                 batch_size,
                 max_concurrent_requests,
-                request_timeout_secs,
+                read_timeout_secs,
             }
             | Self::OpenAiCompatible {
                 endpoint,
                 model,
                 batch_size,
                 max_concurrent_requests,
-                request_timeout_secs,
+                read_timeout_secs,
                 ..
             } => (
                 endpoint,
                 model,
                 batch_size,
                 max_concurrent_requests,
-                request_timeout_secs,
+                read_timeout_secs,
             ),
         };
         anyhow::ensure!(!endpoint.trim().is_empty(), "ai.endpoint is required");
@@ -227,7 +229,7 @@ impl AiConfig {
             *concurrency > 0,
             "ai.max_concurrent_requests must be positive"
         );
-        anyhow::ensure!(*timeout > 0, "ai.request_timeout_secs must be positive");
+        anyhow::ensure!(*timeout > 0, "ai.read_timeout_secs must be positive");
         if let Self::OpenAiCompatible {
             api_key: Some(api_key),
             ..
@@ -285,13 +287,34 @@ endpoint = "http://localhost:8080/v1/chat/completions"
 model = "local-model"
 batch_size = 10
 max_concurrent_requests = 2
-request_timeout_secs = 60"#,
+read_timeout_secs = 60"#,
         )
         .unwrap();
 
         assert!(matches!(
             config,
             AiConfig::OpenAiCompatible { api_key: None, .. }
+        ));
+    }
+
+    #[test]
+    fn accepts_legacy_ai_request_timeout_name() {
+        let config = toml::from_str::<AiConfig>(
+            r#"provider = "ollama"
+endpoint = "http://localhost:11434/api/chat"
+model = "local-model"
+batch_size = 10
+max_concurrent_requests = 1
+request_timeout_secs = 60"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config,
+            AiConfig::Ollama {
+                read_timeout_secs: 60,
+                ..
+            }
         ));
     }
 
@@ -304,7 +327,7 @@ model = "model"
 api_key = "key"
 batch_size = 10
 max_concurrent_requests = 2
-request_timeout_secs = 60"#,
+read_timeout_secs = 60"#,
         )
         .unwrap_err();
 

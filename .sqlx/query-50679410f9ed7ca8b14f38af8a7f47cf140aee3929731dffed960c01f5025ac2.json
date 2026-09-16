@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT input_fingerprint FROM theme_audits WHERE symbol = ? AND status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "name": "input_fingerprint",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "input_fingerprint"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "50679410f9ed7ca8b14f38af8a7f47cf140aee3929731dffed960c01f5025ac2"
+}

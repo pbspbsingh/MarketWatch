@@ -14,6 +14,7 @@ use crate::services::nyse_calendar;
 use crate::services::sector_analysis::SectorAnalysisService;
 use crate::services::study::StudyService;
 use crate::services::theme_analysis::ThemeAnalysisService;
+use crate::services::theme_audits::ThemeAuditService;
 use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::ticker_strength::TickerStrengthService;
@@ -57,6 +58,7 @@ pub struct AppState {
     pub market_explorer: Arc<MarketExplorerService>,
     pub sector_analysis: Arc<SectorAnalysisService>,
     pub themes: Arc<ThemeService>,
+    pub theme_audits: Arc<ThemeAuditService>,
     pub theme_analysis: Arc<ThemeAnalysisService>,
     pub ticker_collections: Arc<TickerCollectionService>,
     pub top_stocks: Arc<TopStocksService>,
@@ -119,6 +121,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     )?);
+    let theme_audits = Arc::new(ThemeAuditService::new(store.clone(), ai.clone()));
     let themes = Arc::new(ThemeService::new(store.clone(), ai, ticker_catalog.clone()));
     let theme_analysis = Arc::new(ThemeAnalysisService::new(
         store.clone(),
@@ -170,6 +173,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         market_explorer,
         sector_analysis,
         themes,
+        theme_audits,
         theme_analysis,
         ticker_collections,
         top_stocks,

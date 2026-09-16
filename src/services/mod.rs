@@ -11,6 +11,7 @@ pub mod nyse_calendar;
 pub mod sector_analysis;
 pub mod study;
 pub mod theme_analysis;
+pub mod theme_audits;
 pub mod themes;
 pub mod ticker_collections;
 pub mod ticker_strength;

@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT current_themes AS \"current_themes: String\",\n                      suggested_themes AS \"suggested_themes: String\",\n                      model,\n                      reasoning\n               FROM theme_audits\n               WHERE symbol = ? AND status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "name": "current_themes: String",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "current_themes"
+          }
+        }
+      },
+      {
+        "name": "suggested_themes: String",
+        "ordinal": 1,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "suggested_themes"
+          }
+        }
+      },
+      {
+        "name": "model",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "name": "reasoning",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "reasoning"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f06214cde3a019ce55263427598dd50fa2361921e8081ece14c5cb85e08c8657"
+}

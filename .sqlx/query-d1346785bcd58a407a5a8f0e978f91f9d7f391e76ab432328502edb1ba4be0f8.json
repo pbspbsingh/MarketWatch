@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_audits",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "d1346785bcd58a407a5a8f0e978f91f9d7f391e76ab432328502edb1ba4be0f8"
+}

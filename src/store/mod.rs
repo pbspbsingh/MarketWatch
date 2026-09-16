@@ -20,6 +20,7 @@ mod maintenance;
 mod market_data;
 mod market_explorer;
 mod memberships;
+mod theme_audits;
 mod themes;
 mod top_stock_screens;
 mod trade_analyzer;
@@ -28,6 +29,7 @@ mod watchlists;
 pub use industries::{IndustryClassification, IndustryRankingRow, IndustryRankings};
 pub use market_explorer::MarketExplorerCandleSummary;
 pub use memberships::TickerIndustryMembership;
+pub(crate) use theme_audits::NewThemeAudit;
 pub use themes::TickerThemeMembership;
 pub(crate) use trade_analyzer::{
     AnalyzerExecutionEdit, AnalyzerExecutionRow, AnalyzerJournalEntryRow, AnalyzerStopRow,

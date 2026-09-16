@@ -67,6 +67,55 @@ export interface ThemeSuggestionError {
   error: string;
 }
 
+export interface ThemeAuditTheme {
+  id: number;
+  name: string;
+}
+
+export interface ThemeAudit {
+  symbol: string;
+  current_themes: ThemeAuditTheme[];
+  suggested_themes: ThemeAuditTheme[];
+  status: "matched" | "pending" | "accepted" | "ignored";
+  confidence: number;
+  reasoning: string;
+  model: string;
+  audited_at: string;
+  processed_at: string | null;
+}
+
+export interface ThemeAuditBatchProgress {
+  number: number;
+  symbols: string[];
+  reasoning: string;
+  response: string;
+}
+
+export interface ThemeAuditProgress {
+  status: "running" | "completed" | "incomplete";
+  include_manual: boolean;
+  model: string;
+  total: number;
+  audited: number;
+  matched: number;
+  discrepancies: number;
+  failed: number;
+  batches_total: number;
+  batches_completed: number;
+  batches_running: number;
+  active_batches: ThemeAuditBatchProgress[];
+  recent_errors: string[];
+  started_at: string;
+}
+
+export interface ThemeAuditOverview {
+  results: ThemeAudit[];
+  eligible_count: number;
+  audited_count: number;
+  stored_count: number;
+  progress: ThemeAuditProgress | null;
+}
+
 export interface ThemeAiJobSummary {
   id: number;
   status: ThemeAiJob["status"];
@@ -175,4 +224,29 @@ export const applyThemeSuggestions = (
   request<{ ok: boolean }>("/api/theme-ai/apply", {
     method: "POST",
     ...json({ suggestions, source }),
+  });
+
+export const fetchThemeAudit = (includeManual: boolean) =>
+  request<ThemeAuditOverview>(`/api/theme-ai/audit?include_manual=${includeManual}`);
+
+export const runEntireThemeAudit = (includeManual: boolean) =>
+  request<{ ok: boolean }>("/api/theme-ai/audit/run", {
+    method: "POST",
+    ...json({ include_manual: includeManual }),
+  });
+
+export const retryRemainingThemeAudit = (includeManual: boolean) =>
+  request<{ ok: boolean }>("/api/theme-ai/audit/retry", {
+    method: "POST",
+    ...json({ include_manual: includeManual }),
+  });
+
+export const acceptThemeAudit = (symbol: string) =>
+  request<{ ok: boolean }>(`/api/theme-ai/audit/${encodeURIComponent(symbol)}/accept`, {
+    method: "POST",
+  });
+
+export const ignoreThemeAudit = (symbol: string) =>
+  request<{ ok: boolean }>(`/api/theme-ai/audit/${encodeURIComponent(symbol)}/ignore`, {
+    method: "POST",
   });

@@ -483,6 +483,10 @@ impl Store {
             .begin()
             .await
             .context("failed to begin assignment")?;
+        sqlx::query!("DELETE FROM theme_audits WHERE symbol = ?", symbol)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to invalidate theme audit")?;
         sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
             .execute(&mut *transaction)
             .await
@@ -543,6 +547,10 @@ impl Store {
         let source = source.as_str();
         for (symbol, theme_ids, reasoning) in assignments {
             let symbol = symbol.as_str();
+            sqlx::query!("DELETE FROM theme_audits WHERE symbol = ?", symbol)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to invalidate bulk theme audit")?;
             sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
                 .execute(&mut *transaction)
                 .await
@@ -731,6 +739,10 @@ impl Store {
 
             for (symbol, theme_ids, reasoning) in assignments {
                 let symbol = symbol.as_str();
+                sqlx::query!("DELETE FROM theme_audits WHERE symbol = ?", symbol)
+                    .execute(&mut *transaction)
+                    .await
+                    .context("failed to invalidate automatically assigned theme audit")?;
                 sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
                     .execute(&mut *transaction)
                     .await

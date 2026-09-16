@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol,\n                      current_themes AS \"current_themes: String\",\n                      suggested_themes AS \"suggested_themes: String\",\n                      status,\n                      confidence,\n                      reasoning,\n                      model,\n                      audited_at AS \"audited_at: NaiveDateTime\",\n                      processed_at AS \"processed_at: NaiveDateTime\"\n               FROM theme_audits\n               WHERE status != 'matched'\n               ORDER BY\n                   CASE status\n                       WHEN 'pending' THEN 0\n                       WHEN 'accepted' THEN 1\n                       ELSE 2\n                   END,\n                   confidence DESC,\n                   symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "current_themes: String",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "current_themes"
+          }
+        }
+      },
+      {
+        "name": "suggested_themes: String",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "suggested_themes"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "confidence",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "confidence"
+          }
+        }
+      },
+      {
+        "name": "reasoning",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "reasoning"
+          }
+        }
+      },
+      {
+        "name": "model",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "name": "audited_at: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "audited_at"
+          }
+        }
+      },
+      {
+        "name": "processed_at: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "processed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "104641ab8bdce44e2a5ff46a25684dc73b005e3f8ea62991f359dc5b4173f714"
+}

@@ -12,13 +12,14 @@ import {
 } from "../../api/themes";
 import { Toast } from "../../components/Toast";
 import { AssignmentsTab } from "./AssignmentsTab";
+import { AuditTab } from "./AuditTab";
 import { AutomaticTab } from "./AutomaticTab";
 import { ThemesTab } from "./ThemesTab";
 import { errorMessage, industryFilterOptions, sameData } from "./themeManagementUtils";
 import "./theme-management.css";
 
 export function ThemeManagementPage() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<ThemeManagementTab>("assignments");
   const [themes, setThemes] = useState<Theme[]>([]);
   const [tickers, setTickers] = useState<ThemeTicker[]>([]);
   const [themeIndustries, setThemeIndustries] = useState<ThemeTickerIndustry[]>([]);
@@ -89,13 +90,14 @@ export function ThemeManagementPage() {
     <section className="theme-management-page">
       <header className="theme-management-header">
         <Typography component="h1">Theme Management</Typography>
-        <Tabs value={tab} onChange={(_, value: number) => setTab(value)}>
-          <Tab label="Ticker Assignments" />
-          <Tab label="Automatic" />
-          <Tab label="Themes" />
+        <Tabs value={tab} onChange={(_, value: ThemeManagementTab) => setTab(value)}>
+          <Tab value="assignments" label="Ticker Assignments" />
+          <Tab value="automatic" label="Automatic" />
+          {capability.enabled && <Tab value="audit" label="Audit" />}
+          <Tab value="themes" label="Themes" />
         </Tabs>
       </header>
-      {tab === 0 ? (
+      {tab === "assignments" ? (
         <AssignmentsTab
           themes={themes}
           tickers={tickers}
@@ -110,7 +112,7 @@ export function ThemeManagementPage() {
           onError={setError}
           onMessage={setMessage}
         />
-      ) : tab === 1 ? (
+      ) : tab === "automatic" ? (
         <AutomaticTab
           tickers={tickers}
           industries={industries}
@@ -120,6 +122,13 @@ export function ThemeManagementPage() {
           setUnassignedOnly={setUnassignedOnly}
           unprocessedOnly={unprocessedOnly}
           setUnprocessedOnly={setUnprocessedOnly}
+          capability={capability}
+          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onError={setError}
+          onMessage={setMessage}
+        />
+      ) : tab === "audit" ? (
+        <AuditTab
           capability={capability}
           onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
           onError={setError}
@@ -138,6 +147,8 @@ export function ThemeManagementPage() {
     </section>
   );
 }
+
+type ThemeManagementTab = "assignments" | "automatic" | "audit" | "themes";
 
 type ThemeManagementData = [Theme[], ThemeTicker[], ThemeTickerIndustry[], AiCapability];
 

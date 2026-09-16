@@ -12,7 +12,7 @@ use thiserror::Error;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{error, trace};
 
-const MAX_THEMES_PER_TICKER: usize = 2;
+pub(crate) const MAX_THEMES_PER_TICKER: usize = 2;
 
 struct AutomaticValidation {
     suggestions: Vec<ThemeSuggestion>,
@@ -855,7 +855,7 @@ Tickers:
     )
 }
 
-fn strip_code_fence(response: &str) -> &str {
+pub(crate) fn strip_code_fence(response: &str) -> &str {
     let trimmed = response.trim();
     trimmed
         .strip_prefix("```json")

@@ -9,6 +9,7 @@ mod market;
 mod market_chart;
 mod market_explorer;
 mod study;
+mod theme_audits;
 mod themes;
 mod ticker_collections;
 mod ticker_strength;
@@ -39,6 +40,7 @@ pub fn router() -> Router<AppState> {
         .merge(ticker_strength::router())
         .merge(ticker_collections::router())
         .merge(themes::router())
+        .merge(theme_audits::router())
         .merge(top_stocks::router())
         .merge(trade_analyzer::router())
         .merge(watchlists::router())
