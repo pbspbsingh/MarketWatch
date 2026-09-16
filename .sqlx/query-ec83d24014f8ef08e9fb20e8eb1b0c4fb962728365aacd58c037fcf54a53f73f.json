@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE trade_executions SET\n                           executed_at_utc = ?, executed_at_local = ?, market_date = ?,\n                           side = ?, position_effect = ?, quantity_micros = ?,\n                           price_micros = ?, fee_micros = ?, source_sequence = ?\n                       WHERE id = ? AND account_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "ec83d24014f8ef08e9fb20e8eb1b0c4fb962728365aacd58c037fcf54a53f73f"
+}

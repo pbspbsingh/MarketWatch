@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE trade_analyzer_state SET data_revision = data_revision + 1 WHERE singleton = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "b01b955fa50441af37113cf1876baa29b0d548d7cf576e51fc560017bca562af"
+}

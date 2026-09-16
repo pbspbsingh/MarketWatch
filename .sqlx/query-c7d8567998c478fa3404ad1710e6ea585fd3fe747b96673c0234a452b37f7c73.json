@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT account_id, symbol,\n                      opened_at AS \"opened_at?: String\", execution_ids_json\n               FROM analyzer_trades WHERE id = ? AND revision = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "opened_at?: String",
+        "ordinal": 2,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opened_at"
+          }
+        }
+      },
+      {
+        "name": "execution_ids_json",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "execution_ids_json"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c7d8567998c478fa3404ad1710e6ea585fd3fe747b96673c0234a452b37f7c73"
+}

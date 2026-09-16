@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO trade_imports (account_id, broker_adapter, file_hash, file_name, range_start, range_end) VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "b2414df4d49bbc08beae2e3745da6baff7f660ff3c7512fecf8897b22a16fb58"
+}

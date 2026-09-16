@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO trade_executions (account_id, import_id, event_key, origin, executed_at_utc, executed_at_local, market_date, symbol, side, position_effect, quantity_micros, price_micros, fee_micros, source_sequence, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 15
+    },
+    "nullable": []
+  },
+  "hash": "fb8905c8e14d0a1ff891a102fc7cca8e1b3062f1a92b2b0735de14eca29b5258"
+}

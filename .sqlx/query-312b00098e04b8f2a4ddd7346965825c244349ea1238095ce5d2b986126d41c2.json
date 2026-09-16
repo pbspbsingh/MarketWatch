@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, lifecycle_key FROM analyzer_trades WHERE account_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "lifecycle_key",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "lifecycle_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "312b00098e04b8f2a4ddd7346965825c244349ea1238095ce5d2b986126d41c2"
+}

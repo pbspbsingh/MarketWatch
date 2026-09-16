@@ -1,21 +1,21 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT detached_at IS NULL FROM daily_note_images WHERE id = ?",
+  "query": "SELECT COUNT(*) FROM analyzer_trades WHERE id = ? AND account_id = ? AND revision = ?",
   "describe": {
     "columns": [
       {
-        "name": "detached_at IS NULL",
+        "name": "COUNT(*)",
         "ordinal": 0,
         "type_info": "Integer",
         "origin": "Expression"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 3
     },
     "nullable": [
       false
     ]
   },
-  "hash": "891214d170ac048145486e2d6e3f91bf991ca7690fb3c118b507d72690859ba9"
+  "hash": "3b74ff20ffbfdbd0cd90b4a7f6eb879f2bc4ee17199b4f33c90d73ded1a0a6b1"
 }

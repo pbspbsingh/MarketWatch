@@ -1,0 +1,170 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, event_key, origin,\n                      executed_at_utc AS \"executed_at_utc!: String\", executed_at_local,\n                      market_date AS \"market_date!: String\", symbol, side, position_effect,\n                      quantity_micros, price_micros, fee_micros, source_sequence\n               FROM trade_executions\n               WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n               ORDER BY executed_at_utc, source_sequence, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "event_key",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "event_key"
+          }
+        }
+      },
+      {
+        "name": "origin",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "name": "executed_at_utc!: String",
+        "ordinal": 3,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "executed_at_utc"
+          }
+        }
+      },
+      {
+        "name": "executed_at_local",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "executed_at_local"
+          }
+        }
+      },
+      {
+        "name": "market_date!: String",
+        "ordinal": 5,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "market_date"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "side",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "side"
+          }
+        }
+      },
+      {
+        "name": "position_effect",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "position_effect"
+          }
+        }
+      },
+      {
+        "name": "quantity_micros",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "quantity_micros"
+          }
+        }
+      },
+      {
+        "name": "price_micros",
+        "ordinal": 10,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "price_micros"
+          }
+        }
+      },
+      {
+        "name": "fee_micros",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "fee_micros"
+          }
+        }
+      },
+      {
+        "name": "source_sequence",
+        "ordinal": 12,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_executions",
+            "name": "source_sequence"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ee3363bdda8a598f51e54696409899e07a2ca65112491a73b4d9780f8727acdf"
+}

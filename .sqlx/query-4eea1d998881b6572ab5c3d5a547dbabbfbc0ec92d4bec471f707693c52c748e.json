@@ -1,0 +1,254 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, lifecycle_key, account_id, symbol, direction,\n                      position_status, history_quality,\n                      opened_at AS \"opened_at?: String\", opened_at_local,\n                      opening_month, closed_at AS \"closed_at?: String\",\n                      quantity_micros, remaining_quantity_micros,\n                      average_entry_micros, average_exit_micros,\n                      initial_stop_micros, active_stop_micros, realized_pnl_micros,\n                      execution_ids_json, revision\n               FROM analyzer_trades\n               ORDER BY opening_month DESC, opened_at DESC, id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "lifecycle_key",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "lifecycle_key"
+          }
+        }
+      },
+      {
+        "name": "account_id",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "direction",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "direction"
+          }
+        }
+      },
+      {
+        "name": "position_status",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "position_status"
+          }
+        }
+      },
+      {
+        "name": "history_quality",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "history_quality"
+          }
+        }
+      },
+      {
+        "name": "opened_at?: String",
+        "ordinal": 7,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opened_at"
+          }
+        }
+      },
+      {
+        "name": "opened_at_local",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opened_at_local"
+          }
+        }
+      },
+      {
+        "name": "opening_month",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opening_month"
+          }
+        }
+      },
+      {
+        "name": "closed_at?: String",
+        "ordinal": 10,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "name": "quantity_micros",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "quantity_micros"
+          }
+        }
+      },
+      {
+        "name": "remaining_quantity_micros",
+        "ordinal": 12,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "remaining_quantity_micros"
+          }
+        }
+      },
+      {
+        "name": "average_entry_micros",
+        "ordinal": 13,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "average_entry_micros"
+          }
+        }
+      },
+      {
+        "name": "average_exit_micros",
+        "ordinal": 14,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "average_exit_micros"
+          }
+        }
+      },
+      {
+        "name": "initial_stop_micros",
+        "ordinal": 15,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "initial_stop_micros"
+          }
+        }
+      },
+      {
+        "name": "active_stop_micros",
+        "ordinal": 16,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "active_stop_micros"
+          }
+        }
+      },
+      {
+        "name": "realized_pnl_micros",
+        "ordinal": 17,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "realized_pnl_micros"
+          }
+        }
+      },
+      {
+        "name": "execution_ids_json",
+        "ordinal": 18,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "execution_ids_json"
+          }
+        }
+      },
+      {
+        "name": "revision",
+        "ordinal": 19,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4eea1d998881b6572ab5c3d5a547dbabbfbc0ec92d4bec471f707693c52c748e"
+}

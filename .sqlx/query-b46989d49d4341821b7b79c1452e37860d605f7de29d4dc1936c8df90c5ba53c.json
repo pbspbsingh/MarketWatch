@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT symbol, market_date AS \"market_date: NaiveDate\", open, high, low,\n                    close, volume\n             FROM daily_candles\n             WHERE market_date >= ? AND market_date <= ?\n             ORDER BY symbol, market_date",
+  "query": "SELECT daily_candles.symbol, market_date AS \"market_date: NaiveDate\", open, high, low,\n                    close, volume\n             FROM daily_candles\n             WHERE market_date >= ? AND market_date <= ?\n               AND EXISTS (\n                    SELECT 1\n                    FROM industry_membership_tickers\n                    WHERE industry_membership_tickers.symbol = daily_candles.symbol\n               )\n               AND EXISTS (\n                    SELECT 1\n                    FROM daily_candles AS target_candle\n                    WHERE target_candle.symbol = daily_candles.symbol\n                      AND target_candle.market_date = ?\n               )\n             ORDER BY symbol, market_date",
   "describe": {
     "columns": [
       {
@@ -82,7 +82,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -94,5 +94,5 @@
       false
     ]
   },
-  "hash": "cfdc0d094ae6d244fdf235bca5125ccdd3ca598cf4b53c8264996877b93a2822"
+  "hash": "b46989d49d4341821b7b79c1452e37860d605f7de29d4dc1936c8df90c5ba53c"
 }

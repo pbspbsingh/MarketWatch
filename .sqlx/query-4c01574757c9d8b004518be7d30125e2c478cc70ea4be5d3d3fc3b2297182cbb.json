@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_journals (trade_id, comment) VALUES (?, ?) ON CONFLICT(trade_id) DO UPDATE SET comment = excluded.comment",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "4c01574757c9d8b004518be7d30125e2c478cc70ea4be5d3d3fc3b2297182cbb"
+}

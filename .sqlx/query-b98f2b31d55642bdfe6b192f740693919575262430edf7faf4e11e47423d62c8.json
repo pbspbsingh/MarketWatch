@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO trade_risk_stops (account_id, import_id, event_key, trade_opened_at_utc, placed_at_utc, placed_at_local, market_date, symbol, quantity_micros, price_micros, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "b98f2b31d55642bdfe6b192f740693919575262430edf7faf4e11e47423d62c8"
+}

@@ -1,0 +1,110 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, account_id, trade_opened_at_utc AS \"trade_opened_at_utc!: String\",\n                      placed_at_utc AS \"placed_at_utc!: String\",\n                      market_date AS \"market_date!: String\", symbol,\n                      price_micros, kind\n               FROM trade_risk_stops\n               WHERE account_id = ?\n               ORDER BY placed_at_utc, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "account_id",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "trade_opened_at_utc!: String",
+        "ordinal": 2,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "trade_opened_at_utc"
+          }
+        }
+      },
+      {
+        "name": "placed_at_utc!: String",
+        "ordinal": 3,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "placed_at_utc"
+          }
+        }
+      },
+      {
+        "name": "market_date!: String",
+        "ordinal": 4,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "market_date"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "price_micros",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "price_micros"
+          }
+        }
+      },
+      {
+        "name": "kind",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "kind"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "577c01abe9a2fc701ed73b7112ee54c08547bc14941137a0bc00fb195609cfbf"
+}

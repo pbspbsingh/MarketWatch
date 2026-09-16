@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, broker, label, timezone FROM trade_accounts WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "broker",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_accounts",
+            "name": "broker"
+          }
+        }
+      },
+      {
+        "name": "label",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_accounts",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "name": "timezone",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_accounts",
+            "name": "timezone"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "17356734ba75e5827832dd8f98daae756bbfd44e770a5010abd8201533eeec27"
+}

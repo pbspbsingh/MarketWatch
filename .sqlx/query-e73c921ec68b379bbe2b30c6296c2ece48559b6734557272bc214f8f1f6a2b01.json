@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM trade_executions WHERE id = ? AND account_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e73c921ec68b379bbe2b30c6296c2ece48559b6734557272bc214f8f1f6a2b01"
+}

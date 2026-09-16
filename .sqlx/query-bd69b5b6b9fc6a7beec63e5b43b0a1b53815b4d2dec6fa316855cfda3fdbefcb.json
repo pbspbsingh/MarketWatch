@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_risk_stops (account_id, event_key, trade_opened_at_utc, placed_at_utc, placed_at_local, market_date, symbol, quantity_micros, price_micros, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "bd69b5b6b9fc6a7beec63e5b43b0a1b53815b4d2dec6fa316855cfda3fdbefcb"
+}

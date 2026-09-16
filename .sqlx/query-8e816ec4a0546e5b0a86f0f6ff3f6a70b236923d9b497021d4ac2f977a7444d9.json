@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE trade_accounts SET needs_rebuild = 1 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8e816ec4a0546e5b0a86f0f6ff3f6a70b236923d9b497021d4ac2f977a7444d9"
+}

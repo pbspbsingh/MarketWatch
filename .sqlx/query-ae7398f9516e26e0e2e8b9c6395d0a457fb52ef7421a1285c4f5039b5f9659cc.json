@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE analyzer_trades SET revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND revision = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ae7398f9516e26e0e2e8b9c6395d0a457fb52ef7421a1285c4f5039b5f9659cc"
+}

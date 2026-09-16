@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_overrides (\n                   trade_id, quantity_micros, average_entry_micros,\n                   initial_stop_micros, active_stop_micros\n               ) VALUES (?, ?, ?, ?, ?)\n               ON CONFLICT(trade_id) DO UPDATE SET\n                   quantity_micros = COALESCE(excluded.quantity_micros, trade_overrides.quantity_micros),\n                   average_entry_micros = COALESCE(excluded.average_entry_micros, trade_overrides.average_entry_micros),\n                   initial_stop_micros = COALESCE(excluded.initial_stop_micros, trade_overrides.initial_stop_micros),\n                   active_stop_micros = COALESCE(excluded.active_stop_micros, trade_overrides.active_stop_micros),\n                   updated_at = CURRENT_TIMESTAMP",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "c63ecbc641aec9cfaefffd47d919f42afd135aec2902624aa31c4886dd680481"
+}

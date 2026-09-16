@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT data_revision FROM trade_analyzer_state WHERE singleton = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "data_revision",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_analyzer_state",
+            "name": "data_revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "be9cb7c577facd919497bf3e15393e9ef6050fc76cce0065b17b20aec921970d"
+}

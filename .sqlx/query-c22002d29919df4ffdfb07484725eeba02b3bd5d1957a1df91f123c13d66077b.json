@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, status, symbols AS \"symbols: String\", model,\n                      prompt, response, suggestions AS \"suggestions: String\",\n                      validation_errors AS \"validation_errors: String\", error, retry_of_job_id,\n                      created_at AS \"created_at: NaiveDateTime\",\n                      updated_at AS \"updated_at: NaiveDateTime\"\n               FROM theme_ai_jobs\n               WHERE id = ?",
+  "query": "SELECT id, status, symbols AS \"symbols: String\", model,\n                      prompt, response, suggestions AS \"suggestions: String\",\n                      validation_errors AS \"validation_errors: String\", error,\n                      created_at AS \"created_at: NaiveDateTime\",\n                      updated_at AS \"updated_at: NaiveDateTime\"\n               FROM theme_ai_jobs\n               WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -103,19 +103,8 @@
         }
       },
       {
-        "name": "retry_of_job_id",
-        "ordinal": 9,
-        "type_info": "Integer",
-        "origin": {
-          "Table": {
-            "table": "theme_ai_jobs",
-            "name": "retry_of_job_id"
-          }
-        }
-      },
-      {
         "name": "created_at: NaiveDateTime",
-        "ordinal": 10,
+        "ordinal": 9,
         "type_info": "Datetime",
         "origin": {
           "Table": {
@@ -126,7 +115,7 @@
       },
       {
         "name": "updated_at: NaiveDateTime",
-        "ordinal": 11,
+        "ordinal": 10,
         "type_info": "Datetime",
         "origin": {
           "Table": {
@@ -149,10 +138,9 @@
       true,
       true,
       true,
-      true,
       false,
       false
     ]
   },
-  "hash": "2159e720554aaec32249fde9b058092aee6fafbf4c9e41400044904ba8352d6e"
+  "hash": "c22002d29919df4ffdfb07484725eeba02b3bd5d1957a1df91f123c13d66077b"
 }

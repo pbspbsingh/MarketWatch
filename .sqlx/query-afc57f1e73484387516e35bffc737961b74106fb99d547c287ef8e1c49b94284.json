@@ -105,7 +105,7 @@
       {
         "name": "automatic_processed!: bool",
         "ordinal": 9,
-        "type_info": "Null",
+        "type_info": "Integer",
         "origin": "Expression"
       }
     ],

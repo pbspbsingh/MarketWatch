@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT industry_key, industry_name, sector_key, sector_name\n             FROM industry_classifications\n             WHERE industry_key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "industry_key",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "industry_key"
+          }
+        }
+      },
+      {
+        "name": "industry_name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "industry_name"
+          }
+        }
+      },
+      {
+        "name": "sector_key",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "sector_key"
+          }
+        }
+      },
+      {
+        "name": "sector_name",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "sector_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a558bbc843dfaeb768636e84ef33569eecbaf68c20c8b6e3ceb5a492434d117b"
+}

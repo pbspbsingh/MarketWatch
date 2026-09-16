@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_overrides (\n                   trade_id, quantity_micros, average_entry_micros,\n                   initial_stop_micros, active_stop_micros\n               ) VALUES (?, NULL, NULL, ?, ?)\n               ON CONFLICT(trade_id) DO UPDATE SET\n                   quantity_micros = NULL,\n                   average_entry_micros = NULL,\n                   initial_stop_micros = excluded.initial_stop_micros,\n                   active_stop_micros = excluded.active_stop_micros,\n                   updated_at = CURRENT_TIMESTAMP",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "183b6ae092581139609a3bf7c04ffa04bbd9996168456d944102869b882a1122"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO analyzer_trades (\n                       lifecycle_key, account_id, symbol, direction, position_status,\n                       history_quality, opened_at, opened_at_local, opening_month,\n                       closed_at, quantity_micros, remaining_quantity_micros,\n                       average_entry_micros, average_exit_micros, initial_stop_micros,\n                       active_stop_micros, realized_pnl_micros, fees_micros, execution_ids_json\n                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n                   ON CONFLICT (lifecycle_key) DO UPDATE SET\n                       symbol = excluded.symbol,\n                       direction = excluded.direction,\n                       position_status = excluded.position_status,\n                       history_quality = excluded.history_quality,\n                       opened_at = excluded.opened_at,\n                       opened_at_local = excluded.opened_at_local,\n                       opening_month = excluded.opening_month,\n                       closed_at = excluded.closed_at,\n                       quantity_micros = excluded.quantity_micros,\n                       remaining_quantity_micros = excluded.remaining_quantity_micros,\n                       average_entry_micros = excluded.average_entry_micros,\n                       average_exit_micros = excluded.average_exit_micros,\n                       initial_stop_micros = excluded.initial_stop_micros,\n                       active_stop_micros = excluded.active_stop_micros,\n                       realized_pnl_micros = excluded.realized_pnl_micros,\n                       fees_micros = excluded.fees_micros,\n                       execution_ids_json = excluded.execution_ids_json,\n                       revision = analyzer_trades.revision + 1,\n                       updated_at = CURRENT_TIMESTAMP",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 19
+    },
+    "nullable": []
+  },
+  "hash": "d08dde8ae395456cd9f5cbf4a57eb7aabd8b8118cd45dfc72dcbcd578046f49e"
+}

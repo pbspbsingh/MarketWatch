@@ -1,0 +1,254 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id, t.lifecycle_key, t.account_id, t.symbol, t.direction,\n                      t.position_status, t.history_quality,\n                      t.opened_at AS \"opened_at?: String\", t.opened_at_local,\n                      t.opening_month, t.closed_at AS \"closed_at?: String\", t.quantity_micros,\n                      t.remaining_quantity_micros, t.average_entry_micros,\n                      t.average_exit_micros, t.initial_stop_micros, t.active_stop_micros,\n                      t.realized_pnl_micros, t.execution_ids_json, t.revision\n               FROM analyzer_trades t\n               WHERE (? IS NULL OR t.account_id = ?)\n                 AND (? IS NULL OR t.opening_month >= ?)\n                 AND (? IS NULL OR t.opening_month <= ?)\n                 AND (? IS NULL OR t.position_status = ?)\n                 AND (? IS NULL OR t.history_quality = ?)\n                 AND (? = 0 OR (t.position_status = 'open' AND t.active_stop_micros IS NULL))\n                 AND (? IS NULL\n                      OR instr(lower(t.symbol), lower(?)) > 0\n                      OR EXISTS (\n                          SELECT 1 FROM trade_journals j\n                          WHERE j.trade_id = t.id AND instr(lower(j.comment), lower(?)) > 0\n                      )\n                      OR EXISTS (\n                          SELECT 1 FROM trade_tag_assignments a\n                          JOIN trade_tags tag ON tag.id = a.tag_id\n                          WHERE a.trade_id = t.id AND instr(lower(tag.name), lower(?)) > 0\n                      ))\n                 AND (? = 0\n                      OR (? = 1 AND (\n                          SELECT COUNT(DISTINCT a.tag_id)\n                          FROM trade_tag_assignments a\n                          WHERE a.trade_id = t.id\n                            AND a.tag_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n                      ) = ?)\n                      OR (? = 0 AND EXISTS (\n                          SELECT 1 FROM trade_tag_assignments a\n                          WHERE a.trade_id = t.id\n                            AND a.tag_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n                      )))\n               ORDER BY t.opening_month DESC, t.opened_at DESC, t.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "lifecycle_key",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "lifecycle_key"
+          }
+        }
+      },
+      {
+        "name": "account_id",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "direction",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "direction"
+          }
+        }
+      },
+      {
+        "name": "position_status",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "position_status"
+          }
+        }
+      },
+      {
+        "name": "history_quality",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "history_quality"
+          }
+        }
+      },
+      {
+        "name": "opened_at?: String",
+        "ordinal": 7,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opened_at"
+          }
+        }
+      },
+      {
+        "name": "opened_at_local",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opened_at_local"
+          }
+        }
+      },
+      {
+        "name": "opening_month",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "opening_month"
+          }
+        }
+      },
+      {
+        "name": "closed_at?: String",
+        "ordinal": 10,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "name": "quantity_micros",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "quantity_micros"
+          }
+        }
+      },
+      {
+        "name": "remaining_quantity_micros",
+        "ordinal": 12,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "remaining_quantity_micros"
+          }
+        }
+      },
+      {
+        "name": "average_entry_micros",
+        "ordinal": 13,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "average_entry_micros"
+          }
+        }
+      },
+      {
+        "name": "average_exit_micros",
+        "ordinal": 14,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "average_exit_micros"
+          }
+        }
+      },
+      {
+        "name": "initial_stop_micros",
+        "ordinal": 15,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "initial_stop_micros"
+          }
+        }
+      },
+      {
+        "name": "active_stop_micros",
+        "ordinal": 16,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "active_stop_micros"
+          }
+        }
+      },
+      {
+        "name": "realized_pnl_micros",
+        "ordinal": 17,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "realized_pnl_micros"
+          }
+        }
+      },
+      {
+        "name": "execution_ids_json",
+        "ordinal": 18,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "execution_ids_json"
+          }
+        }
+      },
+      {
+        "name": "revision",
+        "ordinal": 19,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "analyzer_trades",
+            "name": "revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 21
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ff4bff47ad81d4294145bf75a34f29cbb02898b0a8531438631723ab7eefdd82"
+}

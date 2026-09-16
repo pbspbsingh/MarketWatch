@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_accounts (broker, external_key, label, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (broker, external_key) DO UPDATE SET label = excluded.label, timezone = excluded.timezone",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "234c978f063175cdb07cabc710986ee07aa96a51c135d531ff53ab9dc02cea8f"
+}

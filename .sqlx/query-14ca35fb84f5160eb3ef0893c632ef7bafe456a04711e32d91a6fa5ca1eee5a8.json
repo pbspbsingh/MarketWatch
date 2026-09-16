@@ -1,16 +1,16 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT symbol FROM watchlist_tickers WHERE watchlist_id = ? ORDER BY symbol COLLATE NOCASE",
+  "query": "SELECT event_key FROM trade_executions WHERE account_id = ?",
   "describe": {
     "columns": [
       {
-        "name": "symbol",
+        "name": "event_key",
         "ordinal": 0,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "watchlist_tickers",
-            "name": "symbol"
+            "table": "trade_executions",
+            "name": "event_key"
           }
         }
       }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "bf76ad0541f800332a202695a37251b4867573fc22065f8dbd5dda4b2bb88a52"
+  "hash": "14ca35fb84f5160eb3ef0893c632ef7bafe456a04711e32d91a6fa5ca1eee5a8"
 }

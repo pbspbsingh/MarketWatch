@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT trade_id, comment, strategy, edges, lessons, mistakes, rating FROM trade_journals WHERE trade_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))",
+  "describe": {
+    "columns": [
+      {
+        "name": "trade_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "trade_id"
+          }
+        }
+      },
+      {
+        "name": "comment",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "name": "strategy",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "strategy"
+          }
+        }
+      },
+      {
+        "name": "edges",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "edges"
+          }
+        }
+      },
+      {
+        "name": "lessons",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "lessons"
+          }
+        }
+      },
+      {
+        "name": "mistakes",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "mistakes"
+          }
+        }
+      },
+      {
+        "name": "rating",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_journals",
+            "name": "rating"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8bdb01b8b15ec30886bfd5f04f301ef82e3ec3c21a4c33a07b2dd43cd0356f4d"
+}

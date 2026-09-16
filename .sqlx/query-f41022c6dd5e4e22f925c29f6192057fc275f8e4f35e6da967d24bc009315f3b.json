@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_executions (\n                           account_id, event_key, origin, executed_at_utc, executed_at_local,\n                           market_date, symbol, side, position_effect, quantity_micros,\n                           price_micros, fee_micros, source_sequence, raw_json\n                       ) VALUES (?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "f41022c6dd5e4e22f925c29f6192057fc275f8e4f35e6da967d24bc009315f3b"
+}

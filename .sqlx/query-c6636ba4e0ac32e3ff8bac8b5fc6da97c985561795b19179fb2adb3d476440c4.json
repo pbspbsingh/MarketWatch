@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.trade_id, t.id, t.name FROM trade_tags t JOIN trade_tag_assignments a ON a.tag_id = t.id WHERE a.trade_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)) ORDER BY t.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "trade_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_tag_assignments",
+            "name": "trade_id"
+          }
+        }
+      },
+      {
+        "name": "id",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_tags",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6636ba4e0ac32e3ff8bac8b5fc6da97c985561795b19179fb2adb3d476440c4"
+}

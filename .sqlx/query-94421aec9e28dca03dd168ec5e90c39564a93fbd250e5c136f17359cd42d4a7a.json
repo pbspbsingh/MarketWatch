@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM trade_tag_assignments WHERE trade_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "94421aec9e28dca03dd168ec5e90c39564a93fbd250e5c136f17359cd42d4a7a"
+}

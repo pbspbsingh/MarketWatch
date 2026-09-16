@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT market_date AS \"market_date!: String\", close\n               FROM daily_candles\n               WHERE symbol = ?\n               ORDER BY market_date DESC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "market_date!: String",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "market_date"
+          }
+        }
+      },
+      {
+        "name": "close",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "daily_candles",
+            "name": "close"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "cac48758440a3a58aee4c3d90bd13b9e6f1b63f0723415e4d380b3d261279d9c"
+}

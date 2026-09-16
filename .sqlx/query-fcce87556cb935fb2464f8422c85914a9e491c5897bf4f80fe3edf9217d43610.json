@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE analyzer_trades SET\n                   quantity_micros = COALESCE(?, quantity_micros),\n                   average_entry_micros = COALESCE(?, average_entry_micros),\n                   initial_stop_micros = CASE WHEN ? = 0 THEN NULL ELSE COALESCE(?, initial_stop_micros) END,\n                   active_stop_micros = CASE WHEN ? = 0 THEN NULL ELSE COALESCE(?, active_stop_micros) END,\n                   revision = revision + 1,\n                   updated_at = CURRENT_TIMESTAMP\n               WHERE id = ? AND revision = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "fcce87556cb935fb2464f8422c85914a9e491c5897bf4f80fe3edf9217d43610"
+}

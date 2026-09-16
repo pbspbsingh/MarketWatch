@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT event_key FROM trade_risk_stops WHERE account_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "event_key",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_risk_stops",
+            "name": "event_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1164bee56866a27901a3c1c3e548970d0495bcc2993d302a3a20e9c1f655c4c3"
+}

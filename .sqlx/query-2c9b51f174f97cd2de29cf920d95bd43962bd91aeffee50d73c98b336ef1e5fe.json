@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM trade_risk_stops WHERE account_id = ? AND symbol = ? AND trade_opened_at_utc = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "2c9b51f174f97cd2de29cf920d95bd43962bd91aeffee50d73c98b336ef1e5fe"
+}

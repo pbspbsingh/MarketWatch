@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_ai_jobs WHERE status = 'applied'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "3da17a2d81071e1c9c667b12add9b6b95caca5a65a0736ff8a3dac6f8bf3fb2e"
+}
