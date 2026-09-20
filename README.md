@@ -12,6 +12,32 @@ cp config.example.toml config.toml
 
 When `config.toml` is missing, the backend prints the template and exits.
 
+Before starting the server, generate a password hash:
+
+```bash
+cargo run --bin hash_password
+```
+
+You can also pass the password as an argument with
+`cargo run --bin hash_password -- 'your-long-password'`, but it may be visible in
+shell history and process listings.
+
+Use a strong password, then paste the printed Argon2id hash into
+`[server.auth].password_hash` in `config.toml`. The example value is deliberately
+invalid, so the server refuses to start until it is replaced. Keep the password
+in a password manager and restrict the local config file to the server user:
+
+```bash
+chmod 600 config.toml
+```
+
+The server challenges every route with HTTP Basic authentication, including
+the frontend and WebSocket handshakes. Failed requests are logged with the
+client IP and attempted username. A validated Basic header is cached in memory,
+so repeated requests with the same credentials skip Argon2. Uncached password
+checks are limited to one every five seconds. Tailscale Funnel supplies HTTPS;
+keep the backend bound to `127.0.0.1` and point Funnel at that local port.
+
 ## Development
 
 Run the backend API:

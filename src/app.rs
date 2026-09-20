@@ -1,4 +1,5 @@
 use crate::api;
+use crate::auth;
 use crate::config::Config;
 use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
@@ -68,6 +69,7 @@ pub struct AppState {
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
+    let auth = Arc::new(auth::Auth::new(config.server.auth.clone()));
     let store = Store::connect(&config.database.url).await?;
     let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
     store.fail_interrupted_theme_ai_jobs().await?;
@@ -187,7 +189,12 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let router = router.fallback(frontend);
     #[cfg(debug_assertions)]
     let router = router.fallback(debug_frontend);
-    Ok(router.with_state(state))
+    Ok(router
+        .layer(axum::middleware::from_fn_with_state(
+            auth,
+            auth::require_auth,
+        ))
+        .with_state(state))
 }
 
 #[cfg(debug_assertions)]

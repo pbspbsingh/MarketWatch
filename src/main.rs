@@ -6,6 +6,7 @@ compile_error!("enable either feature `sqlite-bundled` or `sqlite-unbundled`");
 
 mod api;
 mod app;
+mod auth;
 mod config;
 mod constants;
 mod models;
@@ -49,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!(%address, "MarketWatch server started");
     tokio::select! {
-        result = axum::serve(listener, app) => result.context("server failed"),
+        result = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()) => result.context("server failed"),
         _ = shutdown_signal() => Ok(()),
     }
 }

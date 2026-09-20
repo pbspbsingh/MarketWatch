@@ -1,6 +1,11 @@
 [server]
 address = "127.0.0.1:8080"
 
+[server.auth]
+username = "marketwatch"
+# Generate with `cargo run --bin hash_password` and paste the output here.
+password_hash = "REPLACE_WITH_ARGON2ID_HASH"
+
 [database]
 url = "sqlite://market_watch.db?mode=rwc"
 

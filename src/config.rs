@@ -44,6 +44,24 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub address: SocketAddr,
+    pub auth: AuthConfig,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthConfig {
+    pub username: String,
+    pub password_hash: String,
+}
+
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AuthConfig")
+            .field("username", &self.username)
+            .field("password_hash", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -123,6 +141,11 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.server.address.ip().is_loopback(),
+            "server.address must bind to loopback when using HTTP Basic authentication"
+        );
+        self.server.auth.validate()?;
         self.market
             .timezone
             .parse::<Tz>()
@@ -188,6 +211,30 @@ impl Config {
     }
 }
 
+impl AuthConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.username.is_empty(),
+            "server.auth.username is required"
+        );
+        anyhow::ensure!(
+            self.username.len() <= 128
+                && self
+                    .username
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() && byte != b':'),
+            "server.auth.username must use at most 128 printable ASCII characters and no colon"
+        );
+        anyhow::ensure!(
+            self.password_hash.starts_with("$argon2id$"),
+            "server.auth.password_hash must be an Argon2id hash"
+        );
+        argon2::PasswordHash::new(&self.password_hash)
+            .map_err(|error| anyhow::anyhow!("invalid server.auth.password_hash: {error}"))?;
+        Ok(())
+    }
+}
+
 fn valid_finviz_filters(filters: &[String]) -> bool {
     filters.iter().all(|filter| {
         !filter.is_empty()
@@ -246,8 +293,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_example_config() {
-        let config = Config::load("config.example.toml").unwrap();
+    fn loads_example_config_with_a_password_hash() {
+        let example = include_str!("../config.example.toml").replace(
+            "REPLACE_WITH_ARGON2ID_HASH",
+            "$argon2id$v=19$m=19456,t=2,p=1$6W3JE/bOgkM7Goq5g2XlEg$Y+LcSf2GoWooLvtmAoCa3OjkLmMxm+/TudefyM+l2BI",
+        );
+        let config: Config = toml::from_str(&example).unwrap();
+        config.validate().unwrap();
 
         assert!(!config.market.benchmark.is_empty());
         assert_eq!(config.market.sector_benchmarks.len(), SECTORS.len());
@@ -256,6 +308,20 @@ mod tests {
             HashSet::from([NaiveDate::from_ymd_opt(2026, 6, 26).unwrap()])
         );
         assert_eq!(config.home.tickers.len(), 4);
+    }
+
+    #[test]
+    fn rejects_public_plain_http_binding() {
+        let example = include_str!("../config.example.toml")
+            .replace("address = \"127.0.0.1:8080\"", "address = \"0.0.0.0:8080\"");
+        let config: Config = toml::from_str(&example).unwrap();
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("loopback")
+        );
     }
 
     #[test]
