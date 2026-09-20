@@ -39,9 +39,22 @@ use axum::response::{IntoResponse, Response};
 use include_dir::{Dir, include_dir};
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::compression::{
+    CompressionLayer, DefaultPredicate,
+    predicate::{And, Predicate, SizeAbove},
+};
 
 #[cfg(not(debug_assertions))]
 static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist_gzipped");
+
+const API_COMPRESSION_CUTOFF_BYTES: u16 = 512;
+
+fn api_compression_layer() -> CompressionLayer<And<DefaultPredicate, SizeAbove>> {
+    // tower-http 0.6.11 treats the predicate's minimum as inclusive.
+    CompressionLayer::new().compress_when(
+        DefaultPredicate::new().and(SizeAbove::new(API_COMPRESSION_CUTOFF_BYTES + 1)),
+    )
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -184,7 +197,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_live,
     };
 
-    let router = Router::new().nest("/api", api::router());
+    let router = Router::new().nest("/api", api::router().layer(api_compression_layer()));
     #[cfg(not(debug_assertions))]
     let router = router.fallback(frontend);
     #[cfg(debug_assertions)]
@@ -232,5 +245,63 @@ fn content_type(path: &str) -> &'static str {
         "image/png"
     } else {
         "text/html; charset=utf-8"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::Json;
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, header};
+    use axum::response::Response;
+    use axum::routing::get;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn api_compression_respects_size_and_accept_encoding() {
+        let app = Router::new()
+            .route(
+                "/exactly-512-bytes",
+                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 2)) }),
+            )
+            .route(
+                "/over-512-bytes",
+                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 1)) }),
+            )
+            .layer(api_compression_layer());
+
+        let exact = request(&app, "/exactly-512-bytes", true).await;
+        assert!(exact.headers().get(header::CONTENT_ENCODING).is_none());
+        assert_eq!(
+            to_bytes(exact.into_body(), usize::MAX).await.unwrap().len(),
+            usize::from(API_COMPRESSION_CUTOFF_BYTES),
+        );
+
+        let large = request(&app, "/over-512-bytes", true).await;
+        assert_eq!(large.headers()[header::CONTENT_ENCODING], "gzip");
+        assert!(
+            to_bytes(large.into_body(), usize::MAX).await.unwrap().len()
+                < usize::from(API_COMPRESSION_CUTOFF_BYTES),
+        );
+
+        let without_gzip = request(&app, "/over-512-bytes", false).await;
+        assert!(
+            without_gzip
+                .headers()
+                .get(header::CONTENT_ENCODING)
+                .is_none()
+        );
+    }
+
+    async fn request(app: &Router, path: &str, accepts_gzip: bool) -> Response {
+        let mut request = Request::builder().uri(path);
+        if accepts_gzip {
+            request = request.header(header::ACCEPT_ENCODING, "gzip");
+        }
+        app.clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
     }
 }
