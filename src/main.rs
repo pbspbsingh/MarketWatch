@@ -21,7 +21,7 @@ use std::path::Path;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt::time::ChronoLocal};
 
-#[tokio::main(worker_threads = 2)]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 
