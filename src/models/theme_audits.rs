@@ -41,6 +41,18 @@ pub struct ThemeAudit {
     pub processed_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ThemeAuditAcceptance {
+    Accepted,
+    ConfirmationRequired {
+        audited_themes: Vec<ThemeAuditTheme>,
+        current_themes: Vec<ThemeAuditTheme>,
+        suggested_themes: Vec<ThemeAuditTheme>,
+        current_input_fingerprint: String,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeAuditRunStatus {

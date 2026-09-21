@@ -16,6 +16,7 @@ import {
   retryRemainingThemeAudit,
   runEntireThemeAudit,
   type AiCapability,
+  type ThemeAuditAcceptance,
   type ThemeAuditOverview,
 } from "../../api/themes";
 import { tickerMarketWatchUrl } from "../ticker-lens/utils";
@@ -33,6 +34,7 @@ export function AuditTab({
   onMessage: (message: string) => void;
 }) {
   const [includeManual, setIncludeManual] = useState(false);
+  const [showProcessed, setShowProcessed] = useState(false);
   const [overview, setOverview] = useState<ThemeAuditOverview>();
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
@@ -78,6 +80,19 @@ export function AuditTab({
   const storedCount = overview?.stored_count ?? 0;
   const eligibleCount = overview?.eligible_count ?? 0;
   const remainingCount = Math.max(0, eligibleCount - auditedCount);
+  const visibleResults = (overview?.results ?? []).filter(
+    (audit) => showProcessed || (audit.status !== "accepted" && audit.status !== "ignored"),
+  );
+
+  const acceptAudit = async (symbol: string) => {
+    let confirmedInputFingerprint: string | undefined;
+    for (;;) {
+      const result = await acceptThemeAudit(symbol, confirmedInputFingerprint);
+      if (result.status === "accepted") return true;
+      if (!window.confirm(staleAuditMessage(symbol, result))) return false;
+      confirmedInputFingerprint = result.current_input_fingerprint;
+    }
+  };
 
   return (
     <div className="theme-management-body audit-layout">
@@ -99,6 +114,15 @@ export function AuditTab({
                 />
               )}
               label="Include manual assignments"
+            />
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={showProcessed}
+                  onChange={(event) => setShowProcessed(event.target.checked)}
+                />
+              )}
+              label="Show accepted/ignored"
             />
             <Button
               disabled={busy || running || remainingCount === 0}
@@ -174,7 +198,7 @@ export function AuditTab({
       </section>
 
       <section className="assignment-card audit-results">
-        <Typography component="h2">Discrepancies ({overview?.results.length ?? 0})</Typography>
+        <Typography component="h2">Discrepancies ({visibleResults.length})</Typography>
         <div className="audit-table-wrap">
           <table className="audit-table">
             <thead>
@@ -189,7 +213,7 @@ export function AuditTab({
               </tr>
             </thead>
             <tbody>
-              {overview?.results.map((audit) => (
+              {visibleResults.map((audit) => (
                 <tr key={audit.symbol}>
                   <td>
                     <Link
@@ -213,12 +237,8 @@ export function AuditTab({
                           variant="contained"
                           disabled={busy}
                           onClick={() => {
-                            if (
-                              audit.suggested_themes.length === 0
-                              && !window.confirm(`Remove every theme assignment from ${audit.symbol}?`)
-                            ) return;
                             void run(async () => {
-                              await acceptThemeAudit(audit.symbol);
+                              if (!await acceptAudit(audit.symbol)) return;
                               await load();
                               onChanged();
                               onMessage(`${audit.symbol} audit suggestion accepted`);
@@ -253,4 +273,29 @@ export function AuditTab({
 
 function themeNames(themes: { name: string }[]) {
   return themes.length === 0 ? "No theme" : themes.map((theme) => theme.name).join(", ");
+}
+
+function staleAuditMessage(
+  symbol: string,
+  result: Extract<ThemeAuditAcceptance, { status: "confirmation_required" }>,
+) {
+  const audited = new Map(result.audited_themes.map((theme) => [theme.id, theme]));
+  const current = new Map(result.current_themes.map((theme) => [theme.id, theme]));
+  const removed = result.audited_themes.filter((theme) => !current.has(theme.id));
+  const added = result.current_themes.filter((theme) => !audited.has(theme.id));
+  const renamed = result.current_themes.filter(
+    (theme) => audited.has(theme.id) && audited.get(theme.id)?.name !== theme.name,
+  );
+  const changes: string[] = [];
+  if (removed.length > 0) changes.push(`Removed since audit: ${themeNames(removed)}`);
+  if (added.length > 0) changes.push(`Added since audit: ${themeNames(added)}`);
+  if (renamed.length > 0) changes.push(`Renamed since audit: ${themeNames(renamed)}`);
+  if (changes.length === 0) changes.push("Ticker details or the theme catalog changed since the audit.");
+  return [
+    `${symbol}'s inputs changed after this audit.`,
+    ...changes,
+    `Current themes: ${themeNames(result.current_themes)}`,
+    `Accepting will replace them with: ${themeNames(result.suggested_themes)}`,
+    "Apply the audit suggestion?",
+  ].join("\n");
 }

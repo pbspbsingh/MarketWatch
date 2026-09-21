@@ -1,6 +1,6 @@
 use crate::models::{
-    Theme, ThemeAuditBatchProgress, ThemeAuditOverview, ThemeAuditProgress, ThemeAuditRunStatus,
-    ThemeAuditStatus, ThemeAuditTheme, ThemeTicker, TickerSymbol,
+    Theme, ThemeAuditAcceptance, ThemeAuditBatchProgress, ThemeAuditOverview, ThemeAuditProgress,
+    ThemeAuditRunStatus, ThemeAuditStatus, ThemeAuditTheme, ThemeTicker, TickerSymbol,
 };
 use crate::providers::{AiClient, AiError, AiStreamDelta};
 use crate::services::themes::{MAX_THEMES_PER_TICKER, strip_code_fence};
@@ -485,10 +485,14 @@ impl ThemeAuditService {
         }
     }
 
-    pub async fn accept(&self, symbol: &TickerSymbol) -> Result<(), ThemeAuditServiceError> {
-        let stored_fingerprint = self
+    pub async fn accept(
+        &self,
+        symbol: &TickerSymbol,
+        confirmed_input_fingerprint: Option<&str>,
+    ) -> Result<ThemeAuditAcceptance, ThemeAuditServiceError> {
+        let pending = self
             .store
-            .theme_audit_input_fingerprint(symbol)
+            .pending_theme_audit(symbol)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .ok_or_else(|| {
@@ -508,19 +512,50 @@ impl ThemeAuditService {
                 ThemeAuditServiceError::Validation("ticker does not exist".to_owned())
             })?;
         let current_fingerprint = input_fingerprint(&themes, &ticker)?;
-        if stored_fingerprint != current_fingerprint {
-            return Err(ThemeAuditServiceError::Conflict(
-                "theme audit is stale; re-run the audit".to_owned(),
-            ));
-        }
-        let current_ids = ticker
+        let mut current_themes = ticker
             .assignments
             .iter()
-            .map(|assignment| assignment.theme_id)
+            .map(|assignment| ThemeAuditTheme {
+                id: assignment.theme_id,
+                name: assignment.theme_name.clone(),
+            })
+            .collect::<Vec<_>>();
+        current_themes.sort_by_key(|theme| theme.id);
+        let suggested_themes = pending
+            .suggested_themes
+            .iter()
+            .map(|suggested| {
+                themes
+                    .iter()
+                    .find(|theme| theme.id == suggested.id)
+                    .map(|theme| ThemeAuditTheme {
+                        id: theme.id,
+                        name: theme.name.clone(),
+                    })
+                    .ok_or_else(|| {
+                        ThemeAuditServiceError::Validation(format!(
+                            "audit suggestion references deleted theme {}; re-run the audit",
+                            suggested.name
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let is_stale = pending.input_fingerprint != current_fingerprint;
+        if is_stale && confirmed_input_fingerprint != Some(current_fingerprint.as_str()) {
+            return Ok(ThemeAuditAcceptance::ConfirmationRequired {
+                audited_themes: pending.current_themes,
+                current_themes,
+                suggested_themes,
+                current_input_fingerprint: current_fingerprint,
+            });
+        }
+        let current_ids = current_themes
+            .iter()
+            .map(|theme| theme.id)
             .collect::<Vec<_>>();
         let accepted = self
             .store
-            .accept_theme_audit(symbol, &current_ids)
+            .accept_theme_audit(symbol, &current_ids, is_stale)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
         if !accepted {
@@ -528,7 +563,7 @@ impl ThemeAuditService {
                 "pending theme audit does not exist".to_owned(),
             ));
         }
-        Ok(())
+        Ok(ThemeAuditAcceptance::Accepted)
     }
 
     pub async fn ignore(&self, symbol: &TickerSymbol) -> Result<(), ThemeAuditServiceError> {

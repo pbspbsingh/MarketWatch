@@ -16,6 +16,12 @@ pub(crate) struct NewThemeAudit {
     pub input_fingerprint: String,
 }
 
+pub(crate) struct PendingThemeAudit {
+    pub current_themes: Vec<ThemeAuditTheme>,
+    pub suggested_themes: Vec<ThemeAuditTheme>,
+    pub input_fingerprint: String,
+}
+
 #[derive(FromRow)]
 struct StoredThemeAudit {
     symbol: String,
@@ -159,23 +165,39 @@ impl Store {
             .context("failed to commit theme audit insertion")
     }
 
-    pub(crate) async fn theme_audit_input_fingerprint(
+    pub(crate) async fn pending_theme_audit(
         &self,
         symbol: &TickerSymbol,
-    ) -> anyhow::Result<Option<String>> {
-        sqlx::query_scalar!(
-            "SELECT input_fingerprint FROM theme_audits WHERE symbol = ? AND status = 'pending'",
+    ) -> anyhow::Result<Option<PendingThemeAudit>> {
+        let audit = sqlx::query!(
+            r#"SELECT current_themes AS "current_themes: String",
+                      suggested_themes AS "suggested_themes: String",
+                      input_fingerprint
+               FROM theme_audits
+               WHERE symbol = ? AND status = 'pending'"#,
             symbol.as_str(),
         )
         .fetch_optional(&self.pool)
         .await
-        .context("failed to load theme audit fingerprint")
+        .context("failed to load pending theme audit")?;
+        audit
+            .map(|audit| {
+                Ok(PendingThemeAudit {
+                    current_themes: serde_json::from_str(&audit.current_themes)
+                        .context("invalid stored current audit themes")?,
+                    suggested_themes: serde_json::from_str(&audit.suggested_themes)
+                        .context("invalid stored suggested audit themes")?,
+                    input_fingerprint: audit.input_fingerprint,
+                })
+            })
+            .transpose()
     }
 
     pub(crate) async fn accept_theme_audit(
         &self,
         symbol: &TickerSymbol,
         expected_current_theme_ids: &[i64],
+        allow_stale: bool,
     ) -> anyhow::Result<bool> {
         let symbol = symbol.as_str();
         let now = Utc::now().naive_utc();
@@ -212,10 +234,12 @@ impl Store {
         stored_current_ids.sort_unstable();
         let mut expected_current_ids = expected_current_theme_ids.to_vec();
         expected_current_ids.sort_unstable();
-        anyhow::ensure!(
-            stored_current_ids == expected_current_ids,
-            "theme audit is stale"
-        );
+        if !allow_stale {
+            anyhow::ensure!(
+                stored_current_ids == expected_current_ids,
+                "theme audit is stale"
+            );
+        }
         let mut actual_current_ids = sqlx::query_scalar!(
             "SELECT theme_id FROM theme_stocks WHERE symbol = ? ORDER BY theme_id",
             symbol,
@@ -394,7 +418,7 @@ mod tests {
 
         assert!(
             store
-                .accept_theme_audit(&TickerSymbol::parse("TEST").unwrap(), &[1])
+                .accept_theme_audit(&TickerSymbol::parse("TEST").unwrap(), &[1], false)
                 .await
                 .unwrap()
         );
@@ -411,5 +435,69 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(status, "accepted");
+    }
+
+    #[tokio::test]
+    async fn confirmed_stale_audit_replaces_changed_assignments() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        insert_ticker(&store, "TEST").await;
+        let now = Utc::now().naive_utc();
+        sqlx::query!(
+            "INSERT INTO theme_stocks (theme_id, symbol, source, assigned_at) VALUES (1, 'TEST', 'automatic_ai', ?)",
+            now,
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        store
+            .insert_theme_audits(&[NewThemeAudit {
+                symbol: TickerSymbol::parse("TEST").unwrap(),
+                current_themes: vec![ThemeAuditTheme {
+                    id: 1,
+                    name: "Semiconductors".to_owned(),
+                }],
+                suggested_themes: vec![ThemeAuditTheme {
+                    id: 3,
+                    name: "Cybersecurity".to_owned(),
+                }],
+                status: ThemeAuditStatus::Pending,
+                confidence: 0.9,
+                reasoning: "Security business".to_owned(),
+                model: "test-model".to_owned(),
+                input_fingerprint: "fingerprint".to_owned(),
+            }])
+            .await
+            .unwrap();
+        sqlx::query!("DELETE FROM theme_stocks WHERE symbol = 'TEST'")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query!(
+            "INSERT INTO theme_stocks (theme_id, symbol, source, assigned_at) VALUES (2, 'TEST', 'manual', ?)",
+            now,
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap();
+
+        assert!(
+            store
+                .accept_theme_audit(&TickerSymbol::parse("TEST").unwrap(), &[2], false)
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .accept_theme_audit(&TickerSymbol::parse("TEST").unwrap(), &[2], true)
+                .await
+                .unwrap()
+        );
+        let assignment =
+            sqlx::query!("SELECT theme_id, source FROM theme_stocks WHERE symbol = 'TEST'",)
+                .fetch_one(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(assignment.theme_id, 3);
+        assert_eq!(assignment.source, "manual_ai");
     }
 }

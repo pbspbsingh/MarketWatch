@@ -29,8 +29,8 @@ pub use performance::{
     average_daily_range_percent, average_volume, candle_performance, close_above_sma,
 };
 pub use theme_audits::{
-    ThemeAudit, ThemeAuditBatchProgress, ThemeAuditOverview, ThemeAuditProgress,
-    ThemeAuditRunStatus, ThemeAuditStatus, ThemeAuditTheme,
+    ThemeAudit, ThemeAuditAcceptance, ThemeAuditBatchProgress, ThemeAuditOverview,
+    ThemeAuditProgress, ThemeAuditRunStatus, ThemeAuditStatus, ThemeAuditTheme,
 };
 pub use themes::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeAssignment,

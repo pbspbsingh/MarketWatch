@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::models::{ThemeAuditOverview, TickerSymbol};
+use crate::models::{ThemeAuditAcceptance, ThemeAuditOverview, TickerSymbol};
 use crate::services::theme_audits::ThemeAuditServiceError;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -15,6 +15,11 @@ type ApiResult<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;
 struct AuditOptions {
     #[serde(default)]
     include_manual: bool,
+}
+
+#[derive(Default, Deserialize)]
+struct AcceptOptions {
+    confirmed_input_fingerprint: Option<String>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -65,12 +70,14 @@ async fn retry_remaining(
 async fn accept(
     State(state): State<AppState>,
     Path(symbol): Path<TickerSymbol>,
-) -> ApiResult<serde_json::Value> {
+    options: Option<Json<AcceptOptions>>,
+) -> ApiResult<ThemeAuditAcceptance> {
+    let options = options.map(|Json(options)| options).unwrap_or_default();
     state
         .theme_audits
-        .accept(&symbol)
+        .accept(&symbol, options.confirmed_input_fingerprint.as_deref())
         .await
-        .map(|()| Json(json!({ "ok": true })))
+        .map(Json)
         .map_err(api_error)
 }
 

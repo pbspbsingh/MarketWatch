@@ -84,6 +84,16 @@ export interface ThemeAudit {
   processed_at: string | null;
 }
 
+export type ThemeAuditAcceptance =
+  | { status: "accepted" }
+  | {
+      status: "confirmation_required";
+      audited_themes: ThemeAuditTheme[];
+      current_themes: ThemeAuditTheme[];
+      suggested_themes: ThemeAuditTheme[];
+      current_input_fingerprint: string;
+    };
+
 export interface ThemeAuditBatchProgress {
   number: number;
   symbols: string[];
@@ -241,9 +251,12 @@ export const retryRemainingThemeAudit = (includeManual: boolean) =>
     ...json({ include_manual: includeManual }),
   });
 
-export const acceptThemeAudit = (symbol: string) =>
-  request<{ ok: boolean }>(`/api/theme-ai/audit/${encodeURIComponent(symbol)}/accept`, {
+export const acceptThemeAudit = (symbol: string, confirmedInputFingerprint?: string) =>
+  request<ThemeAuditAcceptance>(`/api/theme-ai/audit/${encodeURIComponent(symbol)}/accept`, {
     method: "POST",
+    ...(confirmedInputFingerprint
+      ? json({ confirmed_input_fingerprint: confirmedInputFingerprint })
+      : {}),
   });
 
 export const ignoreThemeAudit = (symbol: string) =>
