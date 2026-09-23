@@ -33,9 +33,12 @@ chmod 600 config.toml
 
 The server challenges every route with HTTP Basic authentication, including
 the frontend and WebSocket handshakes. Failed requests are logged with the
-client IP and attempted username. A validated Basic header is cached in memory,
-so repeated requests with the same credentials skip Argon2. Uncached password
-checks are limited to one every five seconds. Tailscale Funnel supplies HTTPS;
+client IP and attempted username. For a loopback HTTPS proxy, the server uses
+its single `X-Forwarded-For` IP only when `X-Forwarded-Host` matches `Host`;
+otherwise it logs the direct peer IP.
+A validated Basic header is cached in memory, so repeated requests with the
+same credentials skip Argon2. Uncached password checks are limited to five per
+five seconds per client IP. Tailscale Funnel supplies HTTPS;
 keep the backend bound to `127.0.0.1` and point Funnel at that local port.
 
 ## Development

@@ -6,19 +6,23 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, VecDeque, hash_map::RandomState};
+use std::hash::BuildHasher;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
-use tracing::warn;
+use tracing::{error, warn};
 
-const PASSWORD_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+const PASSWORD_CHECK_WINDOW: Duration = Duration::from_secs(5);
+const PASSWORD_CHECKS_PER_WINDOW: u8 = 5;
+const PASSWORD_CHECK_SHARDS: usize = 32;
 const MAX_LOG_VALUE_BYTES: usize = 256;
 
 pub struct Auth {
     config: AuthConfig,
     verified_header: OnceLock<[u8; 32]>,
-    last_password_check: Mutex<Option<Instant>>,
+    password_checks: PasswordCheckLimiter,
 }
 
 impl Auth {
@@ -26,17 +30,62 @@ impl Auth {
         Self {
             config,
             verified_header: OnceLock::new(),
-            last_password_check: Mutex::new(None),
+            password_checks: PasswordCheckLimiter::new(),
         }
     }
 
-    fn reserve_password_check(&self) -> bool {
-        let now = Instant::now();
-        let mut last_check = self.last_password_check.lock().unwrap();
-        if last_check.is_some_and(|time| now.duration_since(time) < PASSWORD_CHECK_INTERVAL) {
+    fn reserve_password_check(&self, ip: Option<IpAddr>) -> bool {
+        self.password_checks.reserve(ip)
+    }
+}
+
+struct PasswordCheckLimiter {
+    hash_builder: RandomState,
+    shards: [Mutex<PasswordCheckShard>; PASSWORD_CHECK_SHARDS],
+}
+
+impl PasswordCheckLimiter {
+    fn new() -> Self {
+        Self {
+            hash_builder: RandomState::new(),
+            shards: std::array::from_fn(|_| Mutex::new(PasswordCheckShard::default())),
+        }
+    }
+
+    fn reserve(&self, ip: Option<IpAddr>) -> bool {
+        let shard = self.hash_builder.hash_one(ip) as usize % PASSWORD_CHECK_SHARDS;
+        let mut shard = self.shards[shard].lock().unwrap();
+        shard.reserve(ip, Instant::now())
+    }
+}
+
+#[derive(Default)]
+struct PasswordCheckShard {
+    recent: VecDeque<(Instant, Option<IpAddr>)>,
+    counts: HashMap<Option<IpAddr>, u8>,
+}
+
+impl PasswordCheckShard {
+    fn reserve(&mut self, ip: Option<IpAddr>, now: Instant) -> bool {
+        while self
+            .recent
+            .front()
+            .is_some_and(|(checked_at, _)| now.duration_since(*checked_at) >= PASSWORD_CHECK_WINDOW)
+        {
+            let (_, expired_ip) = self.recent.pop_front().unwrap();
+            let count = self.counts.get_mut(&expired_ip).unwrap();
+            *count -= 1;
+            if *count == 0 {
+                self.counts.remove(&expired_ip);
+            }
+        }
+
+        let count = self.counts.entry(ip).or_default();
+        if *count >= PASSWORD_CHECKS_PER_WINDOW {
             return false;
         }
-        *last_check = Some(now);
+        *count += 1;
+        self.recent.push_back((now, ip));
         true
     }
 }
@@ -62,7 +111,7 @@ pub async fn require_auth(State(auth): State<Arc<Auth>>, request: Request, next:
         .get()
         .is_some_and(|known| bool::from(known.ct_eq(&header_digest)));
     if !cached {
-        if !auth.reserve_password_check() {
+        if !auth.reserve_password_check(ip) {
             log_rejection(&request, ip, Some(&username), "rate_limited");
             return (StatusCode::TOO_MANY_REQUESTS, [(header::RETRY_AFTER, "5")]).into_response();
         }
@@ -143,45 +192,53 @@ fn allowed_origin(request: &Request) -> bool {
     else {
         return false;
     };
-    let scheme = if trusted_funnel(request) {
-        "https"
-    } else {
-        "http"
+    let Some(origin) = request.headers().get(header::ORIGIN) else {
+        return false;
     };
-    let expected = format!("{scheme}://{host}");
-    request
-        .headers()
-        .get(header::ORIGIN)
-        .is_some_and(|value| value.as_bytes() == expected.as_bytes())
+    // A loopback proxy can terminate HTTPS without forwarding its original scheme.
+    origin.as_bytes() == format!("http://{host}").as_bytes()
+        || (loopback_peer(request) && origin.as_bytes() == format!("https://{host}").as_bytes())
 }
 
-fn trusted_funnel(request: &Request) -> bool {
+fn loopback_peer(request: &Request) -> bool {
+    peer_ip(request).is_some_and(|ip| ip.is_loopback())
+}
+
+fn peer_ip(request: &Request) -> Option<IpAddr> {
     request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
-        .is_some_and(|peer| peer.ip().is_loopback())
-        && request
-            .headers()
-            .get("tailscale-funnel-request")
-            .is_some_and(|value| value == "?1")
-        && request
-            .headers()
-            .get("x-forwarded-proto")
-            .is_some_and(|value| value == "https")
+        .map(|peer| peer.ip())
 }
 
 fn client_ip(request: &Request) -> Option<IpAddr> {
-    let peer = request.extensions().get::<ConnectInfo<SocketAddr>>()?.ip();
-    if trusted_funnel(request) {
-        request
+    let peer = peer_ip(request)?;
+    let forwarded_host_matches = request
+        .headers()
+        .get(header::HOST)
+        .is_some_and(|host| request.headers().get("x-forwarded-host") == Some(host));
+    if !peer.is_loopback()
+        || !request
             .headers()
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<IpAddr>().ok())
-            .or(Some(peer))
-    } else {
-        Some(peer)
+            .get("x-forwarded-proto")
+            .is_some_and(|value| value == "https")
+        || !forwarded_host_matches
+    {
+        return Some(peer);
     }
+
+    let mut forwarded = request.headers().get_all("x-forwarded-for").iter();
+    let Some(value) = forwarded.next() else {
+        return Some(peer);
+    };
+    if forwarded.next().is_some() {
+        return Some(peer);
+    }
+    value
+        .to_str()
+        .ok()
+        .and_then(|value| value.parse::<IpAddr>().ok())
+        .or(Some(peer))
 }
 
 fn log_rejection(
@@ -207,17 +264,30 @@ fn log_rejection(
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
         .map(bounded);
-    warn!(
-        client_ip = ?ip,
-        attempted_username = ?username,
-        method = %request.method(),
-        path = ?path,
-        user_agent = ?user_agent,
-        origin = ?origin,
-        host = ?host,
-        reason,
-        "authentication denied"
-    );
+    if let Some(username) = username {
+        error!(
+            client_ip = ?ip,
+            attempted_username = username,
+            method = %request.method(),
+            path = ?path,
+            user_agent = ?user_agent,
+            origin = ?origin,
+            host = ?host,
+            reason,
+            "authentication denied"
+        );
+    } else {
+        warn!(
+            client_ip = ?ip,
+            method = %request.method(),
+            path = ?path,
+            user_agent = ?user_agent,
+            origin = ?origin,
+            host = ?host,
+            reason,
+            "authentication denied"
+        );
+    }
 }
 
 fn bounded(value: &str) -> &str {
@@ -375,6 +445,14 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
+        for _ in 1..PASSWORD_CHECKS_PER_WINDOW {
+            let response = router
+                .clone()
+                .oneshot(request(Method::GET, "/private", Some(&invalid)))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
         let limited = router
             .clone()
             .oneshot(request(Method::GET, "/private", Some(&invalid)))
@@ -390,6 +468,37 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
+    }
+
+    #[test]
+    fn password_check_limit_is_per_ip_and_rolling() {
+        let mut shard = PasswordCheckShard::default();
+        let first_ip = Some(IpAddr::from([203, 0, 113, 7]));
+        let second_ip = Some(IpAddr::from([198, 51, 100, 9]));
+        let start = Instant::now();
+
+        for _ in 0..PASSWORD_CHECKS_PER_WINDOW {
+            assert!(shard.reserve(first_ip, start));
+        }
+        assert!(!shard.reserve(first_ip, start));
+        assert!(shard.reserve(second_ip, start));
+        assert!(!shard.reserve(
+            first_ip,
+            start + PASSWORD_CHECK_WINDOW - Duration::from_nanos(1)
+        ));
+        assert!(shard.reserve(first_ip, start + PASSWORD_CHECK_WINDOW));
+        assert_eq!(shard.counts.get(&first_ip), Some(&1));
+        assert_eq!(shard.counts.get(&second_ip), None);
+    }
+
+    #[test]
+    fn password_check_limit_uses_shared_bucket_when_ip_is_unknown() {
+        let mut shard = PasswordCheckShard::default();
+        let now = Instant::now();
+        for _ in 0..PASSWORD_CHECKS_PER_WINDOW {
+            assert!(shard.reserve(None, now));
+        }
+        assert!(!shard.reserve(None, now));
     }
 
     #[tokio::test]
@@ -436,8 +545,58 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn loopback_https_proxy_accepts_same_origin_writes_and_websockets() {
+        let router = test_router();
+        let valid = authorization("marketwatch", "correct password");
+        for method in [Method::POST, Method::GET] {
+            let mut proxied = request(method.clone(), "/private", Some(&valid));
+            proxied
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 1234))));
+            proxied
+                .headers_mut()
+                .insert(header::ORIGIN, "https://localhost:8080".parse().unwrap());
+            if method == Method::GET {
+                proxied
+                    .headers_mut()
+                    .insert(header::UPGRADE, "websocket".parse().unwrap());
+            }
+            assert_eq!(
+                router.clone().oneshot(proxied).await.unwrap().status(),
+                StatusCode::OK
+            );
+        }
+
+        for origin in ["https://evil.example", "https://localhost:9999"] {
+            let mut proxied = request(Method::POST, "/private", Some(&valid));
+            proxied
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 1234))));
+            proxied
+                .headers_mut()
+                .insert(header::ORIGIN, origin.parse().unwrap());
+            assert_eq!(
+                router.clone().oneshot(proxied).await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+
+        let mut remote = request(Method::POST, "/private", Some(&valid));
+        remote
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 0, 2, 1], 1234))));
+        remote
+            .headers_mut()
+            .insert(header::ORIGIN, "https://localhost:8080".parse().unwrap());
+        assert_eq!(
+            router.oneshot(remote).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
     #[test]
-    fn forwarded_ip_is_used_only_for_local_funnel_proxy() {
+    fn forwarded_ip_requires_matching_loopback_https_proxy_headers() {
         let mut request = request(Method::GET, "/", None);
         request
             .extensions_mut()
@@ -448,14 +607,35 @@ mod tests {
         assert_eq!(client_ip(&request), Some(IpAddr::from([127, 0, 0, 1])));
         request
             .headers_mut()
-            .insert("tailscale-funnel-request", "?1".parse().unwrap());
+            .insert("x-forwarded-proto", "https".parse().unwrap());
+        assert_eq!(client_ip(&request), Some(IpAddr::from([127, 0, 0, 1])));
         request
             .headers_mut()
-            .insert("x-forwarded-proto", "https".parse().unwrap());
+            .insert("x-forwarded-host", "localhost:8080".parse().unwrap());
         assert_eq!(client_ip(&request), Some(IpAddr::from([203, 0, 113, 7])));
+        request
+            .headers_mut()
+            .insert(header::ORIGIN, "https://localhost:8080".parse().unwrap());
+        request
+            .headers_mut()
+            .insert(header::UPGRADE, "websocket".parse().unwrap());
+        assert!(allowed_origin(&request));
+
         request
             .headers_mut()
             .insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
         assert_eq!(client_ip(&request), Some(IpAddr::from([127, 0, 0, 1])));
+        request
+            .headers_mut()
+            .insert("x-forwarded-for", "203.0.113.7".parse().unwrap());
+        request
+            .headers_mut()
+            .append("x-forwarded-for", "198.51.100.9".parse().unwrap());
+        assert_eq!(client_ip(&request), Some(IpAddr::from([127, 0, 0, 1])));
+
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([192, 0, 2, 1], 1234))));
+        assert_eq!(client_ip(&request), Some(IpAddr::from([192, 0, 2, 1])));
     }
 }
