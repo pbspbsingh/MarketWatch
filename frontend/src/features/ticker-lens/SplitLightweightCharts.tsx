@@ -34,7 +34,6 @@ import {
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import { marketDataSymbol } from "../../api/marketChart";
 import {
-  MarketChartLiveClient,
   type MarketChartLiveDelta,
   type MarketChartSessionDelta,
 } from "../../api/marketChartLive";
@@ -52,6 +51,10 @@ interface SplitLightweightChartsProps {
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
+  topLiveDelta?: MarketChartLiveDelta;
+  bottomLiveDelta?: MarketChartLiveDelta;
+  topSessionDelta?: MarketChartSessionDelta;
+  bottomSessionDelta?: MarketChartSessionDelta;
   topMarkers?: MarketChartMarker[];
   topPriceLines?: MarketChartPriceLine[];
 }
@@ -68,16 +71,6 @@ interface ChartMenuState {
   source: "top" | "bottom";
 }
 
-interface LiveDeltaState {
-  key: string;
-  delta: MarketChartLiveDelta;
-}
-
-interface SessionDeltaState {
-  key: string;
-  delta: MarketChartSessionDelta;
-}
-
 export default function SplitLightweightCharts({
   topSymbol,
   bottomSymbol,
@@ -90,6 +83,10 @@ export default function SplitLightweightCharts({
   initialSplit,
   onSplitChange,
   onError,
+  topLiveDelta,
+  bottomLiveDelta,
+  topSessionDelta,
+  bottomSessionDelta,
   topMarkers,
   topPriceLines,
 }: SplitLightweightChartsProps) {
@@ -101,27 +98,16 @@ export default function SplitLightweightCharts({
   const [topRefreshVersion, setTopRefreshVersion] = useState(0);
   const [bottomRefreshVersion, setBottomRefreshVersion] = useState(0);
   const [topReloadVersion, setTopReloadVersion] = useState(0);
-  const [topLive, setTopLive] = useState<LiveDeltaState>();
-  const [bottomLive, setBottomLive] = useState<LiveDeltaState>();
-  const [topSession, setTopSession] = useState<SessionDeltaState>();
-  const [bottomSession, setBottomSession] = useState<SessionDeltaState>();
   const topRefreshPendingVersionRef = useRef<number | null>(null);
   const topReloadPendingRef = useRef(false);
   const crosshairOwnerRef = useRef<"top" | "bottom">("top");
   const viewportOwnerRef = useRef<"top" | "bottom">("top");
-  const liveClientRef = useRef<MarketChartLiveClient | null>(null);
-  const onErrorRef = useRef(onError);
-  useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
   const historyInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
     occurredAt: 0,
   });
   const initialViewport = useMemo(() => readChartViewport(interval), [interval]);
   const chartInterval = interval === "D" ? "daily" : "weekly";
-  const liveTopKey = `${marketDataSymbol(topSymbol)}\0${chartInterval}\0${marketDataSymbol(bottomSymbol)}`;
-  const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain`;
   const topDatasetKey = `${topSymbol}\0${chartInterval}`;
   const bottomDatasetKey = `${bottomSymbol}\0${chartInterval}`;
   const topLoading = topLoadState?.key !== topDatasetKey
@@ -134,49 +120,6 @@ export default function SplitLightweightCharts({
     },
     [interval],
   );
-
-  useEffect(() => {
-    const client = new MarketChartLiveClient({
-      onDelta: (delta) => {
-        const comparison = delta.relative_strength?.comparison_symbol ?? "plain";
-        const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}`, delta };
-        if (delta.chart_id === "top") {
-          setTopLive(state);
-          setTopSession((current) => sessionAfterRegularUpdate(current, delta));
-        } else if (delta.chart_id === "bottom") {
-          setBottomLive(state);
-          setBottomSession((current) => sessionAfterRegularUpdate(current, delta));
-        }
-      },
-      onSession: (delta) => {
-        const state = { key: `${delta.symbol}\0daily`, delta };
-        if (delta.chart_id === "top") setTopSession(state);
-        else if (delta.chart_id === "bottom") setBottomSession(state);
-      },
-      onError: (message) => onErrorRef.current("top", message),
-    });
-    liveClientRef.current = client;
-    return () => {
-      liveClientRef.current = null;
-      client.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    liveClientRef.current?.setCharts([
-      {
-        chart_id: "top",
-        symbol: topSymbol,
-        interval: chartInterval,
-        comparison_symbol: bottomSymbol,
-      },
-      {
-        chart_id: "bottom",
-        symbol: bottomSymbol,
-        interval: chartInterval,
-      },
-    ]);
-  }, [bottomDatasetKey, bottomSymbol, chartInterval, topDatasetKey, topSymbol]);
 
   useEffect(() => {
     if (topContext === null) return;
@@ -332,10 +275,8 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setTopLoadState({ key: topDatasetKey, status })}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
-              liveDelta={topLive?.key === liveTopKey ? topLive.delta : undefined}
-              sessionDelta={topSession?.key === `${marketDataSymbol(topSymbol)}\0daily`
-                ? topSession.delta
-                : undefined}
+              liveDelta={topLiveDelta}
+              sessionDelta={topSessionDelta}
               markers={topMarkers}
               priceLines={topPriceLines}
             />
@@ -365,10 +306,8 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setBottomLoadState({ key: bottomDatasetKey, status })}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
-              liveDelta={bottomLive?.key === liveBottomKey ? bottomLive.delta : undefined}
-              sessionDelta={bottomSession?.key === `${marketDataSymbol(bottomSymbol)}\0daily`
-                ? bottomSession.delta
-                : undefined}
+              liveDelta={bottomLiveDelta}
+              sessionDelta={bottomSessionDelta}
             />
             {bottomLoading && <ChartLoadingOverlay />}
           </div>
@@ -382,22 +321,6 @@ export default function SplitLightweightCharts({
       />
     </div>
   );
-}
-
-function sessionAfterRegularUpdate(
-  current: SessionDeltaState | undefined,
-  regular: MarketChartLiveDelta,
-): SessionDeltaState | undefined {
-  if (regular.interval !== "daily") return current;
-  if (current?.delta.session === "pre_market"
-    && current.delta.symbol === regular.symbol
-    && regular.candle.date < current.delta.date) {
-    return current;
-  }
-  const matchesPostMarketSession = current?.delta.session === "post_market"
-    && current.delta.symbol === regular.symbol
-    && current.delta.date === regular.candle.date;
-  return matchesPostMarketSession ? current : undefined;
 }
 
 function ChartLoadingOverlay() {

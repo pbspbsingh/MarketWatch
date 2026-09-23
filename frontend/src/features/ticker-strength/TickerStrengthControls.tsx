@@ -58,7 +58,9 @@ export function TickerStrengthControls({
         <Typography component="span">Benchmark</Typography>
         <Select
           size="small"
-          value={tickerStrength.benchmark}
+          value={tickerStrength.benchmarks.some((option) => option.symbol === tickerStrength.benchmark)
+            ? tickerStrength.benchmark
+            : ""}
           disabled={disabled
             || tickerStrength.loading
             || tickerStrength.benchmarks.length === 0}

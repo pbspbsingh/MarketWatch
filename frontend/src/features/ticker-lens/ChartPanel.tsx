@@ -36,6 +36,7 @@ import type {
   SelectedTickerContext,
 } from "./types";
 import { useAppSettings } from "../../app/AppSettings";
+import { useSplitChartLive } from "../../shared/useSplitChartLive";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
@@ -288,6 +289,16 @@ export function ChartPanel({
       return next;
     });
   }, []);
+  const liveCharts = useSplitChartLive(
+    chartEngine === "lightweight" && summary !== undefined
+      ? {
+          topSymbol: summary.symbol,
+          bottomSymbol: bottomChartSymbol ?? summary.benchmark_symbol,
+          interval,
+        }
+      : undefined,
+    (message) => handleChartError("top", message),
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -427,6 +438,7 @@ export function ChartPanel({
               )}
             >
               <SplitLightweightCharts
+                {...liveCharts}
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 topCompanyName={`${summary.tradingview_symbol.split(":", 1)[0]} \\ ${summary.company_name ?? summary.symbol}`}

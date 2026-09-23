@@ -73,8 +73,10 @@ export class MarketChartLiveClient {
     this.requestId += 1;
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.sendDesiredCharts(this.socket);
-    } else {
+    } else if (this.charts.length > 0) {
       this.connect();
+    } else {
+      window.clearTimeout(this.reconnectTimer);
     }
   }
 
@@ -88,6 +90,7 @@ export class MarketChartLiveClient {
   private connect() {
     if (
       this.closed
+      || this.charts.length === 0
       || this.socket?.readyState === WebSocket.OPEN
       || this.socket?.readyState === WebSocket.CONNECTING
     ) return;
@@ -107,7 +110,7 @@ export class MarketChartLiveClient {
     socket.addEventListener("close", () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
-      if (!this.closed) this.scheduleReconnect();
+      if (!this.closed && this.charts.length > 0) this.scheduleReconnect();
     });
   }
 

@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import type { AnalyzerTrade } from "../../api/tradeAnalyzer";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
+import { useSplitChartLive } from "../../shared/useSplitChartLive";
 import type { MarketChartMarker, MarketChartPriceLine } from "../charts/MarketChart";
 import { visualizationColors } from "../../components/lightweight-chart/chartOptions";
 import { IntradayChartDialog } from "./IntradayChartDialog";
@@ -108,6 +109,12 @@ export function TradeChartPane({ trade }: { trade?: AnalyzerTrade }) {
           symbol: summary.benchmark_symbol,
           companyName: summary.benchmark_company_name ?? undefined,
         };
+  const liveCharts = useSplitChartLive(
+    trade !== undefined && activeBenchmark !== undefined
+      ? { topSymbol: trade.symbol, bottomSymbol: activeBenchmark.symbol, interval }
+      : undefined,
+    setError,
+  );
   const markers = useMemo<MarketChartMarker[]>(() => trade === undefined ? [] : [
     ...trade.executions.map((execution) => ({
       date: execution.market_date,
@@ -256,6 +263,7 @@ export function TradeChartPane({ trade }: { trade?: AnalyzerTrade }) {
           <div className="panel-status"><CircularProgress size="1rem" /><Typography color="text.secondary">Loading chart summary</Typography></div>
         ) : activeBenchmark !== undefined && summary !== undefined ? <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
           <SplitLightweightCharts
+            {...liveCharts}
             topSymbol={trade.symbol}
             bottomSymbol={activeBenchmark.symbol}
             topCompanyName={summary.company_name ?? undefined}
