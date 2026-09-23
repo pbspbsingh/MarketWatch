@@ -174,12 +174,6 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        if matches!(&self.server.auth, ServerAuthConfig::Basic(_)) {
-            anyhow::ensure!(
-                self.server.address.ip().is_loopback(),
-                "server.address must bind to loopback when using HTTP Basic authentication"
-            );
-        }
         self.server.auth.validate()?;
         self.market
             .timezone
@@ -327,12 +321,12 @@ impl AiConfig {
 mod tests {
     use super::*;
 
+    const TEST_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$6W3JE/bOgkM7Goq5g2XlEg$Y+LcSf2GoWooLvtmAoCa3OjkLmMxm+/TudefyM+l2BI";
+
     #[test]
     fn loads_example_config_with_a_password_hash() {
-        let example = include_str!("../config.example.toml").replace(
-            "REPLACE_WITH_ARGON2ID_HASH",
-            "$argon2id$v=19$m=19456,t=2,p=1$6W3JE/bOgkM7Goq5g2XlEg$Y+LcSf2GoWooLvtmAoCa3OjkLmMxm+/TudefyM+l2BI",
-        );
+        let example = include_str!("../config.example.toml")
+            .replace("REPLACE_WITH_ARGON2ID_HASH", TEST_PASSWORD_HASH);
         let config: Config = toml::from_str(&example).unwrap();
         config.validate().unwrap();
 
@@ -401,17 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_public_plain_http_binding() {
+    fn accepts_public_bind_with_basic_auth() {
         let example = include_str!("../config.example.toml")
-            .replace("address = \"127.0.0.1:8080\"", "address = \"0.0.0.0:8080\"");
+            .replace("address = \"127.0.0.1:8080\"", "address = \"0.0.0.0:8080\"")
+            .replace("REPLACE_WITH_ARGON2ID_HASH", TEST_PASSWORD_HASH);
         let config: Config = toml::from_str(&example).unwrap();
-        assert!(
-            config
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("loopback")
-        );
+        config.validate().unwrap();
     }
 
     #[test]

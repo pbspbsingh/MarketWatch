@@ -25,7 +25,8 @@ separately by `compression = true` or `false` under `[server]`; this setting is
 required in every mode. Embedded frontend assets remain precompressed. To reach
 the app from other devices, set `address = "0.0.0.0:8080"` under `[server]`.
 This listens on every IPv4 interface, so restrict access with your firewall.
-Basic-auth mode still requires a loopback address. Existing username/hash
+Basic-auth mode can also bind there, but Basic credentials are exposed over
+plain HTTP; use TLS before allowing remote access. Existing username/hash
 configurations stay authenticated.
 
 To keep HTTP Basic authentication, generate a password hash:

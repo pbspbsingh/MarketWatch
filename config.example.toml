@@ -1,7 +1,7 @@
 [server]
 address = "127.0.0.1:8080"
 compression = true
-# With mode = "none", use 0.0.0.0:8080 to listen on every IPv4 interface.
+# Use 0.0.0.0:8080 to listen on every IPv4 interface; protect it with a firewall.
 
 # For local no-auth mode, replace the credentials below with: mode = "none".
 # Keep [server.auth]; omitting it is a configuration error.
