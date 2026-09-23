@@ -12,7 +12,23 @@ cp config.example.toml config.toml
 
 When `config.toml` is missing, the backend prints the template and exits.
 
-Before starting the server, generate a password hash:
+To run without authentication on this computer, replace the credentials in
+`config.toml` with an explicit mode:
+
+```toml
+[server.auth]
+mode = "none"
+```
+
+The `[server.auth]` section is required. API response compression is controlled
+separately by `compression = true` or `false` under `[server]`; this setting is
+required in every mode. Embedded frontend assets remain precompressed. To reach
+the app from other devices, set `address = "0.0.0.0:8080"` under `[server]`.
+This listens on every IPv4 interface, so restrict access with your firewall.
+Basic-auth mode still requires a loopback address. Existing username/hash
+configurations stay authenticated.
+
+To keep HTTP Basic authentication, generate a password hash:
 
 ```bash
 cargo run --bin hash_password
@@ -31,9 +47,10 @@ in a password manager and restrict the local config file to the server user:
 chmod 600 config.toml
 ```
 
-The server challenges every route with HTTP Basic authentication, including
-the frontend and WebSocket handshakes. Failed requests are logged with the
-client IP and attempted username. For a loopback HTTPS proxy, the server uses
+When configured, the server challenges every route with HTTP Basic
+authentication, including the frontend and WebSocket handshakes. Failed
+requests are logged with the client IP and, when available, attempted username.
+For a loopback HTTPS proxy, the server uses
 its single `X-Forwarded-For` IP only when `X-Forwarded-Host` matches `Host`;
 otherwise it logs the direct peer IP.
 A validated Basic header is cached in memory, so repeated requests with the

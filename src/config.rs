@@ -44,7 +44,40 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub address: SocketAddr,
-    pub auth: AuthConfig,
+    pub compression: bool,
+    pub auth: ServerAuthConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ServerAuthConfig {
+    Basic(AuthConfig),
+    Disabled(DisabledAuthConfig),
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DisabledAuthConfig {
+    mode: String,
+}
+
+impl ServerAuthConfig {
+    pub fn into_basic(self) -> Option<AuthConfig> {
+        match self {
+            Self::Basic(config) => Some(config),
+            Self::Disabled(_) => None,
+        }
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Basic(config) => config.validate(),
+            Self::Disabled(config) => {
+                anyhow::ensure!(config.mode == "none", "server.auth.mode must be 'none'");
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -141,10 +174,12 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.server.address.ip().is_loopback(),
-            "server.address must bind to loopback when using HTTP Basic authentication"
-        );
+        if matches!(&self.server.auth, ServerAuthConfig::Basic(_)) {
+            anyhow::ensure!(
+                self.server.address.ip().is_loopback(),
+                "server.address must bind to loopback when using HTTP Basic authentication"
+            );
+        }
         self.server.auth.validate()?;
         self.market
             .timezone
@@ -301,6 +336,9 @@ mod tests {
         let config: Config = toml::from_str(&example).unwrap();
         config.validate().unwrap();
 
+        assert!(matches!(config.server.auth, ServerAuthConfig::Basic(_)));
+        assert!(config.server.compression);
+
         assert!(!config.market.benchmark.is_empty());
         assert_eq!(config.market.sector_benchmarks.len(), SECTORS.len());
         assert_eq!(
@@ -308,6 +346,58 @@ mod tests {
             HashSet::from([NaiveDate::from_ymd_opt(2026, 6, 26).unwrap()])
         );
         assert_eq!(config.home.tickers.len(), 4);
+    }
+
+    #[test]
+    fn accepts_explicit_no_auth_mode_on_public_bind() {
+        let no_auth = replace_example_auth_section("[server.auth]\nmode = \"none\"\n\n");
+        let config: Config = toml::from_str(&no_auth).unwrap();
+        config.validate().unwrap();
+        assert!(matches!(config.server.auth, ServerAuthConfig::Disabled(_)));
+        assert!(config.server.compression);
+
+        let uncompressed = no_auth.replace("compression = true", "compression = false");
+        let config: Config = toml::from_str(&uncompressed).unwrap();
+        config.validate().unwrap();
+        assert!(!config.server.compression);
+
+        let public = no_auth.replace("127.0.0.1:8080", "0.0.0.0:8080");
+        let config: Config = toml::from_str(&public).unwrap();
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn missing_auth_section_is_rejected() {
+        let without_auth = replace_example_auth_section("");
+        let error = toml::from_str::<Config>(&without_auth).unwrap_err();
+        assert!(error.to_string().contains("missing field `auth`"));
+    }
+
+    #[test]
+    fn missing_compression_setting_is_rejected() {
+        let missing = include_str!("../config.example.toml").replace("compression = true\n", "");
+        let error = toml::from_str::<Config>(&missing).unwrap_err();
+        assert!(error.to_string().contains("missing field `compression`"));
+    }
+
+    #[test]
+    fn rejects_unknown_auth_mode() {
+        let invalid = replace_example_auth_section("[server.auth]\nmode = \"unknown\"\n\n");
+        let config: Config = toml::from_str(&invalid).unwrap();
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("server.auth.mode")
+        );
+    }
+
+    fn replace_example_auth_section(replacement: &str) -> String {
+        let example = include_str!("../config.example.toml");
+        let start = example.find("\n[server.auth]\n").unwrap() + 1;
+        let end = example.find("\n[database]\n").unwrap() + 1;
+        format!("{}{replacement}{}", &example[..start], &example[end..])
     }
 
     #[test]

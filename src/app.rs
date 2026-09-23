@@ -1,6 +1,6 @@
 use crate::api;
 use crate::auth;
-use crate::config::Config;
+use crate::config::{AuthConfig, Config};
 use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
@@ -56,6 +56,31 @@ fn api_compression_layer() -> CompressionLayer<And<DefaultPredicate, SizeAbove>>
     )
 }
 
+fn with_optional_api_compression<S>(router: Router<S>, enabled: bool) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    if enabled {
+        router.layer(api_compression_layer())
+    } else {
+        router
+    }
+}
+
+fn with_optional_auth<S>(router: Router<S>, config: Option<AuthConfig>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    if let Some(config) = config {
+        router.layer(axum::middleware::from_fn_with_state(
+            Arc::new(auth::Auth::new(config)),
+            auth::require_auth,
+        ))
+    } else {
+        router
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub chart: Arc<ChartService>,
@@ -82,7 +107,7 @@ pub struct AppState {
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
-    let auth = Arc::new(auth::Auth::new(config.server.auth.clone()));
+    let auth = config.server.auth.clone().into_basic();
     let store = Store::connect(&config.database.url).await?;
     let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
     store.fail_interrupted_theme_ai_jobs().await?;
@@ -197,17 +222,13 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_live,
     };
 
-    let router = Router::new().nest("/api", api::router().layer(api_compression_layer()));
+    let api_router = with_optional_api_compression(api::router(), config.server.compression);
+    let router = Router::new().nest("/api", api_router);
     #[cfg(not(debug_assertions))]
     let router = router.fallback(frontend);
     #[cfg(debug_assertions)]
     let router = router.fallback(debug_frontend);
-    Ok(router
-        .layer(axum::middleware::from_fn_with_state(
-            auth,
-            auth::require_auth,
-        ))
-        .with_state(state))
+    Ok(with_optional_auth(router, auth).with_state(state))
 }
 
 #[cfg(debug_assertions)]
@@ -260,16 +281,22 @@ mod tests {
 
     #[tokio::test]
     async fn api_compression_respects_size_and_accept_encoding() {
-        let app = Router::new()
-            .route(
-                "/exactly-512-bytes",
-                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 2)) }),
-            )
-            .route(
-                "/over-512-bytes",
-                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 1)) }),
-            )
-            .layer(api_compression_layer());
+        let app = with_optional_api_compression(
+            Router::new()
+                .route(
+                    "/exactly-512-bytes",
+                    get(|| async {
+                        Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 2))
+                    }),
+                )
+                .route(
+                    "/over-512-bytes",
+                    get(|| async {
+                        Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 1))
+                    }),
+                ),
+            true,
+        );
 
         let exact = request(&app, "/exactly-512-bytes", true).await;
         assert!(exact.headers().get(header::CONTENT_ENCODING).is_none());
@@ -291,6 +318,31 @@ mod tests {
                 .headers()
                 .get(header::CONTENT_ENCODING)
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn api_compression_can_be_disabled_independently_of_auth() {
+        let app = with_optional_api_compression(
+            Router::new().route(
+                "/large",
+                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES))) }),
+            ),
+            false,
+        );
+        let response = request(&app, "/large", true).await;
+        assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+    }
+
+    #[tokio::test]
+    async fn routes_are_accessible_without_auth_when_unconfigured() {
+        let app = with_optional_auth(
+            Router::new().route("/private", get(|| async { "ok" })),
+            None,
+        );
+        assert_eq!(
+            request(&app, "/private", false).await.status(),
+            StatusCode::OK
         );
     }
 
