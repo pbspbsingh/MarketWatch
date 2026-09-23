@@ -10,6 +10,7 @@ use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -864,7 +865,11 @@ fn input_fingerprint(
     .map_err(|error| {
         ThemeAuditServiceError::Validation(format!("failed to fingerprint audit input: {error}"))
     })?;
-    Ok(format!("{:x}", Sha256::digest(payload)))
+    let mut fingerprint = String::with_capacity(64);
+    for byte in Sha256::digest(payload) {
+        write!(&mut fingerprint, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    Ok(fingerprint)
 }
 
 fn append_bounded(target: &mut String, value: &str) {

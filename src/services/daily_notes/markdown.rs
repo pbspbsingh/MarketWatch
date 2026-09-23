@@ -120,7 +120,6 @@ pub fn highlight_excerpt(markdown: &str, query: &str) -> Option<String> {
 fn options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.strikethrough = true;
-    options.extension.tagfilter = true;
     options.extension.table = true;
     options.extension.autolink = true;
     options.extension.tasklist = true;
