@@ -30,6 +30,7 @@ import { DailyNoteImagePreview } from "./DailyNoteImagePreview";
 import { DailyNotesSidebar } from "./DailyNotesSidebar";
 import { applyImageRevision } from "./image-revision";
 import "./daily-notes.css";
+import { prepareDailyNoteImage } from "./prepare-image";
 
 type SaveStatus = "saved" | "unsaved" | "saving" | "failed";
 type PageMode = "read" | "edit";
@@ -396,7 +397,7 @@ export function DailyNotesPage() {
     setSaveStatus("saving");
     const promise = (async () => {
       try {
-        const uploaded = await uploadDailyNoteImage(date, source);
+        const uploaded = await uploadDailyNoteImage(date, await prepareDailyNoteImage(source));
         editorRef.current?.replaceSelection(`\n${uploaded.markdown}\n`);
         return true;
       } catch (requestError) {

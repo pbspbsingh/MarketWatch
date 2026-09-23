@@ -15,8 +15,6 @@ const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_INPUT_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_IMAGE_DECODE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 1920;
-const INITIAL_IMAGE_WEBP_QUALITY: f32 = 90.0;
-const LOSSLESS_WEBP_EFFORT: f32 = 75.0;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DailyNoteSummary {
     pub note_date: NaiveDate,
@@ -204,9 +202,10 @@ impl DailyNotesService {
         bytes: &[u8],
     ) -> Result<DailyNoteImageUpload, DailyNotesError> {
         self.get(date).await?;
-        let decoded = fit_image(decode_uploaded_image(bytes)?);
+        let decoded = decode_uploaded_image(bytes)?;
+        validate_image_dimensions(&decoded)?;
         let (width, height) = (decoded.width(), decoded.height());
-        let webp = encode_initial_webp(decoded)?;
+        let webp = encode_lossless_webp(decoded)?;
         let id = self
             .store
             .create_daily_note_image(date, &webp, i64::from(width), i64::from(height))
@@ -228,7 +227,8 @@ impl DailyNotesService {
     }
 
     pub async fn update_image(&self, id: i64, image: &[u8]) -> Result<(), DailyNotesError> {
-        let decoded = fit_image(decode_png(image)?);
+        let decoded = decode_png(image)?;
+        validate_image_dimensions(&decoded)?;
         let (width, height) = (decoded.width(), decoded.height());
         let webp = encode_lossless_webp(decoded)?;
         if !self
@@ -280,33 +280,11 @@ fn decode_uploaded_image(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotes
     match format {
         image::ImageFormat::Jpeg => decode_image(bytes, format, "JPEG", MAX_INPUT_IMAGE_BYTES),
         image::ImageFormat::Png => decode_image(bytes, format, "PNG", MAX_INPUT_IMAGE_BYTES),
-        image::ImageFormat::WebP => decode_webp(bytes),
+        image::ImageFormat::WebP => decode_image(bytes, format, "WebP", MAX_INPUT_IMAGE_BYTES),
         _ => Err(DailyNotesError::Validation(
             "image must be JPEG, PNG, or WebP".to_owned(),
         )),
     }
-}
-
-fn decode_webp(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotesError> {
-    if bytes.is_empty() || bytes.len() > MAX_INPUT_IMAGE_BYTES {
-        return Err(DailyNotesError::Validation(
-            "image must be a non-empty WebP within the size limit".to_owned(),
-        ));
-    }
-    let features = webp::BitstreamFeatures::new(bytes)
-        .ok_or_else(|| DailyNotesError::Validation("image must be valid WebP".to_owned()))?;
-    let decoded_bytes = u64::from(features.width())
-        .checked_mul(u64::from(features.height()))
-        .and_then(|pixels| pixels.checked_mul(if features.has_alpha() { 4 } else { 3 }));
-    if decoded_bytes.is_none_or(|bytes| bytes > MAX_IMAGE_DECODE_BYTES) {
-        return Err(DailyNotesError::Validation(
-            "image must be valid WebP".to_owned(),
-        ));
-    }
-    webp::Decoder::new(bytes)
-        .decode()
-        .map(|image| image.to_image())
-        .ok_or_else(|| DailyNotesError::Validation("image must be valid WebP".to_owned()))
 }
 
 fn decode_png(bytes: &[u8]) -> Result<image::DynamicImage, DailyNotesError> {
@@ -333,39 +311,26 @@ fn decode_image(
         .map_err(|_| DailyNotesError::Validation(format!("image must be valid {format_name}")))
 }
 
-fn fit_image(image: image::DynamicImage) -> image::DynamicImage {
-    if image.width() <= MAX_IMAGE_DIMENSION && image.height() <= MAX_IMAGE_DIMENSION {
-        image
-    } else {
-        image.resize(
-            MAX_IMAGE_DIMENSION,
-            MAX_IMAGE_DIMENSION,
-            image::imageops::FilterType::Lanczos3,
-        )
+fn validate_image_dimensions(image: &image::DynamicImage) -> Result<(), DailyNotesError> {
+    if image.width() > MAX_IMAGE_DIMENSION || image.height() > MAX_IMAGE_DIMENSION {
+        return Err(DailyNotesError::Validation(format!(
+            "image must be at most {MAX_IMAGE_DIMENSION} pixels on each side"
+        )));
     }
+    Ok(())
 }
 
 fn encode_lossless_webp(image: image::DynamicImage) -> Result<Vec<u8>, DailyNotesError> {
-    encode_webp(image, true, LOSSLESS_WEBP_EFFORT)
-}
+    use image::ImageEncoder;
 
-fn encode_initial_webp(image: image::DynamicImage) -> Result<Vec<u8>, DailyNotesError> {
-    encode_webp(image, false, INITIAL_IMAGE_WEBP_QUALITY)
-}
-
-fn encode_webp(
-    image: image::DynamicImage,
-    lossless: bool,
-    quality: f32,
-) -> Result<Vec<u8>, DailyNotesError> {
     let (width, height) = (image.width(), image.height());
     let rgba = image.into_rgba8();
-    let webp = webp::Encoder::from_rgba(&rgba, width, height)
-        .encode_simple(lossless, quality)
+    let mut webp = Vec::new();
+    image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+        .write_image(&rgba, width, height, image::ExtendedColorType::Rgba8)
         .map_err(|error| {
-            DailyNotesError::Validation(format!("failed to encode image as WebP: {error:?}"))
-        })?
-        .to_vec();
+            DailyNotesError::Validation(format!("failed to encode image as WebP: {error}"))
+        })?;
     if webp.len() > MAX_IMAGE_BYTES {
         return Err(DailyNotesError::Validation(
             "image exceeds 5 MiB after WebP encoding".to_owned(),
@@ -423,20 +388,15 @@ fn extract_title(markdown: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn oversized_images_are_resized_proportionally() {
-        let resized = fit_image(image::DynamicImage::new_rgba8(3840, 1080));
-        assert_eq!((resized.width(), resized.height()), (1920, 540));
-    }
-
     fn date(value: &str) -> NaiveDate {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
     }
 
     fn webp(pixel: [u8; 4]) -> Vec<u8> {
-        webp::Encoder::from_rgba(&pixel, 1, 1)
-            .encode_lossless()
-            .to_vec()
+        encode_lossless_webp(image::DynamicImage::ImageRgba8(
+            image::RgbaImage::from_pixel(1, 1, image::Rgba(pixel)),
+        ))
+        .unwrap()
     }
 
     #[test]
@@ -546,8 +506,23 @@ mod tests {
             image::guess_format(&stored).unwrap(),
             image::ImageFormat::WebP
         );
+        assert_eq!(
+            *decode_uploaded_image(&stored)
+                .unwrap()
+                .into_rgba8()
+                .get_pixel(0, 0),
+            image::Rgba([255, 0, 0, 255]),
+        );
         assert!(matches!(
             service.upload_image(note_date, b"not an image").await,
+            Err(DailyNotesError::Validation(_))
+        ));
+        let mut oversized = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut oversized)
+            .write_image(&vec![0; 1921 * 4], 1921, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        assert!(matches!(
+            service.upload_image(note_date, &oversized).await,
             Err(DailyNotesError::Validation(_))
         ));
     }

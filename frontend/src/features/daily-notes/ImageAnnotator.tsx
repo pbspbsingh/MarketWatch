@@ -3,6 +3,7 @@ import isPropValid from "@emotion/is-prop-valid";
 import FilerobotImageEditor, { TABS, TOOLS } from "react-filerobot-image-editor";
 import { StyleSheetManager } from "styled-components";
 import { updateDailyNoteImage } from "../../api/daily-notes";
+import { prepareDailyNoteImage } from "./prepare-image";
 
 interface ImageAnnotatorProps {
   imageId: number;
@@ -11,7 +12,6 @@ interface ImageAnnotatorProps {
   onError: (error: unknown) => void;
 }
 
-const maximumEditedImageBytes = 16 * 1024 * 1024;
 const annotationColorStorageKey = "market-watch:image-annotation-color";
 const defaultAnnotationColor = "#ef5350";
 const filerobotTheme = {
@@ -182,6 +182,5 @@ function readStoredAnnotationColor() {
 async function dataUrlToPng(dataUrl: string) {
   const blob = await fetch(dataUrl).then((response) => response.blob());
   if (blob.type !== "image/png") throw new Error("Image editor did not export PNG");
-  if (blob.size > maximumEditedImageBytes) throw new Error("Annotated image exceeds 16 MiB");
-  return blob;
+  return prepareDailyNoteImage(blob);
 }
