@@ -298,23 +298,33 @@ mod tests {
             true,
         );
 
-        let exact = request(&app, "/exactly-512-bytes", true).await;
+        let exact = request(&app, "/exactly-512-bytes", Some("gzip")).await;
         assert!(exact.headers().get(header::CONTENT_ENCODING).is_none());
         assert_eq!(
             to_bytes(exact.into_body(), usize::MAX).await.unwrap().len(),
             usize::from(API_COMPRESSION_CUTOFF_BYTES),
         );
 
-        let large = request(&app, "/over-512-bytes", true).await;
+        let large = request(&app, "/over-512-bytes", Some("gzip")).await;
         assert_eq!(large.headers()[header::CONTENT_ENCODING], "gzip");
         assert!(
             to_bytes(large.into_body(), usize::MAX).await.unwrap().len()
                 < usize::from(API_COMPRESSION_CUTOFF_BYTES),
         );
 
-        let without_gzip = request(&app, "/over-512-bytes", false).await;
+        let deflated = request(&app, "/over-512-bytes", Some("deflate")).await;
+        assert_eq!(deflated.headers()[header::CONTENT_ENCODING], "deflate");
         assert!(
-            without_gzip
+            to_bytes(deflated.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .len()
+                < usize::from(API_COMPRESSION_CUTOFF_BYTES),
+        );
+
+        let without_compression = request(&app, "/over-512-bytes", None).await;
+        assert!(
+            without_compression
                 .headers()
                 .get(header::CONTENT_ENCODING)
                 .is_none()
@@ -330,7 +340,7 @@ mod tests {
             ),
             false,
         );
-        let response = request(&app, "/large", true).await;
+        let response = request(&app, "/large", Some("deflate")).await;
         assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
     }
 
@@ -341,15 +351,15 @@ mod tests {
             None,
         );
         assert_eq!(
-            request(&app, "/private", false).await.status(),
+            request(&app, "/private", None).await.status(),
             StatusCode::OK
         );
     }
 
-    async fn request(app: &Router, path: &str, accepts_gzip: bool) -> Response {
+    async fn request(app: &Router, path: &str, accept_encoding: Option<&str>) -> Response {
         let mut request = Request::builder().uri(path);
-        if accepts_gzip {
-            request = request.header(header::ACCEPT_ENCODING, "gzip");
+        if let Some(encoding) = accept_encoding {
+            request = request.header(header::ACCEPT_ENCODING, encoding);
         }
         app.clone()
             .oneshot(request.body(Body::empty()).unwrap())
