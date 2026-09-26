@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchIndustries } from "../../../api/industries";
 import { fetchThemes } from "../../../api/themes";
+import { clearCommonFilter, readCommonFilter, writeCommonFilter } from "./commonFilterStorage";
 
 export type MarketExplorerFilterOption<Value extends string | number> = {
   value: Value;
@@ -13,14 +14,14 @@ export type MarketExplorerGroupSelection = {
   themeIds?: number[];
 };
 
-export function useMarketExplorerGroupFilters(storagePrefix: string) {
+export function useMarketExplorerGroupFilters() {
   const [industryOptions, setIndustryOptions] = useState<MarketExplorerFilterOption<string>[]>([]);
   const [themeOptions, setThemeOptions] = useState<MarketExplorerFilterOption<number>[]>([]);
   const [excludedIndustryKeys, setExcludedIndustryKeys] = useState(
-    () => readStoredSet<string>(storagePrefix, "excludedIndustryKeys", isString),
+    () => readStoredSet<string>("excludedIndustryKeys", isString),
   );
   const [excludedThemeIds, setExcludedThemeIds] = useState(
-    () => readStoredSet<number>(storagePrefix, "excludedThemeIds", isNumber),
+    () => readStoredSet<number>("excludedThemeIds", isNumber),
   );
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -55,7 +56,7 @@ export function useMarketExplorerGroupFilters(storagePrefix: string) {
         }
       });
     return () => controller.abort();
-  }, [storagePrefix]);
+  }, []);
 
   const selectedIndustryKeys = useMemo(
     () => selectedValues(industryOptions, excludedIndustryKeys),
@@ -73,20 +74,20 @@ export function useMarketExplorerGroupFilters(storagePrefix: string) {
   }), [industryOptions.length, selectedIndustryKeys, selectedThemeIds, themeOptions.length]);
   const commitIndustrySelection = useCallback((selected: Set<string>) => {
     const excluded = excludedValues(industryOptions, selected);
-    storeSet(storagePrefix, "excludedIndustryKeys", excluded);
+    storeSet("excludedIndustryKeys", excluded);
     setExcludedIndustryKeys(excluded);
-  }, [industryOptions, storagePrefix]);
+  }, [industryOptions]);
   const commitThemeSelection = useCallback((selected: Set<number>) => {
     const excluded = excludedValues(themeOptions, selected);
-    storeSet(storagePrefix, "excludedThemeIds", excluded);
+    storeSet("excludedThemeIds", excluded);
     setExcludedThemeIds(excluded);
-  }, [storagePrefix, themeOptions]);
+  }, [themeOptions]);
   const reset = useCallback(() => {
-    localStorage.removeItem(`${storagePrefix}excludedIndustryKeys`);
-    localStorage.removeItem(`${storagePrefix}excludedThemeIds`);
+    clearCommonFilter("excludedIndustryKeys");
+    clearCommonFilter("excludedThemeIds");
     setExcludedIndustryKeys(new Set());
     setExcludedThemeIds(new Set());
-  }, [storagePrefix]);
+  }, []);
 
   return {
     industryOptions,
@@ -135,12 +136,11 @@ function retainKnown<Value extends string | number>(
 }
 
 function readStoredSet<Value extends string | number>(
-  storagePrefix: string,
-  key: string,
+  key: "excludedIndustryKeys" | "excludedThemeIds",
   valid: (value: unknown) => value is Value,
 ) {
   try {
-    const stored = JSON.parse(localStorage.getItem(`${storagePrefix}${key}`) ?? "[]") as unknown;
+    const stored = JSON.parse(readCommonFilter(key) ?? "[]") as unknown;
     return new Set(Array.isArray(stored) ? stored.filter(valid) : []);
   } catch {
     return new Set<Value>();
@@ -148,11 +148,10 @@ function readStoredSet<Value extends string | number>(
 }
 
 function storeSet<Value extends string | number>(
-  storagePrefix: string,
-  key: string,
+  key: "excludedIndustryKeys" | "excludedThemeIds",
   values: ReadonlySet<Value>,
 ) {
-  localStorage.setItem(`${storagePrefix}${key}`, JSON.stringify([...values]));
+  writeCommonFilter(key, JSON.stringify([...values]));
 }
 
 function isString(value: unknown): value is string {

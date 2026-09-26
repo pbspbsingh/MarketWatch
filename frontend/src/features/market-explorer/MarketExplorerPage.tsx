@@ -36,7 +36,13 @@ const HighRsTab = lazy(() =>
   })),
 );
 
-type MarketExplorerView = "market-explorer" | "highest-volume" | "highest-return" | "high-rs";
+const PowerPlayTab = lazy(() =>
+  import("./power-play/PowerPlayTab").then(({ PowerPlayTab }) => ({
+    default: PowerPlayTab,
+  })),
+);
+
+type MarketExplorerView = "market-explorer" | "highest-volume" | "highest-return" | "high-rs" | "power-play";
 
 export function MarketExplorerPage() {
   const [status, setStatus] = useState<MarketExplorerCandleStatus>();
@@ -106,6 +112,7 @@ export function MarketExplorerPage() {
           <MenuItem value="highest-volume" disabled={!viewsEnabled}>Highest Volume</MenuItem>
           <MenuItem value="highest-return" disabled={!viewsEnabled}>Highest Return</MenuItem>
           <MenuItem value="high-rs" disabled={!viewsEnabled}>Highest RS</MenuItem>
+          <MenuItem value="power-play" disabled={!viewsEnabled}>Power Play</MenuItem>
         </Select>
         <div className="market-explorer-toolbar-slot" ref={setToolbarContainer} />
       </header>
@@ -120,6 +127,10 @@ export function MarketExplorerPage() {
       ) : viewsEnabled && activeView === "high-rs" && status !== undefined ? (
         <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
           <HighRsTab toolbarContainer={toolbarContainer} asOf={status.target_date} />
+        </Suspense>
+      ) : viewsEnabled && activeView === "power-play" ? (
+        <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
+          <PowerPlayTab toolbarContainer={toolbarContainer} />
         </Suspense>
       ) : loading && status === undefined ? (
         <div className="panel-status">
@@ -227,6 +238,13 @@ export function MarketExplorerPage() {
                   onClick={() => setActiveView("high-rs")}
                 >
                   Highest RS
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={!viewsEnabled}
+                  onClick={() => setActiveView("power-play")}
+                >
+                  Power Play
                 </Button>
               </div>
             </section>

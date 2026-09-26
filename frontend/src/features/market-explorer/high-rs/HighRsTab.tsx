@@ -22,6 +22,7 @@ import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import { SteppedSlider } from "../components/SteppedSlider";
 import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
+import { clearCommonFilter, readCommonDollarVolume, writeCommonFilter } from "../components/commonFilterStorage";
 import "./high-rs-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.high-rs.";
@@ -36,7 +37,7 @@ export function HighRsTab({
 }) {
   const [settings, setSettings] = useState(() => readSettings(asOf));
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
-  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
+  const groupFilters = useMarketExplorerGroupFilters();
   const [result, setResult] = useState<HighRsResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -90,7 +91,8 @@ export function HighRsTab({
     key: Key,
     value: HighRsSettings[Key],
   ) => {
-    localStorage.setItem(`${storagePrefix}${key}`, String(value));
+    if (key === "minimumDollarVolume") writeCommonFilter("minimumDollarVolume", String(value));
+    else localStorage.setItem(`${storagePrefix}${key}`, String(value));
     if (settings[key] === value) return;
     setError(undefined);
     setLoading(true);
@@ -135,10 +137,10 @@ export function HighRsTab({
       "benchmark",
       "maximumPercentFromTop",
       "limit",
-      "minimumDollarVolume",
     ]) {
       localStorage.removeItem(`${storagePrefix}${key}`);
     }
+    clearCommonFilter("minimumDollarVolume");
     setSettings(defaultSettings(asOf, benchmarks[0] ?? ""));
     groupFilters.reset();
     setError(undefined);
@@ -268,7 +270,7 @@ function readSettings(asOf: string): HighRsSettings {
       0.5,
     ),
     limit: readSteppedNumber("limit", defaults.limit, 50, 500, 50),
-    minimumDollarVolume: readNumber("minimumDollarVolume", defaults.minimumDollarVolume),
+    minimumDollarVolume: readCommonDollarVolume(),
   };
 }
 

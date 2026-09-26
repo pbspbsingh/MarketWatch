@@ -13,6 +13,7 @@ import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import { SteppedSlider } from "../components/SteppedSlider";
 import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
+import { clearCommonFilter, readCommonDollarVolume, writeCommonFilter } from "../components/commonFilterStorage";
 import "./highest-return-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.highest-return.";
@@ -23,7 +24,7 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
   const [result, setResult] = useState<HighestReturnResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
+  const groupFilters = useMarketExplorerGroupFilters();
   const today = formatDate(new Date());
   const requestSettings = useMemo<HighestReturnSettings>(() => ({
     ...settings,
@@ -52,7 +53,8 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
     key: Key,
     value: HighestReturnSettings[Key],
   ) => {
-    localStorage.setItem(`${storagePrefix}${key}`, String(value));
+    if (key === "minimumDollarVolume") writeCommonFilter("minimumDollarVolume", String(value));
+    else localStorage.setItem(`${storagePrefix}${key}`, String(value));
     if (settings[key] === value) return;
     setError(undefined);
     setLoading(true);
@@ -92,9 +94,10 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
     setLoading(true);
   };
   const resetFilters = () => {
-    for (const key of ["startDate", "endDate", "limit", "minimumDollarVolume"]) {
+    for (const key of ["startDate", "endDate", "limit"]) {
       localStorage.removeItem(`${storagePrefix}${key}`);
     }
+    clearCommonFilter("minimumDollarVolume");
     groupFilters.reset();
     setSettings(defaultSettings());
     setError(undefined);
@@ -227,7 +230,7 @@ function readSettings(): HighestReturnSettings {
     startDate,
     endDate,
     limit: readSteppedNumber("limit", defaults.limit, 50, 500, 50),
-    minimumDollarVolume: readNumber("minimumDollarVolume", defaults.minimumDollarVolume),
+    minimumDollarVolume: readCommonDollarVolume(),
   };
 }
 

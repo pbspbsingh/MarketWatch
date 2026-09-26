@@ -13,6 +13,7 @@ use tracing::warn;
 mod high_rs;
 mod highest_return;
 mod highest_volume;
+mod power_play;
 mod selection;
 
 use high_rs::HighRsService;
@@ -24,6 +25,8 @@ pub use highest_volume::{
     HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest, HighestVolumeResult,
     HighestVolumeScanRange,
 };
+use power_play::PowerPlayService;
+pub use power_play::{PowerPlayError, PowerPlayRequest, PowerPlayResult};
 pub use selection::MarketExplorerSelection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -82,6 +85,7 @@ pub struct MarketExplorerService {
     highest_return: HighestReturnService,
     highest_volume: HighestVolumeService,
     high_rs: HighRsService,
+    power_play: PowerPlayService,
     job: Mutex<Option<CandleFetchJob>>,
     resumed: Notify,
 }
@@ -107,6 +111,7 @@ impl MarketExplorerService {
             highest_return: HighestReturnService::new(store.clone()),
             highest_volume: HighestVolumeService::new(store.clone()),
             high_rs: HighRsService::new(store.clone(), yahoo.clone()),
+            power_play: PowerPlayService::new(store.clone()),
             store,
             yahoo,
             job: Mutex::new(None),
@@ -148,6 +153,20 @@ impl MarketExplorerService {
         selection: MarketExplorerSelection,
     ) -> Result<HighRsResult, HighRsError> {
         self.high_rs
+            .scan(
+                request,
+                selection,
+                self.yahoo.latest_completed_candle_date(),
+            )
+            .await
+    }
+
+    pub async fn power_play(
+        &self,
+        request: PowerPlayRequest,
+        selection: MarketExplorerSelection,
+    ) -> Result<PowerPlayResult, PowerPlayError> {
+        self.power_play
             .scan(
                 request,
                 selection,

@@ -16,6 +16,7 @@ import { CheckboxDropdown } from "../components/CheckboxDropdown";
 import { DiscreteSlider } from "../components/DiscreteSlider";
 import { DollarVolumeSlider } from "../components/DollarVolumeSlider";
 import { useMarketExplorerGroupFilters } from "../components/useMarketExplorerGroupFilters";
+import { clearCommonFilter, readCommonDollarVolume, writeCommonFilter } from "../components/commonFilterStorage";
 import "./highest-volume-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.highest-volume.";
@@ -51,7 +52,7 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
   const [result, setResult] = useState<HighestVolumeResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const groupFilters = useMarketExplorerGroupFilters(storagePrefix);
+  const groupFilters = useMarketExplorerGroupFilters();
   const requestSettings = useMemo<HighestVolumeSettings>(() => ({
     ...settings,
     ...groupFilters.selection,
@@ -79,7 +80,8 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
     key: Key,
     value: HighestVolumeSettings[Key],
   ) => {
-    localStorage.setItem(`${storagePrefix}${key}`, String(value));
+    if (key === "minimumDollarVolume") writeCommonFilter("minimumDollarVolume", String(value));
+    else localStorage.setItem(`${storagePrefix}${key}`, String(value));
     if (settings[key] === value) return;
     setError(undefined);
     setLoading(true);
@@ -113,10 +115,10 @@ export function HighestVolumeTab({ toolbarContainer }: { toolbarContainer: HTMLE
       "limit",
       "minimumRvol",
       "minimumRangeAtr",
-      "minimumDollarVolume",
     ]) {
       localStorage.removeItem(`${storagePrefix}${key}`);
     }
+    clearCommonFilter("minimumDollarVolume");
     groupFilters.reset();
     setSettings(defaults);
     setError(undefined);
@@ -270,7 +272,7 @@ function readSettings(): HighestVolumeSettings {
     limit: readOption("limit", limits, defaults.limit),
     minimumRvol: readNumber("minimumRvol", defaults.minimumRvol),
     minimumRangeAtr: readNumber("minimumRangeAtr", defaults.minimumRangeAtr),
-    minimumDollarVolume: readNumber("minimumDollarVolume", defaults.minimumDollarVolume),
+    minimumDollarVolume: readCommonDollarVolume(),
   };
 }
 

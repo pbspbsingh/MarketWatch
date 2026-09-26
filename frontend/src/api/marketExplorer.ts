@@ -101,6 +101,29 @@ export interface HighRsSettings extends MarketExplorerGroupSelection {
   minimumDollarVolume: number;
 }
 
+export interface PowerPlayEvent {
+  symbol: string;
+  start_date: string;
+  end_date: string;
+  start_close: number;
+  end_close: number;
+  return_percent: number;
+  elapsed_days: number;
+  dollar_volume: number;
+}
+
+export interface PowerPlayResult {
+  as_of: string;
+  window_start: string;
+  events: PowerPlayEvent[];
+}
+
+export interface PowerPlaySettings extends MarketExplorerGroupSelection {
+  lookbackMonths: number;
+  limit: number;
+  minimumDollarVolume: number;
+}
+
 export const fetchMarketExplorerCandleStatus = (signal?: AbortSignal, refresh = false) =>
   request(`/api/market-explorer/candles${refresh ? "?refresh=true" : ""}`, { signal });
 
@@ -186,6 +209,29 @@ export async function fetchMarketExplorerHighRs(
     throw new Error(body?.error ?? `Highest RS scan failed: HTTP ${response.status}`);
   }
   return response.json() as Promise<HighRsResult>;
+}
+
+export async function fetchMarketExplorerPowerPlay(
+  settings: PowerPlaySettings,
+  signal?: AbortSignal,
+): Promise<PowerPlayResult> {
+  const response = await fetch("/api/market-explorer/power-play", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lookback_months: settings.lookbackMonths,
+      limit: settings.limit,
+      minimum_dollar_volume: settings.minimumDollarVolume,
+      industry_keys: settings.industryKeys,
+      theme_ids: settings.themeIds,
+    }),
+    signal,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Power Play scan failed: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<PowerPlayResult>;
 }
 
 async function request(url: string, init?: RequestInit): Promise<MarketExplorerCandleStatus> {

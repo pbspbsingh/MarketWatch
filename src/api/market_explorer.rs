@@ -4,7 +4,7 @@ use crate::services::market_explorer::{
     HighRsError, HighRsRequest, HighRsResult, HighestReturnError, HighestReturnRequest,
     HighestReturnResult, HighestVolumeError, HighestVolumeLookback, HighestVolumeRequest,
     HighestVolumeResult, HighestVolumeScanRange, MarketExplorerCandleStatus, MarketExplorerError,
-    MarketExplorerSelection,
+    MarketExplorerSelection, PowerPlayError, PowerPlayRequest, PowerPlayResult,
 };
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -23,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .route("/market-explorer/highest-rs", post(high_rs))
         .route("/market-explorer/highest-return", post(highest_return))
         .route("/market-explorer/highest-volume", post(highest_volume))
+        .route("/market-explorer/power-play", post(power_play))
 }
 
 #[derive(Default, Deserialize)]
@@ -58,6 +59,15 @@ struct HighRsInput {
     start_date: chrono::NaiveDate,
     benchmark: TickerSymbol,
     maximum_percent_from_top: f64,
+    limit: usize,
+    minimum_dollar_volume: f64,
+    #[serde(flatten)]
+    selection: SelectionInput,
+}
+
+#[derive(Deserialize)]
+struct PowerPlayInput {
+    lookback_months: u32,
     limit: usize,
     minimum_dollar_volume: f64,
     #[serde(flatten)]
@@ -196,6 +206,25 @@ async fn high_rs(
         .map_err(high_rs_error)
 }
 
+async fn power_play(
+    State(state): State<AppState>,
+    Json(input): Json<PowerPlayInput>,
+) -> Result<Json<PowerPlayResult>, (StatusCode, Json<Value>)> {
+    state
+        .market_explorer
+        .power_play(
+            PowerPlayRequest {
+                lookback_months: input.lookback_months,
+                limit: input.limit,
+                minimum_dollar_volume: input.minimum_dollar_volume,
+            },
+            input.selection.into(),
+        )
+        .await
+        .map(Json)
+        .map_err(power_play_error)
+}
+
 fn api_error(error: MarketExplorerError) -> StatusCode {
     if matches!(error, MarketExplorerError::RetryUnavailable) {
         return StatusCode::CONFLICT;
@@ -239,6 +268,19 @@ fn high_rs_error(error_value: HighRsError) -> (StatusCode, Json<Value>) {
     };
     if status.is_server_error() {
         error!(error = %error_value, "Market Explorer high-RS scan failed");
+    }
+    (status, Json(json!({ "error": error_value.to_string() })))
+}
+
+fn power_play_error(error_value: PowerPlayError) -> (StatusCode, Json<Value>) {
+    let status = match &error_value {
+        PowerPlayError::Validation(_) => StatusCode::BAD_REQUEST,
+        PowerPlayError::Persistence(_) | PowerPlayError::Computation(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    };
+    if status.is_server_error() {
+        error!(error = %error_value, "Market Explorer power-play scan failed");
     }
     (status, Json(json!({ "error": error_value.to_string() })))
 }
