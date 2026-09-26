@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircularProgress, Tab, Tabs, Typography } from "@mui/material";
+import { useSearchParams } from "react-router-dom";
 import {
   fetchAiCapability,
   fetchThemeIndustries,
@@ -19,6 +20,12 @@ import { errorMessage, industryFilterOptions, sameData } from "./themeManagement
 import "./theme-management.css";
 
 export function ThemeManagementPage() {
+  const [searchParams] = useSearchParams();
+  const linkedTicker = searchParams.get("ticker")?.trim().toUpperCase() ?? "";
+  return <ThemeManagementContent key={linkedTicker} linkedTicker={linkedTicker} />;
+}
+
+function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
   const [tab, setTab] = useState<ThemeManagementTab>("assignments");
   const [themes, setThemes] = useState<Theme[]>([]);
   const [tickers, setTickers] = useState<ThemeTicker[]>([]);
@@ -31,8 +38,8 @@ export function ThemeManagementPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
-  const [unassignedOnly, setUnassignedOnly] = useState(true);
-  const [unprocessedOnly, setUnprocessedOnly] = useState(true);
+  const [unassignedOnly, setUnassignedOnly] = useState(linkedTicker === "");
+  const [unprocessedOnly, setUnprocessedOnly] = useState(linkedTicker === "");
   const industries = useMemo(
     () => industryFilterOptions(themeIndustries, tickers),
     [themeIndustries, tickers],
@@ -69,7 +76,9 @@ export function ThemeManagementPage() {
       });
 
     refresh()
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     const interval = window.setInterval(refresh, 10_000);
     return () => {
       active = false;
@@ -99,6 +108,7 @@ export function ThemeManagementPage() {
       </header>
       {tab === "assignments" ? (
         <AssignmentsTab
+          linkedTicker={linkedTicker}
           themes={themes}
           tickers={tickers}
           industries={industries}

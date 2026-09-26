@@ -1,13 +1,16 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import RateReviewOutlinedIcon from "@mui/icons-material/RateReviewOutlined";
 import {
   Button,
   CircularProgress,
   LinearProgress,
   MenuItem,
   Select,
+  Tooltip,
   Typography,
   type SelectChangeEvent,
 } from "@mui/material";
+import { Link } from "react-router-dom";
 import {
   fetchMarketExplorerCandleStatus,
   pauseMarketExplorerCandleFetch,
@@ -207,6 +210,17 @@ export function MarketExplorerPage() {
                     {status.messages.map((message, index) => (
                       <Typography key={`${message.symbol}:${index}`} component="p">
                         <strong>{message.symbol}</strong> failed: {message.error}
+                        {" "}
+                        <Tooltip title={`Open Theme Management to review or delete ${message.symbol} (new tab)`}>
+                          <Link
+                            to={`/theme-management?ticker=${encodeURIComponent(message.symbol)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Review or delete ${message.symbol} in Theme Management (opens in a new tab)`}
+                          >
+                            <RateReviewOutlinedIcon fontSize="inherit" />
+                          </Link>
+                        </Tooltip>
                       </Typography>
                     ))}
                   </div>

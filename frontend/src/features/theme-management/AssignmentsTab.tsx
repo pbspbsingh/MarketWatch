@@ -1,6 +1,6 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
-import { Button, Chip, IconButton, TextField, Typography } from "@mui/material";
+import { Button, Chip, CircularProgress, IconButton, TextField, Typography } from "@mui/material";
 import {
   addThemeTicker,
   applyThemeSuggestions,
@@ -22,7 +22,14 @@ import {
   matchesIndustryFilter,
 } from "./themeManagementUtils";
 
+const MarketChartContainer = lazy(() =>
+  import("../charts/MarketChartContainer").then(({ MarketChartContainer }) => ({
+    default: MarketChartContainer,
+  })),
+);
+
 export function AssignmentsTab({
+  linkedTicker,
   themes,
   tickers,
   industries,
@@ -36,6 +43,7 @@ export function AssignmentsTab({
   onError,
   onMessage,
 }: {
+  linkedTicker: string;
   themes: Theme[];
   tickers: ThemeTicker[];
   industries: IndustryFilterOption[];
@@ -49,9 +57,9 @@ export function AssignmentsTab({
   onError: (message: string) => void;
   onMessage: (message: string) => void;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(linkedTicker);
   const [newSymbol, setNewSymbol] = useState("");
-  const [selectedSymbol, setSelectedSymbol] = useState<string>();
+  const [selectedSymbol, setSelectedSymbol] = useState<string | undefined>(linkedTicker || undefined);
   const [batchSymbols, setBatchSymbols] = useState<Set<string>>(new Set());
   const [themeDraft, setThemeDraft] = useState<TickerThemeDraft>({ themeIds: [] });
   const [promptSession, setPromptSession] = useState<PromptSession>({
@@ -282,21 +290,42 @@ export function AssignmentsTab({
           </IconButton>
         </div>
       </aside>
-      <main className="assignment-workspace">
+      <main className={editedTicker === undefined
+        ? "assignment-workspace"
+        : "assignment-workspace assignment-workspace-with-chart"}>
         {editedTicker !== undefined && (
           <section className="assignment-card ticker-theme-editor">
-            <div className="ticker-profile">
-              <Typography component="h2">
-                {editedTicker.symbol}
-                {editedTicker.name ? ` · ${editedTicker.name}` : ""}
-              </Typography>
+            <div className="ticker-editor-details">
+              <div className="ticker-profile">
+                <Typography component="h2">
+                  {editedTicker.symbol}
+                  {editedTicker.name ? ` · ${editedTicker.name}` : ""}
+                </Typography>
+                <Typography color="text.secondary" title={editedTicker.description ?? undefined}>
+                  {editedTicker.description ?? "No company description available."}
+                </Typography>
+              </div>
               <Typography color="text.secondary">
-                {editedTicker.description ?? "No company description available."}
+                Prefer one theme. Select a second only for a distinct, material business driver.
               </Typography>
+              <div className="ticker-editor-actions">
+                <Button
+                  variant="contained"
+                  onClick={() =>
+                    run(async () => {
+                      await replaceTickerThemes(editedTicker.symbol, draftThemeIds);
+                      onMessage("Ticker themes updated");
+                      onChanged();
+                    })
+                  }
+                >
+                  Save Manual Assignment
+                </Button>
+                <Button color="error" disabled={busy} onClick={() => removeTicker(editedTicker)}>
+                  Delete Ticker
+                </Button>
+              </div>
             </div>
-            <Typography color="text.secondary">
-              Prefer one theme. Select a second only for a distinct, material business driver.
-            </Typography>
             <div className="theme-chip-grid">
               {themes.map((theme) => (
                 <Chip
@@ -308,21 +337,18 @@ export function AssignmentsTab({
                 />
               ))}
             </div>
-            <Button
-              variant="contained"
-              onClick={() =>
-                run(async () => {
-                  await replaceTickerThemes(editedTicker.symbol, draftThemeIds);
-                  onMessage("Ticker themes updated");
-                  onChanged();
-                })
-              }
-            >
-              Save Manual Assignment
-            </Button>
-            <Button color="error" disabled={busy} onClick={() => removeTicker(editedTicker)}>
-              Delete Ticker
-            </Button>
+          </section>
+        )}
+        {editedTicker !== undefined && (
+          <section className="assignment-chart" aria-label={`${editedTicker.symbol} daily chart`}>
+            <Suspense fallback={<div className="panel-status"><CircularProgress size="1rem" /></div>}>
+              <MarketChartContainer
+                key={editedTicker.symbol}
+                symbol={editedTicker.symbol}
+                companyName={editedTicker.name ?? undefined}
+                interval="daily"
+              />
+            </Suspense>
           </section>
         )}
         {batchSymbols.size > 1 && (
