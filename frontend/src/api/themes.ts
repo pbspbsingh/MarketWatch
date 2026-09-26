@@ -214,9 +214,11 @@ export const createAutomaticJobs = (symbols: string[]) =>
     ...json({ symbols }),
   });
 
-export const fetchThemeAiJobs = () => request<ThemeAiJobSummary[]>("/api/theme-ai/jobs");
+export const fetchThemeAiJobs = (signal?: AbortSignal) =>
+  request<ThemeAiJobSummary[]>("/api/theme-ai/jobs", { signal });
 
-export const fetchThemeAiJob = (id: number) => request<ThemeAiJob>(`/api/theme-ai/jobs/${id}`);
+export const fetchThemeAiJob = (id: number, signal?: AbortSignal) =>
+  request<ThemeAiJob>(`/api/theme-ai/jobs/${id}`, { signal });
 
 export const applyThemeAiJob = (id: number) =>
   request<{ ok: boolean }>(`/api/theme-ai/jobs/${id}/apply`, { method: "POST" });
@@ -239,8 +241,8 @@ export const applyThemeSuggestions = (
     ...json({ suggestions, source }),
   });
 
-export const fetchThemeAudit = (includeManual: boolean) =>
-  request<ThemeAuditOverview>(`/api/theme-ai/audit?include_manual=${includeManual}`);
+export const fetchThemeAudit = (includeManual: boolean, signal?: AbortSignal) =>
+  request<ThemeAuditOverview>(`/api/theme-ai/audit?include_manual=${includeManual}`, { signal });
 
 export const runEntireThemeAudit = (includeManual: boolean) =>
   request<{ ok: boolean }>("/api/theme-ai/audit/run", {

@@ -39,31 +39,49 @@ export function AuditTab({
   const [showProcessed, setShowProcessed] = useState(false);
   const [overview, setOverview] = useState<ThemeAuditOverview>();
   const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => {
-    setOverview(await fetchThemeAudit(includeManual));
+  const running = overview?.progress?.status === "running";
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const next = await fetchThemeAudit(includeManual, signal);
+    if (!signal?.aborted) setOverview(next);
+    return next;
   }, [includeManual]);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    void fetchThemeAudit(includeManual, controller.signal)
+      .then((next) => {
+        if (!controller.signal.aborted) setOverview(next);
+      })
+      .catch((loadError: unknown) => {
+        if (!controller.signal.aborted) onError(errorMessage(loadError));
+      });
+    return () => controller.abort();
+  }, [includeManual, onError, refreshKey]);
+
+  useEffect(() => {
+    if (!running || document.visibilityState !== "visible") return;
+    const controller = new AbortController();
     let timeout: number | undefined;
-    const refresh = async () => {
+    const poll = async () => {
+      if (document.visibilityState !== "visible") return;
       try {
-        const next = await fetchThemeAudit(includeManual);
-        if (!active) return;
-        setOverview(next);
-        timeout = window.setTimeout(refresh, next.progress?.status === "running" ? 2_500 : 10_000);
+        const next = await load(controller.signal);
+        if (!controller.signal.aborted && document.visibilityState === "visible"
+          && next.progress?.status === "running") {
+          timeout = window.setTimeout(poll, 2_500);
+        }
       } catch (loadError) {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         onError(errorMessage(loadError));
-        timeout = window.setTimeout(refresh, 10_000);
+        if (document.visibilityState === "visible") timeout = window.setTimeout(poll, 10_000);
       }
     };
-    void refresh();
+    timeout = window.setTimeout(poll, 2_500);
     return () => {
-      active = false;
+      controller.abort();
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [includeManual, onError, refreshKey]);
+  }, [load, onError, refreshKey, running]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -77,7 +95,6 @@ export function AuditTab({
   };
 
   const progress = overview?.progress;
-  const running = progress?.status === "running";
   const auditedCount = overview?.audited_count ?? 0;
   const storedCount = overview?.stored_count ?? 0;
   const eligibleCount = overview?.eligible_count ?? 0;

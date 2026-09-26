@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -64,6 +64,7 @@ export function AutomaticTab({
   const [selectedId, setSelectedId] = useState<number>();
   const [showAppliedJobs, setShowAppliedJobs] = useState(false);
   const [busy, setBusy] = useState(false);
+  const hasActiveJobs = jobs.some((job) => job.status === "pending" || job.status === "running");
   const appliedJobCount = jobs.filter((job) => job.status === "applied").length;
   const visibleJobs = showAppliedJobs ? jobs : jobs.filter((job) => job.status !== "applied");
   const selectedSummary = jobs.find((job) => job.id === selectedId);
@@ -77,58 +78,83 @@ export function AutomaticTab({
     [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly],
   );
 
-  const reloadJobs = async () => {
-    const next = await fetchThemeAiJobs();
-    setJobs((current) => (sameData(current, next) ? current : next));
-  };
+  const reloadJobs = useCallback(async (signal?: AbortSignal) => {
+    const next = await fetchThemeAiJobs(signal);
+    if (!signal?.aborted) setJobs((current) => (sameData(current, next) ? current : next));
+  }, []);
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const next = await fetchThemeAiJobs();
-        if (!active) return;
-        setJobs((current) => (sameData(current, next) ? current : next));
-      } catch (loadError) {
-        if (active) onError(errorMessage(loadError));
-      }
-    };
-    load();
-    const interval = window.setInterval(load, 10_000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [onError, refreshKey]);
+    const controller = new AbortController();
+    void fetchThemeAiJobs(controller.signal)
+      .then((next) => {
+        if (!controller.signal.aborted) {
+          setJobs((current) => (sameData(current, next) ? current : next));
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!controller.signal.aborted) onError(errorMessage(loadError));
+      });
+    return () => controller.abort();
+  }, [onError, refreshKey, reloadJobs]);
 
   useEffect(() => {
-    if (selectedJobId === undefined) return;
-    let active = true;
+    if (!hasActiveJobs || document.visibilityState !== "visible") return;
+    const controller = new AbortController();
+    let timeout: number | undefined;
+    const poll = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        await reloadJobs(controller.signal);
+      } catch (loadError) {
+        if (!controller.signal.aborted) onError(errorMessage(loadError));
+      }
+      if (!controller.signal.aborted && document.visibilityState === "visible") {
+        timeout = window.setTimeout(poll, 10_000);
+      }
+    };
+    timeout = window.setTimeout(poll, 10_000);
+    return () => {
+      controller.abort();
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [hasActiveJobs, onError, refreshKey, reloadJobs]);
+
+  useEffect(() => {
+    if (selectedJobId === undefined || document.visibilityState !== "visible") return;
+    const controller = new AbortController();
     let timeout: number | undefined;
     let errorReported = false;
     const load = async () => {
+      if (document.visibilityState !== "visible") return;
       try {
-        const job = await fetchThemeAiJob(selectedJobId);
-        if (!active) return;
+        const job = await fetchThemeAiJob(selectedJobId, controller.signal);
+        if (controller.signal.aborted) return;
         setSelectedJob(job);
         errorReported = false;
-        if (job.status === "pending" || job.status === "running") {
+        if ((job.status === "pending" || job.status === "running")
+          && document.visibilityState === "visible") {
           timeout = window.setTimeout(load, 2_500);
+        } else if (selectedJobIsActive && document.visibilityState === "visible") {
+          void reloadJobs(controller.signal).catch((loadError: unknown) => {
+            if (!controller.signal.aborted) onError(errorMessage(loadError));
+          });
         }
       } catch (loadError) {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         if (!errorReported) {
           onError(errorMessage(loadError));
           errorReported = true;
         }
-        if (selectedJobIsActive) timeout = window.setTimeout(load, 2_500);
+        if (selectedJobIsActive && document.visibilityState === "visible") {
+          timeout = window.setTimeout(load, 2_500);
+        }
       }
     };
     void load();
     return () => {
-      active = false;
+      controller.abort();
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [onError, refreshKey, selectedJobId, selectedJobIsActive, selectedJobUpdatedAt]);
+  }, [onError, refreshKey, reloadJobs, selectedJobId, selectedJobIsActive, selectedJobUpdatedAt]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
