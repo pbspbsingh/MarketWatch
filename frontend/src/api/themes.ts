@@ -155,11 +155,14 @@ const json = (body: unknown): RequestInit => ({
 });
 
 export const fetchThemes = (signal?: AbortSignal) => request<Theme[]>("/api/themes", { signal });
-export const fetchThemeTickers = () => request<ThemeTicker[]>("/api/theme-tickers");
-export const fetchThemeIndustries = () => request<ThemeTickerIndustry[]>("/api/theme-industries");
+export const fetchThemeTickers = (signal?: AbortSignal) =>
+  request<ThemeTicker[]>("/api/theme-tickers", { signal });
+export const fetchThemeIndustries = (signal?: AbortSignal) =>
+  request<ThemeTickerIndustry[]>("/api/theme-industries", { signal });
 export const fetchThemeTicker = (symbol: string) =>
   request<ThemeTicker>(`/api/theme-tickers/${encodeURIComponent(symbol)}`);
-export const fetchAiCapability = () => request<AiCapability>("/api/theme-ai/capability");
+export const fetchAiCapability = (signal?: AbortSignal) =>
+  request<AiCapability>("/api/theme-ai/capability", { signal });
 
 export const addThemeTicker = (symbol: string) =>
   request<{ ok: boolean }>("/api/theme-tickers", {

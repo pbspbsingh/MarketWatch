@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircularProgress, Tab, Tabs, Typography } from "@mui/material";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import { CircularProgress, IconButton, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import {
   fetchAiCapability,
@@ -12,6 +13,7 @@ import {
   type ThemeTickerIndustry,
 } from "../../api/themes";
 import { Toast } from "../../components/Toast";
+import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { AssignmentsTab } from "./AssignmentsTab";
 import { AuditTab } from "./AuditTab";
 import { AutomaticTab } from "./AutomaticTab";
@@ -36,6 +38,14 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
     batch_size: null,
   });
   const [loading, setLoading] = useState(true);
+  const [completedRefreshKey, setCompletedRefreshKey] = useState<string>();
+  const [manualRevision, setManualRevision] = useState(0);
+  const [changedRevision, setChangedRevision] = useState(0);
+  const scheduledRefreshRef = useRef<number | undefined>(undefined);
+  const focusRevision = useFocusRefresh();
+  const activeTabRefreshKey = `${focusRevision}:${manualRevision}`;
+  const refreshKey = `${activeTabRefreshKey}:${changedRevision}`;
+  const refreshing = completedRefreshKey !== refreshKey;
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [unassignedOnly, setUnassignedOnly] = useState(linkedTicker === "");
@@ -46,8 +56,10 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
   );
   const [selectedIndustryKeys, setSelectedIndustryKeys] = useState<Set<string>>();
 
-  const selectedIndustries =
-    selectedIndustryKeys ?? new Set(industries.map((industry) => industry.key));
+  const selectedIndustries = useMemo(
+    () => selectedIndustryKeys ?? new Set(industries.map((industry) => industry.key)),
+    [industries, selectedIndustryKeys],
+  );
 
   const applyData = useCallback(([
     nextThemes,
@@ -61,30 +73,50 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
     setCapability((current) => (sameData(current, nextCapability) ? current : nextCapability));
   }, []);
 
-  const reload = useCallback(async () => {
-    applyData(await fetchThemeManagementData());
-  }, [applyData]);
+  const requestRefresh = useCallback(() => {
+    if (scheduledRefreshRef.current !== undefined) {
+      window.clearTimeout(scheduledRefreshRef.current);
+      scheduledRefreshRef.current = undefined;
+    }
+    setManualRevision((current) => current + 1);
+  }, []);
+  const scheduleChangedRefresh = useCallback(() => {
+    if (scheduledRefreshRef.current !== undefined) {
+      window.clearTimeout(scheduledRefreshRef.current);
+    }
+    scheduledRefreshRef.current = window.setTimeout(() => {
+      scheduledRefreshRef.current = undefined;
+      setChangedRevision((current) => current + 1);
+    }, 150);
+  }, []);
 
   useEffect(() => {
-    let active = true;
-    const refresh = () => fetchThemeManagementData()
+    if (scheduledRefreshRef.current !== undefined) {
+      window.clearTimeout(scheduledRefreshRef.current);
+      scheduledRefreshRef.current = undefined;
+    }
+    const controller = new AbortController();
+    void fetchThemeManagementData(controller.signal)
       .then((data) => {
-        if (active) applyData(data);
+        if (!controller.signal.aborted) applyData(data);
       })
       .catch((loadError: unknown) => {
-        if (active) setError(errorMessage(loadError));
-      });
-
-    refresh()
+        if (!controller.signal.aborted) setError(errorMessage(loadError));
+      })
       .finally(() => {
-        if (active) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setCompletedRefreshKey(refreshKey);
+        }
       });
-    const interval = window.setInterval(refresh, 10_000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [applyData]);
+    return () => controller.abort();
+  }, [applyData, refreshKey]);
+
+  useEffect(() => () => {
+    if (scheduledRefreshRef.current !== undefined) {
+      window.clearTimeout(scheduledRefreshRef.current);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -105,6 +137,18 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
           {capability.enabled && <Tab value="audit" label="Audit" />}
           <Tab value="themes" label="Themes" />
         </Tabs>
+        <Tooltip title="Refresh data">
+          <span className="theme-management-refresh">
+            <IconButton
+              size="small"
+              aria-label="Refresh data"
+              disabled={refreshing}
+              onClick={requestRefresh}
+            >
+              {refreshing ? <CircularProgress size="1rem" /> : <RefreshIcon fontSize="small" />}
+            </IconButton>
+          </span>
+        </Tooltip>
       </header>
       {tab === "assignments" ? (
         <AssignmentsTab
@@ -118,12 +162,13 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
           setUnassignedOnly={setUnassignedOnly}
           unprocessedOnly={unprocessedOnly}
           setUnprocessedOnly={setUnprocessedOnly}
-          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onChanged={scheduleChangedRefresh}
           onError={setError}
           onMessage={setMessage}
         />
       ) : tab === "automatic" ? (
         <AutomaticTab
+          refreshKey={activeTabRefreshKey}
           tickers={tickers}
           industries={industries}
           selectedIndustryKeys={selectedIndustries}
@@ -133,21 +178,22 @@ function ThemeManagementContent({ linkedTicker }: { linkedTicker: string }) {
           unprocessedOnly={unprocessedOnly}
           setUnprocessedOnly={setUnprocessedOnly}
           capability={capability}
-          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onChanged={scheduleChangedRefresh}
           onError={setError}
           onMessage={setMessage}
         />
       ) : tab === "audit" ? (
         <AuditTab
+          refreshKey={activeTabRefreshKey}
           capability={capability}
-          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onChanged={scheduleChangedRefresh}
           onError={setError}
           onMessage={setMessage}
         />
       ) : (
         <ThemesTab
           themes={themes}
-          onChanged={() => reload().catch((changeError: unknown) => setError(errorMessage(changeError)))}
+          onChanged={scheduleChangedRefresh}
           onError={setError}
           onMessage={setMessage}
         />
@@ -162,11 +208,11 @@ type ThemeManagementTab = "assignments" | "automatic" | "audit" | "themes";
 
 type ThemeManagementData = [Theme[], ThemeTicker[], ThemeTickerIndustry[], AiCapability];
 
-function fetchThemeManagementData(): Promise<ThemeManagementData> {
+function fetchThemeManagementData(signal: AbortSignal): Promise<ThemeManagementData> {
   return Promise.all([
-    fetchThemes(),
-    fetchThemeTickers(),
-    fetchThemeIndustries(),
-    fetchAiCapability(),
+    fetchThemes(signal),
+    fetchThemeTickers(signal),
+    fetchThemeIndustries(signal),
+    fetchAiCapability(signal),
   ]);
 }

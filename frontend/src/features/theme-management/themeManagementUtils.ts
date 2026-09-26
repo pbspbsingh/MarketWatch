@@ -138,11 +138,20 @@ export function sameData(left: unknown, right: unknown): boolean {
   );
 }
 
-export function enrichTickers(symbols: string[], onError: (message: string) => void) {
+export function enrichTickers(
+  symbols: string[],
+  onError: (message: string) => void,
+  onSettled: () => void,
+) {
   if (symbols.length === 0) return;
-  void Promise.all(symbols.map(addThemeTicker)).catch((error: unknown) =>
-    onError(errorMessage(error)),
-  );
+  void Promise.allSettled(symbols.map(addThemeTicker)).then((results) => {
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length > 0) {
+      const count = `${failures.length} ticker${failures.length === 1 ? "" : "s"}`;
+      onError(`${count} failed to load: ${errorMessage(failures[0].reason)}`);
+    }
+    onSettled();
+  });
 }
 
 export function jobStatusColor(

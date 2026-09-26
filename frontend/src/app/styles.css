@@ -107,6 +107,7 @@ body,
   display: flex;
   min-height: 3rem;
   padding: 0 0.75rem;
+  padding-right: 2rem;
   border-bottom: 0.0625rem solid var(--color-border);
   background: var(--color-surface);
   align-items: center;
@@ -124,6 +125,11 @@ body,
   min-height: 3rem;
   padding: 0 0.75rem;
   font-size: 0.7rem;
+}
+
+.theme-management-refresh {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .theme-management-body {

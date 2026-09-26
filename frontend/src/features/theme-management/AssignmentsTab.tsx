@@ -222,7 +222,7 @@ export function AssignmentsTab({
               return;
             }
             const symbols = filtered.map((ticker) => ticker.symbol);
-            enrichTickers(symbols.filter((symbol) => !batchSymbols.has(symbol)), onError);
+            enrichTickers(symbols.filter((symbol) => !batchSymbols.has(symbol)), onError, onChanged);
             setBatchSymbols(new Set(symbols));
           }}
         />
@@ -232,7 +232,7 @@ export function AssignmentsTab({
           selectedSymbols={batchSymbols}
           activeSymbol={editedTicker?.symbol}
           onToggle={(symbol) => {
-            if (!batchSymbols.has(symbol)) enrichTickers([symbol], onError);
+            if (!batchSymbols.has(symbol)) enrichTickers([symbol], onError, onChanged);
             setBatchSymbols((current) => {
               const next = new Set(current);
               if (next.has(symbol)) next.delete(symbol);

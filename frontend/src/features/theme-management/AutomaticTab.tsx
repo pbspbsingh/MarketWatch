@@ -29,6 +29,7 @@ import {
 } from "./themeManagementUtils";
 
 export function AutomaticTab({
+  refreshKey,
   tickers,
   industries,
   selectedIndustryKeys,
@@ -42,6 +43,7 @@ export function AutomaticTab({
   onError,
   onMessage,
 }: {
+  refreshKey: string;
   tickers: ThemeTicker[];
   industries: IndustryFilterOption[];
   selectedIndustryKeys: Set<string>;
@@ -96,7 +98,7 @@ export function AutomaticTab({
       active = false;
       window.clearInterval(interval);
     };
-  }, [onError]);
+  }, [onError, refreshKey]);
 
   useEffect(() => {
     if (selectedJobId === undefined) return;
@@ -126,7 +128,7 @@ export function AutomaticTab({
       active = false;
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [onError, selectedJobId, selectedJobIsActive, selectedJobUpdatedAt]);
+  }, [onError, refreshKey, selectedJobId, selectedJobIsActive, selectedJobUpdatedAt]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -182,7 +184,7 @@ export function AutomaticTab({
               return;
             }
             const symbols = filtered.map((ticker) => ticker.symbol);
-            enrichTickers(symbols.filter((symbol) => !selectedSymbols.has(symbol)), onError);
+            enrichTickers(symbols.filter((symbol) => !selectedSymbols.has(symbol)), onError, onChanged);
             setSelectedSymbols(new Set(symbols));
           }}
         />
@@ -191,7 +193,7 @@ export function AutomaticTab({
           search={search}
           selectedSymbols={selectedSymbols}
           onToggle={(symbol) => {
-            if (!selectedSymbols.has(symbol)) enrichTickers([symbol], onError);
+            if (!selectedSymbols.has(symbol)) enrichTickers([symbol], onError, onChanged);
             setSelectedSymbols((current) => {
               const next = new Set(current);
               if (next.has(symbol)) next.delete(symbol);

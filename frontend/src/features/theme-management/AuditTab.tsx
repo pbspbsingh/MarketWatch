@@ -23,11 +23,13 @@ import { tickerMarketWatchUrl } from "../ticker-lens/utils";
 import { errorMessage } from "./themeManagementUtils";
 
 export function AuditTab({
+  refreshKey,
   capability,
   onChanged,
   onError,
   onMessage,
 }: {
+  refreshKey: string;
   capability: AiCapability;
   onChanged: () => void;
   onError: (message: string) => void;
@@ -61,7 +63,7 @@ export function AuditTab({
       active = false;
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [includeManual, onError]);
+  }, [includeManual, onError, refreshKey]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
