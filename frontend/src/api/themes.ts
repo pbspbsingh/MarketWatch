@@ -35,6 +35,12 @@ export interface ThemeSuggestion {
   reasoning?: string | null;
 }
 
+export type ThemeSuggestionStreamEvent =
+  | { type: "reasoning"; value: string }
+  | { type: "response"; value: string }
+  | { type: "complete"; value: ThemeSuggestion }
+  | { type: "error"; value: string };
+
 export interface AiCapability {
   enabled: boolean;
   model: string | null;
@@ -207,6 +213,52 @@ export const suggestThemeAssignments = (symbols: string[]) =>
     method: "POST",
     ...json({ symbols }),
   });
+
+export async function streamThemeSuggestion(
+  symbol: string,
+  signal: AbortSignal,
+  onEvent: (event: ThemeSuggestionStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch("/api/theme-ai/suggest-stream", {
+    method: "POST",
+    ...json({ symbol }),
+    signal,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Theme request failed: HTTP ${response.status}`);
+  }
+  if (!response.body) throw new Error("Theme suggestion stream is unavailable");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let finished = false;
+  const processLine = (line: string) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as ThemeSuggestionStreamEvent;
+    onEvent(event);
+    if (event.type === "complete" || event.type === "error") finished = true;
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      let newline = pending.indexOf("\n");
+      while (newline !== -1) {
+        processLine(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+        newline = pending.indexOf("\n");
+      }
+      if (done) break;
+    }
+    processLine(pending);
+    if (!finished) throw new Error("Theme suggestion stream ended before completion");
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
 
 export const createAutomaticJobs = (symbols: string[]) =>
   request<{ ids: number[] }>("/api/theme-ai/jobs", {

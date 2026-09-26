@@ -24,6 +24,15 @@ enum AutomaticStreamDelta {
     Reasoning(String),
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+pub enum ThemeSuggestionStreamEvent {
+    Reasoning(String),
+    Response(String),
+    Complete(ThemeSuggestion),
+    Error(String),
+}
+
 #[derive(Default)]
 struct RunningAiStream {
     reasoning: String,
@@ -252,6 +261,61 @@ impl ThemeService {
         let suggestions = typed_suggestions(suggestions)?;
         self.validate_automatic_suggestions(suggestions, &symbols)
             .await
+    }
+
+    pub async fn suggest_stream(
+        self: &Arc<Self>,
+        symbol: TickerSymbol,
+    ) -> Result<mpsc::UnboundedReceiver<ThemeSuggestionStreamEvent>, ThemeServiceError> {
+        let ai = self.ai.as_ref().ok_or_else(|| {
+            ThemeServiceError::Validation("AI theme suggestion is disabled".into())
+        })?;
+        let themes = self.themes().await?;
+        let tickers = self.selected_tickers(&[symbol.clone()]).await?;
+        let prompt = build_prompt(&themes, &tickers);
+        let (tx, rx) = mpsc::unbounded_channel();
+        let service = self.clone();
+        let ai = ai.clone();
+        tokio::spawn(async move {
+            let updates = tx.clone();
+            let completion = ai.complete_with_updates(&prompt, move |delta| {
+                let event = match delta {
+                    AiStreamDelta::Reasoning(value) => {
+                        ThemeSuggestionStreamEvent::Reasoning(value.to_owned())
+                    }
+                    AiStreamDelta::Content(value) => {
+                        ThemeSuggestionStreamEvent::Response(value.to_owned())
+                    }
+                };
+                let _ = updates.send(event);
+            });
+            let response = tokio::select! {
+                result = completion => result,
+                () = tx.closed() => return,
+            };
+            let result = async {
+                let response = response.map_err(ThemeServiceError::Ai)?;
+                let raw: Vec<RawThemeSuggestion> =
+                    serde_json::from_str(strip_code_fence(&response))
+                        .map_err(ThemeServiceError::InvalidAiResponse)?;
+                let suggestions = typed_suggestions(raw)?;
+                let mut suggestions = service
+                    .validate_automatic_suggestions(suggestions, &[symbol])
+                    .await?;
+                suggestions.pop().ok_or_else(|| {
+                    ThemeServiceError::Validation(
+                        "AI returned no suggestion for this ticker".into(),
+                    )
+                })
+            }
+            .await;
+            let event = match result {
+                Ok(suggestion) => ThemeSuggestionStreamEvent::Complete(suggestion),
+                Err(error) => ThemeSuggestionStreamEvent::Error(error.to_string()),
+            };
+            let _ = tx.send(event);
+        });
+        Ok(rx)
     }
 
     pub async fn create_automatic_jobs(

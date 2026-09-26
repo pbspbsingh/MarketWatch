@@ -19,7 +19,7 @@ import {
   fetchThemeTicker,
   fetchThemes,
   replaceTickerThemes,
-  suggestThemeAssignments,
+  streamThemeSuggestion,
   type AiCapability,
   type Theme,
   type ThemeSuggestion,
@@ -84,6 +84,9 @@ function OpenTickerDetailsDialog({
   );
   const [suggestions, setSuggestions] = useState<ThemeSuggestion[]>([]);
   const requestRef = useRef<AbortController | undefined>(undefined);
+  const suggestionRequestRef = useRef<AbortController | undefined>(undefined);
+  const [liveReasoning, setLiveReasoning] = useState("");
+  const [liveResponse, setLiveResponse] = useState("");
   const themesLoading = tab === "profile-themes" && themeTicker === undefined;
 
   const refreshDetails = useCallback(() => {
@@ -198,8 +201,11 @@ function OpenTickerDetailsDialog({
 
   const close = () => {
     requestRef.current?.abort();
+    suggestionRequestRef.current?.abort();
     onClose();
   };
+
+  useEffect(() => () => suggestionRequestRef.current?.abort(), []);
 
   const toggleTheme = (themeId: number) => {
     setSuggestedThemeIds((current) => current.filter((id) => id !== themeId));
@@ -229,35 +235,46 @@ function OpenTickerDetailsDialog({
   };
 
   const suggestThemes = async () => {
+    suggestionRequestRef.current?.abort();
+    const controller = new AbortController();
+    suggestionRequestRef.current = controller;
     setSuggestingThemes(true);
+    setSuggestions([]);
+    setSuggestedThemeIds([]);
+    setLiveReasoning("");
+    setLiveResponse("");
     try {
       const selectedSymbol = symbol.toUpperCase();
-      const nextSuggestions = (await suggestThemeAssignments([symbol])).filter(
-        (suggestion) => suggestion.symbol === selectedSymbol,
-      );
-      setSuggestions(nextSuggestions);
-      if (nextSuggestions.length === 0) {
-        setDraftThemeIds([]);
-        setSuggestedThemeIds([]);
-        setMessageSeverity("warning");
-        setMessage("AI suggested no themes");
-        return;
-      }
-      const themeIds = nextSuggestions[0].themes
-        .map((themeName) => themes.find((theme) => theme.name === themeName)?.id)
-        .filter((themeId): themeId is number => themeId !== undefined);
-      if (themeIds.length === 0) {
-        setError("AI suggested themes that are not loaded in the UI");
-        return;
-      }
-      setDraftThemeIds(themeIds);
-      setSuggestedThemeIds(themeIds);
-      setMessageSeverity("info");
-      setMessage("AI suggestion selected. Save to apply.");
+      await streamThemeSuggestion(symbol, controller.signal, (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === "reasoning") {
+          setLiveReasoning((current) => (current + event.value).slice(-20_000));
+        } else if (event.type === "response") {
+          setLiveResponse((current) => (current + event.value).slice(-20_000));
+        } else if (event.type === "error") {
+          setError(event.value);
+        } else if (event.value.symbol === selectedSymbol) {
+          setSuggestions([event.value]);
+          const themeIds = event.value.themes
+            .map((themeName) => themes.find((theme) => theme.name === themeName)?.id)
+            .filter((themeId): themeId is number => themeId !== undefined);
+          if (event.value.themes.length > 0 && themeIds.length !== event.value.themes.length) {
+            setError("AI suggested themes that are not loaded in the UI");
+            return;
+          }
+          setDraftThemeIds(themeIds);
+          setSuggestedThemeIds(themeIds);
+          setMessageSeverity(themeIds.length ? "info" : "warning");
+          setMessage(themeIds.length
+            ? "AI suggestion selected. Save to apply."
+            : "AI suggested no themes");
+        }
+      });
     } catch (suggestError) {
-      setError(errorMessage(suggestError));
+      if (!controller.signal.aborted) setError(errorMessage(suggestError));
     } finally {
-      setSuggestingThemes(false);
+      if (!controller.signal.aborted) setSuggestingThemes(false);
+      if (suggestionRequestRef.current === controller) suggestionRequestRef.current = undefined;
     }
   };
 
@@ -335,6 +352,8 @@ function OpenTickerDetailsDialog({
                   saving={savingThemes}
                   suggesting={suggestingThemes}
                   suggestions={suggestions}
+                  liveReasoning={liveReasoning}
+                  liveResponse={liveResponse}
                   onToggleTheme={toggleTheme}
                   onSave={saveManualThemes}
                   onSuggest={suggestThemes}

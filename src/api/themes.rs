@@ -1,10 +1,12 @@
 use crate::app::AppState;
 use crate::models::{AssignmentSource, ThemeSuggestion, TickerSymbol};
-use crate::services::themes::{AiCapability, ThemeServiceError};
+use crate::services::themes::{AiCapability, ThemeServiceError, ThemeSuggestionStreamEvent};
+use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::routing::{delete, get, post, put};
-use axum::{Json, Router};
+use axum::{Json, Router, response::Response};
+use futures_util::stream;
 use serde::Deserialize;
 use serde_json::json;
 use tracing::error;
@@ -60,6 +62,7 @@ pub fn router() -> Router<AppState> {
         .route("/theme-ai/prompt", post(prompt))
         .route("/theme-ai/parse", post(parse))
         .route("/theme-ai/suggest", post(suggest))
+        .route("/theme-ai/suggest-stream", post(suggest_stream))
         .route("/theme-ai/jobs", get(ai_jobs).post(create_ai_jobs))
         .route("/theme-ai/jobs/applied", delete(delete_applied_ai_jobs))
         .route("/theme-ai/jobs/{id}", get(ai_job).delete(delete_ai_job))
@@ -230,6 +233,37 @@ async fn suggest(
         .await
         .map(Json)
         .map_err(api_error)
+}
+
+async fn suggest_stream(
+    State(state): State<AppState>,
+    Json(input): Json<TickerInput>,
+) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let receiver = state
+        .themes
+        .suggest_stream(input.symbol)
+        .await
+        .map_err(api_error)?;
+    let body = Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+        receiver
+            .recv()
+            .await
+            .map(|event: ThemeSuggestionStreamEvent| {
+                let mut line =
+                    serde_json::to_vec(&event).expect("theme suggestion event serializes");
+                line.push(b'\n');
+                (
+                    Ok::<Bytes, std::convert::Infallible>(Bytes::from(line)),
+                    receiver,
+                )
+            })
+    }));
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/x-ndjson")
+        .header(header::CONTENT_ENCODING, "identity")
+        .header(header::CACHE_CONTROL, "no-cache, no-transform")
+        .body(body)
+        .expect("stream response headers are valid"))
 }
 
 async fn ai_jobs(
