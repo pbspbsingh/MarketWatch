@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
+import { CircularProgress, Typography } from "@mui/material";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
 
@@ -82,5 +83,14 @@ function Page({ title, children }: { title: string; children: React.ReactNode })
   useEffect(() => {
     document.title = `${title} | MarketWatch`;
   }, [title]);
-  return <Suspense fallback={null}>{children}</Suspense>;
+  return (
+    <Suspense fallback={(
+      <div className="panel-status" role="status">
+        <CircularProgress size="1rem" />
+        <Typography color="text.secondary">Loading {title}</Typography>
+      </div>
+    )}>
+      {children}
+    </Suspense>
+  );
 }

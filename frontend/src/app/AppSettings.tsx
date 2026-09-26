@@ -52,7 +52,7 @@ function readSettings(): StoredSettings {
         ? value.chartEngine
         : validChartEngine(legacyChartEngine)
           ? legacyChartEngine
-          : "tradingview",
+          : "lightweight",
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
@@ -64,7 +64,7 @@ function readSettings(): StoredSettings {
       theme: "dark",
       chartEngine: validChartEngine(localStorage.getItem(legacyChartEngineKey))
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
-        : "tradingview",
+        : "lightweight",
       candlePalette: "solid",
       fiveEmaOpacity: 0.9,
       relativeStrengthLineStyle: "large-dashed",

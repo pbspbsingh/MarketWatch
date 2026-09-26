@@ -94,6 +94,10 @@ body,
   gap: 0.5rem;
 }
 
+.workspace > .panel-status {
+  height: 100%;
+}
+
 .theme-management-page {
   display: flex;
   width: 100%;
