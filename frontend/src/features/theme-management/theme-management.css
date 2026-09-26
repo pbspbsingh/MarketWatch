@@ -69,6 +69,12 @@
     font-size: 0.625rem;
   }
 
+  & mark {
+    color: var(--color-warning);
+    background: transparent;
+    font-weight: 700;
+  }
+
   & .MuiChip-root {
     height: 1.25rem;
     font-size: 0.625rem;

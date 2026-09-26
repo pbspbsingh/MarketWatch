@@ -22,9 +22,9 @@ import { VirtualTickerList } from "./VirtualTickerList";
 import {
   enrichTickers,
   errorMessage,
+  filterThemeTickers,
   type IndustryFilterOption,
   jobStatusColor,
-  matchesIndustryFilter,
   sameData,
 } from "./themeManagementUtils";
 
@@ -70,18 +70,10 @@ export function AutomaticTab({
   const selectedJobUpdatedAt = selectedSummary?.updated_at;
   const selectedJobIsActive =
     selectedSummary?.status === "pending" || selectedSummary?.status === "running";
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return tickers.filter(
-      (ticker) =>
-        (!unassignedOnly || ticker.assignments.length === 0) &&
-        (!unprocessedOnly || !ticker.automatic_processed) &&
-        matchesIndustryFilter(ticker, selectedIndustryKeys) &&
-        (!query ||
-          ticker.symbol.toLowerCase().includes(query) ||
-          ticker.name?.toLowerCase().includes(query)),
-    );
-  }, [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly]);
+  const filtered = useMemo(
+    () => filterThemeTickers(tickers, search, selectedIndustryKeys, unassignedOnly, unprocessedOnly),
+    [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly],
+  );
 
   const reloadJobs = async () => {
     const next = await fetchThemeAiJobs();
@@ -196,6 +188,7 @@ export function AutomaticTab({
         />
         <VirtualTickerList
           tickers={filtered}
+          search={search}
           selectedSymbols={selectedSymbols}
           onToggle={(symbol) => {
             if (!selectedSymbols.has(symbol)) enrichTickers([symbol], onError);

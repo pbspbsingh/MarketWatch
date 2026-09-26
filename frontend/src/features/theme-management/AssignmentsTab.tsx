@@ -18,8 +18,8 @@ import { VirtualTickerList } from "./VirtualTickerList";
 import {
   enrichTickers,
   errorMessage,
+  filterThemeTickers,
   type IndustryFilterOption,
-  matchesIndustryFilter,
 } from "./themeManagementUtils";
 
 const MarketChartContainer = lazy(() =>
@@ -79,18 +79,10 @@ export function AssignmentsTab({
   const draftThemeIds = themeDraft.symbol === editedTicker?.symbol
     ? themeDraft.themeIds
     : editedTicker?.assignments.map((assignment) => assignment.theme_id) ?? [];
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return tickers.filter(
-      (ticker) =>
-        (!unassignedOnly || ticker.assignments.length === 0) &&
-        (!unprocessedOnly || !ticker.automatic_processed) &&
-        matchesIndustryFilter(ticker, selectedIndustryKeys) &&
-        (!query ||
-          ticker.symbol.toLowerCase().includes(query) ||
-          ticker.name?.toLowerCase().includes(query)),
-    );
-  }, [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly]);
+  const filtered = useMemo(
+    () => filterThemeTickers(tickers, search, selectedIndustryKeys, unassignedOnly, unprocessedOnly),
+    [search, selectedIndustryKeys, tickers, unassignedOnly, unprocessedOnly],
+  );
   const promptFingerprint = useMemo(
     () =>
       JSON.stringify({
@@ -236,6 +228,7 @@ export function AssignmentsTab({
         />
         <VirtualTickerList
           tickers={filtered}
+          search={search}
           selectedSymbols={batchSymbols}
           activeSymbol={editedTicker?.symbol}
           onToggle={(symbol) => {
