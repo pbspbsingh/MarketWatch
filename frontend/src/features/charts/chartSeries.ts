@@ -20,7 +20,7 @@ const dailySpecs: readonly MovingAverageSpec[] = [
   { period: 10, type: "EMA", color: dailyMovingAverageColors[10] },
   { period: 20, type: "EMA", color: dailyMovingAverageColors[20] },
   { period: 50, type: "SMA", color: dailyMovingAverageColors[50] },
-  { period: 100, type: "SMA", color: dailyMovingAverageColors[100] },
+  { period: 150, type: "SMA", color: dailyMovingAverageColors[150] },
   { period: 200, type: "SMA", color: dailyMovingAverageColors[200] },
 ];
 

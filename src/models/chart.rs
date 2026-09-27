@@ -6,7 +6,7 @@ use thiserror::Error;
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{DailyCandle, TickerSymbol};
 
-const DAILY_MA_PERIODS: [usize; 6] = [5, 10, 20, 50, 100, 200];
+const DAILY_MA_PERIODS: [usize; 6] = [5, 10, 20, 50, 150, 200];
 const WEEKLY_EMA_PERIODS: [usize; 3] = [5, 10, 20];
 const WEEKLY_DAILY_SMA_PERIOD: usize = 200;
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
@@ -467,7 +467,7 @@ mod tests {
     fn calculates_required_daily_close_smas() {
         let candles = candles(200);
 
-        for period in [10, 20, 50, 100, 200] {
+        for period in [10, 20, 50, 150, 200] {
             let series = close_sma(&candles, period).unwrap();
             assert_eq!(series.period, period);
             assert_eq!(series.points.len(), 201 - period);
@@ -488,7 +488,7 @@ mod tests {
                 close_ema(&candles, period).unwrap(),
             );
         }
-        for period in [50, 100, 200] {
+        for period in [50, 150, 200] {
             assert_eq!(
                 market_chart_moving_average(&candles, MarketChartInterval::Daily, period).unwrap(),
                 close_sma(&candles, period).unwrap(),

@@ -58,7 +58,7 @@ export const dailyMovingAverageColors = {
   10: "#3179f5",
   20: "#f6c309",
   50: "#fb9800",
-  100: "#fb6500",
+  150: "#fb6500",
   200: "#f60c0c",
 } as const;
 

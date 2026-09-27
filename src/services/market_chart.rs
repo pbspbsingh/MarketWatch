@@ -618,7 +618,7 @@ mod tests {
                 .iter()
                 .map(|series| series.period)
                 .collect::<Vec<_>>(),
-            [5, 10, 20, 50, 100, 200]
+            [5, 10, 20, 50, 150, 200]
         );
         assert_eq!(snapshot.moving_averages[5].points.len(), 21);
         assert_eq!(
