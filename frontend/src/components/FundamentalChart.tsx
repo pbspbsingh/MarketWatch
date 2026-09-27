@@ -171,6 +171,21 @@ export function FundamentalChart({
     if (chart !== null && appliedModelRef.current !== model) applyModel(chart, model);
   }, [applyModel, model]);
 
+  useLayoutEffect(() => {
+    const wrap = chartWrapRef.current;
+    if (wrap === null) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
+    });
+    observer.observe(wrap);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+
   return (
     <section className="fundamentals-panel">
       <Typography component="h3">{title}</Typography>
