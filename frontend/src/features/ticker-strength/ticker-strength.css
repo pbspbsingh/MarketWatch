@@ -14,7 +14,7 @@
   opacity: 0.45;
 }
 
-.ticker-strength-window,
+.ticker-strength-start-date,
 .ticker-strength-benchmark {
   display: flex;
   align-items: center;
@@ -33,36 +33,15 @@
   animation: ticker-strength-loading 0.9s ease-in-out infinite alternate;
 }
 
-.ticker-strength-window {
-  width: min(14rem, 28vw);
-
-  & .MuiSlider-root {
-    min-width: 6rem;
-    padding-block: 0.55rem;
-  }
-
-  & .MuiSlider-valueLabel {
-    top: calc(100% + 0.4rem);
-    transform: scale(0);
-    transform-origin: top center;
-
-    &::before {
-      top: 0;
-      bottom: auto;
-      transform: translate(-50%, -50%) rotate(45deg);
-    }
-
-    &.MuiSlider-valueLabelOpen {
-      transform: scale(1);
-    }
-  }
-}
-
-.ticker-strength-window-value {
-  width: 2.2rem;
+.ticker-strength-start-date input {
+  width: 7.8rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-canvas);
   color: var(--color-text);
-  font-weight: 700;
-  text-align: right;
+  color-scheme: inherit;
+  font: inherit;
 }
 
 .ticker-strength-benchmark {

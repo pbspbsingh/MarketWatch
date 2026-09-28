@@ -144,6 +144,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         store.clone(),
         yahoo.clone(),
         &config.market,
+        config.home.tickers.clone(),
     )?);
     let chart = Arc::new(ChartService::new(
         store.clone(),

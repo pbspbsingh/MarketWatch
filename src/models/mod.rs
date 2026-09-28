@@ -40,10 +40,7 @@ pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
 };
-pub use ticker_strength::{
-    TICKER_STRENGTH_MAX_SESSIONS, TICKER_STRENGTH_MIN_SESSIONS, TickerStrength,
-    calculate_ticker_strength,
-};
+pub use ticker_strength::{TickerStrength, calculate_ticker_strength};
 pub use ticker_symbol::TickerSymbol;
 pub use top_stock_screens::TopStockScreen;
 pub use tradingview_symbol::TradingViewSymbol;

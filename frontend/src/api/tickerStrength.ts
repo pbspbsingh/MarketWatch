@@ -9,12 +9,13 @@ export type TickerStrengthBenchmark = {
 export type TickerStrengthBenchmarkCatalog = {
   global: TickerStrengthBenchmark;
   contextual: TickerStrengthBenchmark[];
+  latest_session: string;
 };
 
 export type TickerStrengthScore = {
   symbol: string;
   score: number;
-  sessions: number;
+  start_date: string;
   samples: number;
   as_of: string;
 };
@@ -34,12 +35,12 @@ export async function fetchTickerStrengthBenchmarks(
 export async function fetchTickerStrengthScores(
   symbols: string[],
   benchmark: string,
-  sessions: number,
+  startDate: string,
   signal?: AbortSignal,
 ) {
   return post<TickerStrengthScore[]>(
     "/api/ticker-strength/scores",
-    { symbols, benchmark, sessions },
+    { symbols, benchmark, start_date: startDate },
     signal,
   );
 }

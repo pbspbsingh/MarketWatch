@@ -8,11 +8,7 @@ import {
 } from "../../api/tickerStrength";
 import type { GroupMode } from "../ticker-lens/types";
 
-export const tickerStrengthMinimumSessions = 5;
-export const tickerStrengthMaximumSessions = 150;
-export const tickerStrengthDefaultSessions = 20;
-
-const sessionsStorageKey = "market-watch.ticker-strength-sessions";
+const startDateStorageKey = "market-watch.ticker-strength-start-date";
 const benchmarkStorageKey = "market-watch.ticker-strength-benchmark";
 
 export type TickerStrengthUniverse = {
@@ -35,8 +31,8 @@ type ScoreState = { requestKey: string; scores: TickerStrengthScore[]; error?: s
 type TickerStrengthContextValue = {
   enabled: boolean;
   available: boolean;
-  draftSessions: number;
-  committedSessions: number;
+  startDate: string;
+  latestSession: string;
   benchmark: string;
   benchmarks: TickerStrengthBenchmark[];
   scores: TickerStrengthScore[];
@@ -44,8 +40,7 @@ type TickerStrengthContextValue = {
   calculating: boolean;
   error?: string;
   setEnabled: (enabled: boolean) => void;
-  setDraftSessions: (sessions: number) => void;
-  commitSessions: (sessions: number) => void;
+  setStartDate: (date: string) => void;
   setBenchmark: (benchmark: string) => void;
   setUniverse: (universe: TickerStrengthUniverse) => void;
 };
@@ -58,8 +53,7 @@ export function TickerStrengthProvider({
   children: ReactNode;
 }) {
   const [enabled, setEnabled] = useState(false);
-  const [committedSessions, setCommittedSessions] = useState(readSessions);
-  const [draftSessions, setDraftSessionsState] = useState(committedSessions);
+  const [storedStartDate, setStoredStartDate] = useState(() => localStorage.getItem(startDateStorageKey) ?? "");
   const [benchmark, setBenchmarkState] = useState(
     () => localStorage.getItem(benchmarkStorageKey)?.trim().toUpperCase() || "",
   );
@@ -105,10 +99,15 @@ export function TickerStrengthProvider({
     () => activeCatalog === undefined ? [] : [activeCatalog.global, ...activeCatalog.contextual],
     [activeCatalog],
   );
+  const latestSession = activeCatalog?.latest_session ?? "";
+  const startDate = activeCatalog === undefined ? "" : validStartDate(
+    storedStartDate, latestSession,
+  ) ? storedStartDate : oneMonthBefore(latestSession);
   const selectionReady = enabled && scope.symbols.length > 0
-    && benchmarks.some((option) => option.symbol === benchmark);
+    && benchmarks.some((option) => option.symbol === benchmark)
+    && startDate !== "";
   const scoreRequestKey = selectionReady
-    ? `${scope.requestKey}\u0002${benchmark}\u0002${committedSessions}`
+    ? `${scope.requestKey}\u0002${benchmark}\u0002${startDate}\u0002${latestSession}`
     : "";
 
   useEffect(() => {
@@ -116,7 +115,7 @@ export function TickerStrengthProvider({
       return;
     }
     const controller = new AbortController();
-    fetchTickerStrengthScores(scope.symbols, benchmark, committedSessions, controller.signal)
+    fetchTickerStrengthScores(scope.symbols, benchmark, startDate, controller.signal)
       .then((scores) => {
         if (!controller.signal.aborted) setScoreState({ requestKey: scoreRequestKey, scores });
       })
@@ -126,17 +125,13 @@ export function TickerStrengthProvider({
         }
       });
     return () => controller.abort();
-  }, [benchmark, committedSessions, scope.symbols, scoreRequestKey, scoreState.requestKey]);
+  }, [benchmark, scope.symbols, scoreRequestKey, scoreState.requestKey, startDate]);
 
-  const setDraftSessions = useCallback((sessions: number) => {
-    setDraftSessionsState(clampSessions(sessions));
-  }, []);
-  const commitSessions = useCallback((sessions: number) => {
-    const next = clampSessions(sessions);
-    setDraftSessionsState(next);
-    setCommittedSessions(next);
-    localStorage.setItem(sessionsStorageKey, String(next));
-  }, []);
+  const setStartDate = useCallback((date: string) => {
+    if (!validStartDate(date, latestSession)) return;
+    setStoredStartDate(date);
+    localStorage.setItem(startDateStorageKey, date);
+  }, [latestSession]);
   const setBenchmark = useCallback((symbol: string) => {
     setBenchmarkState(symbol);
     localStorage.setItem(benchmarkStorageKey, symbol);
@@ -150,8 +145,8 @@ export function TickerStrengthProvider({
   const value = useMemo<TickerStrengthContextValue>(() => ({
     enabled,
     available: scope.symbols.length > 0,
-    draftSessions,
-    committedSessions,
+    startDate,
+    latestSession,
     benchmark,
     benchmarks,
     scores: scoreState.requestKey === scoreRequestKey ? scoreState.scores : [],
@@ -159,13 +154,12 @@ export function TickerStrengthProvider({
     calculating: scoreRequestKey !== "" && scoreState.requestKey !== scoreRequestKey,
     error,
     setEnabled,
-    setDraftSessions,
-    commitSessions,
+    setStartDate,
     setBenchmark,
     setUniverse,
   }), [
-    benchmark, benchmarks, commitSessions, committedSessions, draftSessions, enabled, error, loading, scope.symbols.length,
-    scoreRequestKey, scoreState, setBenchmark, setDraftSessions, setUniverse,
+    benchmark, benchmarks, enabled, error, latestSession, loading, scope.symbols.length,
+    scoreRequestKey, scoreState, setBenchmark, setStartDate, setUniverse, startDate,
   ]);
 
   return <TickerStrengthContext value={value}>{children}</TickerStrengthContext>;
@@ -193,17 +187,14 @@ function scopeFor(universe: TickerStrengthUniverse): Scope {
   };
 }
 
-function readSessions() {
-  const storedSessions = Number(localStorage.getItem(sessionsStorageKey));
-  return validSessions(storedSessions) ? storedSessions : tickerStrengthDefaultSessions;
+function validStartDate(value: string, latest: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value > latest) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function validSessions(value: number) {
-  return Number.isInteger(value)
-    && value >= tickerStrengthMinimumSessions
-    && value <= tickerStrengthMaximumSessions;
-}
-
-function clampSessions(value: number) {
-  return Math.min(tickerStrengthMaximumSessions, Math.max(tickerStrengthMinimumSessions, Math.round(value)));
+function oneMonthBefore(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, month - 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month - 2, Math.min(day, lastDay))).toISOString().slice(0, 10);
 }

@@ -3,42 +3,38 @@ use chrono::NaiveDate;
 use serde::Serialize;
 use std::collections::HashMap;
 
-pub const TICKER_STRENGTH_ATR_SESSIONS: usize = 20;
-pub const TICKER_STRENGTH_MIN_SESSIONS: u16 = 5;
-pub const TICKER_STRENGTH_MAX_SESSIONS: u16 = 150;
+pub const TICKER_STRENGTH_ATR_SESSIONS: usize = 14;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TickerStrength {
     pub score: f64,
-    pub sessions: u16,
-    pub samples: u16,
+    pub start_date: NaiveDate,
+    pub samples: usize,
     pub as_of: NaiveDate,
 }
 
 pub fn calculate_ticker_strength(
     ticker: &[DailyCandle],
     benchmark: &[DailyCandle],
-    sessions: u16,
+    start_date: NaiveDate,
 ) -> Option<TickerStrength> {
-    if !(TICKER_STRENGTH_MIN_SESSIONS..=TICKER_STRENGTH_MAX_SESSIONS).contains(&sessions) {
-        return None;
-    }
-
     let benchmark_closes = benchmark
         .iter()
         .map(|candle| (candle.market_date, candle.close))
         .collect::<HashMap<_, _>>();
     let true_ranges = true_ranges(ticker);
-    let range_start = ticker.len().saturating_sub(usize::from(sessions));
     let mut score = 0.0;
-    let mut samples = 0_u16;
+    let mut samples = 0;
     let mut as_of = None;
 
-    for index in range_start..ticker.len() {
+    for index in 0..ticker.len() {
         if index == 0 || index < TICKER_STRENGTH_ATR_SESSIONS {
             continue;
         }
         let current = &ticker[index];
+        if current.market_date < start_date {
+            continue;
+        }
         let previous = &ticker[index - 1];
         let Some((&benchmark_close, &benchmark_previous_close)) = benchmark_closes
             .get(&current.market_date)
@@ -77,7 +73,7 @@ pub fn calculate_ticker_strength(
 
     Some(TickerStrength {
         score,
-        sessions,
+        start_date,
         samples,
         as_of: as_of?,
     })
@@ -97,4 +93,62 @@ fn true_ranges(candles: &[DailyCandle]) -> Vec<f64> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn includes_start_and_latest_sessions() {
+        let first = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let ticker = (0..25)
+            .map(|index| candle(first + chrono::Days::new(index), 100.0 + index as f64))
+            .collect::<Vec<_>>();
+        let benchmark = (0..25)
+            .map(|index| candle(first + chrono::Days::new(index), 100.0))
+            .collect::<Vec<_>>();
+
+        let start = first + chrono::Days::new(22);
+        let strength = calculate_ticker_strength(&ticker, &benchmark, start).unwrap();
+        assert_eq!(strength.start_date, start);
+        assert_eq!(strength.samples, 3);
+        assert_eq!(strength.as_of, first + chrono::Days::new(24));
+        assert!(strength.score > 0.0);
+        assert_eq!(
+            calculate_ticker_strength(&ticker, &benchmark, strength.as_of)
+                .unwrap()
+                .samples,
+            1
+        );
+        assert!(
+            calculate_ticker_strength(&ticker, &benchmark, first + chrono::Days::new(25)).is_none()
+        );
+    }
+
+    #[test]
+    fn date_window_has_no_session_cap() {
+        let first = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let ticker = (0..201)
+            .map(|index| candle(first + chrono::Days::new(index), 100.0 + index as f64))
+            .collect::<Vec<_>>();
+        let benchmark = (0..201)
+            .map(|index| candle(first + chrono::Days::new(index), 100.0))
+            .collect::<Vec<_>>();
+
+        let strength = calculate_ticker_strength(&ticker, &benchmark, first).unwrap();
+        assert_eq!(strength.samples, 187);
+        assert_eq!(strength.as_of, first + chrono::Days::new(200));
+    }
+
+    fn candle(market_date: NaiveDate, close: f64) -> DailyCandle {
+        DailyCandle {
+            market_date,
+            open: close,
+            high: close + 1.0,
+            low: close - 1.0,
+            close,
+            volume: 1_000,
+        }
+    }
 }

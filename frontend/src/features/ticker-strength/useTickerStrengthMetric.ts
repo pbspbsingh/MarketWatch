@@ -20,7 +20,7 @@ export function useTickerStrengthMetric() {
       tooltipLines: (symbol, value) => {
         const score = details.get(symbol);
         return score === undefined ? [] : [
-          `${formatTickerStrength(value)} · ${tickerStrength.benchmark} · ${score.samples}/${score.sessions} days`,
+          `${formatTickerStrength(value)} · ${tickerStrength.benchmark} · ${score.samples} days`,
         ];
       },
     };

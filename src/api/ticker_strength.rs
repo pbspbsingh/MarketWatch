@@ -1,10 +1,11 @@
 use crate::app::AppState;
-use crate::models::{TICKER_STRENGTH_MAX_SESSIONS, TICKER_STRENGTH_MIN_SESSIONS, TickerSymbol};
+use crate::models::TickerSymbol;
 use crate::services::ticker_strength::{BenchmarkCatalog, BenchmarkScope, TickerStrengthScore};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
+use chrono::NaiveDate;
 use serde::Deserialize;
 use tracing::error;
 
@@ -26,7 +27,7 @@ struct ScoresRequest {
     #[serde(deserialize_with = "super::deserialize_valid_ticker_symbols")]
     symbols: Vec<TickerSymbol>,
     benchmark: TickerSymbol,
-    sessions: u16,
+    start_date: NaiveDate,
 }
 
 pub fn router() -> Router<AppState> {
@@ -66,12 +67,12 @@ async fn scores(
     State(state): State<AppState>,
     Json(request): Json<ScoresRequest>,
 ) -> Result<Json<Vec<TickerStrengthScore>>, StatusCode> {
-    if !(TICKER_STRENGTH_MIN_SESSIONS..=TICKER_STRENGTH_MAX_SESSIONS).contains(&request.sessions) {
+    if request.start_date > state.ticker_strength.latest_session() {
         return Err(StatusCode::BAD_REQUEST);
     }
     state
         .ticker_strength
-        .scores(&request.symbols, &request.benchmark, request.sessions)
+        .scores(&request.symbols, &request.benchmark, request.start_date)
         .await
         .map(Json)
         .map_err(|request_error| {

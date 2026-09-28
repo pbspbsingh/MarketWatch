@@ -1,9 +1,5 @@
-import { MenuItem, Select, Slider, Typography } from "@mui/material";
-import {
-  tickerStrengthMaximumSessions,
-  tickerStrengthMinimumSessions,
-  useTickerStrength,
-} from "./TickerStrengthContext";
+import { MenuItem, Select, Typography } from "@mui/material";
+import { useTickerStrength } from "./TickerStrengthContext";
 import "./ticker-strength.css";
 
 type TickerStrengthControlsProps = {
@@ -30,29 +26,16 @@ export function TickerStrengthControls({
       >
         Ticker Strength
       </Typography>
-      <label className="ticker-strength-window">
-        <Typography component="span">Days</Typography>
-        <Typography component="span">{tickerStrengthMinimumSessions}</Typography>
-        <Slider
-          size="small"
-          min={tickerStrengthMinimumSessions}
-          max={tickerStrengthMaximumSessions}
-          step={1}
-          value={tickerStrength.draftSessions}
-          valueLabelDisplay="auto"
-          aria-label="Ticker Strength trading days"
-          disabled={disabled}
-          onChange={(_, value) =>
-            tickerStrength.setDraftSessions(Array.isArray(value) ? value[0] : value)
-          }
-          onChangeCommitted={(_, value) =>
-            tickerStrength.commitSessions(Array.isArray(value) ? value[0] : value)
-          }
+      <label className="ticker-strength-start-date">
+        <Typography component="span">Since</Typography>
+        <input
+          type="date"
+          value={tickerStrength.startDate}
+          max={tickerStrength.latestSession}
+          aria-label="Ticker Strength start date"
+          disabled={disabled || tickerStrength.loading}
+          onChange={(event) => tickerStrength.setStartDate(event.target.value)}
         />
-        <Typography component="span">{tickerStrengthMaximumSessions}</Typography>
-        <Typography className="ticker-strength-window-value" component="span">
-          {tickerStrength.draftSessions}D
-        </Typography>
       </label>
       <label className="ticker-strength-benchmark">
         <Typography component="span">Benchmark</Typography>
