@@ -1,6 +1,6 @@
 use crate::models::{DailyCandle, TickerSymbol};
 use crate::store::Store;
-use chrono::{Duration, Months, NaiveDate};
+use chrono::{Months, NaiveDate};
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
 use thiserror::Error;
@@ -9,6 +9,7 @@ use super::selection::{MarketExplorerSelection, includes_symbol, selected_symbol
 
 const DOUBLING_WINDOW_DAYS: i64 = 56;
 const VOLUME_AVERAGE_SESSIONS: usize = 50;
+const HISTORY_PADDING_MONTHS: u32 = 4;
 
 #[derive(Clone, Copy, Debug)]
 pub struct PowerPlayRequest {
@@ -65,9 +66,7 @@ impl PowerPlayService {
         let window_start = as_of
             .checked_sub_months(Months::new(request.lookback_months))
             .ok_or_else(|| PowerPlayError::Validation("date range is out of bounds".into()))?;
-        let fetch_start = window_start
-            .checked_sub_signed(Duration::days(DOUBLING_WINDOW_DAYS - 1))
-            .ok_or_else(|| PowerPlayError::Validation("date range is out of bounds".into()))?;
+        let fetch_start = history_start(window_start)?;
         let selected = selected_symbols(&self.store, &selection)
             .await
             .map_err(PowerPlayError::Persistence)?;
@@ -94,6 +93,12 @@ impl PowerPlayService {
             events,
         })
     }
+}
+
+fn history_start(window_start: NaiveDate) -> Result<NaiveDate, PowerPlayError> {
+    window_start
+        .checked_sub_months(Months::new(HISTORY_PADDING_MONTHS))
+        .ok_or_else(|| PowerPlayError::Validation("date range is out of bounds".into()))
 }
 
 fn validate_request(request: PowerPlayRequest) -> Result<(), PowerPlayError> {
@@ -215,6 +220,7 @@ fn best_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Datelike, Duration, Weekday};
 
     fn candles(count: usize) -> Vec<DailyCandle> {
         let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
@@ -259,5 +265,42 @@ mod tests {
         assert_eq!(event.end_date, values[95].market_date);
         assert!((event.return_percent - 200.0).abs() < f64::EPSILON);
         assert!(best_event(&symbol, &values, values[85].market_date, 15_000_000.01).is_none());
+    }
+
+    #[test]
+    fn first_lookback_day_has_fifty_prior_sessions_for_volume_filter() {
+        let symbol = TickerSymbol::parse("TEST").unwrap();
+        let window_start = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let fetch_start = history_start(window_start).unwrap();
+        let mut values = fetch_start
+            .iter_days()
+            .take_while(|date| *date <= window_start)
+            .filter(|date| !matches!(date.weekday(), Weekday::Sat | Weekday::Sun))
+            .map(|market_date| DailyCandle {
+                market_date,
+                open: 10.0,
+                high: 10.0,
+                low: 10.0,
+                close: 10.0,
+                volume: 1_000_000,
+            })
+            .collect::<Vec<_>>();
+        let start = values
+            .iter_mut()
+            .find(|candle| candle.market_date == window_start - Duration::days(21))
+            .unwrap();
+        start.close = 5.0;
+
+        let old_fetch_start = window_start - Duration::days(DOUBLING_WINDOW_DAYS - 1);
+        let old_history = values
+            .iter()
+            .filter(|candle| candle.market_date >= old_fetch_start)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(best_event(&symbol, &old_history, window_start, 10_000_000.0).is_none());
+
+        let event = best_event(&symbol, &values, window_start, 10_000_000.0).unwrap();
+        assert_eq!(event.end_date, window_start);
+        assert_eq!(event.dollar_volume, 10_000_000.0);
     }
 }
