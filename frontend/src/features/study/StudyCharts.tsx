@@ -13,6 +13,7 @@ import {
   HistogramSeries,
   LineSeries,
   ColorType,
+  PriceScaleMode,
   createChart,
   createSeriesMarkers,
   createTextWatermark,
@@ -89,7 +90,7 @@ export function StudyCharts({
   orientation,
   initialSplit,
   onSplitChange,
-  syncCrosshair,
+  logarithmicScale,
   tickerBVisible,
   historyLoading,
   onRequestHistory,
@@ -99,7 +100,7 @@ export function StudyCharts({
   orientation: SplitOrientation;
   initialSplit: number;
   onSplitChange: (split: number) => void;
-  syncCrosshair: boolean;
+  logarithmicScale: boolean;
   tickerBVisible: boolean;
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
@@ -130,9 +131,9 @@ export function StudyCharts({
   const dataInitializedRef = useRef(false);
   const intervalRef = useRef(result.interval);
   const crosshairOwnerRef = useRef<0 | 1>(0);
+  const logarithmicScaleRef = useRef(logarithmicScale);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const relativeStrengthInnerRef = useRef<ISeriesApi<"Line"> | undefined>(undefined);
-  const syncCrosshairRef = useRef(syncCrosshair);
   const historyLoadingRef = useRef(historyLoading);
   const onRequestHistoryRef = useRef(onRequestHistory);
   const viewportRef = useRef<PreservedViewport | undefined>(undefined);
@@ -264,9 +265,11 @@ export function StudyCharts({
   }, [setCrosshairOwner, tickerBVisible]);
 
   useEffect(() => {
-    syncCrosshairRef.current = syncCrosshair;
-    if (!syncCrosshair) chartsRef.current.forEach((chart) => chart.clearCrosshairPosition());
-  }, [syncCrosshair]);
+    logarithmicScaleRef.current = logarithmicScale;
+    chartsRef.current.forEach((chart) => chart.priceScale("right").applyOptions({
+      mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    }));
+  }, [logarithmicScale]);
 
   const openChartMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -321,6 +324,7 @@ export function StudyCharts({
         },
         rightPriceScale: {
           borderColor: appearance.chartColors.border,
+          mode: logarithmicScaleRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
           scaleMargins: overlappingPriceScaleMargins,
         },
         timeScale: { borderColor: appearance.chartColors.border, timeVisible: false },
@@ -418,10 +422,7 @@ export function StudyCharts({
     charts[1].timeScale().subscribeVisibleLogicalRangeChange(historyHandler);
     let synchronizingCrosshair = false;
     const crosshairHandler = (targetIndex: 0 | 1) => (event: MouseEventParams<Time>) => {
-      if (
-        !syncCrosshairRef.current
-        || synchronizingCrosshair
-      ) return;
+      if (synchronizingCrosshair) return;
       synchronizingCrosshair = true;
       try {
         const date = event.time === undefined ? undefined : timeKey(event.time);
