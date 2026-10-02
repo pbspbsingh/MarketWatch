@@ -54,6 +54,8 @@ interface MarketChartContainerProps {
   initialViewport?: ChartViewport;
   priceScaleBottomMargin?: number;
   rightPriceScaleVisible?: boolean;
+  timeScaleVisible?: boolean;
+  rightOffsetPixels?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
   historyInteractionTrackerRef?: RefObject<ChartHistoryInteractionTracker>;
@@ -83,6 +85,8 @@ export function MarketChartContainer({
   initialViewport,
   priceScaleBottomMargin,
   rightPriceScaleVisible = true,
+  timeScaleVisible = true,
+  rightOffsetPixels,
   onChartContext,
   onError,
   historyInteractionTrackerRef,
@@ -370,6 +374,8 @@ export function MarketChartContainer({
           initialViewport={initialViewport}
           priceScaleBottomMargin={priceScaleBottomMargin}
           rightPriceScaleVisible={rightPriceScaleVisible}
+          timeScaleVisible={timeScaleVisible}
+          rightOffsetPixels={rightOffsetPixels}
           onChartContext={handleChartContext}
           relativeStrength={snapshot.relative_strength}
           liveDelta={liveDelta}

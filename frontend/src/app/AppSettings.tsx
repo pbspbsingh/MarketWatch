@@ -27,6 +27,8 @@ export type RelativeStrengthLineStyle =
 type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
+  showWeeklyChartOverlay: boolean;
+  showWeeklyOverlayAxes: boolean;
   candlePalette: CandlePalette;
   fiveEmaOpacity: number;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
@@ -35,6 +37,8 @@ type StoredSettings = {
 type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
+  setShowWeeklyChartOverlay: (show: boolean) => void;
+  setShowWeeklyOverlayAxes: (show: boolean) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
   setFiveEmaOpacity: (opacity: number) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
@@ -53,6 +57,8 @@ function readSettings(): StoredSettings {
         : validChartEngine(legacyChartEngine)
           ? legacyChartEngine
           : "lightweight",
+      showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
+      showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
@@ -65,6 +71,8 @@ function readSettings(): StoredSettings {
       chartEngine: validChartEngine(localStorage.getItem(legacyChartEngineKey))
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
         : "lightweight",
+      showWeeklyChartOverlay: false,
+      showWeeklyOverlayAxes: true,
       candlePalette: "solid",
       fiveEmaOpacity: 0.9,
       relativeStrengthLineStyle: "large-dashed",
@@ -106,6 +114,10 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     ...settings,
     setTheme: (nextTheme) => setSettings((current) => ({ ...current, theme: nextTheme })),
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
+    setShowWeeklyChartOverlay: (showWeeklyChartOverlay) =>
+      setSettings((current) => ({ ...current, showWeeklyChartOverlay })),
+    setShowWeeklyOverlayAxes: (showWeeklyOverlayAxes) =>
+      setSettings((current) => ({ ...current, showWeeklyOverlayAxes })),
     setCandlePalette: (candlePalette) =>
       setSettings((current) => ({ ...current, candlePalette })),
     setFiveEmaOpacity: (fiveEmaOpacity) =>

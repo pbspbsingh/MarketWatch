@@ -154,10 +154,14 @@ export function AppShell() {
     chartEngine,
     fiveEmaOpacity,
     relativeStrengthLineStyle,
+    showWeeklyChartOverlay,
+    showWeeklyOverlayAxes,
     setCandlePalette,
     setChartEngine,
     setFiveEmaOpacity,
     setRelativeStrengthLineStyle,
+    setShowWeeklyChartOverlay,
+    setShowWeeklyOverlayAxes,
     theme,
     setTheme,
   } = useAppSettings();
@@ -335,6 +339,47 @@ export function AppShell() {
               <ToggleButton value="lightweight" aria-label="Lightweight Charts">
                 Lightweight
               </ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              Weekly overlay in Ticker Lens
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              value={showWeeklyChartOverlay ? "on" : "off"}
+              aria-label="Weekly chart overlay (Alt or Option plus W)"
+              title="Alt/Option+W"
+              onChange={(_, value) => {
+                if (value === "on" || value === "off") {
+                  setShowWeeklyChartOverlay(value === "on");
+                }
+              }}
+            >
+              <ToggleButton value="off">Off</ToggleButton>
+              <ToggleButton value="on">On</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
+              Overlay price and time axes
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              value={showWeeklyOverlayAxes ? "show" : "hide"}
+              aria-label="Weekly overlay price and time axes"
+              onChange={(_, value) => {
+                if (value === "show" || value === "hide") {
+                  setShowWeeklyOverlayAxes(value === "show");
+                }
+              }}
+            >
+              <ToggleButton value="show">Show</ToggleButton>
+              <ToggleButton value="hide">Hide</ToggleButton>
             </ToggleButtonGroup>
           </div>
           <div className="settings-control">

@@ -1,0 +1,67 @@
+.weekly-chart-overlay {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-canvas);
+  box-shadow: 0 0.5rem 1.5rem var(--color-overlay);
+}
+
+.weekly-chart-overlay-header {
+  display: flex;
+  height: 1.65rem;
+  min-height: 1.65rem;
+  padding: 0 0.2rem 0 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-raised);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.weekly-chart-overlay-header .MuiIconButton-root {
+  padding: 0.15rem;
+}
+
+.weekly-chart-overlay-header strong {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-chart-overlay-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.weekly-chart-overlay-error {
+  position: absolute;
+  z-index: 5;
+  inset: auto 0 0;
+  padding: 0.35rem 0.5rem;
+  color: var(--color-text);
+  background: var(--color-raised);
+  font-size: 0.7rem;
+}
+
+.weekly-chart-overlay-resize {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 60%, var(--color-muted) 60%, var(--color-muted) 65%, transparent 65%);
+}

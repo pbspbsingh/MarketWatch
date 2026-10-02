@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
+import { useAppSettings } from "../../app/AppSettings";
 import { fetchSectorRankings, type SectorRanking } from "../../api/industries";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
 import { createTickerStreamClient } from "../../api/tickerStream";
@@ -127,6 +128,8 @@ export function TickerLens({
   onTickerUniverseChange,
   defaultMetricSort,
 }: TickerLensProps) {
+  const { showWeeklyChartOverlay, setShowWeeklyChartOverlay } = useAppSettings();
+  const [lensElement, setLensElement] = useState<HTMLElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const searchKey = searchParams.toString();
@@ -321,9 +324,9 @@ export function TickerLens({
   useEffect(() => () => tickerStream.close(), [tickerStream]);
 
   useEffect(() => {
-    const handleGroupToggleShortcut = (event: KeyboardEvent) => {
+    const handleShortcut = (event: KeyboardEvent) => {
       if (
-        event.code !== "KeyG" ||
+        (event.code !== "KeyG" && event.code !== "KeyW") ||
         event.defaultPrevented ||
         event.repeat ||
         event.ctrlKey ||
@@ -335,11 +338,12 @@ export function TickerLens({
         return;
       }
       event.preventDefault();
-      setGroupsCollapsed((collapsed) => !collapsed);
+      if (event.code === "KeyG") setGroupsCollapsed((collapsed) => !collapsed);
+      else setShowWeeklyChartOverlay(!showWeeklyChartOverlay);
     };
-    document.addEventListener("keydown", handleGroupToggleShortcut);
-    return () => document.removeEventListener("keydown", handleGroupToggleShortcut);
-  }, []);
+    document.addEventListener("keydown", handleShortcut);
+    return () => document.removeEventListener("keydown", handleShortcut);
+  }, [setShowWeeklyChartOverlay, showWeeklyChartOverlay]);
 
   useEffect(() => {
     writeTickerFilterValues(tickerFilters);
@@ -514,6 +518,7 @@ export function TickerLens({
 
   return (
     <section
+      ref={setLensElement}
       className={[
         "ticker-lens",
         bounded ? "ticker-lens-bounded" : "",
@@ -596,6 +601,7 @@ export function TickerLens({
         revealTicker={revealTicker}
       />
       <ChartPanel
+        overlayContainer={lensElement}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         industryKeys={industryKeys}

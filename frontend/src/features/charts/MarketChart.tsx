@@ -84,6 +84,8 @@ interface MarketChartProps {
   initialViewport?: ChartViewport;
   priceScaleBottomMargin?: number;
   rightPriceScaleVisible?: boolean;
+  timeScaleVisible?: boolean;
+  rightOffsetPixels?: number;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   liveDelta?: MarketChartLiveDelta;
@@ -124,6 +126,8 @@ export function MarketChart({
   initialViewport,
   priceScaleBottomMargin,
   rightPriceScaleVisible = true,
+  timeScaleVisible = true,
+  rightOffsetPixels = chartRightOffsetPixels,
   onChartContext,
   relativeStrength,
   liveDelta,
@@ -199,7 +203,8 @@ export function MarketChart({
           bottom: priceScaleBottomMargin,
         } }),
     },
-  }), [priceScaleBottomMargin, rightPriceScaleVisible]);
+    timeScale: { visible: timeScaleVisible, rightOffsetPixels },
+  }), [priceScaleBottomMargin, rightOffsetPixels, rightPriceScaleVisible, timeScaleVisible]);
 
   const updateRelativeStrengthStructure = useCallback((
     structure: MarketChartRelativeStrengthStructure | null | undefined,
@@ -609,7 +614,7 @@ export function MarketChart({
     }
     if (timeScale !== null && timeScale !== undefined) {
       timeScale.scrollToPosition(
-        chartRightOffsetPixels / timeScale.options().barSpacing,
+        rightOffsetPixels / timeScale.options().barSpacing,
         false,
       );
     }
@@ -620,7 +625,7 @@ export function MarketChart({
       onChartContextRef.current?.(chartContextRef.current);
       contextReportedRef.current = true;
     }
-  }, [data.candles, data.interval, data.moving_averages, data.symbol, data.volume_average]);
+  }, [data.candles, data.interval, data.moving_averages, data.symbol, data.volume_average, rightOffsetPixels]);
 
   const trendLabel = relativeStrengthTrend === "uptrend"
     ? "Uptrend"

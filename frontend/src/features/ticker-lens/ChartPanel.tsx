@@ -50,8 +50,12 @@ import {
 import "./chart-panel.css";
 
 const SplitLightweightCharts = lazy(() => import("./SplitLightweightCharts"));
+const WeeklyChartOverlay = lazy(() =>
+  import("./WeeklyChartOverlay").then(({ WeeklyChartOverlay: Overlay }) => ({ default: Overlay })),
+);
 
 interface ChartPanelProps {
+  overlayContainer?: HTMLElement | null;
   mode: GroupMode;
   groupKeys: Set<string>;
   industryKeys: Set<string>;
@@ -69,6 +73,7 @@ interface RequestState<T> {
 }
 
 export function ChartPanel({
+  overlayContainer,
   mode,
   groupKeys,
   industryKeys,
@@ -79,6 +84,7 @@ export function ChartPanel({
   forceSystemBenchmark = false,
 }: ChartPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
+  const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
   const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
   const [groupSummaryState, setGroupSummaryState] = useState<RequestState<TickerGroupSummary>>({ key: "" });
   const [interval, setInterval] = useState<"D" | "W">(() =>
@@ -96,7 +102,12 @@ export function ChartPanel({
   }>();
   const [exportingChartPanel, setExportingChartPanel] = useState(false);
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
-  const { chartEngine } = useAppSettings();
+  const {
+    chartEngine,
+    showWeeklyChartOverlay,
+    showWeeklyOverlayAxes,
+    setShowWeeklyChartOverlay,
+  } = useAppSettings();
   const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
   const [detailsSelection, setDetailsSelection] = useState<typeof tickerSelection>();
   const [summaryVersion, setSummaryVersion] = useState(0);
@@ -415,7 +426,7 @@ export function ChartPanel({
         />
       )}
       {selectedTicker !== undefined && (
-        <div className="ticker-lens-chart-stage">
+        <div ref={setChartStageElement} className="ticker-lens-chart-stage">
           {summary !== undefined && chartEngine === "tradingview" && (
             <SplitTradingViewCharts
               topSymbol={summary.tradingview_symbol}
@@ -450,6 +461,20 @@ export function ChartPanel({
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
                 onError={handleChartError}
+              />
+            </Suspense>
+          )}
+          {overlayContainer !== undefined && overlayContainer !== null
+            && chartStageElement !== null && summary !== undefined
+            && interval === "D" && showWeeklyChartOverlay && (
+            <Suspense fallback={null}>
+              <WeeklyChartOverlay
+                container={overlayContainer}
+                chartStage={chartStageElement}
+                symbol={summary.symbol}
+                tradingViewSymbol={summary.tradingview_symbol}
+                showAxes={showWeeklyOverlayAxes}
+                onClose={() => setShowWeeklyChartOverlay(false)}
               />
             </Suspense>
           )}
