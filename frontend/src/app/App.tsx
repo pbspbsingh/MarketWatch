@@ -3,6 +3,9 @@ import { CircularProgress, Typography } from "@mui/material";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
 
+const AboutPage = lazy(() =>
+  import("../features/about/AboutPage").then(({ AboutPage }) => ({ default: AboutPage })),
+);
 const CsvAnalyzerPage = lazy(() =>
   import("../features/csv-analyzer/CsvAnalyzerPage").then(({ CsvAnalyzerPage }) => ({
     default: CsvAnalyzerPage,
@@ -60,6 +63,7 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
+        <Route path="/about" element={<Page title="About"><AboutPage /></Page>} />
         <Route index element={<Page title="Home"><HomePage /></Page>} />
         <Route path="/market-watch" element={<Page title="Market Watch"><MarketWatchPage /></Page>} />
         <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />

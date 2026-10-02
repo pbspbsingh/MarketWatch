@@ -1,3 +1,4 @@
+mod build_info;
 mod chart;
 mod daily_notes;
 mod details;
@@ -25,6 +26,7 @@ use serde::{Deserialize, Deserializer};
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(build_info::router())
         .merge(chart::router())
         .merge(daily_notes::router())
         .merge(details::router())

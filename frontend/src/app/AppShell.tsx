@@ -16,6 +16,7 @@ import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   Drawer,
   IconButton,
@@ -48,6 +49,7 @@ const destinations = [
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
   ["Daily Notes", "/daily-notes", NoteAltOutlinedIcon, "amber"],
   ["Trade Analyzer", "/trade-analyzer", QueryStatsOutlinedIcon, "green"],
+  ["About", "/about", InfoOutlinedIcon, "blue"],
 ] as const;
 
 const triggerInset = 4;
