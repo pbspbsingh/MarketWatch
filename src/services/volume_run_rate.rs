@@ -27,9 +27,19 @@ struct History {
     days: BTreeMap<NaiveDate, Vec<(u32, u64)>>,
     averages: [Option<f64>; 288],
     latest: Option<YahooLiveVolume>,
+    candle_volume: Option<YahooLiveVolume>,
 }
 
 impl History {
+    fn current_volume(&self) -> Option<&YahooLiveVolume> {
+        self.latest.as_ref().or(self.candle_volume.as_ref())
+    }
+
+    fn ratio(&self, slot: usize) -> Option<f64> {
+        let volume = self.current_volume().map_or(0, |volume| volume.volume);
+        self.averages[slot].map(|average| volume as f64 / average)
+    }
+
     fn is_current(&self, schedule: &MarketSchedule, now: DateTime<Utc>) -> bool {
         schedule.session(now) != MarketSession::Closed
             && self.market_date == schedule.market_date(now)
@@ -106,6 +116,7 @@ impl VolumeRunRateService {
         if self.schedule.market_date(finished) == date
             && self.schedule.session(finished) != MarketSession::Closed
         {
+            let candle_volume = current_day_volume(symbol, &candles, &self.schedule, date)?;
             let days = historical_days(candles, &self.schedule, date);
             let averages = cumulative_averages(&days);
             self.history
@@ -118,6 +129,7 @@ impl VolumeRunRateService {
                         days,
                         averages,
                         latest: None,
+                        candle_volume,
                     },
                 );
         }
@@ -143,26 +155,51 @@ impl VolumeRunRateService {
         self.expire(now);
         let history = self.history.lock().expect("VRR history lock poisoned");
         let cached = history.get(symbol);
-        // Preserve the last genuine numerator, but advance the baseline even for quiet tickers.
+        // Prefer genuine live volume; fall back to today's fetched candle total.
+        // Advance the baseline even for quiet tickers.
         let as_of = cached
-            .and_then(|history| history.latest.as_ref())
+            .and_then(History::current_volume)
             .map(|volume| volume.updated_at);
         let slot = self.schedule.market_time(now).num_seconds_from_midnight() / 300;
-        let average = cached.and_then(|history| history.averages[slot as usize]);
-        let volume = cached
-            .and_then(|history| history.latest.as_ref())
-            .map_or(0, |volume| volume.volume);
         VolumeRunRate {
             symbol: symbol.clone(),
             market_date: self.schedule.market_date(now),
             visible: self.schedule.session(now) != MarketSession::Closed,
             cached: cached.is_some(),
-            ratio: average.map(|average| volume as f64 / average),
+            ratio: cached.and_then(|history| history.ratio(slot as usize)),
             sample_days: cached.map_or(0, |history| history.days.len()),
             updated_at: as_of,
             calculated_at: now,
         }
     }
+}
+
+fn current_day_volume(
+    symbol: &YahooSymbol,
+    candles: &[Candle],
+    schedule: &MarketSchedule,
+    today: NaiveDate,
+) -> Result<Option<YahooLiveVolume>, YahooError> {
+    let mut volume = 0_u64;
+    let mut updated_at: Option<DateTime<Utc>> = None;
+    for candle in candles
+        .iter()
+        .filter(|candle| schedule.market_date(candle.timestamp) == today)
+    {
+        volume = volume
+            .checked_add(candle.volume)
+            .ok_or_else(|| YahooError::InvalidResponse {
+                message: format!("cumulative intraday volume overflow for {symbol} on {today}"),
+            })?;
+        updated_at =
+            Some(updated_at.map_or(candle.timestamp, |latest| latest.max(candle.timestamp)));
+    }
+    Ok(updated_at.map(|updated_at| YahooLiveVolume {
+        symbol: symbol.clone(),
+        market_date: today,
+        volume,
+        updated_at,
+    }))
 }
 
 fn historical_days(
@@ -232,6 +269,127 @@ mod tests {
         DateTime::parse_from_rfc3339(value).unwrap().to_utc()
     }
 
+    fn candle(timestamp: &str, volume: u64) -> Candle {
+        Candle {
+            timestamp: time(timestamp),
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume,
+        }
+    }
+
+    #[test]
+    fn afterhours_activation_uses_today_candles_without_live_volume() {
+        let schedule = schedule();
+        let date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        let symbol = YahooSymbol::parse("AAPL").unwrap();
+        let candles = vec![
+            candle("2026-09-30T11:00:00Z", 100), // Historical baseline.
+            candle("2026-10-01T11:00:00Z", 10),  // Today's premarket.
+            candle("2026-10-02T00:00:00Z", 40),  // Still October 1 in market timezone.
+            candle("2026-10-01T14:00:00Z", 20),  // Today's regular session.
+            candle("2026-10-01T23:50:00Z", 30),  // Today's afterhours.
+            candle("2026-10-02T07:00:00Z", 999), // Next market date.
+        ];
+        let candle_volume = current_day_volume(&symbol, &candles, &schedule, date).unwrap();
+        let days = historical_days(candles, &schedule, date);
+        let history = History {
+            market_date: date,
+            averages: cumulative_averages(&days),
+            days,
+            latest: None,
+            candle_volume,
+        };
+        let volume = history.current_volume().unwrap();
+        assert_eq!(volume.symbol, symbol);
+        assert_eq!(volume.market_date, date);
+        assert_eq!(volume.volume, 100);
+        assert_eq!(volume.updated_at, time("2026-10-02T00:00:00Z"));
+        assert_eq!(history.days.len(), 1);
+        assert_eq!(history.ratio(203), Some(1.0));
+    }
+
+    #[test]
+    fn live_volume_takes_priority_over_the_candle_fallback() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        let symbol = YahooSymbol::parse("AAPL").unwrap();
+        let mut history = History {
+            market_date: date,
+            days: BTreeMap::new(),
+            averages: [Some(100.0); 288],
+            latest: None,
+            candle_volume: current_day_volume(
+                &symbol,
+                &[candle("2026-10-01T23:50:00Z", 200)],
+                &schedule(),
+                date,
+            )
+            .unwrap(),
+        };
+        assert_eq!(history.ratio(203), Some(2.0));
+        history.observe(YahooLiveVolume {
+            symbol: symbol.clone(),
+            market_date: date,
+            volume: 300,
+            updated_at: time("2026-10-01T22:00:00Z"),
+        });
+        assert_eq!(history.ratio(203), Some(3.0));
+        assert_eq!(
+            history.current_volume().unwrap().updated_at,
+            time("2026-10-01T22:00:00Z")
+        );
+        history.observe(YahooLiveVolume {
+            symbol,
+            market_date: date,
+            volume: 0,
+            updated_at: time("2026-10-01T23:55:00Z"),
+        });
+        assert_eq!(history.ratio(203), Some(0.0));
+    }
+
+    #[test]
+    fn candle_fallback_distinguishes_no_today_candles_from_zero_volume() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        let symbol = YahooSymbol::parse("AAPL").unwrap();
+        assert!(
+            current_day_volume(
+                &symbol,
+                &[candle("2026-09-30T23:55:00Z", 100)],
+                &schedule(),
+                date,
+            )
+            .unwrap()
+            .is_none()
+        );
+        let reading = current_day_volume(
+            &symbol,
+            &[candle("2026-10-01T23:55:00Z", 0)],
+            &schedule(),
+            date,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(reading.volume, 0);
+    }
+
+    #[test]
+    fn candle_fallback_rejects_volume_overflow() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        let symbol = YahooSymbol::parse("AAPL").unwrap();
+        let result = current_day_volume(
+            &symbol,
+            &[
+                candle("2026-10-01T23:50:00Z", u64::MAX),
+                candle("2026-10-01T23:55:00Z", 1),
+            ],
+            &schedule(),
+            date,
+        );
+        assert!(matches!(result, Err(YahooError::InvalidResponse { .. })));
+    }
+
     #[test]
     fn cache_survives_idle_and_expires_after_extended_session_or_date_rollover() {
         let history = History {
@@ -239,6 +397,7 @@ mod tests {
             days: BTreeMap::new(),
             averages: [None; 288],
             latest: None,
+            candle_volume: None,
         };
         let schedule = schedule();
         for timestamp in [
@@ -258,14 +417,6 @@ mod tests {
 
     #[test]
     fn historical_days_use_market_timezone_and_exclude_today() {
-        let candle = |timestamp, volume| Candle {
-            timestamp: time(timestamp),
-            open: 1.0,
-            high: 1.0,
-            low: 1.0,
-            close: 1.0,
-            volume,
-        };
         let today = NaiveDate::from_ymd_opt(2026, 10, 2).unwrap();
         let days = historical_days(
             vec![
@@ -294,6 +445,7 @@ mod tests {
             days: BTreeMap::new(),
             averages: [None; 288],
             latest: None,
+            candle_volume: None,
         };
         history.observe(reading("2026-10-01T19:00:00Z", 100));
         history.observe(reading("2026-10-01T22:00:00Z", 120));
