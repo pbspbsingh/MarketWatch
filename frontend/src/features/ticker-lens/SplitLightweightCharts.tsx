@@ -38,8 +38,10 @@ import {
   type MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 import { isArrowKeyControl, tickerMarketWatchUrl } from "./utils";
+import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
 interface SplitLightweightChartsProps {
+  volumeRunRate?: VolumeRunRateControl;
   topSymbol: string;
   bottomSymbol: string;
   topCompanyName?: string;
@@ -72,6 +74,7 @@ interface ChartMenuState {
 }
 
 export default function SplitLightweightCharts({
+  volumeRunRate,
   topSymbol,
   bottomSymbol,
   topCompanyName,
@@ -261,6 +264,7 @@ export default function SplitLightweightCharts({
           >
             <MarketChartContainer
               symbol={topSymbol}
+              volumeRunRate={volumeRunRate}
               companyName={topCompanyName}
               tradingViewSymbol={topTradingViewSymbol}
               interval={chartInterval}

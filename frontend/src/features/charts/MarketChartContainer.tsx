@@ -31,6 +31,7 @@ import {
   previousHistoryRange,
 } from "./chartHistory";
 import "./market-chart.css";
+import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
 type LoadState =
   | { key: string; status: "loading" }
@@ -45,6 +46,7 @@ export interface ChartHistoryInteractionTracker {
 export type MarketChartLoadStatus = "loading" | "ready" | "error";
 
 interface MarketChartContainerProps {
+  volumeRunRate?: VolumeRunRateControl;
   symbol: string;
   companyName?: string;
   companyNameHref?: string;
@@ -76,6 +78,7 @@ const chartInteractionWindowMs = 1_000;
 const automaticHistoryCheckDelayMs = 500;
 
 export function MarketChartContainer({
+  volumeRunRate,
   symbol,
   companyName,
   companyNameHref,
@@ -368,6 +371,7 @@ export function MarketChartContainer({
         <MarketChart
           key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
+          volumeRunRate={volumeRunRate}
           companyName={companyName}
           companyNameHref={companyNameHref}
           tradingViewSymbol={tradingViewSymbol}

@@ -9,8 +9,9 @@ use crate::models::{
     calculate_relative_strength_line,
 };
 use crate::models::{DailyCandle, TickerSymbol, YahooSymbol};
+use crate::services::volume_run_rate::{VolumeRunRate, VolumeRunRateService};
 use crate::services::yahoo::{YahooService, YahooServiceError};
-use crate::services::yahoo_live::YahooLiveHandle;
+use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveVolume};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -18,6 +19,7 @@ use thiserror::Error;
 const MAX_HISTORY_RANGE_DAYS: i64 = 10_000;
 
 pub struct MarketChartService {
+    volume_run_rate: Arc<VolumeRunRateService>,
     yahoo: Arc<YahooService>,
     yahoo_live: YahooLiveHandle,
     market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
@@ -48,12 +50,34 @@ impl MarketChartService {
         yahoo: Arc<YahooService>,
         yahoo_live: YahooLiveHandle,
         market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
+        volume_run_rate: Arc<VolumeRunRateService>,
     ) -> Self {
         Self {
+            volume_run_rate,
             yahoo,
             yahoo_live,
             market_repositioning_dates,
         }
+    }
+
+    pub async fn activate_volume_run_rate(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> Result<VolumeRunRate, MarketChartError> {
+        self.volume_run_rate
+            .activate(&YahooSymbol::from(symbol))
+            .await
+            .map_err(|error| MarketChartError::Data(error.into()))
+    }
+
+    pub async fn volume_run_rate(&self, symbol: &TickerSymbol) -> VolumeRunRate {
+        self.volume_run_rate
+            .status(&YahooSymbol::from(symbol))
+            .await
+    }
+
+    pub fn observe_live_volume(&self, volume: YahooLiveVolume) {
+        self.volume_run_rate.observe(volume);
     }
 
     pub async fn snapshot(

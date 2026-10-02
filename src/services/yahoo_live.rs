@@ -35,7 +35,16 @@ pub struct YahooLivePrice {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct YahooLiveVolume {
+    pub symbol: YahooSymbol,
+    pub market_date: chrono::NaiveDate,
+    pub volume: u64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum YahooLiveUpdate {
+    Volume(YahooLiveVolume),
     Regular(YahooLiveCandle),
     PreMarket(YahooLiveCandle),
     PostMarket(YahooLivePrice),
@@ -44,6 +53,7 @@ pub enum YahooLiveUpdate {
 impl YahooLiveUpdate {
     pub fn symbol(&self) -> &YahooSymbol {
         match self {
+            Self::Volume(update) => &update.symbol,
             Self::Regular(update) | Self::PreMarket(update) => &update.symbol,
             Self::PostMarket(update) => &update.symbol,
         }
@@ -52,6 +62,7 @@ impl YahooLiveUpdate {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct YahooLiveState {
+    volume: Option<YahooLiveVolume>,
     regular: Option<YahooLiveCandle>,
     session: Option<YahooLiveSessionUpdate>,
 }
@@ -86,6 +97,10 @@ pub enum YahooLiveError {
 }
 
 enum Command {
+    LatestVolume {
+        symbol: YahooSymbol,
+        reply: oneshot::Sender<Option<YahooLiveVolume>>,
+    },
     Subscribe {
         symbol: YahooSymbol,
         reply: oneshot::Sender<Result<watch::Receiver<YahooLiveState>, YahooLiveError>>,
@@ -140,6 +155,19 @@ struct CachedCandle {
 }
 
 impl YahooLiveHandle {
+    pub async fn latest_volume(
+        &self,
+        symbol: &YahooSymbol,
+    ) -> Result<Option<YahooLiveVolume>, YahooLiveError> {
+        let (reply, result) = oneshot::channel();
+        self.commands
+            .send(Command::LatestVolume {
+                symbol: symbol.clone(),
+                reply,
+            })
+            .map_err(|_| YahooLiveError::Unavailable)?;
+        result.await.map_err(|_| YahooLiveError::Unavailable)
+    }
     pub fn spawn(yahoo: Arc<YahooService>, schedule: MarketSchedule) -> Self {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (pricing_sender, pricing) = mpsc::channel(PRICING_BUFFER_SIZE);
@@ -233,6 +261,13 @@ impl YahooLiveSubscription {
     fn queue_current_state(&mut self) {
         let current = self.updates.borrow_and_update().clone();
         self.pending.clear();
+        if current.volume != self.delivered.volume {
+            if let Some(update) = current.volume.clone() {
+                self.pending.push_back(YahooLiveUpdate::Volume(update));
+            } else {
+                self.delivered.volume = None;
+            }
+        }
         if current.regular != self.delivered.regular
             && let Some(update) = current.regular.clone()
         {
@@ -256,6 +291,7 @@ impl YahooLiveSubscription {
     fn pop_pending(&mut self) -> Option<YahooLiveUpdate> {
         let update = self.pending.pop_front()?;
         match &update {
+            YahooLiveUpdate::Volume(update) => self.delivered.volume = Some(update.clone()),
             YahooLiveUpdate::Regular(update) => self.delivered.regular = Some(update.clone()),
             YahooLiveUpdate::PreMarket(update) => {
                 self.delivered.session = Some(YahooLiveSessionUpdate::PreMarket(update.clone()));
@@ -300,6 +336,15 @@ impl YahooLiveActor {
 
     fn handle_command(&mut self, command: Command) {
         match command {
+            Command::LatestVolume { symbol, reply } => {
+                let date = self.schedule.market_date(Utc::now());
+                let latest = self
+                    .streams
+                    .get(&symbol)
+                    .and_then(|stream| stream.borrow().volume.clone())
+                    .filter(|volume| volume.market_date == date);
+                let _ = reply.send(latest);
+            }
             Command::Subscribe { symbol, reply } => {
                 let result = self.add_subscription(&symbol);
                 let _ = reply.send(result);
@@ -600,6 +645,20 @@ impl YahooLiveActor {
             return;
         };
         let pre_market = session == MarketSession::PreMarket;
+        // Volume is independent of OHLC completeness and remains meaningful after hours.
+        if let Some(volume) = update.day_volume.filter(|volume| *volume >= 0)
+            && accept_frame_timestamp(&mut self.latest_frame_at, &symbol, timestamp)
+            && let Some(stream) = self.streams.get(&symbol)
+        {
+            stream.send_modify(|state| {
+                state.volume = Some(YahooLiveVolume {
+                    symbol: symbol.clone(),
+                    market_date: self.schedule.market_date(timestamp),
+                    volume: volume as u64,
+                    updated_at: timestamp,
+                });
+            });
+        }
         if session == MarketSession::PostMarket {
             let Some(price) = update.price.and_then(|price| valid_price(price.into())) else {
                 return;
@@ -1072,6 +1131,45 @@ mod tests {
             post_market,
             YahooLiveUpdate::PostMarket(update) if update.price == 102.0
         ));
+    }
+
+    #[tokio::test]
+    async fn volume_updates_do_not_require_a_candle_and_survive_price_only_frames() {
+        let (commands, _) = mpsc::unbounded_channel();
+        let (updates, receiver) = watch::channel(YahooLiveState::default());
+        let timestamp = Utc.with_ymd_and_hms(2026, 10, 1, 22, 0, 0).unwrap();
+        let volume = YahooLiveVolume {
+            symbol: yahoo("AAPL"),
+            market_date: timestamp.date_naive(),
+            volume: 100_000,
+            updated_at: timestamp,
+        };
+        let mut subscription = YahooLiveSubscription {
+            symbol: yahoo("AAPL"),
+            commands,
+            updates: receiver,
+            delivered: YahooLiveState::default(),
+            pending: VecDeque::new(),
+        };
+        updates.send_modify(|state| state.volume = Some(volume.clone()));
+        assert_eq!(
+            subscription.recv().await.unwrap(),
+            YahooLiveUpdate::Volume(volume.clone())
+        );
+        updates.send_modify(|state| {
+            state.session = Some(YahooLiveSessionUpdate::PostMarket(YahooLivePrice {
+                symbol: yahoo("AAPL"),
+                market_date: timestamp.date_naive(),
+                price: 100.0,
+                updated_at: timestamp + chrono::TimeDelta::minutes(1),
+            }))
+        });
+        assert!(matches!(
+            subscription.recv().await.unwrap(),
+            YahooLiveUpdate::PostMarket(_)
+        ));
+        assert_eq!(updates.borrow().volume, Some(volume));
+        assert!(subscription.latest_updates().is_empty());
     }
 
     #[test]

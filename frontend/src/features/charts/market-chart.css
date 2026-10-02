@@ -65,11 +65,12 @@
   }
 }
 
-.market-chart-rs-trend {
+.market-chart-metric-toggle {
   flex-shrink: 0;
   padding: 0.1rem 0.3rem;
   border: 1px solid currentColor;
   border-radius: 0.25rem;
+  color: var(--color-text);
   background: color-mix(in srgb, var(--color-canvas) 82%, transparent);
   font-family: inherit;
   font-size: 0.65rem;
@@ -79,7 +80,7 @@
   pointer-events: auto;
 }
 
-.market-chart-rs-trend:focus-visible {
+.market-chart-metric-toggle:focus-visible {
   outline: 1px solid currentColor;
   outline-offset: 2px;
 }
@@ -96,6 +97,26 @@
   color: var(--color-muted);
 }
 
-.market-chart-rs-hidden {
+.market-chart-metric-hidden {
   color: var(--color-muted);
+}
+
+.market-chart-vrr-value {
+  cursor: default;
+}
+
+.market-chart-vrr-low {
+  color: var(--color-negative);
+}
+
+.market-chart-vrr-below-average {
+  color: var(--color-warning);
+}
+
+.market-chart-vrr-above-average {
+  color: var(--color-positive);
+}
+
+.market-chart-vrr-high {
+  color: color-mix(in srgb, var(--color-positive) 75%, black);
 }

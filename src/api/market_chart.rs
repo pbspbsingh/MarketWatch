@@ -7,6 +7,7 @@ use crate::models::{TickerSymbol, YahooSymbol};
 use crate::providers::YahooError;
 use crate::services::market_chart::MarketChartError;
 use crate::services::market_chart::MarketChartService;
+use crate::services::volume_run_rate::VolumeRunRate;
 use crate::services::yahoo::YahooServiceError;
 use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -56,6 +57,8 @@ enum LiveChartCommand {
 
 #[derive(Deserialize)]
 struct RawLiveChartRequest {
+    #[serde(default)]
+    volume_run_rate: bool,
     chart_id: String,
     symbol: String,
     interval: MarketChartInterval,
@@ -64,6 +67,7 @@ struct RawLiveChartRequest {
 
 #[derive(Clone)]
 struct LiveChartRequest {
+    volume_run_rate: bool,
     chart_id: String,
     symbol: TickerSymbol,
     interval: MarketChartInterval,
@@ -101,6 +105,11 @@ struct LiveSessionDelta {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum LiveChartEvent<'a> {
+    VolumeRunRate {
+        request_id: u64,
+        chart_id: &'a str,
+        state: VolumeRunRate,
+    },
     Subscribed {
         request_id: u64,
         symbols: &'a [YahooSymbol],
@@ -129,6 +138,46 @@ pub fn router() -> Router<AppState> {
         .route("/market-chart/{symbol}", get(snapshot))
         .route("/market-chart/{symbol}/refresh", post(refresh_snapshot))
         .route("/market-chart/{symbol}/history", get(history_snapshot))
+        .route(
+            "/market-chart/{symbol}/volume-run-rate",
+            post(activate_volume_run_rate),
+        )
+}
+
+async fn activate_volume_run_rate(
+    State(state): State<AppState>,
+    Path(symbol): Path<TickerSymbol>,
+) -> Result<Json<VolumeRunRate>, (StatusCode, String)> {
+    state
+        .market_chart
+        .activate_volume_run_rate(&symbol)
+        .await
+        .map(Json)
+        .map_err(|error| map_error(&symbol, error))
+}
+
+async fn send_volume_run_rates(
+    socket: &mut WebSocket,
+    service: &MarketChartService,
+    charts: &[LiveChartRequest],
+    request_id: u64,
+) -> bool {
+    for chart in charts.iter().filter(|chart| chart.volume_run_rate) {
+        let state = service.volume_run_rate(&chart.symbol).await;
+        if !send_live_event(
+            socket,
+            LiveChartEvent::VolumeRunRate {
+                request_id,
+                chart_id: &chart.chart_id,
+                state,
+            },
+        )
+        .await
+        {
+            return false;
+        }
+    }
+    true
 }
 
 async fn live_chart_socket(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
@@ -164,6 +213,9 @@ async fn handle_live_chart_socket(
                     continue;
                 }
                 match update {
+                    YahooLiveUpdate::Volume(volume) => {
+                        market_chart.observe_live_volume(volume);
+                    }
                     YahooLiveUpdate::Regular(update) => {
                         dirty_symbols.insert(update.symbol);
                     }
@@ -179,6 +231,7 @@ async fn handle_live_chart_socket(
                 delta_deadline = None;
                 let changed = std::mem::take(&mut dirty_symbols);
                 let sessions = std::mem::take(&mut session_updates);
+                if !send_volume_run_rates(&mut socket, &market_chart, &charts, request_id).await { return; }
                 for chart in charts.iter().filter(|chart| {
                     changed.contains(&YahooSymbol::from(&chart.symbol))
                         || chart.comparison_symbol.as_ref().is_some_and(|symbol| {
@@ -264,6 +317,7 @@ async fn handle_live_chart_socket(
                                 Ok(()) => {
                                     request_id = next_request_id;
                                     charts = requested;
+                                    if !send_volume_run_rates(&mut socket, &market_chart, &charts, request_id).await { return; }
                                     dirty_symbols.clear();
                                     session_updates.clear();
                                     delta_deadline = None;
@@ -300,6 +354,7 @@ async fn handle_live_chart_socket(
                 Some(Ok(_)) => {}
             },
             _ = ping.tick() => {
+                if !send_volume_run_rates(&mut socket, &market_chart, &charts, request_id).await { return; }
                 if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
                     return;
                 }
@@ -342,6 +397,7 @@ fn normalize_live_charts(
         symbols.push(YahooSymbol::from(&symbol));
         symbols.extend(comparison_symbol.iter().map(YahooSymbol::from));
         normalized_charts.push(LiveChartRequest {
+            volume_run_rate: chart.volume_run_rate,
             chart_id: chart.chart_id,
             symbol,
             interval: chart.interval,
@@ -470,7 +526,9 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
             candle: None,
             price: update.price,
         },
-        YahooLiveUpdate::Regular(_) => unreachable!("regular updates use calculated deltas"),
+        YahooLiveUpdate::Regular(_) | YahooLiveUpdate::Volume(_) => {
+            unreachable!("non-session updates use separate events")
+        }
     }
 }
 
@@ -562,6 +620,7 @@ mod tests {
     fn normalizes_and_bounds_live_chart_configuration() {
         let request =
             |chart_id: &str, symbol: &str, comparison_symbol: Option<&str>| RawLiveChartRequest {
+                volume_run_rate: false,
                 chart_id: chart_id.to_owned(),
                 symbol: symbol.to_owned(),
                 interval: MarketChartInterval::Daily,
@@ -629,6 +688,7 @@ mod tests {
             has_more_before: true,
         };
         let chart = LiveChartRequest {
+            volume_run_rate: false,
             chart_id: "top".to_owned(),
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
@@ -647,6 +707,7 @@ mod tests {
     fn pre_market_session_delta_is_scoped_to_the_chart() {
         let date = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
         let chart = LiveChartRequest {
+            volume_run_rate: false,
             chart_id: "top".to_owned(),
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,

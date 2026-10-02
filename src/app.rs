@@ -22,6 +22,7 @@ use crate::services::ticker_strength::TickerStrengthService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
 use crate::services::trade_analyzer::TradeAnalyzerService;
+use crate::services::volume_run_rate::VolumeRunRateService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::services::yahoo_live::YahooLiveHandle;
@@ -151,10 +152,17 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         &config.market,
     )?);
+    let volume_run_rate = Arc::new(VolumeRunRateService::new(
+        yahoo.clone(),
+        yahoo_live.clone(),
+        market_schedule.clone(),
+    ));
+    volume_run_rate.spawn_cleanup_task();
     let market_chart = Arc::new(MarketChartService::new(
         yahoo.clone(),
         yahoo_live.clone(),
         market_repositioning_dates.clone(),
+        volume_run_rate,
     ));
     let market_explorer = Arc::new(MarketExplorerService::new(store.clone(), yahoo.clone()));
     let sector_analysis = Arc::new(SectorAnalysisService::new(

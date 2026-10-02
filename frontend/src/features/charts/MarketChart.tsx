@@ -73,8 +73,11 @@ import {
 } from "./relativeStrengthSeries";
 import { chartCompanyNameLabel } from "./chartLabels";
 import { LeftPriceLineLabels } from "./priceLineLabels";
+import { VolumeRunRateBadge } from "./VolumeRunRateBadge";
+import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
 interface MarketChartProps {
+  volumeRunRate?: VolumeRunRateControl;
   data: MarketChartData;
   companyName?: string;
   companyNameHref?: string;
@@ -117,6 +120,7 @@ function watermarkLines(symbol: string, color: string) {
 }
 
 export function MarketChart({
+  volumeRunRate,
   data,
   companyName,
   companyNameHref,
@@ -648,7 +652,7 @@ export function MarketChart({
         onChartReady={initializeSeries}
         onChartDestroy={destroyChart}
       />
-      {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined) && (
+      {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined || volumeRunRate?.state.visible) && (
         <div className="market-chart-labels">
           {companyLabel !== undefined && (
             companyNameHref === undefined ? (
@@ -672,8 +676,8 @@ export function MarketChart({
             <button
               type="button"
               className={showRelativeStrength
-                ? `market-chart-rs-trend market-chart-rs-trend-${relativeStrengthTrend}`
-                : "market-chart-rs-trend market-chart-rs-hidden"}
+                ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
+                : "market-chart-metric-toggle market-chart-metric-hidden"}
               aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
               aria-pressed={showRelativeStrength}
               title={`Relative Strength ${trendLabel}`}
@@ -681,6 +685,9 @@ export function MarketChart({
             >
               RS
             </button>
+          )}
+          {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
+            <VolumeRunRateBadge control={volumeRunRate} />
           )}
         </div>
       )}

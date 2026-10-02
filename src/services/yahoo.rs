@@ -504,7 +504,7 @@ impl YahooService {
         unreachable!("Yahoo chart retry loop always returns")
     }
 
-    async fn fetch_intraday_chart(
+    pub(crate) async fn fetch_intraday_chart(
         &self,
         symbol: &YahooSymbol,
         start: chrono::DateTime<Utc>,

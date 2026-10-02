@@ -74,6 +74,10 @@ impl MarketSchedule {
         timestamp.with_timezone(&self.timezone).date_naive()
     }
 
+    pub fn market_time(&self, timestamp: DateTime<Utc>) -> NaiveTime {
+        timestamp.with_timezone(&self.timezone).time()
+    }
+
     pub fn session(&self, timestamp: DateTime<Utc>) -> MarketSession {
         let market_time = timestamp.with_timezone(&self.timezone);
         if market_time.is_weekend() || self.holidays.contains(&market_time.date_naive()) {

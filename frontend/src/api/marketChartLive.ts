@@ -5,8 +5,10 @@ import {
   type MarketChartRelativeStrength,
   type MarketChartSeries,
 } from "./marketChart";
+import { isVolumeRunRateState, type VolumeRunRateState } from "./volumeRunRate";
 
 export interface MarketChartLiveRequest {
+  volume_run_rate?: boolean;
   chart_id: string;
   symbol: string;
   interval: MarketChartInterval;
@@ -33,12 +35,14 @@ export interface MarketChartSessionDelta {
 }
 
 interface LiveChartClientOptions {
+  onVolumeRunRate?: (chartId: string, state: VolumeRunRateState) => void;
   onDelta: (delta: MarketChartLiveDelta) => void;
   onSession: (delta: MarketChartSessionDelta) => void;
   onError: (message: string) => void;
 }
 
 type LiveChartEvent =
+  | { type: "volume_run_rate"; request_id: number; chart_id: string; state: VolumeRunRateState }
   | { type: "subscribed"; request_id: number; symbols: string[] }
   | { type: "delta"; request_id: number; delta: MarketChartLiveDelta }
   | { type: "session"; request_id: number; delta: MarketChartSessionDelta }
@@ -132,7 +136,9 @@ export class MarketChartLiveClient {
       return;
     }
     if (event.request_id !== this.requestId) return;
-    if (event.type === "error") {
+    if (event.type === "volume_run_rate" && typeof event.chart_id === "string" && isVolumeRunRateState(event.state)) {
+      this.options.onVolumeRunRate?.(event.chart_id, event.state);
+    } else if (event.type === "error") {
       this.options.onError(event.message);
     } else if (event.type === "delta" && isLiveDelta(event.delta)) {
       this.options.onDelta(event.delta);
