@@ -1,7 +1,7 @@
 {
   "name": "market-watch-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,7 @@
     "@emotion/is-prop-valid": "^1.4.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@lezer/highlight": "^1.2.3",
+    "@lezer/highlight": "^1.2.5",
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
     "lightweight-charts": "^5.2.1",
@@ -38,11 +38,11 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
-    "eslint": "^10.11.0",
+    "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
+    "globals": "^17.13.0",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.70.1",
-    "vite": "8.3.0"
+    "typescript-eslint": "^8.71.0",
+    "vite": "8.3.2"
   }
 }
