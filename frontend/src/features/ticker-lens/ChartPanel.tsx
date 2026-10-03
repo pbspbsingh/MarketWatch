@@ -14,7 +14,7 @@ import {
   type TickerGroupSummary,
   type TickerGroupSummaryItem,
 } from "../../api/tickers";
-import { TickerDetailsDialog } from "../../components/TickerDetailsDialog";
+import { TickerDetailsDialog, type TickerDetailsTab } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
 import type { ImageExportAction } from "../../components/ImageExportMenu";
@@ -109,7 +109,11 @@ export function ChartPanel({
     setShowWeeklyChartOverlay,
   } = useAppSettings();
   const tickerSelection = useMemo(() => ({ selectedTicker }), [selectedTicker]);
-  const [detailsSelection, setDetailsSelection] = useState<typeof tickerSelection>();
+  const [detailsSelection, setDetailsSelection] = useState<{
+    tickerSelection: typeof tickerSelection;
+    initialTab: TickerDetailsTab;
+  }>();
+  const closeDetails = useCallback(() => setDetailsSelection(undefined), []);
   const [summaryVersion, setSummaryVersion] = useState(0);
   const groupKeysKey = [...groupKeys].sort().join("\0");
   const industryKeysKey = [...industryKeys].sort().join("\0");
@@ -133,7 +137,7 @@ export function ChartPanel({
     ? groupSummaryState.error
     : undefined;
   const error = panelError?.key === summaryRequestKey ? panelError?.message : undefined;
-  const detailsOpen = detailsSelection === tickerSelection && selectedTicker !== undefined;
+  const detailsOpen = detailsSelection?.tickerSelection === tickerSelection && selectedTicker !== undefined;
   const selectedThemeEtf = themeSelection?.ticker === selectedTicker ? themeSelection?.etf : undefined;
   const activeSummary = summary;
   const selectedIndustry = activeSummary?.industry?.name ?? "All industries";
@@ -315,6 +319,7 @@ export function ChartPanel({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         !horizontalDetailsNavigation ||
+        event.defaultPrevented ||
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
@@ -325,23 +330,28 @@ export function ChartPanel({
       }
       if (event.key === "Escape" && detailsOpen) {
         event.preventDefault();
-        setDetailsSelection(undefined);
+        closeDetails();
         return;
       }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       if (horizontalDetailsNavigation === "right" && event.key !== "ArrowRight") return;
+      if (document.querySelector('[role="dialog"], [role="menu"]') !== null) return;
 
       event.preventDefault();
+      if (event.repeat) return;
       if (selectedTicker === undefined) {
-        if (horizontalDetailsNavigation !== "right") setWarning("No ticker is selected");
+        setWarning("No ticker is selected");
       } else {
-        setDetailsSelection(tickerSelection);
+        setDetailsSelection({
+          tickerSelection,
+          initialTab: event.key === "ArrowRight" ? "fundamentals" : "profile-themes",
+        });
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [detailsOpen, horizontalDetailsNavigation, selectedTicker, tickerSelection]);
+  }, [closeDetails, detailsOpen, horizontalDetailsNavigation, selectedTicker, tickerSelection]);
 
   useEffect(() => {
     if (selectedTicker === undefined) {
@@ -410,7 +420,9 @@ export function ChartPanel({
         benchmarkSelectionDisabled={forceSystemBenchmark}
         setInterval={setInterval}
         setBenchmarkSelection={selectBenchmark}
-        setDetailsOpen={(open) => setDetailsSelection(open ? tickerSelection : undefined)}
+        setDetailsOpen={(open) => setDetailsSelection(open
+          ? { tickerSelection, initialTab: "fundamentals" }
+          : undefined)}
         exportChartPanel={exportChartPanel}
         exportChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
         exportingChartPanel={exportingChartPanel}
@@ -506,7 +518,8 @@ export function ChartPanel({
       <TickerDetailsDialog
         symbol={selectedTicker}
         open={detailsOpen}
-        onClose={() => setDetailsSelection(undefined)}
+        initialTab={detailsSelection?.initialTab}
+        onClose={closeDetails}
         onThemeChanged={() => setSummaryVersion((version) => version + 1)}
       />
     </section>

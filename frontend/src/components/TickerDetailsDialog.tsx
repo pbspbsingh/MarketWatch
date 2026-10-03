@@ -33,16 +33,18 @@ import "./ticker-details-dialog.css";
 interface TickerDetailsDialogProps {
   symbol?: string;
   open: boolean;
+  initialTab?: TickerDetailsTab;
   onClose: () => void;
   onThemeChanged?: () => void;
 }
 
 const detailsTabs = ["fundamentals", "profile-themes"] as const;
-type DetailsTab = (typeof detailsTabs)[number];
+export type TickerDetailsTab = (typeof detailsTabs)[number];
 
 export function TickerDetailsDialog({
   symbol,
   open,
+  initialTab = "fundamentals",
   onClose,
   onThemeChanged,
 }: TickerDetailsDialogProps) {
@@ -51,6 +53,7 @@ export function TickerDetailsDialog({
     <OpenTickerDetailsDialog
       key={symbol}
       symbol={symbol}
+      initialTab={initialTab}
       onClose={onClose}
       onThemeChanged={onThemeChanged}
     />
@@ -59,6 +62,7 @@ export function TickerDetailsDialog({
 
 function OpenTickerDetailsDialog({
   symbol,
+  initialTab,
   onClose,
   onThemeChanged,
 }: Omit<TickerDetailsDialogProps, "open" | "symbol"> & { symbol: string }) {
@@ -72,7 +76,7 @@ function OpenTickerDetailsDialog({
     model: null,
     batch_size: null,
   });
-  const [tab, setTab] = useState<DetailsTab>("fundamentals");
+  const [tab, setTab] = useState<TickerDetailsTab>(initialTab ?? "fundamentals");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingThemes, setSavingThemes] = useState(false);
@@ -110,6 +114,12 @@ function OpenTickerDetailsDialog({
       });
   }, [details, refreshing, symbol]);
 
+  const close = useCallback(() => {
+    requestRef.current?.abort();
+    suggestionRequestRef.current?.abort();
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -130,17 +140,15 @@ function OpenTickerDetailsDialog({
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
       event.stopPropagation();
-      setTab((current) => {
-        const index = detailsTabs.indexOf(current);
-        const direction = event.key === "ArrowRight" ? 1 : -1;
-        return detailsTabs[
-          (index + direction + detailsTabs.length) % detailsTabs.length
-        ];
-      });
+      if (event.repeat) return;
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const nextTab = detailsTabs[detailsTabs.indexOf(tab) + direction];
+      if (nextTab === undefined) close();
+      else setTab(nextTab);
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [refreshDetails]);
+  }, [close, refreshDetails, tab]);
 
   const loadThemes = async () => {
     try {
@@ -198,12 +206,6 @@ function OpenTickerDetailsDialog({
       active = false;
     };
   }, [symbol, tab]);
-
-  const close = () => {
-    requestRef.current?.abort();
-    suggestionRequestRef.current?.abort();
-    onClose();
-  };
 
   useEffect(() => () => suggestionRequestRef.current?.abort(), []);
 
@@ -335,7 +337,7 @@ function OpenTickerDetailsDialog({
             <>
               <Tabs
                 value={tab}
-                onChange={(_, value: DetailsTab) => setTab(value)}
+                onChange={(_, value: TickerDetailsTab) => setTab(value)}
               >
                 <Tab value="fundamentals" label="Fundamentals" />
                 <Tab value="profile-themes" label="Profile / Themes" />

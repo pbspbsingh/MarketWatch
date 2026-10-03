@@ -615,8 +615,11 @@ export function ThemeTrackerPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]') !== null) return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || isArrowKeyControl(event.target)) return;
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      // The selected stock's ChartPanel owns opening details with the right arrow.
+      if (stockMode && selectedStock !== undefined && event.key === "ArrowRight") return;
 
       if (event.key === "ArrowRight" && !stockMode) {
         const activeItem = sortedItems.find((item) => item.key === activeGroupKey);
