@@ -108,11 +108,12 @@ export function StudyCharts({
   const {
     candlePalette,
     fiveEmaOpacity,
+    gridOpacity,
     relativeStrengthLineStyle: rsLineStyle,
     theme,
   } = useAppSettings();
   const palette = appPalettes[theme];
-  const chartColors = useMemo(() => getChartColors(theme), [theme]);
+  const chartColors = useMemo(() => getChartColors(theme, gridOpacity), [theme, gridOpacity]);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
@@ -201,7 +202,7 @@ export function StudyCharts({
 
   useEffect(() => {
     appearanceRef.current = { chartColors, palette };
-    chartsRef.current.forEach((chart) => chart.applyOptions(chartThemeOptions(theme)));
+    chartsRef.current.forEach((chart) => chart.applyOptions(chartThemeOptions(theme, gridOpacity)));
     watermarkRef.current.forEach((watermark, index) => {
       watermark.applyOptions({
         lines: [{
@@ -229,6 +230,7 @@ export function StudyCharts({
     ));
   }, [
     chartColors,
+    gridOpacity,
     firstSymbol,
     palette,
     result.date,

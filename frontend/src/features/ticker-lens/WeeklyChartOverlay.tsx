@@ -14,6 +14,7 @@ import { IconButton } from "@mui/material";
 import { marketDataSymbol } from "../../api/marketChart";
 import { MarketChartLiveClient, type MarketChartLiveDelta } from "../../api/marketChartLive";
 import { readChartViewport } from "./chartViewport";
+import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import "./weekly-chart-overlay.css";
 
 interface WeeklyChartOverlayProps {
@@ -22,6 +23,7 @@ interface WeeklyChartOverlayProps {
   symbol: string;
   tradingViewSymbol: string;
   showAxes: boolean;
+  onChartContext: (context: ChartSyncTarget | null) => void;
   onClose: () => void;
 }
 
@@ -77,6 +79,7 @@ export function WeeklyChartOverlay({
   symbol,
   tradingViewSymbol,
   showAxes,
+  onChartContext,
   onClose,
 }: WeeklyChartOverlayProps) {
   const [rect, setRect] = useState<Rect | null>(null);
@@ -234,7 +237,8 @@ export function WeeklyChartOverlay({
             initialViewport={initialViewport}
             rightPriceScaleVisible={showAxes}
             timeScaleVisible={showAxes}
-            rightOffsetPixels={20}
+            rightOffsetPixels={10}
+            onChartContext={onChartContext}
             liveDelta={currentLiveDelta}
           />
         </Suspense>

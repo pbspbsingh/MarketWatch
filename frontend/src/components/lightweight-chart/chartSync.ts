@@ -18,6 +18,108 @@ export interface ChartSyncTarget {
   isDisposed: () => boolean;
 }
 
+/** Sync weekly to main/comparison, and comparison dates to weekly, without changing viewports. */
+export function synchronizeWeeklyOverlayCrosshairs(
+  daily: ChartSyncTarget,
+  weekly: ChartSyncTarget,
+  onWeeklyMove: () => void,
+  comparison?: ChartSyncTarget,
+): () => void {
+  if (daily.isDisposed() || weekly.isDisposed()) return () => undefined;
+  const targets = comparison === undefined || comparison.isDisposed()
+    ? [daily, weekly] : [daily, weekly, comparison];
+  const sources = targets.filter((target) => target !== daily);
+  let synchronizing = false;
+  const handlers = sources.map((source) => {
+    const handler = (event: MouseEventParams<Time>) => {
+      if (synchronizing || daily.isDisposed() || weekly.isDisposed() || source.isDisposed()
+        || (source !== weekly && !source.chart.options().crosshair.horzLine.visible)) return;
+      // Ignore synthetic moves from data/viewport updates; mouse leave has no point.
+      if (event.point !== undefined && event.sourceEvent === undefined) return;
+      synchronizing = true;
+      try {
+        const date = event.time === undefined ? undefined : chartTimeToMarketDate(event.time);
+        const price = event.point === undefined || source === comparison
+          ? null : source.candleSeries.coordinateToPrice(event.point.y);
+        const validPosition = date !== undefined && event.point !== undefined
+          && source.candleAt(date) !== undefined
+          && (source === comparison || (price !== null && Number.isFinite(price)));
+        if (validPosition) {
+          if (source === weekly) onWeeklyMove();
+          const showPrice = source !== comparison;
+          if (weekly.chart.options().crosshair.horzLine.visible !== showPrice) {
+            setHorizontalCrosshairVisible(weekly, showPrice);
+          }
+        }
+        for (const target of targets) {
+          if (target === source || target.isDisposed()) continue;
+          // The existing comparison/main synchronizer already handles this pair.
+          if (source !== weekly && target !== weekly) continue;
+          const targetDate = date === undefined ? undefined
+            : target === weekly ? marketWeekStart(date)
+            : firstTradingDateInWeek(target, date);
+          const candle = targetDate === undefined ? undefined : target.candleAt(targetDate);
+          if (!validPosition || targetDate === undefined || candle === undefined) {
+            target.chart.clearCrosshairPosition();
+            continue;
+          }
+          const targetTime = marketDateToChartTime(targetDate);
+          const timeScale = target.chart.timeScale();
+          const x = timeScale.timeToCoordinate(targetTime);
+          // Lightweight Charts clamps an offscreen synthetic crosshair to the visible bars.
+          if (x === null || x < 0 || x > timeScale.width()) {
+            target.chart.clearCrosshairPosition();
+            continue;
+          }
+          target.chart.setCrosshairPosition(
+            source === comparison || target === comparison ? candle.close : price!,
+            targetTime,
+            target.candleSeries,
+          );
+        }
+      } finally {
+        synchronizing = false;
+      }
+    };
+    source.chart.subscribeCrosshairMove(handler);
+    return handler;
+  });
+
+  return () => {
+    synchronizing = true;
+    sources.forEach((source, index) => {
+      if (!source.isDisposed()) source.chart.unsubscribeCrosshairMove(handlers[index]);
+    });
+    targets.forEach((target) => {
+      if (target.isDisposed()) return;
+      target.chart.clearCrosshairPosition();
+    });
+    setHorizontalCrosshairVisible(weekly, true);
+  };
+}
+
+function firstTradingDateInWeek(target: ChartSyncTarget, week: string): string | undefined {
+  const candles = target.candleSeries.data();
+  // Find the first trading day in the week, including weeks with a Monday holiday.
+  let low = 0;
+  let high = candles.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (chartTimeToMarketDate(candles[middle].time) < week) low = middle + 1;
+    else high = middle;
+  }
+  const candle = candles[low];
+  if (candle === undefined) return undefined;
+  const date = chartTimeToMarketDate(candle.time);
+  return marketWeekStart(date) === week ? date : undefined;
+}
+
+function marketWeekStart(date: string): string {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
+  return day.toISOString().slice(0, 10);
+}
+
 export function synchronizeCharts(
   first: ChartSyncTarget,
   second: ChartSyncTarget,

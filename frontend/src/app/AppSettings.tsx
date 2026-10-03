@@ -29,8 +29,10 @@ type StoredSettings = {
   chartEngine: ChartEngine;
   showWeeklyChartOverlay: boolean;
   showWeeklyOverlayAxes: boolean;
+  syncWeeklyOverlayCrosshair: boolean;
   candlePalette: CandlePalette;
   fiveEmaOpacity: number;
+  gridOpacity: number;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
 };
 
@@ -39,8 +41,10 @@ type AppSettingsValue = StoredSettings & {
   setChartEngine: (chartEngine: ChartEngine) => void;
   setShowWeeklyChartOverlay: (show: boolean) => void;
   setShowWeeklyOverlayAxes: (show: boolean) => void;
+  setSyncWeeklyOverlayCrosshair: (sync: boolean) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
   setFiveEmaOpacity: (opacity: number) => void;
+  setGridOpacity: (opacity: number) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
 };
 
@@ -59,8 +63,10 @@ function readSettings(): StoredSettings {
           : "lightweight",
       showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
       showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
+      syncWeeklyOverlayCrosshair: value.syncWeeklyOverlayCrosshair === true,
       candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
+      gridOpacity: validOpacity(value.gridOpacity) ? value.gridOpacity : 1,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
@@ -73,8 +79,10 @@ function readSettings(): StoredSettings {
         : "lightweight",
       showWeeklyChartOverlay: false,
       showWeeklyOverlayAxes: true,
+      syncWeeklyOverlayCrosshair: false,
       candlePalette: "solid",
       fiveEmaOpacity: 0.9,
+      gridOpacity: 1,
       relativeStrengthLineStyle: "large-dashed",
     };
   }
@@ -118,10 +126,14 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       setSettings((current) => ({ ...current, showWeeklyChartOverlay })),
     setShowWeeklyOverlayAxes: (showWeeklyOverlayAxes) =>
       setSettings((current) => ({ ...current, showWeeklyOverlayAxes })),
+    setSyncWeeklyOverlayCrosshair: (syncWeeklyOverlayCrosshair) =>
+      setSettings((current) => ({ ...current, syncWeeklyOverlayCrosshair })),
     setCandlePalette: (candlePalette) =>
       setSettings((current) => ({ ...current, candlePalette })),
     setFiveEmaOpacity: (fiveEmaOpacity) =>
       setSettings((current) => ({ ...current, fiveEmaOpacity })),
+    setGridOpacity: (gridOpacity) =>
+      setSettings((current) => ({ ...current, gridOpacity })),
     setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
       setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);

@@ -155,15 +155,19 @@ export function AppShell() {
     candlePalette,
     chartEngine,
     fiveEmaOpacity,
+    gridOpacity,
     relativeStrengthLineStyle,
     showWeeklyChartOverlay,
     showWeeklyOverlayAxes,
+    syncWeeklyOverlayCrosshair,
     setCandlePalette,
     setChartEngine,
     setFiveEmaOpacity,
+    setGridOpacity,
     setRelativeStrengthLineStyle,
     setShowWeeklyChartOverlay,
     setShowWeeklyOverlayAxes,
+    setSyncWeeklyOverlayCrosshair,
     theme,
     setTheme,
   } = useAppSettings();
@@ -386,6 +390,27 @@ export function AppShell() {
           </div>
           <div className="settings-control">
             <Typography className="settings-control-label" color="text.secondary">
+              Sync weekly overlay crosshair
+            </Typography>
+            <ToggleButtonGroup
+              disabled={chartEngine !== "lightweight"}
+              exclusive
+              fullWidth
+              size="small"
+              value={syncWeeklyOverlayCrosshair ? "on" : "off"}
+              aria-label="Sync weekly overlay crosshair"
+              onChange={(_, value) => {
+                if (value === "on" || value === "off") {
+                  setSyncWeeklyOverlayCrosshair(value === "on");
+                }
+              }}
+            >
+              <ToggleButton value="off">Off</ToggleButton>
+              <ToggleButton value="on">On</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <Typography className="settings-control-label" color="text.secondary">
               Candles
             </Typography>
             <ToggleButtonGroup
@@ -439,6 +464,29 @@ export function AppShell() {
                 Sparse
               </ToggleButton>
             </ToggleButtonGroup>
+          </div>
+          <div className="settings-control">
+            <div className="settings-control-label-row">
+              <Typography className="settings-control-label" color="text.secondary">
+                Grid opacity
+              </Typography>
+              <Typography className="settings-control-label" color="text.secondary">
+                {Math.round(gridOpacity * 100)}%
+              </Typography>
+            </div>
+            <Slider
+              disabled={chartEngine !== "lightweight"}
+              min={0}
+              max={100}
+              size="small"
+              value={Math.round(gridOpacity * 100)}
+              aria-label="Grid opacity"
+              valueLabelDisplay="auto"
+              valueLabelFormat={(value) => `${value}%`}
+              onChange={(_, value) => {
+                if (typeof value === "number") setGridOpacity(value / 100);
+              }}
+            />
           </div>
           <div className="settings-control">
             <div className="settings-control-label-row">

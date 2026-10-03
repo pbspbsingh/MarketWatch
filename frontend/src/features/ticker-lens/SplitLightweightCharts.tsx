@@ -15,6 +15,7 @@ import {
 import type { MarketChartMarker } from "../charts/MarketChart";
 import type { MarketChartPriceLine } from "../charts/MarketChart";
 import { SplitPane } from "../../components/SplitPane";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   ChartContextMenu,
   type ChartMenuPosition,
@@ -23,6 +24,7 @@ import {
   subscribeChartViewport,
   setHorizontalCrosshairVisible,
   synchronizeCharts,
+  synchronizeWeeklyOverlayCrosshairs,
   type ChartSyncTarget,
   type ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
@@ -50,6 +52,7 @@ interface SplitLightweightChartsProps {
   bottomTradingViewSymbol: string;
   interval: "D" | "W";
   topPending?: boolean;
+  weeklyChartContext?: ChartSyncTarget | null;
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
@@ -83,6 +86,7 @@ export default function SplitLightweightCharts({
   bottomTradingViewSymbol,
   interval,
   topPending = false,
+  weeklyChartContext = null,
   initialSplit,
   onSplitChange,
   onError,
@@ -93,6 +97,7 @@ export default function SplitLightweightCharts({
   topMarkers,
   topPriceLines,
 }: SplitLightweightChartsProps) {
+  const { syncWeeklyOverlayCrosshair } = useAppSettings();
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [chartMenu, setChartMenu] = useState<ChartMenuState | null>(null);
@@ -155,6 +160,23 @@ export default function SplitLightweightCharts({
     },
     [bottomContext, topContext],
   );
+
+  useEffect(() => {
+    if (!syncWeeklyOverlayCrosshair || interval !== "D" || topLoading || topPending
+      || topContext === null || weeklyChartContext === null) return;
+    return synchronizeWeeklyOverlayCrosshairs(topContext, weeklyChartContext, () => {
+      if (crosshairOwnerRef.current !== "top") setCrosshairOwner("top");
+    }, bottomContext ?? undefined);
+  }, [
+    bottomContext,
+    interval,
+    setCrosshairOwner,
+    syncWeeklyOverlayCrosshair,
+    topContext,
+    topLoading,
+    topPending,
+    weeklyChartContext,
+  ]);
 
   const openContextMenu = useCallback((
     source: "top" | "bottom",

@@ -5,6 +5,7 @@ import {
   type ChartOptions,
   type DeepPartial,
 } from "lightweight-charts";
+import { alpha } from "@mui/material/styles";
 import { appPalettes, type AppThemeMode } from "../../app/theme";
 import type {
   CandlePalette,
@@ -30,13 +31,13 @@ export const visualizationColors = {
   axisText: "#ffffff",
 } as const;
 
-export function getChartColors(mode: AppThemeMode) {
+export function getChartColors(mode: AppThemeMode, gridOpacity = 1) {
   const palette = appPalettes[mode];
   return {
     ...visualizationColors,
     background: palette.canvas,
     text: palette.muted,
-    grid: palette.border,
+    grid: alpha(palette.border, gridOpacity),
     border: palette.border,
   };
 }
@@ -69,8 +70,8 @@ export const weeklyMovingAverageColors = {
   200: "#b23a48",
 } as const;
 
-export function chartThemeOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
-  const colors = getChartColors(mode);
+export function chartThemeOptions(mode: AppThemeMode, gridOpacity = 1): DeepPartial<ChartOptions> {
+  const colors = getChartColors(mode, gridOpacity);
   return {
     layout: {
       background: { type: ColorType.Solid, color: colors.background },
@@ -92,8 +93,8 @@ export function chartThemeOptions(mode: AppThemeMode): DeepPartial<ChartOptions>
   };
 }
 
-export function baseChartOptions(mode: AppThemeMode): DeepPartial<ChartOptions> {
-  const colors = getChartColors(mode);
+export function baseChartOptions(mode: AppThemeMode, gridOpacity = 1): DeepPartial<ChartOptions> {
+  const colors = getChartColors(mode, gridOpacity);
   return {
     autoSize: true,
     layout: {

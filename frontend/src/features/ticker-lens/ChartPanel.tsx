@@ -36,6 +36,7 @@ import type {
   SelectedTickerContext,
 } from "./types";
 import { useAppSettings } from "../../app/AppSettings";
+import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import { useSplitChartLive } from "../../shared/useSplitChartLive";
 import {
   industriesMarketWatchUrl,
@@ -85,6 +86,7 @@ export function ChartPanel({
 }: ChartPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
+  const [weeklyChartContext, setWeeklyChartContext] = useState<ChartSyncTarget | null>(null);
   const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
   const [groupSummaryState, setGroupSummaryState] = useState<RequestState<TickerGroupSummary>>({ key: "" });
   const [interval, setInterval] = useState<"D" | "W">(() =>
@@ -470,6 +472,7 @@ export function ChartPanel({
                 bottomTradingViewSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 interval={interval}
                 topPending={summaryLoading}
+                weeklyChartContext={showWeeklyChartOverlay ? weeklyChartContext : null}
                 initialSplit={readChartSplit(chartSplitKey)}
                 onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
                 onError={handleChartError}
@@ -481,11 +484,13 @@ export function ChartPanel({
             && interval === "D" && showWeeklyChartOverlay && (
             <Suspense fallback={null}>
               <WeeklyChartOverlay
+                key={summary.symbol}
                 container={overlayContainer}
                 chartStage={chartStageElement}
                 symbol={summary.symbol}
                 tradingViewSymbol={summary.tradingview_symbol}
                 showAxes={showWeeklyOverlayAxes}
+                onChartContext={setWeeklyChartContext}
                 onClose={() => setShowWeeklyChartOverlay(false)}
               />
             </Suspense>

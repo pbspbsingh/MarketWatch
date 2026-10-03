@@ -36,10 +36,11 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     onChartReady,
     onChartDestroy,
   }, ref) {
-    const { theme } = useAppSettings();
+    const { theme, gridOpacity } = useAppSettings();
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
     const initialThemeRef = useRef(theme);
+    const initialGridOpacityRef = useRef(gridOpacity);
     const onChartReadyRef = useRef(onChartReady);
     const onChartDestroyRef = useRef(onChartDestroy);
     const attributionUrlRef = useRef(attributionUrl);
@@ -55,7 +56,10 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
       const container = containerRef.current;
       if (container === null) return;
 
-      const chart = createChart(container, baseChartOptions(initialThemeRef.current));
+      const chart = createChart(container, baseChartOptions(
+        initialThemeRef.current,
+        initialGridOpacityRef.current,
+      ));
       const observer = new MutationObserver(() => {
         updateAttributionUrl(container, attributionUrlRef.current);
       });
@@ -76,8 +80,8 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     }, []);
 
     useEffect(() => {
-      chartRef.current?.applyOptions(chartThemeOptions(theme));
-    }, [theme]);
+      chartRef.current?.applyOptions(chartThemeOptions(theme, gridOpacity));
+    }, [theme, gridOpacity]);
 
     useEffect(() => {
       if (options !== undefined) chartRef.current?.applyOptions(options);
