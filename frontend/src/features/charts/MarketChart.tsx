@@ -68,8 +68,8 @@ import {
 } from "./chartSeries";
 import {
   relativeStrengthLineData,
-  rsSwingHighColor,
-  rsSwingLowColor,
+  recolorRelativeStrengthLineData,
+  rsSwingColor,
 } from "./relativeStrengthSeries";
 import { chartCompanyNameLabel } from "./chartLabels";
 import { LeftPriceLineLabels } from "./priceLineLabels";
@@ -146,6 +146,8 @@ export function MarketChart({
     theme,
   } = useAppSettings();
   const palette = appPalettes[theme];
+  const candlePaletteRef = useRef(candlePalette);
+  const themeRef = useRef(theme);
   const hostRef = useRef<ChartHostHandle>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram">>(null);
@@ -227,9 +229,11 @@ export function MarketChart({
     const provisionalData = structure?.provisional === null
       || structure?.provisional === undefined
       ? []
-      : [{ time: structure.provisional.date, value: structure.provisional.value }];
+      : [{ time: structure.provisional.date, value: structure.provisional.value,
+        customValues: { kind: structure.provisional.kind } }];
     relativeStrengthProvisionalOuterRef.current?.applyOptions({
-      color: structure?.provisional?.kind === "low" ? rsSwingLowColor : rsSwingHighColor,
+      color: rsSwingColor(structure?.provisional?.kind === "low" ? "low" : "high",
+        candlePaletteRef.current, themeRef.current),
     });
     relativeStrengthProvisionalOuterRef.current?.setData(provisionalData);
     relativeStrengthProvisionalInnerRef.current?.setData(provisionalData);
@@ -243,7 +247,7 @@ export function MarketChart({
     }
     const candleSeries = chart.addSeries(
       CandlestickSeries,
-      candleSeriesOptions(candlePalette),
+      candleSeriesOptions(candlePalette, theme),
     );
     candleSeriesRef.current = candleSeries;
     const leftPriceLineLabels = new LeftPriceLineLabels();
@@ -274,7 +278,7 @@ export function MarketChart({
     relativeStrengthSeriesRef.current = relativeStrengthSeries;
     relativeStrengthHighsRef.current = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: rsSwingHighColor,
+      color: rsSwingColor("high", candlePalette, theme),
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2.5,
@@ -282,7 +286,7 @@ export function MarketChart({
     });
     relativeStrengthLowsRef.current = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: rsSwingLowColor,
+      color: rsSwingColor("low", candlePalette, theme),
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2.5,
@@ -290,7 +294,7 @@ export function MarketChart({
     });
     relativeStrengthProvisionalOuterRef.current = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: rsSwingHighColor,
+      color: rsSwingColor("high", candlePalette, theme),
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2.5,
@@ -317,7 +321,7 @@ export function MarketChart({
     };
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, [candlePalette, palette, rsLineStyle]);
+  }, [candlePalette, palette, rsLineStyle, theme]);
 
   const destroyChart = useCallback(() => {
     watermarkRef.current?.detach();
@@ -350,14 +354,42 @@ export function MarketChart({
   }, [palette.canvas]);
 
   useEffect(() => {
-    candleSeriesRef.current?.applyOptions(candleSeriesOptions(candlePalette));
-  }, [candlePalette]);
+    candlePaletteRef.current = candlePalette;
+    themeRef.current = theme;
+    const candles = candleSeriesRef.current;
+    candles?.applyOptions(candleSeriesOptions(candlePalette, theme));
+    // Remove session color overrides when changing style; retain current live OHLC values.
+    if (candles !== null) candles.setData(candles.data().map((candle) => ({
+      ...candle, color: undefined, borderColor: undefined, wickColor: undefined,
+    })));
+    const volume = volumeSeriesRef.current;
+    if (volume !== null) volume.setData(volume.data().map((bar) => {
+      const candle = candlesByDateRef.current.get(chartTimeToMarketDate(bar.time));
+      return candle === undefined ? bar : {
+        ...bar,
+        color: volumeColor(candle.open, candle.close, candle.volume_event, candlePalette, theme),
+      };
+    }));
+  }, [candlePalette, theme]);
 
   useEffect(() => {
     relativeStrengthSeriesRef.current?.applyOptions({
       lineStyle: relativeStrengthLineStyle(rsLineStyle),
     });
   }, [rsLineStyle]);
+
+  useEffect(() => {
+    const series = relativeStrengthSeriesRef.current;
+    if (series === null) return;
+    // Recolor existing points so live values and the visible range are retained.
+    const points = series.data().filter((point) => "value" in point);
+    series.setData(recolorRelativeStrengthLineData(points, candlePalette, theme));
+    relativeStrengthHighsRef.current?.applyOptions({ color: rsSwingColor("high", candlePalette, theme) });
+    relativeStrengthLowsRef.current?.applyOptions({ color: rsSwingColor("low", candlePalette, theme) });
+    const provisional = relativeStrengthProvisionalOuterRef.current;
+    const kind = provisional?.data()[0]?.customValues?.kind === "low" ? "low" : "high";
+    provisional?.applyOptions({ color: rsSwingColor(kind, candlePalette, theme) });
+  }, [candlePalette, theme]);
 
   useEffect(() => {
     const datasetKey = `${data.symbol}\0${data.interval}`;
@@ -381,7 +413,7 @@ export function MarketChart({
     const volume = data.candles.map((candle): HistogramData<Time> => ({
       time: marketDateToChartTime(candle.date),
       value: candle.volume,
-      color: volumeColor(candle.open, candle.close, candle.volume_event),
+      color: volumeColor(candle.open, candle.close, candle.volume_event, candlePaletteRef.current, themeRef.current),
     }));
 
     candleSeriesRef.current?.setData(candles);
@@ -469,7 +501,7 @@ export function MarketChart({
     const chart = hostRef.current?.getChart();
     const series = relativeStrengthSeriesRef.current;
     if (chart === null || chart === undefined || series === null) return;
-    const points = relativeStrengthLineData(relativeStrength);
+    const points = relativeStrengthLineData(relativeStrength, candlePaletteRef.current, themeRef.current);
     chart.applyOptions({ leftPriceScale: { visible: false } });
     series.setData(points);
     updateRelativeStrengthStructure(relativeStrength?.structure);
@@ -500,7 +532,7 @@ export function MarketChart({
     updateHistogramSeries(volumeSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
       value: candle.volume,
-      color: volumeColor(candle.open, candle.close, persistedVolumeEvent),
+      color: volumeColor(candle.open, candle.close, persistedVolumeEvent, candlePalette, theme),
     }, data.interval);
 
     const movingAverages = new Map(
@@ -525,6 +557,8 @@ export function MarketChart({
 
     const relativePoint = relativeStrengthLineData(
       liveDelta.relative_strength,
+      candlePalette,
+      theme,
     )[0];
     if (relativePoint !== undefined) {
       const series = relativeStrengthSeriesRef.current;
@@ -532,7 +566,7 @@ export function MarketChart({
         updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
       }
     }
-  }, [data.candles, data.interval, data.symbol, liveDelta, updateRelativeStrengthStructure]);
+  }, [candlePalette, data.candles, data.interval, data.symbol, liveDelta, theme, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -560,7 +594,13 @@ export function MarketChart({
         ? liveDelta.candle
         : undefined;
       if (regularCandle !== undefined && regularCandle.date >= candle.date) return;
-      const color = candle.close >= candle.open ? preMarketUpColor : preMarketDownColor;
+      const up = candle.close >= candle.open;
+      const sessionColor = up ? preMarketUpColor : preMarketDownColor;
+      const appearance = candleSeriesOptions(candlePalette, theme);
+      const color = candlePalette === "monochrome"
+        ? up ? appearance.upColor : appearance.downColor : sessionColor;
+      const outline = candlePalette === "monochrome"
+        ? up ? appearance.wickUpColor : appearance.wickDownColor : sessionColor;
       const candleUpdated = updateCandlestickSeries(candleSeries, {
         time: marketDateToChartTime(candle.date),
         open: candle.open,
@@ -568,14 +608,15 @@ export function MarketChart({
         low: candle.low,
         close: candle.close,
         color,
-        borderColor: color,
-        wickColor: color,
+        borderColor: outline,
+        wickColor: outline,
       }, data.interval);
       if (candleUpdated) candlesByDateRef.current.set(candle.date, candle);
       updateHistogramSeries(volumeSeriesRef.current, {
         time: marketDateToChartTime(candle.date),
         value: candle.volume,
-        color,
+        color: candlePalette === "monochrome"
+          ? volumeColor(candle.open, candle.close, undefined, candlePalette, theme) : sessionColor,
       }, data.interval);
       return;
     }
@@ -599,7 +640,7 @@ export function MarketChart({
     } else {
       postMarketLineRef.current.applyOptions(options);
     }
-  }, [data.candles, data.interval, data.symbol, liveDelta, sessionDelta]);
+  }, [candlePalette, data.candles, data.interval, data.symbol, liveDelta, sessionDelta, theme]);
 
   useEffect(() => {
     if (data.candles.length === 0) return;

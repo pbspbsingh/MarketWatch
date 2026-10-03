@@ -76,7 +76,7 @@ export function IntradayChartDialog({
 }
 
 function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: AnalyzerTrade }) {
-  const { candlePalette } = useAppSettings();
+  const { candlePalette, theme } = useAppSettings();
   const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const emaRefs = useRef<ISeriesApi<"Line">[]>([]);
@@ -95,7 +95,7 @@ function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: An
     volumeRef.current?.setData(data.candles.map((candle) => ({
       time: candle.timestamp as Time,
       value: candle.volume,
-      color: volumeColor(candle.open, candle.close),
+      color: volumeColor(candle.open, candle.close, undefined, candlePalette, theme),
     })));
     emaRefs.current.forEach((series, index) => {
       const ema = data.emas[index];
@@ -142,9 +142,12 @@ function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: An
       color: stop.color,
       textColor: visualizationColors.axisText,
     })));
-  }, [data, trade.active_stop, trade.executions, trade.initial_stop]);
+  }, [candlePalette, data, theme, trade.active_stop, trade.executions, trade.initial_stop]);
 
   useEffect(populate, [populate]);
+  useEffect(() => {
+    candlesRef.current?.applyOptions(candleSeriesOptions(candlePalette, theme));
+  }, [candlePalette, theme]);
   return (
     <ChartHost
       className="intraday-chart"
@@ -155,7 +158,7 @@ function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: An
       }}
       attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(trade.tradingview_symbol)}`}
       onChartReady={(chart) => {
-        const candles = chart.addSeries(CandlestickSeries, candleSeriesOptions(candlePalette));
+        const candles = chart.addSeries(CandlestickSeries, candleSeriesOptions(candlePalette, theme));
         candlesRef.current = candles;
         const stopLabels = new LeftPriceLineLabels();
         candles.attachPrimitive(stopLabels);

@@ -126,15 +126,21 @@ export function baseChartOptions(mode: AppThemeMode, gridOpacity = 1): DeepParti
   };
 }
 
-export function candleSeriesOptions(palette: CandlePalette) {
+export function candleSeriesOptions(palette: CandlePalette, mode: AppThemeMode) {
+  const monochrome = palette === "monochrome";
+  const hollow = palette !== "solid";
+  const up = monochrome ? appPalettes[mode].text : visualizationColors.up;
+  const down = monochrome
+    ? mode === "dark" ? "#a0a0a0" : appPalettes[mode].text
+    : visualizationColors.down;
   return {
-    upColor: palette === "hollow" ? "transparent" : visualizationColors.up,
-    downColor: visualizationColors.down,
-    borderVisible: palette === "hollow",
-    borderUpColor: visualizationColors.up,
-    borderDownColor: visualizationColors.down,
-    wickUpColor: visualizationColors.up,
-    wickDownColor: visualizationColors.down,
+    upColor: hollow ? "transparent" : up,
+    downColor: down,
+    borderVisible: hollow,
+    borderUpColor: up,
+    borderDownColor: down,
+    wickUpColor: up,
+    wickDownColor: down,
     priceLineVisible: false,
   };
 }
@@ -191,7 +197,17 @@ export function volumeColor(
   open: number,
   close: number,
   event?: "history_high" | "year_high",
+  palette: CandlePalette = "solid",
+  mode: AppThemeMode = "dark",
 ) {
+  if (palette === "monochrome") {
+    const color = close >= open
+      ? mode === "dark" ? "#b0b0b0" : "#a0a0a0"
+      : mode === "dark" ? "#707070" : "#505050";
+    // Keep volume-record emphasis while preserving the direction's grey shade.
+    const opacity = event === "history_high" ? 1 : event === "year_high" ? 0.85 : 0.6;
+    return alpha(color, opacity);
+  }
   if (event === "history_high") return visualizationColors.historyHighVolume;
   if (event === "year_high") {
     return close >= open

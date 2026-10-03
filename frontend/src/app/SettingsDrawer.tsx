@@ -11,9 +11,12 @@ import {
 } from "@mui/material";
 import {
   useAppSettings,
+  validCandlePalette,
   validRelativeStrengthLineStyle,
+  type CandlePalette,
   type RelativeStrengthLineStyle,
 } from "./AppSettings";
+import { candleSeriesOptions } from "../components/lightweight-chart/chartOptions";
 
 const lineStyles: Array<{
   value: RelativeStrengthLineStyle;
@@ -86,16 +89,18 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           <div className="settings-choice-row">
             <span id={candleLabelId} className="settings-control-label">Candle style</span>
             <ToggleButtonGroup
-              className="settings-choice-segments" disabled={!lightweight} exclusive size="small"
+              className="settings-choice-segments settings-candle-styles" disabled={!lightweight} exclusive size="small"
               value={candlePalette} aria-labelledby={candleLabelId}
               onChange={(_, value) => {
-                if (value === "solid" || value === "hollow") setCandlePalette(value);
+                if (validCandlePalette(value)) setCandlePalette(value);
               }}
             >
               <ToggleButton value="solid" aria-label="Red and green candles"><CandleSample /> Solid</ToggleButton>
-              <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample hollow /> Hollow</ToggleButton>
+              <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample palette="hollow" /> Hollow</ToggleButton>
+              <ToggleButton value="monochrome" aria-label="Monochrome candles" title="Monochrome"><CandleSample palette="monochrome" /> Mono</ToggleButton>
             </ToggleButtonGroup>
           </div>
+          {candlePalette === "monochrome" && <p className="settings-hint">Up: hollow candles, lighter volume. Down: filled candles, darker volume.</p>}
           <OpacityControl label="Grid opacity" value={gridOpacity} onChange={setGridOpacity} disabled={!lightweight} />
         </SettingsSection>
 
@@ -210,13 +215,17 @@ function OpacityControl({ label, value, onChange, disabled }: {
   );
 }
 
-function CandleSample({ hollow = false }: { hollow?: boolean }) {
+function CandleSample({ palette = "solid" }: { palette?: CandlePalette }) {
+  const { theme } = useAppSettings();
+  const options = candleSeriesOptions(palette, theme);
+  const up = palette === "monochrome" ? options.borderUpColor : "var(--color-positive)";
+  const down = palette === "monochrome" ? options.borderDownColor : "var(--color-negative)";
   return (
     <svg className="settings-candle-sample" viewBox="0 0 24 20" aria-hidden="true">
-      <path d="M7 1v18" stroke="var(--color-positive)" strokeWidth="1.5" />
-      <rect x="3.5" y="5" width="7" height="9" rx="1" stroke="var(--color-positive)" strokeWidth="1.5" fill={hollow ? "var(--color-surface)" : "var(--color-positive)"} />
-      <path d="M18 1v18" stroke="var(--color-negative)" strokeWidth="1.5" />
-      <rect x="14.5" y="7" width="7" height="8" rx="1" fill="var(--color-negative)" />
+      <path d="M7 1v18" stroke={up} strokeWidth="1.5" />
+      <rect x="3.5" y="5" width="7" height="9" rx="1" stroke={up} strokeWidth="1.5" fill={palette === "solid" ? up : "var(--color-surface)"} />
+      <path d="M18 1v18" stroke={down} strokeWidth="1.5" />
+      <rect x="14.5" y="7" width="7" height="8" rx="1" fill={down} />
     </svg>
   );
 }

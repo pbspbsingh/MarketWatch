@@ -57,9 +57,10 @@ import {
   volumeSeriesOptions,
   volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
-import { appPalettes } from "../../app/theme";
+import { appPalettes, type AppThemeMode } from "../../app/theme";
 import {
   useAppSettings,
+  type CandlePalette,
   type RelativeStrengthLineStyle,
 } from "../../app/AppSettings";
 import {
@@ -69,8 +70,8 @@ import {
 } from "../charts/chartSeries";
 import {
   relativeStrengthLineData,
-  rsSwingHighColor,
-  rsSwingLowColor,
+  recolorRelativeStrengthLineData,
+  rsSwingColor,
 } from "../charts/relativeStrengthSeries";
 import { chartCompanyNameLabel } from "../charts/chartLabels";
 import { shiftYears } from "./studyDates";
@@ -125,7 +126,7 @@ export function StudyCharts({
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>[]>([]);
   const candlePaletteRef = useRef(candlePalette);
   const fiveEmaOpacityRef = useRef(fiveEmaOpacity);
-  const appearanceRef = useRef({ chartColors, palette });
+  const appearanceRef = useRef({ chartColors, palette, theme });
   const candlesByDateRef = useRef<Array<Map<string, StudyCandle>>>([]);
   const datesRef = useRef<string[]>([]);
   const historyAvailabilityRef = useRef({ before: false, after: false });
@@ -183,9 +184,28 @@ export function StudyCharts({
   useEffect(() => {
     candlePaletteRef.current = candlePalette;
     candleSeriesRef.current.forEach((series) => {
-      series.applyOptions(candleSeriesOptions(candlePalette));
+      series.applyOptions(candleSeriesOptions(candlePalette, theme));
     });
-  }, [candlePalette]);
+    volumeSeriesRef.current.forEach((series, index) => {
+      series.setData(series.data().map((bar) => {
+        const candle = candlesByDateRef.current[index]?.get(timeKey(bar.time));
+        return candle === undefined ? bar : {
+          ...bar,
+          color: volumeColor(candle.open, candle.close, candle.volume_event, candlePalette, theme),
+        };
+      }));
+    });
+    const rsLine = relativeStrengthSeriesRef.current[0];
+    if (rsLine !== undefined) {
+      const points = rsLine.data().filter((point) => "value" in point);
+      rsLine.setData(recolorRelativeStrengthLineData(points, candlePalette, theme));
+    }
+    relativeStrengthSeriesRef.current[1]?.applyOptions({ color: rsSwingColor("high", candlePalette, theme) });
+    relativeStrengthSeriesRef.current[2]?.applyOptions({ color: rsSwingColor("low", candlePalette, theme) });
+    const provisional = relativeStrengthSeriesRef.current[3];
+    const kind = provisional?.data()[0]?.customValues?.kind === "low" ? "low" : "high";
+    provisional?.applyOptions({ color: rsSwingColor(kind, candlePalette, theme) });
+  }, [candlePalette, theme]);
 
   useEffect(() => {
     fiveEmaOpacityRef.current = fiveEmaOpacity;
@@ -201,7 +221,7 @@ export function StudyCharts({
   }, [fiveEmaOpacity, result.interval]);
 
   useEffect(() => {
-    appearanceRef.current = { chartColors, palette };
+    appearanceRef.current = { chartColors, palette, theme };
     chartsRef.current.forEach((chart) => chart.applyOptions(chartThemeOptions(theme, gridOpacity)));
     watermarkRef.current.forEach((watermark, index) => {
       watermark.applyOptions({
@@ -340,7 +360,7 @@ export function StudyCharts({
       updateAttributionUrl(container, attributionUrl);
       const candles = chart.addSeries(
         CandlestickSeries,
-        candleSeriesOptions(candlePaletteRef.current),
+        candleSeriesOptions(candlePaletteRef.current, appearance.theme),
       );
       watermarks.push(createTextWatermark(chart.panes()[0], {
         horzAlign: "center",
@@ -533,7 +553,7 @@ export function StudyCharts({
               : {
                 time: date,
                 value: candle.volume,
-                color: volumeColor(candle.open, candle.close, candle.volume_event),
+                color: volumeColor(candle.open, candle.close, candle.volume_event, candlePaletteRef.current, appearanceRef.current.theme),
               };
           }),
         );
@@ -574,6 +594,8 @@ export function StudyCharts({
         showRelativeStrengthRef.current,
         appearanceRef.current.chartColors.background,
         rsLineStyleRef.current,
+        candlePaletteRef.current,
+        appearanceRef.current.theme,
       );
     relativeStrengthSeriesRef.current = relativeStrength.series;
     relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
@@ -675,6 +697,8 @@ function addRelativeStrength(
   visible: boolean,
   background: string,
   rsLineStyle: RelativeStrengthLineStyle,
+  candlePalette: CandlePalette,
+  theme: AppThemeMode,
 ): {
   series: ISeriesApi<"Line">[];
   provisionalInner: ISeriesApi<"Line"> | undefined;
@@ -686,14 +710,14 @@ function addRelativeStrength(
     lineStyle: relativeStrengthLineStyle(rsLineStyle),
   });
   line.priceScale().applyOptions({ scaleMargins: relativeStrengthScaleMargins });
-  line.setData(relativeStrengthLineData(relativeStrength));
+  line.setData(relativeStrengthLineData(relativeStrength, candlePalette, theme));
   series.push(line);
 
   const confirmed = relativeStrength.structure.confirmed;
-  for (const [kind, color] of [["high", rsSwingHighColor], ["low", rsSwingLowColor]] as const) {
+  for (const kind of ["high", "low"] as const) {
     const swings = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color,
+      color: rsSwingColor(kind, candlePalette, theme),
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2.5,
@@ -707,10 +731,10 @@ function addRelativeStrength(
 
   const provisional = relativeStrength.structure.provisional;
   if (provisional !== null) {
-    const data = [{ time: provisional.date, value: provisional.value }];
+    const data = [{ time: provisional.date, value: provisional.value, customValues: { kind: provisional.kind } }];
     const outer = chart.addSeries(LineSeries, {
       ...indicatorSeriesOptions,
-      color: provisional.kind === "low" ? rsSwingLowColor : rsSwingHighColor,
+      color: rsSwingColor(provisional.kind, candlePalette, theme),
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2.5,

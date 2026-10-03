@@ -17,7 +17,7 @@ const settingsKey = "market-watch.settings.v1";
 const legacyChartEngineKey = "market-watch.chart-engine";
 
 export type ChartEngine = "tradingview" | "lightweight";
-export type CandlePalette = "solid" | "hollow";
+export type CandlePalette = "solid" | "hollow" | "monochrome";
 export type RelativeStrengthLineStyle =
   | "solid"
   | "dashed"
@@ -64,7 +64,7 @@ function readSettings(): StoredSettings {
       showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
       showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
       syncWeeklyOverlayCrosshair: value.syncWeeklyOverlayCrosshair === true,
-      candlePalette: value.candlePalette === "hollow" ? "hollow" : "solid",
+      candlePalette: validCandlePalette(value.candlePalette) ? value.candlePalette : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       gridOpacity: validOpacity(value.gridOpacity) ? value.gridOpacity : 1,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
@@ -94,6 +94,10 @@ function validChartEngine(value: unknown): value is ChartEngine {
 
 function validOpacity(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+export function validCandlePalette(value: unknown): value is CandlePalette {
+  return value === "solid" || value === "hollow" || value === "monochrome";
 }
 
 export function validRelativeStrengthLineStyle(

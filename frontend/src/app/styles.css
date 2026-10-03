@@ -506,6 +506,11 @@ body,
   height: 1rem;
 }
 
+.settings-choice-segments.settings-candle-styles .MuiToggleButton-root {
+  flex-direction: column;
+  min-width: 0;
+}
+
 .settings-value {
   min-width: 2.5rem;
   padding: 0.2rem 0.375rem;
