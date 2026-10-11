@@ -1,6 +1,7 @@
 use crate::api;
 use crate::auth;
 use crate::config::{AuthConfig, Config};
+use crate::providers::news::StockTitanClient;
 use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
@@ -11,6 +12,7 @@ use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::maintenance;
 use crate::services::market_chart::MarketChartService;
 use crate::services::market_explorer::MarketExplorerService;
+use crate::services::n_factor::NFactorService;
 use crate::services::nyse_calendar;
 use crate::services::sector_analysis::SectorAnalysisService;
 use crate::services::study::StudyService;
@@ -96,6 +98,7 @@ pub struct AppState {
     pub market_schedule: MarketSchedule,
     pub market_chart: Arc<MarketChartService>,
     pub market_explorer: Arc<MarketExplorerService>,
+    pub n_factor: Arc<NFactorService>,
     pub sector_analysis: Arc<SectorAnalysisService>,
     pub themes: Arc<ThemeService>,
     pub theme_audits: Arc<ThemeAuditService>,
@@ -118,6 +121,12 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo_client = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
+    let n_factor = Arc::new(NFactorService::new(
+        store.clone(),
+        finviz.clone(),
+        StockTitanClient::new(&config.providers)?,
+        ai.clone(),
+    ));
     let yahoo = Arc::new(YahooService::new(
         store.clone(),
         yahoo_client.clone(),
@@ -220,6 +229,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         market_schedule,
         market_chart,
         market_explorer,
+        n_factor,
         sector_analysis,
         themes,
         theme_audits,

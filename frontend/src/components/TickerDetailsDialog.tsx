@@ -27,6 +27,7 @@ import {
 } from "../api/themes";
 import { TickerFundamentalsTab } from "./TickerFundamentalsTab";
 import { TickerProfileThemesTab } from "./TickerProfileThemesTab";
+import { TickerNFactorTab } from "./TickerNFactorTab";
 import { Toast } from "./Toast";
 import "./ticker-details-dialog.css";
 
@@ -38,7 +39,7 @@ interface TickerDetailsDialogProps {
   onThemeChanged?: () => void;
 }
 
-const detailsTabs = ["fundamentals", "profile-themes"] as const;
+const detailsTabs = ["fundamentals", "profile-themes", "n-factor"] as const;
 export type TickerDetailsTab = (typeof detailsTabs)[number];
 
 export function TickerDetailsDialog({
@@ -134,7 +135,7 @@ function OpenTickerDetailsDialog({
       if (event.key.toLowerCase() === "r") {
         event.preventDefault();
         event.stopPropagation();
-        refreshDetails();
+        if (tab !== "n-factor") refreshDetails();
         return;
       }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -311,7 +312,7 @@ function OpenTickerDetailsDialog({
               </>
             )}
           </div>
-          <div className="ticker-details-actions">
+          {tab !== "n-factor" && <div className="ticker-details-actions">
             {details !== undefined && (
               <Typography color={details.stale_fundamentals ? "warning.main" : "text.secondary"}>
                 {details.stale_fundamentals ? "Stale cache" : "Updated"}{" "}
@@ -325,23 +326,21 @@ function OpenTickerDetailsDialog({
             >
               {refreshing ? <CircularProgress size="1rem" /> : <RefreshIcon />}
             </IconButton>
-          </div>
+          </div>}
         </DialogTitle>
         <DialogContent className="ticker-details-content" dividers>
-          {loading && details === undefined ? (
+          <Tabs value={tab} onChange={(_, value: TickerDetailsTab) => setTab(value)}>
+            <Tab value="fundamentals" label="Fundamentals" />
+            <Tab value="profile-themes" label="Profile / Themes" />
+            <Tab value="n-factor" label="N-Factor" />
+          </Tabs>
+          {tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : loading && details === undefined ? (
             <div className="panel-status">
               <CircularProgress size="1rem" />
               <Typography color="text.secondary">Loading ticker details</Typography>
             </div>
           ) : details !== undefined ? (
             <>
-              <Tabs
-                value={tab}
-                onChange={(_, value: TickerDetailsTab) => setTab(value)}
-              >
-                <Tab value="fundamentals" label="Fundamentals" />
-                <Tab value="profile-themes" label="Profile / Themes" />
-              </Tabs>
               {tab === "profile-themes" ? (
                 <TickerProfileThemesTab
                   details={details}

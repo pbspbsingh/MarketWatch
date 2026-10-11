@@ -4,6 +4,7 @@ mod daily_notes;
 mod exchange;
 mod fundamentals;
 mod market_data;
+pub mod n_factor;
 mod performance;
 mod theme_audits;
 mod themes;

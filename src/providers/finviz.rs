@@ -1,6 +1,8 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
+use crate::models::n_factor::NewsItem;
 use crate::models::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
+use crate::providers::news::parse_finviz_news;
 use crate::providers::request_throttle::RequestThrottle;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -59,6 +61,15 @@ struct ScreenerPage {
 }
 
 impl FinvizClient {
+    pub async fn news(&self, ticker: &TickerSymbol) -> anyhow::Result<Vec<NewsItem>> {
+        let mut url = self.stock_url.clone();
+        url.query_pairs_mut()
+            .clear()
+            .append_pair("t", ticker.as_str())
+            .append_pair("p", "d");
+        parse_finviz_news(&self.get(url).await?, Utc::now())
+    }
+
     pub fn new(finviz: &FinvizConfig, provider: &ProviderConfig) -> anyhow::Result<Self> {
         let http = Client::builder()
             .user_agent(BROWSER_USER_AGENT)

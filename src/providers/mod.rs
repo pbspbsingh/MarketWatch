@@ -1,5 +1,6 @@
 mod ai;
 mod finviz;
+pub(crate) mod news;
 mod request_throttle;
 mod yahoo;
 

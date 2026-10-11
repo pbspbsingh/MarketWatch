@@ -9,6 +9,7 @@ mod live_prices;
 mod market;
 mod market_chart;
 mod market_explorer;
+mod n_factor;
 mod study;
 mod theme_audits;
 mod themes;
@@ -36,6 +37,7 @@ pub fn router() -> Router<AppState> {
         .merge(market::router())
         .merge(market_chart::router())
         .merge(market_explorer::router())
+        .merge(n_factor::router())
         .merge(live_prices::router())
         .merge(study::router())
         .merge(tickers::router())

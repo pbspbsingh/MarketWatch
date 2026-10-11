@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT payload FROM n_factor_reports WHERE symbol = ? AND source = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "payload",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "n_factor_reports",
+            "name": "payload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7d9ec64177ca78c0f5fbcc8cc74e6ebc1b0b1fdea39fd3e095b3996e2c3f7d6c"
+}

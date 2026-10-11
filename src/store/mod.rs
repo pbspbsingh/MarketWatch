@@ -20,6 +20,7 @@ mod maintenance;
 mod market_data;
 mod market_explorer;
 mod memberships;
+mod n_factor;
 mod theme_audits;
 mod themes;
 mod top_stock_screens;
