@@ -15,6 +15,7 @@ import {
 
 const settingsKey = "market-watch.settings.v1";
 const legacyChartEngineKey = "market-watch.chart-engine";
+const legacyStudyLogarithmicScaleKey = "market-watch.study-logarithmic-scale";
 
 export type ChartEngine = "tradingview" | "lightweight";
 export type CandlePalette = "solid" | "hollow" | "monochrome";
@@ -27,6 +28,7 @@ export type RelativeStrengthLineStyle =
 type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
+  logarithmicScale: boolean;
   showWeeklyChartOverlay: boolean;
   showWeeklyOverlayAxes: boolean;
   syncWeeklyOverlayCrosshair: boolean;
@@ -39,6 +41,7 @@ type StoredSettings = {
 type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
+  setLogarithmicScale: (logarithmicScale: boolean) => void;
   setShowWeeklyChartOverlay: (show: boolean) => void;
   setShowWeeklyOverlayAxes: (show: boolean) => void;
   setSyncWeeklyOverlayCrosshair: (sync: boolean) => void;
@@ -61,6 +64,9 @@ function readSettings(): StoredSettings {
         : validChartEngine(legacyChartEngine)
           ? legacyChartEngine
           : "lightweight",
+      logarithmicScale: typeof value.logarithmicScale === "boolean"
+        ? value.logarithmicScale
+        : localStorage.getItem(legacyStudyLogarithmicScaleKey) === "true",
       showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
       showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
       syncWeeklyOverlayCrosshair: value.syncWeeklyOverlayCrosshair === true,
@@ -77,6 +83,7 @@ function readSettings(): StoredSettings {
       chartEngine: validChartEngine(localStorage.getItem(legacyChartEngineKey))
         ? localStorage.getItem(legacyChartEngineKey) as ChartEngine
         : "lightweight",
+      logarithmicScale: localStorage.getItem(legacyStudyLogarithmicScaleKey) === "true",
       showWeeklyChartOverlay: false,
       showWeeklyOverlayAxes: true,
       syncWeeklyOverlayCrosshair: false,
@@ -120,12 +127,15 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     applyThemeToDocument(settings.theme);
     localStorage.setItem(settingsKey, JSON.stringify(settings));
     localStorage.removeItem(legacyChartEngineKey);
+    localStorage.removeItem(legacyStudyLogarithmicScaleKey);
   }, [settings]);
 
   const value = useMemo<AppSettingsValue>(() => ({
     ...settings,
     setTheme: (nextTheme) => setSettings((current) => ({ ...current, theme: nextTheme })),
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
+    setLogarithmicScale: (logarithmicScale) =>
+      setSettings((current) => ({ ...current, logarithmicScale })),
     setShowWeeklyChartOverlay: (showWeeklyChartOverlay) =>
       setSettings((current) => ({ ...current, showWeeklyChartOverlay })),
     setShowWeeklyOverlayAxes: (showWeeklyOverlayAxes) =>

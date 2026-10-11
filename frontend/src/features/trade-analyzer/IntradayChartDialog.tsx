@@ -150,6 +150,7 @@ function IntradayChart({ data, trade }: { data: IntradayChartSnapshot; trade: An
   }, [candlePalette, theme]);
   return (
     <ChartHost
+      useGlobalPriceScale
       className="intraday-chart"
       ariaLabel={`${trade.symbol} 30 minute trade chart`}
       options={{

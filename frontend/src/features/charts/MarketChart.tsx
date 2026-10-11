@@ -683,6 +683,7 @@ export function MarketChart({
   return (
     <>
       <ChartHost
+        useGlobalPriceScale
         ref={hostRef}
         className={className}
         ariaLabel={ariaLabel ?? `${data.symbol} price chart`}

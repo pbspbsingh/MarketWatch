@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   createChart,
+  PriceScaleMode,
   type ChartOptions,
   type DeepPartial,
   type IChartApi,
@@ -22,6 +23,7 @@ interface ChartHostProps {
   className?: string;
   ariaLabel?: string;
   options?: DeepPartial<ChartOptions>;
+  useGlobalPriceScale?: boolean;
   attributionUrl?: string;
   onChartReady?: (chart: IChartApi) => void;
   onChartDestroy?: (chart: IChartApi) => void;
@@ -32,11 +34,12 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     className,
     ariaLabel,
     options,
+    useGlobalPriceScale = false,
     attributionUrl,
     onChartReady,
     onChartDestroy,
   }, ref) {
-    const { theme, gridOpacity } = useAppSettings();
+    const { theme, gridOpacity, logarithmicScale } = useAppSettings();
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi>(null);
     const initialThemeRef = useRef(theme);
@@ -86,6 +89,14 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     useEffect(() => {
       if (options !== undefined) chartRef.current?.applyOptions(options);
     }, [options]);
+
+    useEffect(() => {
+      if (useGlobalPriceScale) {
+        chartRef.current?.priceScale("right").applyOptions({
+          mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+        });
+      }
+    }, [useGlobalPriceScale, logarithmicScale]);
 
     useEffect(() => {
       const container = containerRef.current;

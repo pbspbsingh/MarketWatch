@@ -501,12 +501,13 @@ body,
   background: var(--color-hover);
 }
 
-.settings-candle-sample {
+.settings-candle-sample,
+.settings-scale-sample {
   width: 1.25rem;
   height: 1rem;
 }
 
-.settings-choice-segments.settings-candle-styles .MuiToggleButton-root {
+.settings-choice-segments.settings-visual-choices .MuiToggleButton-root {
   flex-direction: column;
   min-width: 0;
 }

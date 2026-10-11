@@ -91,7 +91,6 @@ export function StudyCharts({
   orientation,
   initialSplit,
   onSplitChange,
-  logarithmicScale,
   tickerBVisible,
   historyLoading,
   onRequestHistory,
@@ -101,12 +100,12 @@ export function StudyCharts({
   orientation: SplitOrientation;
   initialSplit: number;
   onSplitChange: (split: number) => void;
-  logarithmicScale: boolean;
   tickerBVisible: boolean;
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
 }) {
   const {
+    logarithmicScale,
     candlePalette,
     fiveEmaOpacity,
     gridOpacity,

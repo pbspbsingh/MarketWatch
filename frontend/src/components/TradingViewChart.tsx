@@ -46,7 +46,7 @@ function loadTradingView() {
 }
 
 export function TradingViewChart({ symbol, interval, onError }: TradingViewChartProps) {
-  const { theme } = useAppSettings();
+  const { theme, logarithmicScale } = useAppSettings();
   const palette = appPalettes[theme];
   const containerId = `tradingview-${useId().replaceAll(":", "")}`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +78,11 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
           enable_publishing: false,
           container_id: containerId,
           studies: ["MASimple@tv-basicstudies", "STD;MA%Ribbon"],
+          overrides: {
+            "mainSeriesProperties.priceAxisProperties.log": logarithmicScale,
+            "mainSeriesProperties.priceAxisProperties.percentage": false,
+            "mainSeriesProperties.priceAxisProperties.indexedTo100": false,
+          },
           studies_overrides: {
             "moving average.length": 10,
             "moving average.ma.color": palette.accent,
@@ -99,7 +104,7 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
       widgetRef.current = undefined;
       container?.replaceChildren();
     };
-  }, [containerId, onError, palette, theme]);
+  }, [containerId, logarithmicScale, onError, palette, theme]);
 
   useEffect(() => {
     const widget = widgetRef.current;

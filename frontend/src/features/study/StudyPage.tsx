@@ -8,7 +8,6 @@ import {
 } from "react";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
-import FunctionsIcon from "@mui/icons-material/Functions";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import {
@@ -44,7 +43,6 @@ import "./study.css";
 const todayText = localDateText(new Date());
 const studyOrientationKey = "market-watch.study-orientation";
 const studySplitKey = "market-watch.study-split";
-const studyLogarithmicScaleKey = "market-watch.study-logarithmic-scale";
 const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
 
@@ -62,9 +60,6 @@ export function StudyPage() {
   const [loading, setLoading] = useState(true);
   const [orientation, setOrientation] = useState<SplitOrientation>(() =>
     localStorage.getItem(studyOrientationKey) === "horizontal" ? "horizontal" : "vertical",
-  );
-  const [logarithmicScale, setLogarithmicScale] = useState(
-    () => localStorage.getItem(studyLogarithmicScaleKey) === "true",
   );
   const [tickerBVisible, setTickerBVisible] = useState(
     () => localStorage.getItem(studyTickerBVisibleKey) !== "false",
@@ -352,25 +347,9 @@ export function StudyPage() {
         <Button size="small" variant="contained" type="submit" disabled={loading}>Load</Button>
         <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={() => void load(true)}>Refresh</Button>
         {loading && <CircularProgress size="1rem" />}
-        <Tooltip title={`Switch to ${logarithmicScale ? "normal" : "logarithmic"} price scale`}>
-          <ToggleButton
-            className="study-scale-toggle"
-            size="small"
-            type="button"
-            value="logarithmic"
-            selected={logarithmicScale}
-            aria-label="Logarithmic price scale"
-            onChange={() => setLogarithmicScale((current) => {
-              const next = !current;
-              localStorage.setItem(studyLogarithmicScaleKey, String(next));
-              return next;
-            })}
-          >
-            <FunctionsIcon fontSize="small" />
-          </ToggleButton>
-        </Tooltip>
         <Tooltip title={orientation === "vertical" ? "Switch to side-by-side" : "Switch to top/bottom"}>
           <IconButton
+            className="study-layout-toggle"
             size="small"
             type="button"
             aria-label={orientation === "vertical" ? "Switch to side-by-side charts" : "Switch to top and bottom charts"}
@@ -417,7 +396,6 @@ export function StudyPage() {
             orientation={orientation}
             initialSplit={readStudySplit()}
             onSplitChange={(split) => localStorage.setItem(studySplitKey, String(split))}
-            logarithmicScale={logarithmicScale}
             tickerBVisible={tickerBVisible}
             historyLoading={historyLoading}
             onRequestHistory={(direction) => void loadHistory(direction)}

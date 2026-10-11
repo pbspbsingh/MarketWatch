@@ -33,6 +33,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
   const {
     theme, setTheme,
     chartEngine, setChartEngine,
+    logarithmicScale, setLogarithmicScale,
     candlePalette, setCandlePalette,
     gridOpacity, setGridOpacity,
     fiveEmaOpacity, setFiveEmaOpacity,
@@ -43,6 +44,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
   } = useAppSettings();
   const lightweight = chartEngine === "lightweight";
   const engineLabelId = useId();
+  const scaleLabelId = useId();
   const candleLabelId = useId();
 
   return (
@@ -87,9 +89,25 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           </div>
           {!lightweight && <p className="settings-hint">Choose Lightweight to customize chart styles.</p>}
           <div className="settings-choice-row">
+            <span id={scaleLabelId} className="settings-control-label">Price scale</span>
+            <ToggleButtonGroup
+              className="settings-choice-segments settings-visual-choices" exclusive size="small"
+              value={logarithmicScale ? "logarithmic" : "regular"} aria-labelledby={scaleLabelId}
+              onChange={(_, value) => {
+                if (value === "regular" || value === "logarithmic") {
+                  setLogarithmicScale(value === "logarithmic");
+                }
+              }}
+            >
+              <ToggleButton value="regular"><PriceScaleSample /> Regular</ToggleButton>
+              <ToggleButton value="logarithmic"><PriceScaleSample logarithmic /> Log</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <p className="settings-hint">Applies to all price charts, including Studies. TradingView reloads when changed.</p>
+          <div className="settings-choice-row">
             <span id={candleLabelId} className="settings-control-label">Candle style</span>
             <ToggleButtonGroup
-              className="settings-choice-segments settings-candle-styles" disabled={!lightweight} exclusive size="small"
+              className="settings-choice-segments settings-visual-choices" disabled={!lightweight} exclusive size="small"
               value={candlePalette} aria-labelledby={candleLabelId}
               onChange={(_, value) => {
                 if (validCandlePalette(value)) setCandlePalette(value);
@@ -212,6 +230,18 @@ function OpacityControl({ label, value, onChange, disabled }: {
         }}
       />
     </div>
+  );
+}
+
+function PriceScaleSample({ logarithmic = false }: { logarithmic?: boolean }) {
+  return (
+    <svg className="settings-scale-sample" viewBox="0 0 24 20" aria-hidden="true">
+      <path d="M3 2v15h19" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <path
+        d={logarithmic ? "M6 14C8 6 13 4 21 3" : "M6 14L21 3"}
+        fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
