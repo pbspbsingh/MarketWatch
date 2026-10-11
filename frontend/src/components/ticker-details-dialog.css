@@ -347,6 +347,19 @@
   }
 }
 
+.fundamentals-negative-percent,
+.fundamentals-positive-percent {
+  font-weight: 700;
+}
+
+.fundamentals-negative-percent {
+  color: var(--color-negative);
+}
+
+.fundamentals-positive-percent {
+  color: var(--color-positive);
+}
+
 .fundamentals-summary {
   min-height: 1rem;
   overflow-x: auto;

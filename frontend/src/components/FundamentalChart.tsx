@@ -50,6 +50,8 @@ interface FundamentalChartProps {
   legendTitle?: string;
   summaryLabel?: string;
   summarySeparator?: "divider" | "arrow";
+  summaryGrowth?: Array<number | null>;
+  forecastGrowth?: number | null;
   empty?: boolean;
 }
 
@@ -67,6 +69,8 @@ export function FundamentalChart({
   legendTitle,
   summaryLabel,
   summarySeparator = "divider",
+  summaryGrowth,
+  forecastGrowth,
   empty = false,
 }: FundamentalChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
@@ -190,7 +194,7 @@ export function FundamentalChart({
     <section className="fundamentals-panel">
       <Typography component="h3">{title}</Typography>
       {!empty && <div className="fundamentals-legend">
-        {legendTitle !== undefined && <span>{legendTitle}</span>}
+        {legendTitle !== undefined && <span><PercentageText value={legendTitle} /></span>}
         {model.series.map((series) => (
           <span className="fundamentals-legend-item" key={series.label}>
             <i
@@ -230,17 +234,29 @@ export function FundamentalChart({
         <div className="fundamentals-summary-content">
           {summaryLabel && <Typography className="fundamentals-summary-label" color="text.secondary">{summaryLabel}:</Typography>}
           {summary.map((value, index) => (
-            <Typography key={`${value}-${index}`} color="text.secondary">{value}</Typography>
+            <Typography key={`${value}-${index}`} color="text.secondary">
+              <PercentageText value={value} highlightGrowth={(summaryGrowth?.[index] ?? 0) > 25} />
+            </Typography>
           ))}
           {forecastSummary !== undefined && (
             <Typography className="fundamentals-forecast-summary" color="text.secondary">
-              {forecastSummary}
+              <PercentageText value={forecastSummary} highlightGrowth={(forecastGrowth ?? 0) > 25} />
             </Typography>
           )}
         </div>
       </div>
     </section>
   );
+}
+
+function PercentageText({ value, highlightGrowth = false }: { value: string; highlightGrowth?: boolean }) {
+  return value.split(/([+-]?\d+%)/g).map((part, index) => {
+    if (index % 2 === 0) return part;
+    const percentage = Number.parseFloat(part);
+    const className = percentage < 0 ? "fundamentals-negative-percent"
+      : highlightGrowth ? "fundamentals-positive-percent" : undefined;
+    return className === undefined ? part : <span key={index} className={className}>{part}</span>;
+  });
 }
 
 function chartTime(index: number): UTCTimestamp {

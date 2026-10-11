@@ -161,7 +161,7 @@ function GrowthChart({
       const value = isForecast ? series.forecast.value : historicalPoint?.value;
       return {
         lines,
-        detail: `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`,
+        detail: `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? formatRevenue(value) : value.toFixed(2)}`,
       };
     });
     return {
@@ -216,6 +216,8 @@ function GrowthChart({
       forecastSummary={series.forecast.period === null ? undefined : `${formatPercent(forecastSummaryValue)} (forecast)`}
       summaryLabel={smaVisible ? "Growth MA" : "Growth"}
       summarySeparator="arrow"
+      summaryGrowth={summaryValues.slice(-4)}
+      forecastGrowth={forecastSummaryValue}
       empty={historical.every((value) => value === null) && forecastGrowth === null}
       model={model}
     />
@@ -238,7 +240,7 @@ function EstimateChart({
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
   const format = useCallback(
-    (value: number) => actualField === "revenue" ? compact(value) : value.toFixed(2),
+    (value: number) => actualField === "revenue" ? formatRevenue(value) : value.toFixed(2),
     [actualField],
   );
   const actual = useMemo(
@@ -284,7 +286,7 @@ function EstimateChart({
       return {
         lines,
         detail: index < quarters.length
-          ? `Surprise: ${formatSurprise(actualValue ?? null, estimate ?? null)}`
+          ? `Surprise: ${formatSurprise(actualValue ?? null, estimate ?? null, actualField === "revenue" ? formatRevenue : compact)}`
           : undefined,
       };
     });
@@ -322,10 +324,12 @@ function EstimateChart({
   return (
     <FundamentalChart
       title={title}
-      summary={surprises.slice(-4).map(signedPercent)}
+      summary={actual.map((value, index) =>
+        `${value === null ? "N/A" : format(value)} (${signedPercent(surprises[index] ?? null)})`
+      ).slice(-4)}
       forecastSummary={`${forecast === null ? "N/A" : format(forecast)} (forecast)`}
       legendTitle={`${quarters.at(-1)?.fiscal_period ?? "Latest quarter"} Surprise: ${signedPercent(surprises.at(-1) ?? null)}`}
-      summaryLabel="Surprise"
+      summaryLabel="Actual"
       empty={actual.every((value) => value === null) && estimates.every((value) => value === null) && forecast === null}
       model={model}
     />
@@ -336,17 +340,23 @@ function surprisePercent(actual: number | null, estimate: number | null) {
   return growthPercent(actual, estimate);
 }
 
-function formatSurprise(actual: number | null, estimate: number | null) {
+function formatSurprise(actual: number | null, estimate: number | null, formatValue: (value: number) => string) {
   if (actual === null || estimate === null) return "N/A";
-  return `${compact(actual - estimate)} (${formatPercent(surprisePercent(actual, estimate))})`;
+  return `${formatValue(actual - estimate)} (${formatPercent(surprisePercent(actual, estimate))})`;
 }
 
 function formatPercent(value: number | null) {
-  return value === null ? "N/A" : `${value.toFixed(1)}%`;
+  return value === null ? "N/A" : `${Math.round(value)}%`;
 }
 
 function signedPercent(value: number | null) {
-  return `${value !== null && value > 0 ? "+" : ""}${formatPercent(value)}`;
+  const rounded = value === null ? null : Math.round(value);
+  return `${rounded !== null && rounded > 0 ? "+" : ""}${formatPercent(rounded)}`;
+}
+
+function formatRevenue(value: number) {
+  const billions = Math.round(value / 100_000_000) / 10;
+  return `${billions.toFixed(1)}B`;
 }
 
 function compact(value: number) {
