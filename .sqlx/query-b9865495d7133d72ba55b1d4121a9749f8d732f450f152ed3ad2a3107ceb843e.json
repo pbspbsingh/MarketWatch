@@ -1,0 +1,33 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT wt.symbol AS \"symbol!\",\n               json_extract(r.payload, '$.generated_at') AS \"generated_at?: String\"\n               FROM watchlist_tickers wt\n               LEFT JOIN n_factor_reports r ON r.symbol = wt.symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watchlist_tickers",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "generated_at?: String",
+        "ordinal": 1,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "b9865495d7133d72ba55b1d4121a9749f8d732f450f152ed3ad2a3107ceb843e"
+}

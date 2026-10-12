@@ -6,6 +6,7 @@ use reqwest::{Client, StatusCode, Url, header};
 use scraper::{Html, Selector};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use tracing::{info, warn};
 
 use crate::{
     config::ProviderConfig,
@@ -17,6 +18,12 @@ use crate::{
 };
 
 const MAX_NEWS_ITEMS: usize = 50;
+
+#[derive(Debug, thiserror::Error)]
+enum NewsFetchError {
+    #[error("Stock Titan returned HTTP 404; the news page is unavailable")]
+    NotFound,
+}
 
 pub enum NewsProgress {
     Waiting(Option<DateTime<Utc>>),
@@ -83,12 +90,33 @@ impl StockTitanClient {
         now: DateTime<Utc>,
         progress: impl Fn(NewsProgress) + Send + Sync,
     ) -> anyhow::Result<NewsBatch> {
+        let url = Url::parse(&format!("https://www.stocktitan.net/news/{symbol}/"))?;
+        self.fetch_news(symbol, now, progress, url).await
+    }
+
+    async fn fetch_news(
+        &self,
+        symbol: &TickerSymbol,
+        now: DateTime<Utc>,
+        progress: impl Fn(NewsProgress) + Send + Sync,
+        mut url: Url,
+    ) -> anyhow::Result<NewsBatch> {
         let mut window = NewsWindow::new(now)?;
         let mut page_number = 1;
-        let mut url = Url::parse(&format!("https://www.stocktitan.net/news/{symbol}/"))?;
         loop {
-            let html = self.fetch_page(&url, &progress).await?;
-            let page = parse_stock_titan_page(&html, symbol, page_number)?;
+            info!(page_number, %url, "Fetching Stock Titan news page");
+            let html = match self.fetch_page(&url, &progress).await {
+                Err(error)
+                    if page_number == 1
+                        && matches!(error.downcast_ref(), Some(NewsFetchError::NotFound)) =>
+                {
+                    info!(%symbol, "Stock Titan ticker news page is unavailable (HTTP 404)");
+                    return Ok(window.finish(0, NewsStopReason::SourceNotFound));
+                }
+                result => result?,
+            };
+            let page = parse_stock_titan_page(&html, symbol, page_number)
+                .with_context(|| format!("Could not parse Stock Titan news page {page_number}"))?;
             let previous_count = window.items.len();
             let stop = window.append(page.items)?;
             progress(NewsProgress::Page {
@@ -138,6 +166,7 @@ impl StockTitanClient {
                     gate.next_request_at =
                         Some(Instant::now() + Duration::from_secs(1 << attempt) + self.jitter());
                     if attempt < 2 && (error.is_timeout() || error.is_connect()) {
+                        warn!(%url, attempt = attempt + 1, next_attempt = attempt + 2, %error, "Retrying Stock Titan news request after connection or timeout error");
                         attempt += 1;
                         continue;
                     }
@@ -154,13 +183,18 @@ impl StockTitanClient {
                     Utc::now(),
                 );
                 gate.cooldown_until = Some(retry_at);
+                warn!(%url, %retry_at, retry_after_secs = (retry_at - Utc::now()).num_seconds().max(0), "Stock Titan returned HTTP 429; waiting before retry");
                 continue;
             }
             if response.status().is_server_error() && attempt < 2 {
+                warn!(%url, status = %response.status(), attempt = attempt + 1, next_attempt = attempt + 2, "Retrying Stock Titan news request after server error");
                 gate.next_request_at =
                     Some(Instant::now() + Duration::from_secs(1 << attempt) + self.jitter());
                 attempt += 1;
                 continue;
+            }
+            if response.status() == StatusCode::NOT_FOUND {
+                return Err(NewsFetchError::NotFound.into());
             }
             ensure!(
                 response.status().is_success(),
@@ -439,6 +473,15 @@ pub(crate) fn parse_finviz_news(html: &str, now: DateTime<Utc>) -> anyhow::Resul
             url: url.to_string(),
         });
     }
+    // An intact, empty news table is valid; rows with unrecognized links are not.
+    if items.is_empty()
+        && document
+            .select(&selector("#news-table"))
+            .next()
+            .is_some_and(|table| table.select(&selector("tr")).next().is_none())
+    {
+        return Ok(items);
+    }
     finish(items)
 }
 
@@ -507,6 +550,51 @@ mod tests {
             max_delay_ms: 25,
         })
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn stock_titan_404_is_an_empty_result_without_request_retries() {
+        let (url, log, server) = test_server(vec![(StatusCode::NOT_FOUND, None)]).await;
+        let batch = test_client()
+            .fetch_news(
+                &TickerSymbol::parse("ALAB").unwrap(),
+                Utc::now(),
+                |_| {},
+                url,
+            )
+            .await
+            .unwrap();
+        assert!(batch.items.is_empty());
+        assert_eq!(batch.coverage.stop_reason, NewsStopReason::SourceNotFound);
+        assert_eq!(batch.coverage.pages_fetched, 0);
+        assert_eq!(log.lock().unwrap().starts.len(), 1);
+        server.abort();
+    }
+
+    #[test]
+    fn empty_news_requires_a_recognized_source_page() {
+        let now = Utc::now();
+        assert!(
+            parse_finviz_news("<table id='news-table'></table>", now)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(parse_finviz_news("<html>Access denied</html>", now).is_err());
+        assert!(
+            parse_finviz_news(
+                "<table id='news-table'><tr><td>Changed layout</td></tr></table>",
+                now
+            )
+            .is_err()
+        );
+        assert!(
+            parse_stock_titan_page(
+                "<html>Access denied</html>",
+                &TickerSymbol::parse("ALAB").unwrap(),
+                1
+            )
+            .is_err()
+        );
     }
 
     #[tokio::test]

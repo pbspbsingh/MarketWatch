@@ -4,21 +4,22 @@ import NewspaperOutlinedIcon from "@mui/icons-material/NewspaperOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { Alert, Button, Chip, CircularProgress, MenuItem, TextField, Typography } from "@mui/material";
-import { fetchNFactor, isNFactorActive, refreshNFactor, type NFactorJob, type NFactorPhase, type NFactorState, type NewsCoverage, type NewsItem, type NewsSource } from "../api/nFactor";
+import { fetchNFactor, isNFactorActive, refreshNFactor, type NFactorJob, type NFactorJobProgress, type NFactorPhase, type NFactorState, type NewsCoverage, type NewsItem, type NewsSource } from "../api/nFactor";
 import "./ticker-n-factor.css";
 
 const sourceLabels: Record<NewsSource, string> = { stock_titan: "Stock Titan", finviz: "Finviz" };
 const phaseLabels: Record<NFactorPhase, string> = {
   queued: "Queued", waiting_for_source: "Waiting for source", fetching_news: "Fetching news",
+  waiting_for_ai: "Waiting for AI",
   analyzing: "AI analysis", saving: "Saving report", completed: "Report saved", failed: "Refresh failed",
 };
 
 export function TickerNFactorTab({ symbol }: { symbol: string }) {
-  const [source, setSource] = useState<NewsSource>("stock_titan");
-  return <NFactorContent key={`${symbol}-${source}`} symbol={symbol} source={source} onSourceChange={setSource} />;
+  const [source, setSource] = useState<NewsSource>();
+  return <NFactorContent key={`${symbol}-${source ?? "auto"}`} symbol={symbol} source={source} onSourceChange={setSource} />;
 }
 
-function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; source: NewsSource; onSourceChange: (source: NewsSource) => void }) {
+function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; source?: NewsSource; onSourceChange: (source: NewsSource) => void }) {
   const [state, setState] = useState<NFactorState>();
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -28,13 +29,18 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
   const [selectedNewsId, setSelectedNewsId] = useState<number>();
   const [showCurrentNews, setShowCurrentNews] = useState(false);
   const startController = useRef<AbortController | undefined>(undefined);
+  const evidenceKeyRef = useRef<string | undefined>(undefined);
   const active = isNFactorActive(state?.job);
   const report = state?.report;
   const job = state?.job;
+  const otherJobs = state?.other_jobs ?? [];
+  const showCurrentProgress = job != null && (active || job.phase === "failed");
+  const selectedSource = source ?? state?.source ?? report?.source ?? "stock_titan";
   const hasRefreshNews = job != null && job.phase !== "completed" && (job.news.length > 0 || job.coverage != null);
   const showingRefreshNews = hasRefreshNews && (report == null || showCurrentNews);
   const news = showingRefreshNews ? job?.news ?? [] : report?.news ?? [];
   const coverage = showingRefreshNews ? job?.coverage : report?.coverage;
+  const newsSource = (showingRefreshNews ? job?.source : report?.source) ?? selectedSource;
   const aiPreview = job && (job.phase === "analyzing" || job.phase === "saving" || (job.phase === "failed" && (job.live_reasoning || job.live_response)))
     ? <AiPreview key={job.id} job={job} /> : null;
 
@@ -42,7 +48,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
     const controller = new AbortController();
     let timeout: number | undefined;
     let inFlight = false;
-    let keepPolling = true;
+    let pollInterval = 5_000;
     const poll = async () => {
       if (inFlight || controller.signal.aborted) return;
       if (timeout !== undefined) window.clearTimeout(timeout);
@@ -50,16 +56,22 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
       try {
         const next = await fetchNFactor(symbol, source, controller.signal);
         if (controller.signal.aborted) return;
+        const evidenceKey = `${next.report?.source}-${next.report?.generated_at}-${next.job?.id}`;
+        if (evidenceKeyRef.current !== evidenceKey) {
+          setSelectedNewsId(undefined);
+          setShowCurrentNews(false);
+          evidenceKeyRef.current = evidenceKey;
+        }
         setState(next);
         setError(undefined);
-        keepPolling = isNFactorActive(next.job);
+        pollInterval = isNFactorActive(next.job) || (next.other_jobs?.length ?? 0) > 0 ? 5_000 : 15_000;
       } catch (failure) {
         if (!controller.signal.aborted) setError(errorMessage(failure));
       } finally {
         inFlight = false;
         if (!controller.signal.aborted) {
           setLoading(false);
-          if (keepPolling && document.visibilityState === "visible") timeout = window.setTimeout(() => void poll(), 2_000);
+          if (document.visibilityState === "visible") timeout = window.setTimeout(() => void poll(), pollInterval);
         }
       }
     };
@@ -85,7 +97,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
     setStarting(true);
     setStartError(undefined);
     try {
-      const nextJob = await refreshNFactor(symbol, source, controller.signal);
+      const nextJob = await refreshNFactor(symbol, selectedSource, controller.signal);
       if (!controller.signal.aborted) {
         setState((current) => current === undefined ? current : { ...current, job: nextJob });
         setSelectedNewsId(undefined);
@@ -113,7 +125,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
     <div className="n-factor-tab">
       <div className="n-factor-toolbar">
         <div className="n-factor-controls">
-          <TextField select size="small" value={source} slotProps={{ select: { inputProps: { "aria-label": "News source" } } }} onChange={(event) => onSourceChange(event.target.value as NewsSource)}>
+          <TextField select size="small" value={selectedSource} slotProps={{ select: { inputProps: { "aria-label": "News source" } } }} onChange={(event) => onSourceChange(event.target.value as NewsSource)}>
             <MenuItem value="stock_titan">Stock Titan</MenuItem>
             <MenuItem value="finviz">Finviz</MenuItem>
           </TextField>
@@ -128,7 +140,18 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
       {error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => setReload((current) => current + 1)}>Retry load</Button>}>{error}</Alert>}
       {startError && <Alert severity="error" onClose={() => setStartError(undefined)}>{startError}</Alert>}
       {state && !state.ai_enabled && <Alert severity="info">Configure AI to generate an N-Factor report. Saved reports remain available.</Alert>}
-      {job && (active || job.phase === "failed") && <JobProgress job={job} previousReport={report != null} />}
+      {(showCurrentProgress || otherJobs.length > 0) && <div className={`n-factor-progress-grid${otherJobs.length === 0 ? " n-factor-progress-single" : ""}`}>
+        <section className="n-factor-progress-column" aria-label="Current ticker progress">
+          <Typography component="h4" className="n-factor-progress-label">{symbol} · Current ticker</Typography>
+          {showCurrentProgress ? <JobProgress key={job.id} job={job} previousReport={report != null} /> : <Typography className="n-factor-progress-idle" color="text.secondary">No N-Factor job is running for {symbol}.</Typography>}
+        </section>
+        {otherJobs.length > 0 && <section className="n-factor-progress-column" aria-label="Other ticker progress">
+          <Typography component="h4" className="n-factor-progress-label">Other tickers <Chip size="small" variant="outlined" label={otherJobs.length} /></Typography>
+          <div className="n-factor-progress-list">
+            {otherJobs.map((otherJob) => <JobProgress key={otherJob.id} job={otherJob} previousReport={false} showSymbol />)}
+          </div>
+        </section>}
+      </div>}
       {loading && !state ? <div className="panel-status"><CircularProgress size="1rem" /><Typography color="text.secondary">Loading saved report</Typography></div> : (
         <div className="n-factor-grid">
           <section className="n-factor-panel" aria-label="N-Factor findings">
@@ -137,7 +160,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
               {report ? <>
                 {aiPreview}
                 <Typography className="n-factor-overview">{report.overview}</Typography>
-                {report.findings.length === 0 && <Typography color="text.secondary">No clear N-factor identified in the fetched news window.</Typography>}
+                {report.findings.length === 0 && report.news.length > 0 && <Typography color="text.secondary">No clear N-factor identified in the fetched news window.</Typography>}
                 {report.findings.map((finding, index) => <article className="n-factor-finding" key={index}>
                   <div className="n-factor-finding-heading"><Typography component="h4">{finding.title}</Typography><Chip size="small" variant="outlined" label={finding.category} /></div>
                   <Typography>{finding.what_is_new}</Typography>
@@ -148,19 +171,19 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
                     return item ? <Button size="small" key={id} title={item.title} onClick={() => selectNews(id)}>#{id}</Button> : null;
                   })}</div>
                 </article>)}
-                <Typography className="n-factor-note" color="text.secondary">Based on the fetched news window. Potential developments are AI assessments, with supporting evidence and uncertainties above.</Typography>
+                {report.news.length > 0 && <Typography className="n-factor-note" color="text.secondary">Based on the fetched news window. Potential developments are AI assessments, with supporting evidence and uncertainties above.</Typography>}
               </> : <><div className="n-factor-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">What’s new at {symbol}?</Typography><Typography color="text.secondary">Find potential products, contracts, management changes, acquisitions, expansion, and industry developments.</Typography><Typography color="text.secondary">Choose a source and generate a report. Results and supporting news will be saved here.</Typography></div>{aiPreview}</>}
             </div>
           </section>
           <section className="n-factor-panel" aria-label="Source news">
-            <div className="n-factor-panel-heading"><NewspaperOutlinedIcon /><Typography component="h3">News · {sourceLabels[source]}</Typography><Chip size="small" variant="outlined" label={`${news.length} items`} /></div>
+            <div className="n-factor-panel-heading"><NewspaperOutlinedIcon /><Typography component="h3">News · {sourceLabels[newsSource]}</Typography><Chip size="small" variant="outlined" label={`${news.length} items`} /></div>
             <div className="n-factor-panel-body">
               {hasRefreshNews && report && <div className="n-factor-news-switch"><Button size="small" variant={!showingRefreshNews ? "outlined" : "text"} onClick={() => setShowCurrentNews(false)}>Saved report</Button><Button size="small" variant={showingRefreshNews ? "outlined" : "text"} onClick={() => { setShowCurrentNews(true); setSelectedNewsId(undefined); }}>Current refresh</Button></div>}
               {(coverage || news.length > 0) && <CoverageCaption news={news} coverage={coverage} />}
               {news.length > 0 ? <>
-                <Typography className="n-factor-note" color="text.secondary">{showingRefreshNews ? "News from the current refresh." : `Fetched ${new Date(report?.news_fetched_at ?? "").toLocaleString()}.`} {source === "stock_titan" ? "Summaries provided by Stock Titan AI." : "Finviz provides headlines; summaries may be unavailable."}</Typography>
+                <Typography className="n-factor-note" color="text.secondary">{showingRefreshNews ? "News from the current refresh." : `Fetched ${new Date(report?.news_fetched_at ?? "").toLocaleString()}.`} {newsSource === "stock_titan" ? "Summaries provided by Stock Titan AI." : "Finviz provides headlines; summaries may be unavailable."}</Typography>
                 {news.map((item) => <NewsArticle key={`${showingRefreshNews ? job?.id : report?.generated_at}-${item.url}`} item={item} selected={selectedNewsId === item.id} />)}
-              </> : <div className="n-factor-empty"><NewspaperOutlinedIcon /><Typography component="h4">News behind the analysis</Typography><Typography color="text.secondary">{coverage ? "No articles available in the requested six-month window." : "Titles, summaries, dates, and source links appear here after news is fetched."}</Typography></div>}
+              </> : <div className="n-factor-empty"><NewspaperOutlinedIcon /><Typography component="h4">News behind the analysis</Typography><Typography color="text.secondary">{coverage?.stop_reason === "source_not_found" ? "The source news page is unavailable (HTTP 404)." : coverage ? "No articles available in the requested six-month window." : "Titles, summaries, dates, and source links appear here after news is fetched."}</Typography></div>}
             </div>
           </section>
         </div>
@@ -191,6 +214,7 @@ function CoverageCaption({ news, coverage }: { news: NewsItem[]; coverage: NewsC
     article_limit: "50-article limit reached",
     source_exhausted: "End of available source history",
     source_limited: "Limited to available Finviz headlines",
+    source_not_found: "Source news page unavailable (HTTP 404)",
   }[coverage.stop_reason] : undefined;
   return <Typography className="n-factor-note n-factor-coverage" color="text.secondary">
     {range && <span>Coverage {range}</span>}
@@ -210,7 +234,7 @@ function AiPreview({ job }: { job: NFactorJob }) {
   </div>;
 }
 
-function JobProgress({ job, previousReport }: { job: NFactorJob; previousReport: boolean }) {
+function JobProgress({ job, previousReport, showSymbol = false }: { job: NFactorJobProgress; previousReport: boolean; showSymbol?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   const active = isNFactorActive(job);
   useEffect(() => {
@@ -221,8 +245,8 @@ function JobProgress({ job, previousReport }: { job: NFactorJob; previousReport:
   const elapsed = Math.max(0, Math.floor(((active ? now : Date.parse(job.updated_at)) - Date.parse(job.started_at)) / 1_000));
   const countdown = job.retry_at ? Math.max(0, Math.ceil((Date.parse(job.retry_at) - now) / 1_000)) : undefined;
   return <div className={`n-factor-progress${job.phase === "failed" ? " n-factor-progress-failed" : ""}`} role="status">
-    <div className="n-factor-progress-heading">{active && <CircularProgress size="0.9rem" />}<strong>{phaseLabels[job.phase]}</strong><span>{Math.floor(elapsed / 60)}m {elapsed % 60}s</span>{job.pages_fetched > 0 && <span>{job.pages_fetched} {job.pages_fetched === 1 ? "page" : "pages"} fetched</span>}{job.news_count > 0 && <span>{job.news_count} news items</span>}</div>
-    <Typography color="text.secondary">{job.error ?? (countdown !== undefined ? `Rate limited (HTTP 429) · retrying in ${countdown}s` : job.phase === "waiting_for_source" ? "Waiting for another source request to finish" : job.phase === "analyzing" ? job.ai_activity_at ? "AI is processing the news" : "Waiting for the AI response" : "You can close this window; processing will continue while the server is running.")}{previousReport && " Previous report remains visible until a new report is saved."}</Typography>
+    <div className="n-factor-progress-heading">{active && <CircularProgress size="0.9rem" />}{showSymbol && <strong>{job.symbol}</strong>}<strong>{phaseLabels[job.phase]}</strong><span>{job.background ? "Background" : "Manual"} · {sourceLabels[job.source]}</span><span>{Math.floor(elapsed / 60)}m {elapsed % 60}s</span>{job.pages_fetched > 0 && <span>{job.pages_fetched} {job.pages_fetched === 1 ? "page" : "pages"} fetched</span>}{job.news_count > 0 && <span>{job.news_count} news items</span>}</div>
+    <Typography color="text.secondary">{job.error ?? (countdown !== undefined ? `Rate limited (HTTP 429) · retrying in ${countdown}s` : job.phase === "waiting_for_source" ? "Waiting for another source request to finish" : job.phase === "waiting_for_ai" ? job.background ? "Waiting for user-started AI work to finish and the idle delay to expire" : "Waiting for AI capacity" : job.phase === "analyzing" ? job.ai_activity_at ? "AI is processing the news" : "Waiting for the AI response" : "You can close this window; processing will continue while the server is running.")}{previousReport && " Previous report remains visible until a new report is saved."}</Typography>
   </div>;
 }
 

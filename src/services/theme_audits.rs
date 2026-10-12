@@ -204,6 +204,7 @@ impl ThemeAuditService {
     ) -> Result<(), ThemeAuditServiceError> {
         let _lifecycle = self.lifecycle.lock().await;
         let ai = self.ai.as_ref().ok_or(ThemeAuditServiceError::Disabled)?;
+        let user_job = ai.user_job();
         if self
             .run
             .read()
@@ -269,6 +270,7 @@ impl ThemeAuditService {
         let themes = Arc::new(themes);
         let concurrency = ai.max_concurrent_requests();
         tokio::spawn(async move {
+            let _user_job = user_job;
             stream::iter(batches.into_iter().enumerate())
                 .for_each_concurrent(concurrency, |(index, batch)| {
                     let service = service.clone();

@@ -4,6 +4,7 @@ use crate::store::Store;
 use std::collections::HashSet;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::watch;
 
 pub const WATCHLIST_ICONS: &[&str] = &[
     "bookmark",
@@ -51,6 +52,7 @@ pub const WATCHLIST_ICONS: &[&str] = &[
 pub struct WatchlistService {
     store: Store,
     ticker_catalog: Arc<TickerCatalogService>,
+    membership_changes: watch::Sender<()>,
 }
 
 #[derive(Debug, Error)]
@@ -74,7 +76,12 @@ impl WatchlistService {
         Self {
             store,
             ticker_catalog,
+            membership_changes: watch::channel(()).0,
         }
+    }
+
+    pub(crate) fn subscribe_membership_changes(&self) -> watch::Receiver<()> {
+        self.membership_changes.subscribe()
     }
 
     pub async fn watchlists(&self) -> Result<Vec<Watchlist>, WatchlistServiceError> {
@@ -135,12 +142,17 @@ impl WatchlistService {
         if current.is_default {
             return Err(WatchlistServiceError::DefaultImmutable);
         }
-        self.store
+        let result = self
+            .store
             .delete_watchlist(id)
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
-            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
+            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()));
+        if result.is_ok() {
+            self.membership_changes.send_replace(());
+        }
+        result
     }
 
     pub async fn symbols(&self, id: i64) -> Result<Vec<TickerSymbol>, WatchlistServiceError> {
@@ -191,12 +203,17 @@ impl WatchlistService {
             .ensure_ticker_symbol(symbol)
             .await
             .map_err(WatchlistServiceError::TickerCatalog)?;
-        self.store
+        let result = self
+            .store
             .add_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
-            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
+            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()));
+        if result.is_ok() {
+            self.membership_changes.send_replace(());
+        }
+        result
     }
 
     pub async fn remove_symbol(
@@ -205,19 +222,29 @@ impl WatchlistService {
         symbol: &TickerSymbol,
     ) -> Result<(), WatchlistServiceError> {
         validate_id(id)?;
-        self.store
+        let result = self
+            .store
             .remove_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
             .then_some(())
-            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()))
+            .ok_or_else(|| WatchlistServiceError::NotFound("watchlist does not exist".to_owned()));
+        if result.is_ok() {
+            self.membership_changes.send_replace(());
+        }
+        result
     }
 
     pub async fn clear_symbol(&self, symbol: &TickerSymbol) -> Result<(), WatchlistServiceError> {
-        self.store
+        let result = self
+            .store
             .clear_symbol_watchlists(symbol)
             .await
-            .map_err(WatchlistServiceError::Persistence)
+            .map_err(WatchlistServiceError::Persistence);
+        if result.is_ok() {
+            self.membership_changes.send_replace(());
+        }
+        result
     }
 
     pub async fn memberships(

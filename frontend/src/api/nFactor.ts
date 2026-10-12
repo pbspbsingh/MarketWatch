@@ -1,5 +1,5 @@
 export type NewsSource = "stock_titan" | "finviz";
-export type NFactorPhase = "queued" | "waiting_for_source" | "fetching_news" | "analyzing" | "saving" | "completed" | "failed";
+export type NFactorPhase = "queued" | "waiting_for_source" | "fetching_news" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "failed";
 
 export interface NewsItem {
   id: number;
@@ -12,7 +12,7 @@ export interface NewsItem {
 export interface NewsCoverage {
   requested_since: string;
   pages_fetched: number;
-  stop_reason: "six_months" | "article_limit" | "source_exhausted" | "source_limited";
+  stop_reason: "six_months" | "article_limit" | "source_exhausted" | "source_limited" | "source_not_found";
 }
 
 export interface NFactorFinding {
@@ -37,32 +37,38 @@ export interface NFactorReport {
   coverage: NewsCoverage | null;
 }
 
-export interface NFactorJob {
+export interface NFactorJobProgress {
   id: string;
   symbol: string;
   source: NewsSource;
+  background: boolean;
   phase: NFactorPhase;
   started_at: string;
   updated_at: string;
   retry_at: string | null;
   news_count: number;
   pages_fetched: number;
-  news: NewsItem[];
-  coverage: NewsCoverage | null;
   ai_activity_at: string | null;
-  live_reasoning: string;
-  live_response: string;
   error: string | null;
 }
 
+export interface NFactorJob extends NFactorJobProgress {
+  news: NewsItem[];
+  coverage: NewsCoverage | null;
+  live_reasoning: string;
+  live_response: string;
+}
+
 export interface NFactorState {
+  source: NewsSource;
   report: NFactorReport | null;
   job: NFactorJob | null;
+  other_jobs: NFactorJobProgress[];
   ai_enabled: boolean;
   model: string | null;
 }
 
-export function isNFactorActive(job: NFactorJob | null | undefined) {
+export function isNFactorActive(job: NFactorJobProgress | null | undefined) {
   return job != null && job.phase !== "completed" && job.phase !== "failed";
 }
 
@@ -77,8 +83,9 @@ async function request<T>(url: string, options: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function fetchNFactor(symbol: string, source: NewsSource, signal?: AbortSignal) {
-  return request<NFactorState>(`/api/n-factor/${encodeURIComponent(symbol)}?source=${source}`, { signal });
+export function fetchNFactor(symbol: string, source?: NewsSource, signal?: AbortSignal) {
+  const query = source ? `?source=${source}` : "";
+  return request<NFactorState>(`/api/n-factor/${encodeURIComponent(symbol)}${query}`, { signal });
 }
 
 export function refreshNFactor(symbol: string, source: NewsSource, signal?: AbortSignal) {

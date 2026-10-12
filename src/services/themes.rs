@@ -2,7 +2,7 @@ use crate::models::{
     AssignmentSource, Theme, ThemeAiJob, ThemeAiJobStatus, ThemeAiJobSummary, ThemeSuggestion,
     ThemeSuggestionError, ThemeTicker, TickerSymbol,
 };
-use crate::providers::{AiClient, AiError, AiStreamDelta};
+use crate::providers::{AiClient, AiError, AiStreamDelta, UserAiJob};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
@@ -247,6 +247,7 @@ impl ThemeService {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("AI theme suggestion is disabled".into())
         })?;
+        let _user_job = ai.user_job();
         let themes = self.themes().await?;
         let tickers = self.selected_tickers(symbols).await?;
         let prompt = build_prompt(&themes, &tickers);
@@ -270,13 +271,15 @@ impl ThemeService {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("AI theme suggestion is disabled".into())
         })?;
+        let user_job = ai.user_job();
         let themes = self.themes().await?;
-        let tickers = self.selected_tickers(&[symbol.clone()]).await?;
+        let tickers = self.selected_tickers(std::slice::from_ref(&symbol)).await?;
         let prompt = build_prompt(&themes, &tickers);
         let (tx, rx) = mpsc::unbounded_channel();
         let service = self.clone();
         let ai = ai.clone();
         tokio::spawn(async move {
+            let _user_job = user_job;
             let updates = tx.clone();
             let completion = ai.complete_with_updates(&prompt, move |delta| {
                 let event = match delta {
@@ -325,6 +328,7 @@ impl ThemeService {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
         })?;
+        let user_job = Arc::new(ai.user_job());
         let themes = self.themes().await?;
         let tickers = self.selected_tickers(symbols).await?;
         let batches = tickers
@@ -345,7 +349,7 @@ impl ThemeService {
             .await
             .map_err(ThemeServiceError::Persistence)?;
         for (job_id, (_, prompt)) in job_ids.iter().copied().zip(batches) {
-            self.spawn_automatic_job(job_id, prompt);
+            self.spawn_automatic_job(job_id, prompt, user_job.clone());
         }
         Ok(job_ids)
     }
@@ -354,6 +358,7 @@ impl ThemeService {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
         })?;
+        let user_job = Arc::new(ai.user_job());
         let job = self.ai_job(id).await?;
         if !matches!(job.status, ThemeAiJobStatus::Failed) {
             return Err(ThemeServiceError::Validation(
@@ -377,7 +382,7 @@ impl ThemeService {
                 "AI job is no longer failed".to_owned(),
             ));
         }
-        self.spawn_automatic_job(id, job.prompt);
+        self.spawn_automatic_job(id, job.prompt, user_job);
         Ok(id)
     }
 
@@ -529,9 +534,15 @@ impl ThemeService {
         }
     }
 
-    fn spawn_automatic_job(self: &Arc<Self>, job_id: i64, prompt: String) {
+    fn spawn_automatic_job(
+        self: &Arc<Self>,
+        job_id: i64,
+        prompt: String,
+        user_job: Arc<UserAiJob>,
+    ) {
         let service = self.clone();
         tokio::spawn(async move {
+            let _user_job = user_job;
             let result = service.run_automatic_job(job_id, prompt).await;
             service.running_streams.write().await.remove(&job_id);
             if let Err(job_error) = result {

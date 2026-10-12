@@ -21,8 +21,12 @@ type ApiError = (StatusCode, Json<Value>);
 
 #[derive(Default, Deserialize)]
 struct SourceInput {
-    #[serde(default)]
-    source: NewsSource,
+    source: Option<NewsSource>,
+}
+
+#[derive(Default, Deserialize)]
+struct StateInput {
+    source: Option<NewsSource>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -35,7 +39,7 @@ pub fn router() -> Router<AppState> {
 async fn state(
     State(state): State<AppState>,
     Path(symbol): Path<TickerSymbol>,
-    Query(input): Query<SourceInput>,
+    Query(input): Query<StateInput>,
 ) -> Result<Json<NFactorState>, ApiError> {
     state
         .n_factor
@@ -58,7 +62,12 @@ async fn refresh(
 ) -> Result<(StatusCode, Json<NFactorJob>), ApiError> {
     state
         .n_factor
-        .start(symbol, input.source)
+        .start(
+            symbol,
+            input
+                .source
+                .unwrap_or_else(|| state.n_factor.default_source()),
+        )
         .map(|job| (StatusCode::ACCEPTED, Json(job)))
         .map_err(|error| {
             let status = match error {

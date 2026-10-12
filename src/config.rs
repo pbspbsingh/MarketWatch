@@ -1,6 +1,7 @@
 use crate::models::TickerSymbol;
+use crate::models::n_factor::NewsSource;
 use anyhow::Context;
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{Duration, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
@@ -38,6 +39,23 @@ pub struct Config {
     pub finviz: FinvizConfig,
     #[serde(default)]
     pub ai: Option<AiConfig>,
+    #[serde(default)]
+    pub n_factor: Option<NFactorConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NFactorConfig {
+    #[serde(default)]
+    pub default_source: NewsSource,
+    pub background: Option<NFactorBackgroundConfig>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NFactorBackgroundConfig {
+    pub idle_delay_secs: u32,
+    pub refresh_days: u32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -236,6 +254,18 @@ impl Config {
         if let Some(ai) = &self.ai {
             ai.validate()?;
         }
+        if let Some(background) = self.n_factor.as_ref().and_then(|config| config.background) {
+            anyhow::ensure!(
+                background.refresh_days > 0,
+                "n_factor.background.refresh_days must be positive"
+            );
+            anyhow::ensure!(
+                Utc::now()
+                    .checked_add_signed(Duration::days(i64::from(background.refresh_days)))
+                    .is_some(),
+                "n_factor.background.refresh_days is too large"
+            );
+        }
         Ok(())
     }
 }
@@ -320,6 +350,55 @@ impl AiConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn n_factor_default_source_accepts_supported_sources_and_defaults_to_stock_titan() {
+        let absent: NFactorConfig = toml::from_str("").unwrap();
+        assert_eq!(absent.default_source, NewsSource::StockTitan);
+        let finviz: NFactorConfig = toml::from_str("default_source = 'finviz'").unwrap();
+        assert_eq!(finviz.default_source, NewsSource::Finviz);
+        assert!(finviz.background.is_none());
+        assert!(toml::from_str::<NFactorConfig>("default_source = 'unknown'").is_err());
+    }
+
+    #[test]
+    fn background_config_is_optional_and_validates_refresh_days() {
+        let example = include_str!("../config.example.toml")
+            .replace("REPLACE_WITH_ARGON2ID_HASH", TEST_PASSWORD_HASH);
+        let absent: Config = toml::from_str(example.split("\n[n_factor]").next().unwrap()).unwrap();
+        absent.validate().unwrap();
+        assert!(absent.n_factor.is_none());
+        let configured =
+            format!("{example}\n[n_factor.background]\nidle_delay_secs = 0\nrefresh_days = 7\n");
+        let configured: Config = toml::from_str(&configured).unwrap();
+        let background = configured.n_factor.as_ref().unwrap().background.unwrap();
+        assert_eq!(background.idle_delay_secs, 0);
+        assert_eq!(background.refresh_days, 7);
+        configured.validate().unwrap();
+        let invalid =
+            format!("{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 0\n");
+        let invalid: Config = toml::from_str(&invalid).unwrap();
+        assert!(
+            invalid
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("refresh_days")
+        );
+        let incomplete = format!("{example}\n[n_factor.background]\nidle_delay_secs = 5\n");
+        assert!(toml::from_str::<Config>(&incomplete).is_err());
+        let excessive = format!(
+            "{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 4294967295\n"
+        );
+        let excessive: Config = toml::from_str(&excessive).unwrap();
+        assert!(
+            excessive
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("refresh_days is too large")
+        );
+    }
 
     const TEST_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$6W3JE/bOgkM7Goq5g2XlEg$Y+LcSf2GoWooLvtmAoCa3OjkLmMxm+/TudefyM+l2BI";
 

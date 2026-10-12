@@ -47,3 +47,13 @@ max_delay_ms = 1000
 industry_membership_filters = ["cap_smallover", "sh_avgvol_o400", "sh_price_o3"]
 top_stocks_additional_filters = []
 membership_fresh_days = 15
+
+# Default source for new reports and background refreshes.
+[n_factor]
+default_source = "stock_titan" # "stock_titan" or "finviz"
+
+# Optional: refresh watchlist N-Factor reports while user-started AI work is idle.
+# Requires [ai] configuration. Leave this block commented to disable it.
+# [n_factor.background]
+# idle_delay_secs = 300
+# refresh_days = 7

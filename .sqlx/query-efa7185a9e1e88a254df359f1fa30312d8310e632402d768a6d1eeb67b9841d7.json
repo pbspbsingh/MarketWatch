@@ -1,12 +1,12 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT payload FROM n_factor_reports WHERE symbol = ? AND source = ?",
+  "query": "SELECT payload AS \"payload!: String\" FROM n_factor_reports WHERE symbol = ? AND source = ?",
   "describe": {
     "columns": [
       {
-        "name": "payload",
+        "name": "payload!: String",
         "ordinal": 0,
-        "type_info": "Text",
+        "type_info": "Null",
         "origin": {
           "Table": {
             "table": "n_factor_reports",
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "7d9ec64177ca78c0f5fbcc8cc74e6ebc1b0b1fdea39fd3e095b3996e2c3f7d6c"
+  "hash": "efa7185a9e1e88a254df359f1fa30312d8310e632402d768a6d1eeb67b9841d7"
 }

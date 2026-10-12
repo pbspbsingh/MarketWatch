@@ -126,6 +126,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         StockTitanClient::new(&config.providers)?,
         ai.clone(),
+        config
+            .n_factor
+            .as_ref()
+            .map(|config| config.default_source)
+            .unwrap_or_default(),
     ));
     let yahoo = Arc::new(YahooService::new(
         store.clone(),
@@ -192,6 +197,13 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         theme_analysis.clone(),
     ));
     let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
+    if let Some(background) = config
+        .n_factor
+        .as_ref()
+        .and_then(|config| config.background)
+    {
+        n_factor.spawn_background(background, watchlists.subscribe_membership_changes());
+    }
     let top_stocks = Arc::new(TopStocksService::new(
         store.clone(),
         finviz.clone(),

@@ -1,13 +1,18 @@
+mod activity;
 mod ollama;
 mod openai_compatible;
 
 use crate::config::AiConfig;
 use reqwest::{Client, Response, StatusCode};
 use serde::Serialize;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::Semaphore;
 use tracing::{error, info};
+
+use activity::AiActivity;
+pub(crate) use activity::{BackgroundAiRequest, UserAiJob};
 
 pub struct AiClient {
     http: Client,
@@ -16,6 +21,7 @@ pub struct AiClient {
     batch_size: usize,
     max_concurrent_requests: usize,
     permits: Semaphore,
+    activity: Arc<AiActivity>,
 }
 
 pub(crate) enum AiStreamDelta<'a> {
@@ -167,6 +173,7 @@ impl AiClient {
             batch_size,
             max_concurrent_requests: concurrency,
             permits: Semaphore::new(concurrency),
+            activity: AiActivity::new(),
         }
     }
 
@@ -186,11 +193,44 @@ impl AiClient {
         self.complete_with_updates(prompt, |_| {}).await
     }
 
+    pub(crate) fn user_job(&self) -> UserAiJob {
+        self.activity.user_job()
+    }
+
+    pub(crate) async fn wait_idle(&self, delay: Duration) {
+        self.activity.wait_idle(delay).await;
+    }
+
+    pub(crate) async fn background_request(&self, delay: Duration) -> BackgroundAiRequest {
+        self.activity.background_request(delay).await
+    }
+
     pub(crate) async fn complete_with_updates<F>(
         &self,
         prompt: &str,
         mut on_delta: F,
     ) -> Result<String, AiError>
+    where
+        F: FnMut(AiStreamDelta<'_>) + Send,
+    {
+        let _job = self.user_job();
+        let _request = self.activity.user_request().await;
+        self.complete_admitted(prompt, &mut on_delta).await
+    }
+
+    pub(crate) async fn complete_background_with_updates<F>(
+        &self,
+        prompt: &str,
+        _request: BackgroundAiRequest,
+        mut on_delta: F,
+    ) -> Result<String, AiError>
+    where
+        F: FnMut(AiStreamDelta<'_>) + Send,
+    {
+        self.complete_admitted(prompt, &mut on_delta).await
+    }
+
+    async fn complete_admitted<F>(&self, prompt: &str, on_delta: &mut F) -> Result<String, AiError>
     where
         F: FnMut(AiStreamDelta<'_>) + Send,
     {
@@ -207,7 +247,7 @@ impl AiClient {
         let started = Instant::now();
         let result = self
             .provider
-            .complete(&self.http, &self.model, prompt, &mut on_delta)
+            .complete(&self.http, &self.model, prompt, on_delta)
             .await
             .and_then(|content| {
                 (!content.trim().is_empty())

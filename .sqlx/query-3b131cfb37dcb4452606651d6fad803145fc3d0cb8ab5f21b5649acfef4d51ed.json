@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT CAST(type AS TEXT) AS \"type!: String\" FROM pragma_table_info('n_factor_reports') WHERE name = 'payload'",
+  "describe": {
+    "columns": [
+      {
+        "name": "type!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3b131cfb37dcb4452606651d6fad803145fc3d0cb8ab5f21b5649acfef4d51ed"
+}

@@ -36,6 +36,7 @@ pub enum NewsStopReason {
     ArticleLimit,
     SourceExhausted,
     SourceLimited,
+    SourceNotFound,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -88,6 +89,7 @@ pub enum NFactorPhase {
     Queued,
     WaitingForSource,
     FetchingNews,
+    WaitingForAi,
     Analyzing,
     Saving,
     Completed,
@@ -105,6 +107,7 @@ pub struct NFactorJob {
     pub id: String,
     pub symbol: TickerSymbol,
     pub source: NewsSource,
+    pub background: bool,
     pub phase: NFactorPhase,
     pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -117,4 +120,40 @@ pub struct NFactorJob {
     pub live_reasoning: String,
     pub live_response: String,
     pub error: Option<String>,
+}
+
+/// Progress for other tickers, without duplicating their news or AI streams.
+#[derive(Clone, Debug, Serialize)]
+pub struct NFactorJobProgress {
+    pub id: String,
+    pub symbol: TickerSymbol,
+    pub source: NewsSource,
+    pub background: bool,
+    pub phase: NFactorPhase,
+    pub started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub retry_at: Option<DateTime<Utc>>,
+    pub news_count: usize,
+    pub pages_fetched: usize,
+    pub ai_activity_at: Option<DateTime<Utc>>,
+    pub error: Option<String>,
+}
+
+impl From<&NFactorJob> for NFactorJobProgress {
+    fn from(job: &NFactorJob) -> Self {
+        Self {
+            id: job.id.clone(),
+            symbol: job.symbol.clone(),
+            source: job.source,
+            background: job.background,
+            phase: job.phase,
+            started_at: job.started_at,
+            updated_at: job.updated_at,
+            retry_at: job.retry_at,
+            news_count: job.news_count,
+            pages_fetched: job.pages_fetched,
+            ai_activity_at: job.ai_activity_at,
+            error: job.error.clone(),
+        }
+    }
 }
