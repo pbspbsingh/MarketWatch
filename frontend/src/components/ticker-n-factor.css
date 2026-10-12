@@ -42,6 +42,16 @@
   & .MuiButton-startIcon > svg {
     font-size: 1rem;
   }
+
+  & .MuiToggleButton-root.Mui-selected {
+    color: var(--color-canvas);
+    background: var(--color-accent);
+    font-weight: 700;
+
+    &:hover {
+      background: var(--color-accent);
+    }
+  }
 }
 
 .n-factor-updated {
