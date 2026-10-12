@@ -32,21 +32,8 @@
   flex-shrink: 0;
   gap: 0.375rem;
 
-  & .MuiTextField-root {
-    min-width: 7.5rem;
-  }
-
-  & .MuiInputBase-root {
-    height: 1.75rem;
-    font-size: 0.7rem;
-  }
-
-  & .MuiSelect-select {
-    padding-top: 0.25rem;
-    padding-bottom: 0.25rem;
-  }
-
-  & .MuiButton-root {
+  & .MuiButton-root,
+  & .MuiToggleButton-root {
     min-height: 1.75rem;
     padding: 0.2rem 0.625rem;
     font-size: 0.7rem;

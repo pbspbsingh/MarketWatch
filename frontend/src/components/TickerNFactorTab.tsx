@@ -3,7 +3,7 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import NewspaperOutlinedIcon from "@mui/icons-material/NewspaperOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { Alert, Button, Chip, CircularProgress, MenuItem, TextField, Typography } from "@mui/material";
+import { Alert, Button, Chip, CircularProgress, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { fetchNFactor, isNFactorActive, refreshNFactor, type NFactorJob, type NFactorJobProgress, type NFactorPhase, type NFactorState, type NewsCoverage, type NewsItem, type NewsSource } from "../api/nFactor";
 import "./ticker-n-factor.css";
 
@@ -125,10 +125,12 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
     <div className="n-factor-tab">
       <div className="n-factor-toolbar">
         <div className="n-factor-controls">
-          <TextField select size="small" value={selectedSource} slotProps={{ select: { inputProps: { "aria-label": "News source" } } }} onChange={(event) => onSourceChange(event.target.value as NewsSource)}>
-            <MenuItem value="stock_titan">Stock Titan</MenuItem>
-            <MenuItem value="finviz">Finviz</MenuItem>
-          </TextField>
+          <ToggleButtonGroup exclusive size="small" color="primary" value={selectedSource} aria-label="News source" onChange={(_, nextSource: NewsSource | null) => {
+            if (nextSource !== null) onSourceChange(nextSource);
+          }}>
+            <ToggleButton value="stock_titan">Stock Titan</ToggleButton>
+            <ToggleButton value="finviz">Finviz</ToggleButton>
+          </ToggleButtonGroup>
           <Button size="small" variant="contained" disabled={loading || starting || active || !state?.ai_enabled} startIcon={starting || active ? <CircularProgress size="0.85rem" color="inherit" /> : report ? <RefreshIcon /> : <AutoAwesomeOutlinedIcon />} onClick={() => void generate()}>
             {starting ? "Starting…" : active ? "In progress" : report ? "Refresh" : "Generate"}
           </Button>
