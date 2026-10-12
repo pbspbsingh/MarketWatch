@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub(crate) struct NFactorCandidate {
     pub symbol: TickerSymbol,
     pub generated_at: Option<DateTime<Utc>>,
+    pub in_watchlist: bool,
 }
 
 impl Store {
@@ -27,16 +28,26 @@ impl Store {
         .collect()
     }
 
-    pub(crate) async fn n_factor_candidates(&self) -> anyhow::Result<Vec<NFactorCandidate>> {
+    pub(crate) async fn n_factor_candidates(
+        &self,
+        process_non_watchlist: bool,
+    ) -> anyhow::Result<Vec<NFactorCandidate>> {
         let rows = sqlx::query!(
-            r#"SELECT DISTINCT wt.symbol AS "symbol!",
+            r#"SELECT DISTINCT c.symbol AS "symbol!",
+               EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS "in_watchlist!: bool",
                json_extract(r.payload, '$.generated_at') AS "generated_at?: String"
-               FROM watchlist_tickers wt
-               LEFT JOIN n_factor_reports r ON r.symbol = wt.symbol"#,
+               FROM industry_membership_tickers c
+               LEFT JOIN n_factor_reports r ON r.symbol = c.symbol
+               WHERE (? OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
+               AND NOT EXISTS (
+                   SELECT 1 FROM industry_membership_tickers im
+                   WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'
+               )"#,
+            process_non_watchlist,
         )
         .fetch_all(&self.pool)
         .await?;
-        let mut latest = HashMap::<TickerSymbol, Option<DateTime<Utc>>>::new();
+        let mut latest = HashMap::<TickerSymbol, NFactorCandidate>::new();
         for row in rows {
             let symbol = TickerSymbol::try_from(row.symbol)?;
             let generated_at = row
@@ -45,17 +56,15 @@ impl Store {
                 .transpose()
                 .context("invalid N-Factor report timestamp")?;
             latest
-                .entry(symbol)
-                .and_modify(|current| *current = (*current).max(generated_at))
-                .or_insert(generated_at);
+                .entry(symbol.clone())
+                .and_modify(|current| current.generated_at = current.generated_at.max(generated_at))
+                .or_insert(NFactorCandidate {
+                    symbol,
+                    generated_at,
+                    in_watchlist: row.in_watchlist,
+                });
         }
-        Ok(latest
-            .into_iter()
-            .map(|(symbol, generated_at)| NFactorCandidate {
-                symbol,
-                generated_at,
-            })
-            .collect())
+        Ok(latest.into_values().collect())
     }
 
     pub async fn n_factor_report(
@@ -96,7 +105,108 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::AssignmentSource;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn candidates_require_industry_mapping_exclude_etfs_and_preserve_watchlist_membership() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let watchlist = store.watchlists().await.unwrap().remove(0);
+        for symbol in ["WATCH", "UNMAPPED", "CATALOG", "SPY", "IWM"] {
+            sqlx::query!(
+                "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
+                symbol
+            )
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        }
+        for symbol in ["WATCH", "UNMAPPED", "SPY"] {
+            store
+                .add_watchlist_symbol(watchlist.id, &TickerSymbol::parse(symbol).unwrap())
+                .await
+                .unwrap();
+        }
+        for symbol in ["SPY", "IWM"] {
+            store
+                .add_ticker_industry(
+                    "exchangetradedfund",
+                    "Exchange Traded Fund",
+                    &TickerSymbol::parse(symbol).unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+        for symbol in ["WATCH", "INDUSTRY"] {
+            store
+                .add_ticker_industry(
+                    "semiconductors",
+                    "Semiconductors",
+                    &TickerSymbol::parse(symbol).unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+        let theme_id = store
+            .create_theme("Test", &TickerSymbol::parse("SPY").unwrap(), None)
+            .await
+            .unwrap();
+        store
+            .replace_theme_assignments(
+                &TickerSymbol::parse("THEME").unwrap(),
+                &[theme_id],
+                AssignmentSource::Manual,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let watchlist_only = store.n_factor_candidates(false).await.unwrap();
+        assert_eq!(watchlist_only.len(), 1);
+        assert_eq!(watchlist_only[0].symbol.as_str(), "WATCH");
+        assert!(watchlist_only[0].in_watchlist);
+        let all = store.n_factor_candidates(true).await.unwrap();
+        let mut symbols = all
+            .iter()
+            .map(|candidate| candidate.symbol.as_str())
+            .collect::<Vec<_>>();
+        symbols.sort_unstable();
+        assert_eq!(symbols, ["INDUSTRY", "WATCH"]);
+        assert!(
+            all.iter()
+                .all(|candidate| candidate.in_watchlist == (candidate.symbol.as_str() == "WATCH"))
+        );
+        // Rechecking picks up watchlist changes and newly learned ETF mappings.
+        store
+            .remove_watchlist_symbol(watchlist.id, &TickerSymbol::parse("WATCH").unwrap())
+            .await
+            .unwrap();
+        assert!(store.n_factor_candidates(false).await.unwrap().is_empty());
+        assert!(
+            store
+                .n_factor_candidates(true)
+                .await
+                .unwrap()
+                .iter()
+                .all(|candidate| !candidate.in_watchlist)
+        );
+        store
+            .add_ticker_industry(
+                "exchangetradedfund",
+                "Exchange Traded Fund",
+                &TickerSymbol::parse("INDUSTRY").unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            !store
+                .n_factor_candidates(true)
+                .await
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate.symbol.as_str() == "INDUSTRY")
+        );
+    }
 
     #[tokio::test]
     async fn json_migration_preserves_both_source_payloads() {
@@ -162,6 +272,10 @@ mod tests {
             .unwrap();
             let symbol = TickerSymbol::parse(symbol).unwrap();
             store
+                .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+                .await
+                .unwrap();
+            store
                 .add_watchlist_symbol(favourite.id, &symbol)
                 .await
                 .unwrap();
@@ -185,7 +299,7 @@ mod tests {
         report.source = NewsSource::Finviz;
         report.generated_at = now;
         store.save_n_factor_report(&report).await.unwrap();
-        let candidates = store.n_factor_candidates().await.unwrap();
+        let candidates = store.n_factor_candidates(false).await.unwrap();
         assert_eq!(candidates.len(), 2);
         assert_eq!(
             candidates

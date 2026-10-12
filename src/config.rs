@@ -56,6 +56,8 @@ pub struct NFactorConfig {
 pub struct NFactorBackgroundConfig {
     pub idle_delay_secs: u32,
     pub refresh_days: u32,
+    #[serde(default)]
+    pub process_non_watchlist: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -374,7 +376,21 @@ mod tests {
         let background = configured.n_factor.as_ref().unwrap().background.unwrap();
         assert_eq!(background.idle_delay_secs, 0);
         assert_eq!(background.refresh_days, 7);
+        assert!(!background.process_non_watchlist);
         configured.validate().unwrap();
+        let enabled: Config = toml::from_str(&format!(
+            "{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 7\nprocess_non_watchlist = true\n"
+        ))
+        .unwrap();
+        enabled.validate().unwrap();
+        assert!(
+            enabled
+                .n_factor
+                .unwrap()
+                .background
+                .unwrap()
+                .process_non_watchlist
+        );
         let invalid =
             format!("{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 0\n");
         let invalid: Config = toml::from_str(&invalid).unwrap();

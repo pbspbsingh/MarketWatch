@@ -16,6 +16,10 @@ use crate::{
 };
 
 const FAILURE_BACKOFF: Duration = Duration::minutes(5);
+const NON_WATCHLIST_DELAY: StdDuration = StdDuration::from_secs(30);
+// Industry mapping updates do not emit watchlist events. Discover newly mapped
+// tickers even when every eligible report is fresh or none are mapped yet.
+const INDUSTRY_MAPPING_RECHECK: Duration = Duration::minutes(30);
 
 struct BackgroundPlan {
     symbol: Option<TickerSymbol>,
@@ -36,6 +40,7 @@ impl NFactorService {
             source = self.default_source.as_str(),
             idle_delay_secs = config.idle_delay_secs,
             refresh_days = config.refresh_days,
+            process_non_watchlist = config.process_non_watchlist,
             "Background N-Factor worker enabled"
         );
         let service = self.clone();
@@ -58,7 +63,11 @@ impl NFactorService {
             let jobs_changed = self.job_changes.notified();
             tokio::pin!(jobs_changed);
             jobs_changed.as_mut().enable();
-            let candidates = match self.store.n_factor_candidates().await {
+            let candidates = match self
+                .store
+                .n_factor_candidates(config.process_non_watchlist)
+                .await
+            {
                 Ok(candidates) => candidates,
                 Err(error) => {
                     warn!(error = %format!("{error:#}"), retry_after_secs = 60, "Could not select background N-Factor ticker; retrying later");
@@ -76,7 +85,7 @@ impl NFactorService {
                 .filter(|entry| entry.job.phase.is_active())
                 .map(|entry| entry.job.symbol.clone())
                 .collect::<HashSet<_>>();
-            let plan = background_plan(
+            let mut plan = background_plan(
                 &candidates,
                 &active,
                 &failures,
@@ -85,11 +94,12 @@ impl NFactorService {
                 &mut random,
             );
             if let Some(symbol) = plan.symbol {
-                let last_updated = candidates
+                let candidate = candidates
                     .iter()
                     .find(|candidate| candidate.symbol == symbol)
-                    .and_then(|candidate| candidate.generated_at);
-                info!(%symbol, ?last_updated, watchlist_tickers = candidates.len(), "Selected background N-Factor ticker");
+                    .expect("selected ticker is a candidate");
+                info!(%symbol, last_updated = ?candidate.generated_at, in_watchlist = candidate.in_watchlist,
+                    candidate_tickers = candidates.len(), "Selected background N-Factor ticker");
                 // start_job shares the same registry and completion signal as
                 // manual jobs. Await the entire ticker before selecting another.
                 match self.start_job(symbol.clone(), self.default_source, Some(config)) {
@@ -108,6 +118,11 @@ impl NFactorService {
                             warn!(%symbol, job_id = %job.id, %retry_at, "Failed background N-Factor ticker deferred; continuing with other tickers");
                             failures.insert(symbol, retry_at);
                         }
+                        if !candidate.in_watchlist {
+                            info!(symbol = %candidate.symbol, delay_secs = NON_WATCHLIST_DELAY.as_secs(),
+                                "Pausing background worker after non-watchlist N-Factor job");
+                            tokio::time::sleep(NON_WATCHLIST_DELAY).await;
+                        }
                     }
                     Err(NFactorStartError::Busy) => {
                         info!("Background N-Factor worker waiting for job capacity");
@@ -117,9 +132,11 @@ impl NFactorService {
                 }
                 continue;
             }
-            info!(watchlist_tickers = candidates.len(), active_tickers = active.len(),
+            let recheck = now + INDUSTRY_MAPPING_RECHECK;
+            plan.next_check = Some(plan.next_check.map_or(recheck, |due| due.min(recheck)));
+            info!(candidate_tickers = candidates.len(), active_tickers = active.len(),
                 deferred_tickers = failures.len(), next_check = ?plan.next_check,
-                "No eligible background N-Factor tickers; waiting for expiry, membership changes, or job completion");
+                "No eligible background N-Factor tickers; waiting for expiry, industry mapping recheck, membership changes, or job completion");
             let wait_due = async {
                 match plan.next_check {
                     Some(deadline) => {
@@ -130,7 +147,7 @@ impl NFactorService {
                 }
             };
             tokio::select! {
-                () = wait_due => { info!("Background N-Factor refresh deadline reached"); },
+                () = wait_due => { info!("Background N-Factor refresh or industry mapping recheck deadline reached"); },
                 () = &mut jobs_changed => { info!("N-Factor job completion woke background worker"); },
                 result = membership_changes.changed() => {
                     if result.is_err() { return; }
@@ -148,7 +165,7 @@ impl NFactorService {
         let cutoff = Utc::now() - Duration::days(i64::from(config.refresh_days));
         Ok(self
             .store
-            .n_factor_candidates()
+            .n_factor_candidates(config.process_non_watchlist)
             .await?
             .into_iter()
             .any(|candidate| {
@@ -188,6 +205,10 @@ fn background_plan(
             next_check = Some(next_check.map_or(due, |current: DateTime<Utc>| current.min(due)));
         }
     }
+    // Watchlists have priority even if a non-watchlist report is older or missing.
+    if eligible.iter().any(|candidate| candidate.in_watchlist) {
+        eligible.retain(|candidate| candidate.in_watchlist);
+    }
     let oldest = eligible
         .iter()
         .map(|candidate| candidate.generated_at)
@@ -206,7 +227,73 @@ mod tests {
         NFactorCandidate {
             symbol: TickerSymbol::parse(symbol).unwrap(),
             generated_at: date,
+            in_watchlist: true,
         }
+    }
+
+    #[test]
+    fn watchlists_take_priority_and_resume_as_soon_as_they_become_due() {
+        let now = Utc::now();
+        let mut candidates = [
+            candidate("WATCH", Some(now - Duration::days(8))),
+            candidate("OTHER", None),
+        ];
+        candidates[1].in_watchlist = false;
+        let mut random = fastrand::Rng::with_seed(7);
+        let active = HashSet::new();
+        let failures = HashMap::new();
+        assert_eq!(
+            background_plan(&candidates, &active, &failures, now, 7, &mut random)
+                .symbol
+                .unwrap()
+                .as_str(),
+            "WATCH"
+        );
+        candidates[0].generated_at = Some(now);
+        let plan = background_plan(&candidates, &active, &failures, now, 7, &mut random);
+        assert_eq!(plan.symbol.unwrap().as_str(), "OTHER");
+        assert_eq!(plan.next_check, Some(now + Duration::days(7)));
+        assert_eq!(
+            background_plan(
+                &candidates,
+                &active,
+                &failures,
+                now + Duration::days(7),
+                7,
+                &mut random
+            )
+            .symbol
+            .unwrap()
+            .as_str(),
+            "WATCH"
+        );
+    }
+
+    #[test]
+    fn deferred_watchlists_do_not_block_other_tickers_and_keep_their_retry_deadline() {
+        let now = Utc::now();
+        let mut candidates = [candidate("WATCH", None), candidate("OTHER", None)];
+        candidates[1].in_watchlist = false;
+        let retry = now + FAILURE_BACKOFF;
+        let failures = HashMap::from([(TickerSymbol::parse("WATCH").unwrap(), retry)]);
+        let mut random = fastrand::Rng::with_seed(7);
+        let plan = background_plan(&candidates, &HashSet::new(), &failures, now, 7, &mut random);
+        assert_eq!(plan.symbol.unwrap().as_str(), "OTHER");
+        assert_eq!(plan.next_check, Some(retry));
+        assert_eq!(
+            background_plan(
+                &candidates,
+                &HashSet::new(),
+                &failures,
+                retry,
+                7,
+                &mut random
+            )
+            .symbol
+            .unwrap()
+            .as_str(),
+            "WATCH"
+        );
     }
 
     #[test]

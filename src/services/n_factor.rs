@@ -425,7 +425,7 @@ impl NFactorService {
                 let eligible = self.background_eligible(&key.0, config).await?;
                 if *origin.borrow() && !eligible {
                     info!(
-                        "Skipping background N-Factor save: ticker was refreshed or removed from watchlists"
+                        "Skipping background N-Factor save: ticker is fresh or no longer eligible"
                     );
                     self.update(key, id, |job| job.phase = NFactorPhase::Completed);
                     return Ok(());
@@ -463,15 +463,15 @@ impl NFactorService {
                     if !*origin.borrow() {
                         break;
                     }
-                    // A user may have refreshed this ticker, or removed it from all
-                    // watchlists, while the background job fetched news or waited.
+                    // Freshness, watchlist scope, or industry mappings may have
+                    // changed while the background job fetched news or waited.
                     let eligible = self.background_eligible(&key.0, config).await?;
                     if !*origin.borrow() {
                         break;
                     }
                     if !eligible {
                         info!(
-                            "Skipping background N-Factor analysis: ticker was refreshed or removed from watchlists"
+                            "Skipping background N-Factor analysis: ticker is fresh or no longer eligible"
                         );
                         self.update(key, id, |job| job.phase = NFactorPhase::Completed);
                         return Ok(());
@@ -695,6 +695,7 @@ mod tests {
         let config = NFactorBackgroundConfig {
             idle_delay_secs: 300,
             refresh_days: 7,
+            process_non_watchlist: false,
         };
         for (symbol_text, source, reason) in [
             (
@@ -718,6 +719,10 @@ mod tests {
                 .unwrap();
             store
                 .add_watchlist_symbol(watchlist.id, &symbol)
+                .await
+                .unwrap();
+            store
+                .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
                 .await
                 .unwrap();
             let now = Utc::now();
@@ -758,7 +763,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-            let saved = store
+            let mut saved = store
                 .n_factor_report(&symbol, source)
                 .await
                 .unwrap()
@@ -766,13 +771,46 @@ mod tests {
             assert!(saved.generated_at >= now);
             assert!(saved.news.is_empty() && saved.findings.is_empty());
             assert_eq!(saved.model, "No AI needed");
-            assert_eq!(saved.coverage.unwrap().stop_reason, reason);
+            assert_eq!(saved.coverage.as_ref().unwrap().stop_reason, reason);
             assert_eq!(
                 saved.overview.contains("HTTP 404"),
                 reason == NewsStopReason::SourceNotFound
             );
             assert_eq!(service.job(&job.id).unwrap().phase, NFactorPhase::Completed);
             assert!(!service.background_eligible(&symbol, config).await.unwrap());
+            let expanded = NFactorBackgroundConfig {
+                process_non_watchlist: true,
+                ..config
+            };
+            assert!(
+                !service
+                    .background_eligible(&symbol, expanded)
+                    .await
+                    .unwrap()
+            );
+            store
+                .remove_watchlist_symbol(watchlist.id, &symbol)
+                .await
+                .unwrap();
+            saved.generated_at = Utc::now() - Duration::days(8);
+            store.save_n_factor_report(&saved).await.unwrap();
+            assert!(!service.background_eligible(&symbol, config).await.unwrap());
+            assert!(
+                service
+                    .background_eligible(&symbol, expanded)
+                    .await
+                    .unwrap()
+            );
+            store
+                .add_ticker_industry("exchangetradedfund", "Exchange Traded Fund", &symbol)
+                .await
+                .unwrap();
+            assert!(
+                !service
+                    .background_eligible(&symbol, expanded)
+                    .await
+                    .unwrap()
+            );
         }
     }
 
