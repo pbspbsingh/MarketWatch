@@ -490,10 +490,10 @@ fn resolve_range(
                 .and_then(|date| date.succ_opt())
                 .ok_or_else(|| StudyError::InvalidInput("date range overflow".to_owned()))?,
         ),
-        (Some(start), Some(end)) if start < end && start <= date && date < end => (start, end),
+        (Some(start), Some(end)) if start < end => (start, end),
         _ => {
             return Err(StudyError::InvalidInput(
-                "study range must be increasing and contain the selected date".to_owned(),
+                "study range start and end are required and must be increasing".to_owned(),
             ));
         }
     };
@@ -639,6 +639,13 @@ mod tests {
         );
         assert!(resolve_range(date, Some(date), None, available_end).is_err());
         assert!(resolve_range(date, Some(date), Some(date), available_end).is_err());
+
+        let selected = NaiveDate::from_ymd_opt(2026, 10, 12).unwrap();
+        let capped_end = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
+        assert_eq!(
+            resolve_range(selected, Some(start), Some(capped_end), capped_end).unwrap(),
+            (start, capped_end)
+        );
 
         let range_start = NaiveDate::from_ymd_opt(1998, 1, 1).unwrap();
         let range_end = NaiveDate::from_ymd_opt(2002, 1, 1).unwrap();
