@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import CloseIcon from "@mui/icons-material/Close";
@@ -42,8 +43,6 @@ interface Drag {
   rect: Rect;
 }
 
-const positionKey = "market-watch.weekly-chart-overlay.lens-rect";
-const minimizedKey = "market-watch.weekly-chart-overlay.minimized";
 const MarketChartContainer = lazy(() =>
   import("../charts/MarketChartContainer").then(({ MarketChartContainer: Chart }) => ({ default: Chart })),
 );
@@ -82,16 +81,80 @@ export function WeeklyChartOverlay({
   onChartContext,
   onClose,
 }: WeeklyChartOverlayProps) {
+  const [initialViewport] = useState(() => readChartViewport("W"));
+  return (
+    <WeeklyChartOverlayFrame container={container} chartStage={chartStage} symbol={symbol} onClose={onClose}>
+      <LiveWeeklyChart
+        symbol={symbol}
+        tradingViewSymbol={tradingViewSymbol}
+        showAxes={showAxes}
+        initialViewport={initialViewport}
+        onChartContext={onChartContext}
+      />
+    </WeeklyChartOverlayFrame>
+  );
+}
+
+function LiveWeeklyChart({
+  symbol,
+  tradingViewSymbol,
+  showAxes,
+  initialViewport,
+  onChartContext,
+}: Pick<WeeklyChartOverlayProps, "symbol" | "tradingViewSymbol" | "showAxes" | "onChartContext"> & {
+  initialViewport: ReturnType<typeof readChartViewport>;
+}) {
+  const [liveDelta, setLiveDelta] = useState<MarketChartLiveDelta>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    const client = new MarketChartLiveClient({
+      onDelta: setLiveDelta,
+      onSession: () => undefined,
+      onError: setError,
+    });
+    client.setCharts([{ chart_id: "top", symbol, interval: "weekly" }]);
+    return () => client.close();
+  }, [symbol]);
+  return (
+    <>
+      <Suspense fallback={null}>
+        <MarketChartContainer
+          symbol={symbol}
+          tradingViewSymbol={tradingViewSymbol}
+          interval="weekly"
+          initialViewport={initialViewport}
+          rightPriceScaleVisible={showAxes}
+          timeScaleVisible={showAxes}
+          rightOffsetPixels={10}
+          onChartContext={onChartContext}
+          liveDelta={liveDelta?.symbol === marketDataSymbol(symbol) ? liveDelta : undefined}
+        />
+      </Suspense>
+      {error && <div className="weekly-chart-overlay-error" role="alert">{error}</div>}
+    </>
+  );
+}
+
+export function WeeklyChartOverlayFrame({
+  container,
+  chartStage,
+  symbol,
+  onClose,
+  storageKey = "market-watch.weekly-chart-overlay",
+  onChartInteraction,
+  children,
+}: Pick<WeeklyChartOverlayProps, "container" | "chartStage" | "symbol" | "onClose"> & {
+  storageKey?: string;
+  onChartInteraction?: () => void;
+  children: ReactNode;
+}) {
+  const positionKey = `${storageKey}.lens-rect`;
+  const minimizedKey = `${storageKey}.minimized`;
   const [rect, setRect] = useState<Rect | null>(null);
   const [minimized, setMinimized] = useState(() => localStorage.getItem(minimizedKey) === "true");
   const headerRef = useRef<HTMLDivElement>(null);
   const rectRef = useRef<Rect | null>(null);
   const dragRef = useRef<Drag | null>(null);
-  const [initialViewport] = useState(() => readChartViewport("W"));
-  const [liveDelta, setLiveDelta] = useState<MarketChartLiveDelta>();
-  const [error, setError] = useState<{ symbol: string; message: string }>();
-  const currentError = error?.symbol === symbol ? error.message : undefined;
-  const currentLiveDelta = liveDelta?.symbol === marketDataSymbol(symbol) ? liveDelta : undefined;
 
   const updateRect = useCallback((next: Rect) => {
     rectRef.current = next;
@@ -125,27 +188,12 @@ export function WeeklyChartOverlay({
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [chartStage, container, updateRect, visibleHeight]);
-
-  useEffect(() => {
-    if (minimized) return;
-    const client = new MarketChartLiveClient({
-      onDelta: setLiveDelta,
-      onSession: () => undefined,
-      onError: (message) => setError({ symbol, message }),
-    });
-    client.setCharts([{ chart_id: "top", symbol, interval: "weekly" }]);
-    return () => client.close();
-  }, [minimized, symbol]);
+  }, [chartStage, container, positionKey, updateRect, visibleHeight]);
 
   const toggleMinimized = () => {
     const next = !minimized;
     setMinimized(next);
     localStorage.setItem(minimizedKey, String(next));
-    if (next) {
-      setLiveDelta(undefined);
-      setError(undefined);
-    }
   };
 
   const startDrag = (event: PointerEvent<HTMLElement>, mode: Drag["mode"]) => {
@@ -228,21 +276,12 @@ export function WeeklyChartOverlay({
           <CloseIcon fontSize="small" />
         </IconButton>
       </div>
-      {!minimized && <div className="weekly-chart-overlay-body">
-        <Suspense fallback={null}>
-          <MarketChartContainer
-            symbol={symbol}
-            tradingViewSymbol={tradingViewSymbol}
-            interval="weekly"
-            initialViewport={initialViewport}
-            rightPriceScaleVisible={showAxes}
-            timeScaleVisible={showAxes}
-            rightOffsetPixels={10}
-            onChartContext={onChartContext}
-            liveDelta={currentLiveDelta}
-          />
-        </Suspense>
-        {currentError && <div className="weekly-chart-overlay-error" role="alert">{currentError}</div>}
+      {!minimized && <div
+        className="weekly-chart-overlay-body"
+        onPointerDownCapture={onChartInteraction}
+        onWheelCapture={onChartInteraction}
+      >
+        {children}
       </div>}
       {!minimized && <div
         className="weekly-chart-overlay-resize"

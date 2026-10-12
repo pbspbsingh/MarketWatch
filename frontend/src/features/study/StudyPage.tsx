@@ -10,6 +10,7 @@ import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import CalendarViewWeekIcon from "@mui/icons-material/CalendarViewWeek";
 import {
   Button,
   CircularProgress,
@@ -37,6 +38,11 @@ import {
   downloadElementAsPng,
 } from "../../utils/exportElementImage";
 import { StudyCharts } from "./StudyCharts";
+import { StudyWeeklyChart } from "./StudyWeeklyChart";
+import { WeeklyChartOverlayFrame } from "../ticker-lens/WeeklyChartOverlay";
+import { isArrowKeyControl } from "../ticker-lens/utils";
+import { useAppSettings } from "../../app/AppSettings";
+import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import { shiftYears } from "./studyDates";
 import "./study.css";
 
@@ -47,7 +53,11 @@ const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
 
 export function StudyPage() {
+  const { showWeeklyChartOverlay, showWeeklyOverlayAxes, setShowWeeklyChartOverlay } = useAppSettings();
   const pageRef = useRef<HTMLElement>(null);
+  const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
+  const [weeklyChartContext, setWeeklyChartContext] = useState<ChartSyncTarget | null>(null);
+  const rangeOwnerRef = useRef<"daily" | "weekly">("daily");
   const [symbolA, setSymbolA] = useState("SPY");
   const [symbolB, setSymbolB] = useState("QQQ");
   const [date, setDate] = useState(todayText);
@@ -74,6 +84,18 @@ export function StudyPage() {
   const requestRef = useRef<AbortController | undefined>(undefined);
   const historyRequestRef = useRef<AbortController | undefined>(undefined);
   const resultRef = useRef(result);
+
+  useEffect(() => {
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.code !== "KeyW" || event.defaultPrevented || event.repeat
+        || event.ctrlKey || event.metaKey || !event.altKey || isArrowKeyControl(event.target)
+        || document.querySelector('[role="dialog"], [role="menu"]') !== null) return;
+      event.preventDefault();
+      setShowWeeklyChartOverlay(!showWeeklyChartOverlay);
+    };
+    document.addEventListener("keydown", handleShortcut);
+    return () => document.removeEventListener("keydown", handleShortcut);
+  }, [setShowWeeklyChartOverlay, showWeeklyChartOverlay]);
 
   useEffect(() => {
     resultRef.current = result;
@@ -347,9 +369,22 @@ export function StudyPage() {
         <Button size="small" variant="contained" type="submit" disabled={loading}>Load</Button>
         <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={() => void load(true)}>Refresh</Button>
         {loading && <CircularProgress size="1rem" />}
+        <Tooltip title="Weekly chart overlay (Alt+W)">
+          <IconButton
+            className="study-weekly-toggle"
+            size="small"
+            type="button"
+            disabled={result?.interval !== "daily"}
+            color={showWeeklyChartOverlay ? "primary" : "default"}
+            aria-label={`${showWeeklyChartOverlay ? "Hide" : "Show"} weekly chart overlay`}
+            aria-pressed={showWeeklyChartOverlay}
+            onClick={() => setShowWeeklyChartOverlay(!showWeeklyChartOverlay)}
+          >
+            <CalendarViewWeekIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={orientation === "vertical" ? "Switch to side-by-side" : "Switch to top/bottom"}>
           <IconButton
-            className="study-layout-toggle"
             size="small"
             type="button"
             aria-label={orientation === "vertical" ? "Switch to side-by-side charts" : "Switch to top and bottom charts"}
@@ -384,7 +419,7 @@ export function StudyPage() {
           onSelect={(action) => void exportStudy(action)}
         />
       </form>
-      <div className="study-body">
+      <div ref={setChartStageElement} className="study-body">
         {result === undefined ? (
           <div className="panel-status">
             <Typography color="text.secondary">Enter two tickers and a historical date</Typography>
@@ -399,7 +434,26 @@ export function StudyPage() {
             tickerBVisible={tickerBVisible}
             historyLoading={historyLoading}
             onRequestHistory={(direction) => void loadHistory(direction)}
+            weeklyChartContext={showWeeklyChartOverlay ? weeklyChartContext : null}
+            rangeOwnerRef={rangeOwnerRef}
           />
+        )}
+        {chartStageElement !== null && result?.interval === "daily" && showWeeklyChartOverlay && (
+          <WeeklyChartOverlayFrame
+            key={`${result.series[0].symbol}\0${result.date}\0${datasetVersion}`}
+            container={chartStageElement}
+            chartStage={chartStageElement}
+            symbol={result.series[0].symbol}
+            storageKey="market-watch.study-weekly-chart-overlay"
+            onChartInteraction={() => { rangeOwnerRef.current = "weekly"; }}
+            onClose={() => setShowWeeklyChartOverlay(false)}
+          >
+            <StudyWeeklyChart
+              result={result}
+              showAxes={showWeeklyOverlayAxes}
+              onChartContext={setWeeklyChartContext}
+            />
+          </WeeklyChartOverlayFrame>
         )}
       </div>
       <Toast message={error} onClose={() => setError(undefined)} />

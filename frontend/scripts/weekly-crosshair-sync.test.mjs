@@ -13,7 +13,7 @@ const hooks = registerHooks({
     }
   },
 });
-const { synchronizeWeeklyOverlayCrosshairs } = await import("../src/components/lightweight-chart/chartSync.ts");
+const { synchronizeWeeklyOverlayCrosshairs, synchronizeDailyWeeklyRanges } = await import("../src/components/lightweight-chart/chartSync.ts");
 hooks.deregister();
 
 function target(dates) {
@@ -73,6 +73,94 @@ test("main daily hover and mouse leave do not move or clear the weekly overlay",
   assert.deepEqual(weekly.positions, []);
   assert.equal(weekly.clears, 0);
   assert.deepEqual(daily.positions, []);
+  cleanup();
+});
+
+test("study daily hover syncs weekly dates and prices and clears on mouse leave", () => {
+  const daily = target(["2026-09-28", "2026-10-02"]);
+  const weekly = target(["2026-09-28"]);
+  const cleanup = synchronizeWeeklyOverlayCrosshairs(daily, weekly, () => {}, undefined, true);
+  daily.move("2026-10-02", 72);
+  assert.deepEqual(weekly.positions, [{ time: "2026-09-28", price: 144 }]);
+  daily.leave();
+  assert.equal(weekly.clears, 1);
+  cleanup();
+  assert.equal(daily.handlers.size, 0);
+});
+
+function rangeTarget(dates, initialRange) {
+  const base = target(dates);
+  const handlers = new Set();
+  const updates = [];
+  let range = initialRange;
+  const index = (date, nearest) => {
+    const exact = dates.indexOf(date);
+    if (exact !== -1 || !nearest) return exact === -1 ? null : exact;
+    return dates.reduce((best, value, i) =>
+      Math.abs(Date.parse(value) - Date.parse(date)) < Math.abs(Date.parse(dates[best]) - Date.parse(date)) ? i : best, 0);
+  };
+  const move = (next) => {
+    range = next;
+    for (const handler of handlers) handler(range);
+  };
+  base.chart.timeScale = () => ({
+    getVisibleRange: () => range,
+    timeToIndex: index,
+    setVisibleRange: (next) => {
+      updates.push(next);
+      move({ from: dates[index(next.from, true)], to: dates[index(next.to, true)] });
+    },
+    subscribeVisibleTimeRangeChange: (handler) => handlers.add(handler),
+    unsubscribeVisibleTimeRangeChange: (handler) => handlers.delete(handler),
+  });
+  return { ...base, moveRange: move, rangeHandlers: handlers, updates };
+}
+
+test("daily and weekly ranges sync both ways without feedback, including holiday weeks", () => {
+  const daily = rangeTarget(["2026-09-08", "2026-09-11", "2026-09-14", "2026-09-18", "2026-09-21", "2026-09-25"],
+    { from: "2026-09-08", to: "2026-09-18" });
+  const weekly = rangeTarget(["2026-09-07", "2026-09-14", "2026-09-21"],
+    { from: "2026-09-14", to: "2026-09-21" });
+  const cleanup = synchronizeDailyWeeklyRanges(daily, weekly);
+  assert.deepEqual(weekly.updates, [{ from: "2026-09-07", to: "2026-09-14" }]);
+  weekly.moveRange({ from: "2026-09-14", to: "2026-09-21" });
+  assert.deepEqual(daily.updates, [{ from: "2026-09-14", to: "2026-09-25" }]);
+  daily.moveRange({ from: "2026-09-08", to: "2026-09-18" });
+  assert.equal(weekly.updates.length, 2);
+  // Delayed range notifications should also settle without redundant updates.
+  weekly.moveRange(weekly.chart.timeScale().getVisibleRange());
+  assert.equal(daily.updates.length, 1);
+  cleanup();
+  assert.equal(daily.rangeHandlers.size, 0);
+  assert.equal(weekly.rangeHandlers.size, 0);
+});
+
+test("non-overlapping or disposed charts do not change the weekly range", () => {
+  const daily = rangeTarget(["2020-01-06", "2020-01-10"], { from: "2020-01-06", to: "2020-01-10" });
+  const weekly = rangeTarget(["2026-09-07", "2026-09-14"], { from: "2026-09-07", to: "2026-09-14" });
+  const cleanup = synchronizeDailyWeeklyRanges(daily, weekly);
+  assert.deepEqual(weekly.updates, []);
+  weekly.setDisposed();
+  daily.moveRange({ from: "2020-01-06", to: "2020-01-10" });
+  assert.deepEqual(weekly.updates, []);
+  cleanup();
+  assert.equal(daily.rangeHandlers.size, 0);
+  const skipped = synchronizeDailyWeeklyRanges(daily, weekly);
+  assert.equal(daily.rangeHandlers.size, 0);
+  skipped();
+});
+
+test("delayed weekly notifications cannot round a dragged daily chart back to full weeks", () => {
+  const daily = rangeTarget(["2026-09-08", "2026-09-09", "2026-09-11", "2026-09-14", "2026-09-18"],
+    { from: "2026-09-09", to: "2026-09-18" });
+  const weekly = rangeTarget(["2026-09-07", "2026-09-14", "2026-09-21"],
+    { from: "2026-09-14", to: "2026-09-21" });
+  const cleanup = synchronizeDailyWeeklyRanges(daily, weekly);
+  for (let i = 0; i < 20; i += 1) weekly.moveRange(weekly.chart.timeScale().getVisibleRange());
+  assert.deepEqual(daily.updates, []);
+  assert.deepEqual(daily.chart.timeScale().getVisibleRange(), { from: "2026-09-09", to: "2026-09-18" });
+  weekly.moveRange({ from: "2026-09-14", to: "2026-09-21" });
+  assert.equal(daily.updates.length, 1);
   cleanup();
 });
 

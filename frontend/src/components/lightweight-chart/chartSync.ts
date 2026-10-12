@@ -24,11 +24,12 @@ export function synchronizeWeeklyOverlayCrosshairs(
   weekly: ChartSyncTarget,
   onWeeklyMove: () => void,
   comparison?: ChartSyncTarget,
+  syncDailyToWeekly = false,
 ): () => void {
   if (daily.isDisposed() || weekly.isDisposed()) return () => undefined;
   const targets = comparison === undefined || comparison.isDisposed()
     ? [daily, weekly] : [daily, weekly, comparison];
-  const sources = targets.filter((target) => target !== daily);
+  const sources = syncDailyToWeekly ? targets : targets.filter((target) => target !== daily);
   let synchronizing = false;
   const handlers = sources.map((source) => {
     const handler = (event: MouseEventParams<Time>) => {
@@ -118,6 +119,71 @@ function marketWeekStart(date: string): string {
   const day = new Date(`${date}T00:00:00Z`);
   day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
   return day.toISOString().slice(0, 10);
+}
+
+/** Link visible dates across daily and weekly charts without sharing logical bar indices. */
+export function synchronizeDailyWeeklyRanges(
+  daily: ChartSyncTarget,
+  weekly: ChartSyncTarget,
+  canSyncRange: (source: ChartSyncTarget) => boolean = () => true,
+): () => void {
+  if (daily.isDisposed() || weekly.isDisposed()) return () => undefined;
+  let synchronizing = false;
+  const propagatedRanges = new Map<ChartSyncTarget, string>();
+  const rangeKey = (target: ChartSyncTarget) => {
+    const range = target.chart.timeScale().getVisibleRange();
+    return range === null ? undefined
+      : `${chartTimeToMarketDate(range.from)}\0${chartTimeToMarketDate(range.to)}`;
+  };
+  const sync = (source: ChartSyncTarget, target: ChartSyncTarget, initial = false) => {
+    if (synchronizing || source.isDisposed() || target.isDisposed()
+      || !initial && !canSyncRange(source)) return;
+    // Range notifications can arrive after setVisibleRange returns. Never feed
+    // rounded weekly bounds back into the chart that originated the gesture.
+    if (propagatedRanges.get(source) === rangeKey(source)) return;
+    propagatedRanges.delete(source);
+    const range = source.chart.timeScale().getVisibleRange();
+    const candles = target.candleSeries.data();
+    if (range === null || candles.length === 0) return;
+    let from = chartTimeToMarketDate(range.from);
+    let to = chartTimeToMarketDate(range.to);
+    if (target === weekly) {
+      from = marketWeekStart(from);
+      to = marketWeekStart(to);
+    } else {
+      const endOfWeek = new Date(`${to}T00:00:00Z`);
+      endOfWeek.setUTCDate(endOfWeek.getUTCDate() + 6);
+      to = endOfWeek.toISOString().slice(0, 10);
+    }
+    const first = candles.find((candle) => chartTimeToMarketDate(candle.time) >= from);
+    const last = candles.findLast((candle) => chartTimeToMarketDate(candle.time) <= to);
+    if (first === undefined || last === undefined) return;
+    from = chartTimeToMarketDate(first.time);
+    to = chartTimeToMarketDate(last.time);
+    if (from >= to) return;
+    const timeScale = target.chart.timeScale();
+    const current = timeScale.getVisibleRange();
+    if (current !== null
+      && timeScale.timeToIndex(current.from, false) === timeScale.timeToIndex(from, true)
+      && timeScale.timeToIndex(current.to, false) === timeScale.timeToIndex(to, true)) return;
+    synchronizing = true;
+    try {
+      timeScale.setVisibleRange({ from, to });
+      const propagated = rangeKey(target);
+      if (propagated !== undefined) propagatedRanges.set(target, propagated);
+    } finally {
+      synchronizing = false;
+    }
+  };
+  const dailyHandler = () => sync(daily, weekly);
+  const weeklyHandler = () => sync(weekly, daily);
+  sync(daily, weekly, true);
+  daily.chart.timeScale().subscribeVisibleTimeRangeChange(dailyHandler);
+  weekly.chart.timeScale().subscribeVisibleTimeRangeChange(weeklyHandler);
+  return () => {
+    if (!daily.isDisposed()) daily.chart.timeScale().unsubscribeVisibleTimeRangeChange(dailyHandler);
+    if (!weekly.isDisposed()) weekly.chart.timeScale().unsubscribeVisibleTimeRangeChange(weeklyHandler);
+  };
 }
 
 export function synchronizeCharts(

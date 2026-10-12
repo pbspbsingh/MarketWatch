@@ -6,6 +6,7 @@ import {
   useState,
   type MouseEvent,
   type PointerEvent,
+  type RefObject,
 } from "react";
 import {
   CandlestickSeries,
@@ -75,6 +76,11 @@ import {
 } from "../charts/relativeStrengthSeries";
 import { chartCompanyNameLabel } from "../charts/chartLabels";
 import { shiftYears } from "./studyDates";
+import {
+  synchronizeDailyWeeklyRanges,
+  synchronizeWeeklyOverlayCrosshairs,
+  type ChartSyncTarget,
+} from "../../components/lightweight-chart/chartSync";
 
 const historyLoadThresholdBars = 50;
 const chartInteractionWindowMs = 1_000;
@@ -94,6 +100,8 @@ export function StudyCharts({
   tickerBVisible,
   historyLoading,
   onRequestHistory,
+  weeklyChartContext,
+  rangeOwnerRef,
 }: {
   result: StudyResult;
   datasetVersion: number;
@@ -103,6 +111,8 @@ export function StudyCharts({
   tickerBVisible: boolean;
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
+  weeklyChartContext: ChartSyncTarget | null;
+  rangeOwnerRef: RefObject<"daily" | "weekly">;
 }) {
   const {
     logarithmicScale,
@@ -160,6 +170,7 @@ export function StudyCharts({
   }, [historyLoading, onRequestHistory]);
 
   const markPointerInteraction = () => {
+    rangeOwnerRef.current = "daily";
     const interaction = interactionRef.current;
     interaction.sequence += 1;
     interaction.occurredAt = performance.now();
@@ -171,6 +182,7 @@ export function StudyCharts({
   };
 
   const markWheelInteraction = () => {
+    rangeOwnerRef.current = "daily";
     const interaction = interactionRef.current;
     const now = performance.now();
     if (interaction.kind !== "wheel" || now - interaction.occurredAt > wheelGestureGapMs) {
@@ -634,6 +646,30 @@ export function StudyCharts({
     dataInitializedRef.current = true;
     intervalRef.current = result.interval;
   }, [datasetKey, result]);
+
+  useEffect(() => {
+    const charts = chartsRef.current;
+    if (result.interval !== "daily" || weeklyChartContext === null || charts.length !== 2) return;
+    const targets = charts.map((chart, index): ChartSyncTarget => ({
+      chart,
+      candleSeries: candleSeriesRef.current[index],
+      candleAt: (date) => candlesByDateRef.current[index]?.get(date),
+      isDisposed: () => chartsRef.current[index] !== chart,
+    }));
+    const stopRanges = synchronizeDailyWeeklyRanges(targets[0], weeklyChartContext,
+      (source) => source === targets[0]
+        ? rangeOwnerRef.current === "daily"
+        : rangeOwnerRef.current === "weekly");
+    const stopCrosshairs = synchronizeWeeklyOverlayCrosshairs(
+      targets[0], weeklyChartContext, () => setCrosshairOwner(0),
+      tickerBVisible ? targets[1] : undefined,
+      true,
+    );
+    return () => {
+      stopRanges();
+      stopCrosshairs();
+    };
+  }, [rangeOwnerRef, result, setCrosshairOwner, tickerBVisible, weeklyChartContext]);
 
   return (
     <>

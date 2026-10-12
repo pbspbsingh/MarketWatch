@@ -43,7 +43,7 @@
     font-size: 0.7rem;
   }
 
-  & .study-layout-toggle {
+  & .study-weekly-toggle {
     margin-left: auto;
   }
 
@@ -53,6 +53,7 @@
 }
 
 .study-body {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
