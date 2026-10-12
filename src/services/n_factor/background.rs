@@ -24,6 +24,7 @@ const INDUSTRY_MAPPING_RECHECK: Duration = Duration::minutes(30);
 struct BackgroundPlan {
     symbol: Option<TickerSymbol>,
     next_check: Option<DateTime<Utc>>,
+    pending_tickers: usize,
 }
 
 impl NFactorService {
@@ -99,7 +100,8 @@ impl NFactorService {
                     .find(|candidate| candidate.symbol == symbol)
                     .expect("selected ticker is a candidate");
                 info!(%symbol, last_updated = ?candidate.generated_at, in_watchlist = candidate.in_watchlist,
-                    candidate_tickers = candidates.len(), "Selected background N-Factor ticker");
+                    candidate_tickers = candidates.len(), pending_tickers = plan.pending_tickers,
+                    "Selected background N-Factor ticker");
                 // start_job shares the same registry and completion signal as
                 // manual jobs. Await the entire ticker before selecting another.
                 match self.start_job(symbol.clone(), self.default_source, Some(config)) {
@@ -134,7 +136,7 @@ impl NFactorService {
             }
             let recheck = now + INDUSTRY_MAPPING_RECHECK;
             plan.next_check = Some(plan.next_check.map_or(recheck, |due| due.min(recheck)));
-            info!(candidate_tickers = candidates.len(), active_tickers = active.len(),
+            info!(candidate_tickers = candidates.len(), pending_tickers = plan.pending_tickers, active_tickers = active.len(),
                 deferred_tickers = failures.len(), next_check = ?plan.next_check,
                 "No eligible background N-Factor tickers; waiting for expiry, industry mapping recheck, membership changes, or job completion");
             let wait_due = async {
@@ -186,14 +188,19 @@ fn background_plan(
     let refresh = Duration::days(i64::from(refresh_days));
     let mut eligible = Vec::new();
     let mut next_check = None;
+    let mut pending_tickers = 0;
     for candidate in candidates {
-        if active.contains(&candidate.symbol) {
-            continue;
-        }
         let due = candidate
             .generated_at
             .map(|date| date + refresh)
             .unwrap_or(now);
+        // Missing or expired reports remain pending during active jobs and backoff.
+        if due <= now {
+            pending_tickers += 1;
+        }
+        if active.contains(&candidate.symbol) {
+            continue;
+        }
         let due = failures
             .get(&candidate.symbol)
             .copied()
@@ -216,7 +223,11 @@ fn background_plan(
     eligible.retain(|candidate| Some(candidate.generated_at) == oldest);
     let symbol =
         (!eligible.is_empty()).then(|| eligible[random.usize(0..eligible.len())].symbol.clone());
-    BackgroundPlan { symbol, next_check }
+    BackgroundPlan {
+        symbol,
+        next_check,
+        pending_tickers,
+    }
 }
 
 #[cfg(test)]
