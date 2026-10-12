@@ -44,9 +44,7 @@ import {
 import {
   getChartColors,
   chartThemeOptions,
-  chartRightOffsetPixels,
   candleSeriesOptions,
-  defaultChartBarSpacing,
   fiveEmaColor,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
@@ -309,18 +307,31 @@ export function StudyCharts({
     setChartMenuPosition({ left: event.clientX, top: event.clientY });
   }, []);
 
-  const resetChartView = useCallback(() => {
-    setChartMenuPosition(null);
+  const centerSelectedDate = useCallback(() => {
     const chart = chartsRef.current[0];
     if (chart === undefined) return;
+    const dates = datesRef.current;
+    const visibleStart = shiftYears(result.date, -1);
+    const visibleEnd = shiftYears(result.date, 1);
+    const firstVisible = dates.findIndex((date) => date >= visibleStart);
+    const lastVisible = dates.findLastIndex((date) => date <= visibleEnd);
+    if (firstVisible < 0 || lastVisible < firstVisible) {
+      chartsRef.current.forEach((item) => item.timeScale().fitContent());
+      return;
+    }
+    const selected = dates.findIndex((date) => date >= result.date);
+    const selectedIndex = selected < 0 ? dates.length - 1 : selected;
+    const span = lastVisible - firstVisible + 1;
+    const from = Math.max(-0.5, Math.min(selectedIndex - span / 2, dates.length - 0.5 - span));
+    chartsRef.current.forEach((item) => item.timeScale().setVisibleLogicalRange({ from, to: from + span }));
+  }, [result.date]);
+
+  const resetChartView = useCallback(() => {
+    setChartMenuPosition(null);
+    rangeOwnerRef.current = "daily";
     handledInteractionSequenceRef.current = interactionRef.current.sequence;
-    const timeScale = chart.timeScale();
-    timeScale.applyOptions({ barSpacing: defaultChartBarSpacing });
-    timeScale.scrollToPosition(
-      chartRightOffsetPixels / defaultChartBarSpacing,
-      false,
-    );
-  }, []);
+    centerSelectedDate();
+  }, [centerSelectedDate, rangeOwnerRef]);
 
   useEffect(() => {
     const top = topRef.current;
@@ -538,6 +549,7 @@ export function StudyCharts({
       after: result.has_more_after,
     };
 
+    let resumeSynchronizationFrame: number;
     rangeSynchronizationPausedRef.current = true;
     try {
       result.series.forEach((series, index) => {
@@ -593,7 +605,11 @@ export function StudyCharts({
         });
       });
     } finally {
-      rangeSynchronizationPausedRef.current = false;
+      // Range changes apply on the next frame. Ignore intermediate resize ranges
+      // until both charts have applied the requested viewport.
+      resumeSynchronizationFrame = requestAnimationFrame(() => {
+        rangeSynchronizationPausedRef.current = false;
+      });
     }
 
     relativeStrengthSeriesRef.current.forEach((series) => charts[0].removeSeries(series));
@@ -624,28 +640,19 @@ export function StudyCharts({
     ));
 
     if (visibleTimeRange !== null) {
-      charts[0].timeScale().setVisibleRange(visibleTimeRange);
+      charts.forEach((chart) => chart.timeScale().setVisibleRange(visibleTimeRange));
     } else if (anchor !== undefined) {
-      restoreAnchoredLogicalRange(charts[0], anchor, intervalChanged);
+      charts.forEach((chart) => restoreAnchoredLogicalRange(chart, anchor, intervalChanged));
     } else {
-      const visibleStart = shiftYears(result.date, -1);
-      const visibleEnd = shiftYears(result.date, 1);
-      const firstVisible = dates.findIndex((date) => date >= visibleStart);
-      const lastVisible = dates.findLastIndex((date) => date <= visibleEnd);
-      if (firstVisible >= 0 && lastVisible >= firstVisible) {
-        charts[0].timeScale().setVisibleLogicalRange({
-          from: firstVisible - 0.5,
-          to: lastVisible + 0.5,
-        });
-      } else {
-        charts[0].timeScale().fitContent();
-      }
+      centerSelectedDate();
     }
-    const range = charts[0].timeScale().getVisibleLogicalRange();
-    if (range !== null) charts[1].timeScale().setVisibleLogicalRange(range);
     dataInitializedRef.current = true;
     intervalRef.current = result.interval;
-  }, [datasetKey, result]);
+    return () => {
+      cancelAnimationFrame(resumeSynchronizationFrame);
+      rangeSynchronizationPausedRef.current = false;
+    };
+  }, [centerSelectedDate, datasetKey, result]);
 
   useEffect(() => {
     const charts = chartsRef.current;

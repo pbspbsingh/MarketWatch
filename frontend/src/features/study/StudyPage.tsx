@@ -15,6 +15,7 @@ import {
   Button,
   CircularProgress,
   IconButton,
+  SvgIcon,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -53,7 +54,13 @@ const studyTickerBVisibleKey = "market-watch.study-ticker-b-visible";
 const studyIntervalKey = "market-watch.study-interval";
 
 export function StudyPage() {
-  const { showWeeklyChartOverlay, showWeeklyOverlayAxes, setShowWeeklyChartOverlay } = useAppSettings();
+  const {
+    logarithmicScale,
+    setLogarithmicScale,
+    showWeeklyChartOverlay,
+    showWeeklyOverlayAxes,
+    setShowWeeklyChartOverlay,
+  } = useAppSettings();
   const pageRef = useRef<HTMLElement>(null);
   const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
   const [weeklyChartContext, setWeeklyChartContext] = useState<ChartSyncTarget | null>(null);
@@ -381,6 +388,20 @@ export function StudyPage() {
             onClick={() => setShowWeeklyChartOverlay(!showWeeklyChartOverlay)}
           >
             <CalendarViewWeekIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Logarithmic price scale">
+          <IconButton
+            size="small"
+            type="button"
+            color={logarithmicScale ? "primary" : "default"}
+            aria-label="Toggle logarithmic price scale"
+            aria-pressed={logarithmicScale}
+            onClick={() => setLogarithmicScale(!logarithmicScale)}
+          >
+            <SvgIcon fontSize="small">
+              <text x="12" y="17" textAnchor="middle" fontFamily="serif" fontSize="16" fontWeight="600" fill="currentColor">log</text>
+            </SvgIcon>
           </IconButton>
         </Tooltip>
         <Tooltip title={orientation === "vertical" ? "Switch to side-by-side" : "Switch to top/bottom"}>
