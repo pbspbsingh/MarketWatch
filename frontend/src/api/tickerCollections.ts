@@ -7,7 +7,7 @@ export interface TickerCollectionFile {
 
 export interface TickerCollection {
   version: number;
-  source: { type: "csv"; files: TickerCollectionFile[] };
+  source: { type: "csv"; files: TickerCollectionFile[] } | { type: "pasted" };
   symbols: string[];
   skipped_rows: number;
   created_at: string;
@@ -71,6 +71,18 @@ export async function clearTickerCollection(): Promise<void> {
   if (!response.ok && response.status !== 204) {
     throw new Error(`Failed to clear ticker collection: HTTP ${response.status}`);
   }
+}
+
+export async function pasteTickerCollection(text: string): Promise<TickerCollection> {
+  const response = await fetch("/api/ticker-collections/paste", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load pasted tickers: HTTP ${response.status}`);
+  }
+  return response.json() as Promise<TickerCollection>;
 }
 
 export async function fetchBoundedTickerGroups(

@@ -83,11 +83,19 @@ impl TickerCollectionService {
             return Err(TickerCollectionError::EmptyUpload);
         }
         let collection = parse_csv_files(files);
+        Ok(self.remember_collection(collection))
+    }
+
+    pub fn parse_pasted_text(&self, text: &str) -> TickerCollection {
+        self.remember_collection(parse_pasted_text(text))
+    }
+
+    fn remember_collection(&self, collection: TickerCollection) -> TickerCollection {
         *self
             .last_collection
             .lock()
             .expect("last ticker collection mutex is not poisoned") = Some(collection.clone());
-        Ok(collection)
+        collection
     }
 
     pub async fn groups(
@@ -277,6 +285,29 @@ fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
     }
 }
 
+fn parse_pasted_text(text: &str) -> TickerCollection {
+    let mut seen = HashSet::new();
+    let mut symbols = Vec::new();
+    let mut skipped_rows = 0;
+    for token in text
+        .split(|character: char| character.is_whitespace() || matches!(character, ',' | ';' | '|'))
+        .filter(|token| !token.is_empty())
+    {
+        match symbol_from_line(token) {
+            Some(symbol) if seen.insert(symbol.clone()) => symbols.push(symbol),
+            Some(_) => {}
+            None => skipped_rows += 1,
+        }
+    }
+    TickerCollection {
+        version: 1,
+        source: TickerCollectionSource::Pasted,
+        symbols,
+        skipped_rows,
+        created_at: Utc::now(),
+    }
+}
+
 fn symbol_from_line(line: &str) -> Option<TickerSymbol> {
     let line = line.trim().trim_start_matches('\u{feff}');
     if line.is_empty() || line.starts_with('#') || line.starts_with("//") || line.starts_with("--")
@@ -333,5 +364,32 @@ mod tests {
 
         assert_eq!(collection.symbols, ["AAPL", "MSFT", "NVDA"]);
         assert_eq!(collection.skipped_rows, 4);
+    }
+
+    #[test]
+    fn parses_pasted_tickers_with_mixed_separators_and_normalizes_symbols() {
+        let collection = parse_pasted_text(
+            " \u{feff}\"aapl\",$msft;\r\nNASDAQ:nvda\tbrk.b|brk-b aapl;\u{a0}'TSLA' ",
+        );
+        assert_eq!(
+            collection.symbols,
+            ["AAPL", "MSFT", "NVDA", "BRK.B", "BRK-B", "TSLA"]
+        );
+        assert_eq!(collection.skipped_rows, 0);
+        assert_eq!(
+            serde_json::to_value(collection.source).unwrap(),
+            serde_json::json!({ "type": "pasted" })
+        );
+    }
+
+    #[test]
+    fn counts_invalid_pasted_tokens_without_counting_empty_separators() {
+        let collection = parse_pasted_text("AAPL , ; | \n ??? MSFT N/A NULL");
+        assert_eq!(collection.symbols, ["AAPL", "MSFT"]);
+        assert_eq!(collection.skipped_rows, 3);
+
+        let empty = parse_pasted_text(" ,;|\t\n ");
+        assert!(empty.symbols.is_empty());
+        assert_eq!(empty.skipped_rows, 0);
     }
 }

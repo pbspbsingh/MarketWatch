@@ -20,6 +20,7 @@
   min-height: 1.55rem;
   padding-top: 0.125rem;
   padding-bottom: 0.125rem;
+  padding-right: 1.5rem;
   align-items: center;
   gap: 0.5rem;
 
@@ -46,12 +47,6 @@
   align-items: center;
   gap: 0.25rem;
 
-  & .MuiButton-root {
-    min-width: 0;
-    padding: 0 0.3rem;
-    font-size: 0.6rem;
-  }
-
   & .MuiIconButton-root {
     padding: 0.0625rem;
   }
@@ -71,4 +66,17 @@
 .csv-analyzer-upload-status {
   flex: 1;
   justify-content: center;
+}
+
+.csv-collection-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.csv-collection-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  overflow-wrap: anywhere;
 }

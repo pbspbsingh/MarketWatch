@@ -24,6 +24,11 @@ enum BoundedGroupMode {
     Theme,
 }
 
+#[derive(Deserialize)]
+struct PastedTickersRequest {
+    text: String,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
@@ -31,6 +36,7 @@ pub fn router() -> Router<AppState> {
             get(last_collection).delete(clear_collection),
         )
         .route("/ticker-collections/csv", post(parse_csv))
+        .route("/ticker-collections/paste", post(parse_pasted_tickers))
         .route("/ticker-collections/groups", post(groups))
 }
 
@@ -110,6 +116,19 @@ async fn groups(
         "loaded bounded ticker groups"
     );
     Ok(Json(groups))
+}
+
+async fn parse_pasted_tickers(
+    State(state): State<AppState>,
+    Json(request): Json<PastedTickersRequest>,
+) -> Json<TickerCollection> {
+    let collection = state.ticker_collections.parse_pasted_text(&request.text);
+    info!(
+        symbol_count = collection.symbols.len(),
+        skipped_tokens = collection.skipped_rows,
+        "parsed pasted ticker collection"
+    );
+    Json(collection)
 }
 
 impl From<BoundedGroupMode> for TickerCollectionGroupMode {

@@ -59,7 +59,7 @@ interface TickerLensProps {
   universe: TickerUniverse;
   watchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
-  onBoundedResolution?: (failedCount: number) => void;
+  onBoundedResolution?: (failedSymbols: string[]) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
   metrics?: readonly TickerMetric[];
   metricExtensions?: readonly TickerMetricExtension[];
@@ -392,7 +392,7 @@ export function TickerLens({
                 boundedSymbolsByGroup: new Map(),
               } satisfies GroupsState;
             }
-            onBoundedResolution?.(failed_symbols.length);
+            onBoundedResolution?.(failed_symbols);
             return {
               key: groupsRequestKey,
               resolvedBoundedSymbols: symbols,
