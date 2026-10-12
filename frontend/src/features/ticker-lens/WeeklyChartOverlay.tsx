@@ -126,6 +126,7 @@ function LiveWeeklyChart({
           rightPriceScaleVisible={showAxes}
           timeScaleVisible={showAxes}
           rightOffsetPixels={10}
+          attributionLogo={false}
           onChartContext={onChartContext}
           liveDelta={liveDelta?.symbol === marketDataSymbol(symbol) ? liveDelta : undefined}
         />

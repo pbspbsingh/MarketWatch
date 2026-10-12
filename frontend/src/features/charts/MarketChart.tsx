@@ -89,6 +89,7 @@ interface MarketChartProps {
   rightPriceScaleVisible?: boolean;
   timeScaleVisible?: boolean;
   rightOffsetPixels?: number;
+  attributionLogo?: boolean;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   liveDelta?: MarketChartLiveDelta;
@@ -132,6 +133,7 @@ export function MarketChart({
   rightPriceScaleVisible = true,
   timeScaleVisible = true,
   rightOffsetPixels = chartRightOffsetPixels,
+  attributionLogo = true,
   onChartContext,
   relativeStrength,
   liveDelta,
@@ -200,6 +202,7 @@ export function MarketChart({
     ].forEach((series) => series?.applyOptions({ visible: showRelativeStrength }));
   }, [showRelativeStrength]);
   const chartOptions = useMemo(() => ({
+    layout: { attributionLogo },
     rightPriceScale: {
       visible: rightPriceScaleVisible,
       ...(priceScaleBottomMargin === undefined
@@ -210,7 +213,7 @@ export function MarketChart({
         } }),
     },
     timeScale: { visible: timeScaleVisible, rightOffsetPixels },
-  }), [priceScaleBottomMargin, rightOffsetPixels, rightPriceScaleVisible, timeScaleVisible]);
+  }), [attributionLogo, priceScaleBottomMargin, rightOffsetPixels, rightPriceScaleVisible, timeScaleVisible]);
 
   const updateRelativeStrengthStructure = useCallback((
     structure: MarketChartRelativeStrengthStructure | null | undefined,

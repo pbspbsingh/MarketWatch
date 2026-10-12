@@ -56,6 +56,7 @@ export function StudyWeeklyChart({
       rightPriceScaleVisible={showAxes}
       timeScaleVisible={showAxes}
       rightOffsetPixels={10}
+      attributionLogo={false}
       onChartContext={onChartContext}
       markers={markerDate === undefined ? [] : [{ date: markerDate, kind: "exit", text: result.date }]}
     />
