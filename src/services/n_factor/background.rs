@@ -1,10 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration as StdDuration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration as StdDuration};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use tokio::sync::watch;
 use tracing::{info, warn};
 
@@ -12,20 +8,12 @@ use super::{NFactorService, NFactorStartError};
 use crate::{
     config::NFactorBackgroundConfig,
     models::{TickerSymbol, n_factor::NFactorPhase},
-    store::NFactorCandidate,
 };
 
 const FAILURE_BACKOFF: Duration = Duration::minutes(5);
 const NON_WATCHLIST_DELAY: StdDuration = StdDuration::from_secs(30);
-// Industry mapping updates do not emit watchlist events. Discover newly mapped
-// tickers even when every eligible report is fresh or none are mapped yet.
-const INDUSTRY_MAPPING_RECHECK: Duration = Duration::minutes(30);
-
-struct BackgroundPlan {
-    symbol: Option<TickerSymbol>,
-    next_check: Option<DateTime<Utc>>,
-    pending_tickers: usize,
-}
+// Recheck freshness, failure backoff, and industry mappings without loading a list.
+const CANDIDATE_RECHECK: StdDuration = StdDuration::from_secs(30 * 60);
 
 impl NFactorService {
     pub(crate) fn spawn_background(
@@ -57,50 +45,43 @@ impl NFactorService {
     ) {
         let ai = self.ai.as_ref().expect("background worker requires AI");
         let mut failures = HashMap::new();
-        let mut random = fastrand::Rng::new();
         loop {
             ai.wait_idle(StdDuration::from_secs(u64::from(config.idle_delay_secs)))
                 .await;
             let jobs_changed = self.job_changes.notified();
             tokio::pin!(jobs_changed);
             jobs_changed.as_mut().enable();
-            let candidates = match self
-                .store
-                .n_factor_candidates(config.process_non_watchlist)
-                .await
-            {
-                Ok(candidates) => candidates,
-                Err(error) => {
-                    warn!(error = %format!("{error:#}"), retry_after_secs = 60, "Could not select background N-Factor ticker; retrying later");
-                    tokio::time::sleep(StdDuration::from_secs(60)).await;
-                    continue;
-                }
-            };
             let now = Utc::now();
             failures.retain(|_, deadline| *deadline > now);
-            let active = self
+            let mut excluded = self
                 .jobs
                 .lock()
                 .expect("N-Factor registry lock")
                 .values()
                 .filter(|entry| entry.job.phase.is_active())
                 .map(|entry| entry.job.symbol.clone())
-                .collect::<HashSet<_>>();
-            let mut plan = background_plan(
-                &candidates,
-                &active,
-                &failures,
-                now,
-                config.refresh_days,
-                &mut random,
-            );
-            if let Some(symbol) = plan.symbol {
-                let candidate = candidates
-                    .iter()
-                    .find(|candidate| candidate.symbol == symbol)
-                    .expect("selected ticker is a candidate");
+                .collect::<Vec<_>>();
+            excluded.extend(failures.keys().cloned());
+            let candidate = match self
+                .store
+                .n_factor_candidate(
+                    config.process_non_watchlist,
+                    now - Duration::days(i64::from(config.refresh_days)),
+                    &excluded,
+                    None,
+                )
+                .await
+            {
+                Ok(candidate) => candidate,
+                Err(error) => {
+                    warn!(error = %format!("{error:#}"), retry_after_secs = 60, "Could not select background N-Factor ticker; retrying later");
+                    tokio::time::sleep(StdDuration::from_secs(60)).await;
+                    continue;
+                }
+            };
+            if let Some(candidate) = candidate {
+                let symbol = candidate.symbol.clone();
                 info!(%symbol, last_updated = ?candidate.generated_at, in_watchlist = candidate.in_watchlist,
-                    candidate_tickers = candidates.len(), pending_tickers = plan.pending_tickers,
                     "Selected background N-Factor ticker");
                 // start_job shares the same registry and completion signal as
                 // manual jobs. Await the entire ticker before selecting another.
@@ -134,22 +115,13 @@ impl NFactorService {
                 }
                 continue;
             }
-            let recheck = now + INDUSTRY_MAPPING_RECHECK;
-            plan.next_check = Some(plan.next_check.map_or(recheck, |due| due.min(recheck)));
-            info!(candidate_tickers = candidates.len(), pending_tickers = plan.pending_tickers, active_tickers = active.len(),
-                deferred_tickers = failures.len(), next_check = ?plan.next_check,
-                "No eligible background N-Factor tickers; waiting for expiry, industry mapping recheck, membership changes, or job completion");
-            let wait_due = async {
-                match plan.next_check {
-                    Some(deadline) => {
-                        tokio::time::sleep((deadline - Utc::now()).to_std().unwrap_or_default())
-                            .await
-                    }
-                    None => std::future::pending::<()>().await,
-                }
-            };
+            info!(
+                excluded_tickers = excluded.len(),
+                recheck_secs = CANDIDATE_RECHECK.as_secs(),
+                "No eligible background N-Factor ticker; waiting for recheck, membership changes, or job completion"
+            );
             tokio::select! {
-                () = wait_due => { info!("Background N-Factor refresh or industry mapping recheck deadline reached"); },
+                () = tokio::time::sleep(CANDIDATE_RECHECK) => { info!("Background N-Factor candidate recheck deadline reached"); },
                 () = &mut jobs_changed => { info!("N-Factor job completion woke background worker"); },
                 result = membership_changes.changed() => {
                     if result.is_err() { return; }
@@ -167,233 +139,8 @@ impl NFactorService {
         let cutoff = Utc::now() - Duration::days(i64::from(config.refresh_days));
         Ok(self
             .store
-            .n_factor_candidates(config.process_non_watchlist)
+            .n_factor_candidate(config.process_non_watchlist, cutoff, &[], Some(symbol))
             .await?
-            .into_iter()
-            .any(|candidate| {
-                candidate.symbol == *symbol
-                    && candidate.generated_at.is_none_or(|date| date <= cutoff)
-            }))
-    }
-}
-
-fn background_plan(
-    candidates: &[NFactorCandidate],
-    active: &HashSet<TickerSymbol>,
-    failures: &HashMap<TickerSymbol, DateTime<Utc>>,
-    now: DateTime<Utc>,
-    refresh_days: u32,
-    random: &mut fastrand::Rng,
-) -> BackgroundPlan {
-    let refresh = Duration::days(i64::from(refresh_days));
-    let mut eligible = Vec::new();
-    let mut next_check = None;
-    let mut pending_tickers = 0;
-    for candidate in candidates {
-        let due = candidate
-            .generated_at
-            .map(|date| date + refresh)
-            .unwrap_or(now);
-        // Missing or expired reports remain pending during active jobs and backoff.
-        if due <= now {
-            pending_tickers += 1;
-        }
-        if active.contains(&candidate.symbol) {
-            continue;
-        }
-        let due = failures
-            .get(&candidate.symbol)
-            .copied()
-            .unwrap_or(due)
-            .max(due);
-        if due <= now {
-            eligible.push(candidate);
-        } else {
-            next_check = Some(next_check.map_or(due, |current: DateTime<Utc>| current.min(due)));
-        }
-    }
-    // Watchlists have priority even if a non-watchlist report is older or missing.
-    if eligible.iter().any(|candidate| candidate.in_watchlist) {
-        eligible.retain(|candidate| candidate.in_watchlist);
-    }
-    let oldest = eligible
-        .iter()
-        .map(|candidate| candidate.generated_at)
-        .min();
-    eligible.retain(|candidate| Some(candidate.generated_at) == oldest);
-    let symbol =
-        (!eligible.is_empty()).then(|| eligible[random.usize(0..eligible.len())].symbol.clone());
-    BackgroundPlan {
-        symbol,
-        next_check,
-        pending_tickers,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn candidate(symbol: &str, date: Option<DateTime<Utc>>) -> NFactorCandidate {
-        NFactorCandidate {
-            symbol: TickerSymbol::parse(symbol).unwrap(),
-            generated_at: date,
-            in_watchlist: true,
-        }
-    }
-
-    #[test]
-    fn watchlists_take_priority_and_resume_as_soon_as_they_become_due() {
-        let now = Utc::now();
-        let mut candidates = [
-            candidate("WATCH", Some(now - Duration::days(8))),
-            candidate("OTHER", None),
-        ];
-        candidates[1].in_watchlist = false;
-        let mut random = fastrand::Rng::with_seed(7);
-        let active = HashSet::new();
-        let failures = HashMap::new();
-        assert_eq!(
-            background_plan(&candidates, &active, &failures, now, 7, &mut random)
-                .symbol
-                .unwrap()
-                .as_str(),
-            "WATCH"
-        );
-        candidates[0].generated_at = Some(now);
-        let plan = background_plan(&candidates, &active, &failures, now, 7, &mut random);
-        assert_eq!(plan.symbol.unwrap().as_str(), "OTHER");
-        assert_eq!(plan.next_check, Some(now + Duration::days(7)));
-        assert_eq!(
-            background_plan(
-                &candidates,
-                &active,
-                &failures,
-                now + Duration::days(7),
-                7,
-                &mut random
-            )
-            .symbol
-            .unwrap()
-            .as_str(),
-            "WATCH"
-        );
-    }
-
-    #[test]
-    fn deferred_watchlists_do_not_block_other_tickers_and_keep_their_retry_deadline() {
-        let now = Utc::now();
-        let mut candidates = [candidate("WATCH", None), candidate("OTHER", None)];
-        candidates[1].in_watchlist = false;
-        let retry = now + FAILURE_BACKOFF;
-        let failures = HashMap::from([(TickerSymbol::parse("WATCH").unwrap(), retry)]);
-        let mut random = fastrand::Rng::with_seed(7);
-        let plan = background_plan(&candidates, &HashSet::new(), &failures, now, 7, &mut random);
-        assert_eq!(plan.symbol.unwrap().as_str(), "OTHER");
-        assert_eq!(plan.next_check, Some(retry));
-        assert_eq!(
-            background_plan(
-                &candidates,
-                &HashSet::new(),
-                &failures,
-                retry,
-                7,
-                &mut random
-            )
-            .symbol
-            .unwrap()
-            .as_str(),
-            "WATCH"
-        );
-    }
-
-    #[test]
-    fn missing_reports_are_randomized_ahead_of_old_reports() {
-        let now = Utc::now();
-        let candidates = [
-            candidate("AAA", None),
-            candidate("BBB", None),
-            candidate("OLD", Some(now - Duration::days(50))),
-        ];
-        let mut random = fastrand::Rng::with_seed(7);
-        let mut selected = HashSet::new();
-        for _ in 0..30 {
-            let plan = background_plan(
-                &candidates,
-                &HashSet::new(),
-                &HashMap::new(),
-                now,
-                7,
-                &mut random,
-            );
-            selected.insert(plan.symbol.unwrap().as_str().to_owned());
-        }
-        assert_eq!(
-            selected,
-            HashSet::from(["AAA".to_owned(), "BBB".to_owned()])
-        );
-    }
-
-    #[test]
-    fn oldest_report_wins_and_equal_dates_are_randomized() {
-        let now = Utc::now();
-        let oldest = now - Duration::days(20);
-        let candidates = [
-            candidate("AAA", Some(oldest)),
-            candidate("BBB", Some(oldest)),
-            candidate("NEW", Some(now - Duration::days(10))),
-        ];
-        let mut random = fastrand::Rng::with_seed(7);
-        let selected = (0..30)
-            .map(|_| {
-                background_plan(
-                    &candidates,
-                    &HashSet::new(),
-                    &HashMap::new(),
-                    now,
-                    7,
-                    &mut random,
-                )
-                .symbol
-                .unwrap()
-            })
-            .collect::<HashSet<_>>();
-        assert_eq!(
-            selected,
-            HashSet::from([
-                TickerSymbol::parse("AAA").unwrap(),
-                TickerSymbol::parse("BBB").unwrap()
-            ])
-        );
-    }
-
-    #[test]
-    fn fresh_reports_sleep_until_expiry_and_failed_or_active_tickers_are_skipped() {
-        let now = Utc::now();
-        let candidates = [
-            candidate("FRESH", Some(now - Duration::days(2))),
-            candidate("FAILED", None),
-            candidate("ACTIVE", None),
-        ];
-        let active = HashSet::from([TickerSymbol::parse("ACTIVE").unwrap()]);
-        let retry = now + Duration::minutes(5);
-        let failures = HashMap::from([(TickerSymbol::parse("FAILED").unwrap(), retry)]);
-        let mut random = fastrand::Rng::with_seed(7);
-        let plan = background_plan(&candidates, &active, &failures, now, 7, &mut random);
-        assert!(plan.symbol.is_none());
-        assert_eq!(plan.next_check, Some(retry));
-        let plan = background_plan(&candidates, &active, &failures, retry, 7, &mut random);
-        assert_eq!(plan.symbol.unwrap().as_str(), "FAILED");
-        let plan = background_plan(
-            &candidates[..1],
-            &HashSet::new(),
-            &HashMap::new(),
-            now,
-            7,
-            &mut random,
-        );
-        assert_eq!(plan.next_check, Some(now + Duration::days(5)));
-        let empty = background_plan(&[], &HashSet::new(), &HashMap::new(), now, 7, &mut random);
-        assert!(empty.symbol.is_none() && empty.next_check.is_none());
+            .is_some())
     }
 }

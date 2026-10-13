@@ -3,7 +3,6 @@ use crate::models::TickerSymbol;
 use crate::models::n_factor::{NFactorReport, NewsSource};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 
 pub(crate) struct NFactorCandidate {
     pub symbol: TickerSymbol,
@@ -28,43 +27,59 @@ impl Store {
         .collect()
     }
 
-    pub(crate) async fn n_factor_candidates(
+    pub(crate) async fn n_factor_candidate(
         &self,
         process_non_watchlist: bool,
-    ) -> anyhow::Result<Vec<NFactorCandidate>> {
-        let rows = sqlx::query!(
-            r#"SELECT DISTINCT c.symbol AS "symbol!",
-               EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS "in_watchlist!: bool",
-               json_extract(r.payload, '$.generated_at') AS "generated_at?: String"
-               FROM industry_membership_tickers c
-               LEFT JOIN n_factor_reports r ON r.symbol = c.symbol
-               WHERE (? OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
-               AND NOT EXISTS (
-                   SELECT 1 FROM industry_membership_tickers im
-                   WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'
-               )"#,
+        cutoff: DateTime<Utc>,
+        excluded: &[TickerSymbol],
+        // Restrict the same query to one ticker when rechecking a running job.
+        symbol: Option<&TickerSymbol>,
+    ) -> anyhow::Result<Option<NFactorCandidate>> {
+        let cutoff = cutoff.to_rfc3339();
+        let excluded = serde_json::to_string(excluded)?;
+        let symbol = symbol.map(TickerSymbol::as_str);
+        let row = sqlx::query!(
+            r#"WITH candidates AS (
+                   SELECT DISTINCT c.symbol,
+                       EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,
+                       (SELECT json_extract(r.payload, '$.generated_at')
+                        FROM n_factor_reports r WHERE r.symbol = c.symbol
+                        ORDER BY julianday(json_extract(r.payload, '$.generated_at')) DESC
+                        LIMIT 1) AS generated_at
+                   FROM industry_membership_tickers c
+                   WHERE (?1 OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
+                       AND (?4 IS NULL OR c.symbol = ?4)
+                       AND NOT EXISTS (
+                           SELECT 1 FROM industry_membership_tickers im
+                           WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'
+                       )
+                       AND NOT EXISTS (SELECT 1 FROM json_each(?3) WHERE value = c.symbol)
+               )
+               SELECT symbol AS "symbol!", in_watchlist AS "in_watchlist!: bool",
+                   generated_at AS "generated_at?: String"
+               FROM candidates
+               WHERE generated_at IS NULL OR julianday(generated_at) <= julianday(?2)
+               ORDER BY in_watchlist DESC, julianday(generated_at), RANDOM()
+               LIMIT 1"#,
             process_non_watchlist,
+            cutoff,
+            excluded,
+            symbol,
         )
-        .fetch_all(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
-        let mut latest = HashMap::<TickerSymbol, NFactorCandidate>::new();
-        for row in rows {
-            let symbol = TickerSymbol::try_from(row.symbol)?;
-            let generated_at = row
-                .generated_at
-                .map(|value| value.parse::<DateTime<Utc>>())
-                .transpose()
-                .context("invalid N-Factor report timestamp")?;
-            latest
-                .entry(symbol.clone())
-                .and_modify(|current| current.generated_at = current.generated_at.max(generated_at))
-                .or_insert(NFactorCandidate {
-                    symbol,
-                    generated_at,
-                    in_watchlist: row.in_watchlist,
-                });
-        }
-        Ok(latest.into_values().collect())
+        row.map(|row| {
+            Ok(NFactorCandidate {
+                symbol: TickerSymbol::try_from(row.symbol)?,
+                generated_at: row
+                    .generated_at
+                    .map(|value| value.parse::<DateTime<Utc>>())
+                    .transpose()
+                    .context("invalid N-Factor report timestamp")?,
+                in_watchlist: row.in_watchlist,
+            })
+        })
+        .transpose()
     }
 
     pub async fn n_factor_report(
@@ -161,50 +176,71 @@ mod tests {
             )
             .await
             .unwrap();
-        let watchlist_only = store.n_factor_candidates(false).await.unwrap();
-        assert_eq!(watchlist_only.len(), 1);
-        assert_eq!(watchlist_only[0].symbol.as_str(), "WATCH");
-        assert!(watchlist_only[0].in_watchlist);
-        let all = store.n_factor_candidates(true).await.unwrap();
-        let mut symbols = all
-            .iter()
-            .map(|candidate| candidate.symbol.as_str())
-            .collect::<Vec<_>>();
-        symbols.sort_unstable();
-        assert_eq!(symbols, ["INDUSTRY", "WATCH"]);
-        assert!(
-            all.iter()
-                .all(|candidate| candidate.in_watchlist == (candidate.symbol.as_str() == "WATCH"))
-        );
+        let cutoff = Utc::now() - chrono::Duration::days(7);
+        let watch = store
+            .n_factor_candidate(false, cutoff, &[], None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(watch.symbol.as_str(), "WATCH");
+        assert!(watch.in_watchlist);
+        let all = store
+            .n_factor_candidate(true, cutoff, &[], None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(all.symbol.as_str(), "WATCH");
+        let other = store
+            .n_factor_candidate(true, cutoff, std::slice::from_ref(&watch.symbol), None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(other.symbol.as_str(), "INDUSTRY");
+        assert!(!other.in_watchlist);
         // Rechecking picks up watchlist changes and newly learned ETF mappings.
         store
-            .remove_watchlist_symbol(watchlist.id, &TickerSymbol::parse("WATCH").unwrap())
+            .remove_watchlist_symbol(watchlist.id, &watch.symbol)
             .await
             .unwrap();
-        assert!(store.n_factor_candidates(false).await.unwrap().is_empty());
         assert!(
             store
-                .n_factor_candidates(true)
+                .n_factor_candidate(false, cutoff, &[], None)
                 .await
                 .unwrap()
-                .iter()
-                .all(|candidate| !candidate.in_watchlist)
+                .is_none()
+        );
+        assert!(
+            !store
+                .n_factor_candidate(true, cutoff, &[], None)
+                .await
+                .unwrap()
+                .unwrap()
+                .in_watchlist
         );
         store
-            .add_ticker_industry(
-                "exchangetradedfund",
-                "Exchange Traded Fund",
-                &TickerSymbol::parse("INDUSTRY").unwrap(),
-            )
+            .add_ticker_industry("exchangetradedfund", "Exchange Traded Fund", &other.symbol)
             .await
             .unwrap();
         assert!(
-            !store
-                .n_factor_candidates(true)
+            store
+                .n_factor_candidate(true, cutoff, &[], Some(&other.symbol))
                 .await
                 .unwrap()
-                .iter()
-                .any(|candidate| candidate.symbol.as_str() == "INDUSTRY")
+                .is_none()
+        );
+        // A newly added watchlist ticker is selected on the very next query.
+        store
+            .add_watchlist_symbol(watchlist.id, &watch.symbol)
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .n_factor_candidate(false, cutoff, &[], None)
+                .await
+                .unwrap()
+                .unwrap()
+                .symbol,
+            watch.symbol
         );
     }
 
@@ -299,24 +335,145 @@ mod tests {
         report.source = NewsSource::Finviz;
         report.generated_at = now;
         store.save_n_factor_report(&report).await.unwrap();
-        let candidates = store.n_factor_candidates(false).await.unwrap();
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(
-            candidates
-                .iter()
-                .find(|candidate| candidate.symbol == symbol)
-                .unwrap()
-                .generated_at,
-            Some(now)
-        );
+        let cutoff = now - chrono::Duration::days(7);
+        let missing = store
+            .n_factor_candidate(false, cutoff, &[], None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(missing.symbol.as_str(), "BBB");
+        assert!(missing.generated_at.is_none());
         assert!(
-            candidates
-                .iter()
-                .find(|candidate| candidate.symbol.as_str() == "BBB")
+            store
+                .n_factor_candidate(false, cutoff, &[missing.symbol], None)
+                .await
                 .unwrap()
-                .generated_at
                 .is_none()
         );
+        assert!(
+            store
+                .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // Both sources must be stale before the ticker becomes eligible again.
+        report.generated_at = now - chrono::Duration::days(8);
+        store.save_n_factor_report(&report).await.unwrap();
+        let stale = store
+            .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stale.generated_at, Some(report.generated_at));
         assert_eq!(store.n_factor_reports(&symbol).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn candidate_prioritizes_watchlists_then_missing_and_oldest_reports() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let watchlist = store.watchlists().await.unwrap().remove(0);
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::days(7);
+        let watch = TickerSymbol::parse("WATCH").unwrap();
+        let fresh = TickerSymbol::parse("FRESH").unwrap();
+        for symbol in ["WATCH", "FRESH", "OTHER"] {
+            sqlx::query!(
+                "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
+                symbol,
+            )
+            .execute(&store.pool)
+            .await
+            .unwrap();
+            let symbol = TickerSymbol::parse(symbol).unwrap();
+            store
+                .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+                .await
+                .unwrap();
+            if symbol.as_str() != "OTHER" {
+                store
+                    .add_watchlist_symbol(watchlist.id, &symbol)
+                    .await
+                    .unwrap();
+            }
+        }
+        let mut report = NFactorReport {
+            symbol: watch.clone(),
+            source: NewsSource::Finviz,
+            generated_at: now - chrono::Duration::days(10),
+            news_fetched_at: now,
+            model: "test".to_owned(),
+            prompt_version: 3,
+            overview: "Saved".to_owned(),
+            findings: Vec::new(),
+            news: Vec::new(),
+            coverage: None,
+        };
+        store.save_n_factor_report(&report).await.unwrap();
+        report.symbol = fresh.clone();
+        report.generated_at = now;
+        store.save_n_factor_report(&report).await.unwrap();
+        // A stale watchlist report outranks a missing non-watchlist report.
+        assert_eq!(
+            store
+                .n_factor_candidate(true, cutoff, &[], None)
+                .await
+                .unwrap()
+                .unwrap()
+                .symbol,
+            watch
+        );
+        // Running jobs and failures in backoff are excluded in SQL.
+        let excluded = std::slice::from_ref(&watch);
+        let fallback = store
+            .n_factor_candidate(true, cutoff, excluded, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(fallback.symbol.as_str(), "OTHER");
+        assert!(
+            store
+                .n_factor_candidate(false, cutoff, excluded, None)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // The oldest eligible watchlist report wins.
+        report.generated_at = now - chrono::Duration::days(20);
+        store.save_n_factor_report(&report).await.unwrap();
+        assert_eq!(
+            store
+                .n_factor_candidate(true, cutoff, &[], None)
+                .await
+                .unwrap()
+                .unwrap()
+                .symbol,
+            fresh
+        );
+        // Report expiry includes the exact refresh boundary.
+        report.generated_at = cutoff;
+        store.save_n_factor_report(&report).await.unwrap();
+        assert!(
+            store
+                .n_factor_candidate(false, cutoff, &[], Some(&fresh))
+                .await
+                .unwrap()
+                .is_some()
+        );
+        // A new watchlist addition with no report takes priority immediately.
+        let newcomer = fallback.symbol;
+        store
+            .add_watchlist_symbol(watchlist.id, &newcomer)
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .n_factor_candidate(true, cutoff, &[], None)
+                .await
+                .unwrap()
+                .unwrap()
+                .symbol,
+            newcomer
+        );
     }
 }
