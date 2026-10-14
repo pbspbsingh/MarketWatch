@@ -13,8 +13,36 @@ const hooks = registerHooks({
     }
   },
 });
-const { synchronizeWeeklyOverlayCrosshairs, synchronizeDailyWeeklyRanges } = await import("../src/components/lightweight-chart/chartSync.ts");
+const { synchronizeWeeklyOverlayCrosshairs, synchronizeDailyWeeklyRanges, subscribeChartViewport } = await import("../src/components/lightweight-chart/chartSync.ts");
 hooks.deregister();
+
+test("viewport persistence saves the final zoom before immediate chart disposal", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { clearTimeout };
+  try {
+    let handler;
+    let disposed = false;
+    let barSpacing = 6;
+    const saved = [];
+    const timeScale = {
+      options: () => ({ barSpacing }),
+      subscribeVisibleLogicalRangeChange: (listener) => { handler = listener; },
+      unsubscribeVisibleLogicalRangeChange: () => { handler = undefined; },
+    };
+    const cleanup = subscribeChartViewport({
+      chart: { timeScale: () => timeScale },
+      isDisposed: () => disposed,
+    }, (viewport) => saved.push(viewport));
+    barSpacing = 18;
+    handler();
+    disposed = true;
+    cleanup();
+    assert.deepEqual(saved, [{ barSpacing: 18 }]);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
 
 function target(dates) {
   const handlers = new Set();

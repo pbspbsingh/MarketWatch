@@ -421,6 +421,10 @@ export function subscribeChartViewport(
     const viewport = {
       barSpacing: timeScale.options().barSpacing,
     };
+    if (debounceMs === 0) {
+      listener(viewport);
+      return;
+    }
     window.clearTimeout(timeout);
     timeout = window.setTimeout(() => {
       timeout = undefined;

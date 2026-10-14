@@ -9,6 +9,7 @@ interface ChartContextMenuProps {
   position: ChartMenuPosition | null;
   onClose: () => void;
   onResetView: () => void;
+  resetLabel?: string;
   onRefreshCandles?: () => void;
 }
 
@@ -16,6 +17,7 @@ export function ChartContextMenu({
   position,
   onClose,
   onResetView,
+  resetLabel = "Reset chart view",
   onRefreshCandles,
 }: ChartContextMenuProps) {
   return (
@@ -25,7 +27,7 @@ export function ChartContextMenu({
       anchorReference="anchorPosition"
       anchorPosition={position ?? undefined}
     >
-      <MenuItem onClick={onResetView}>Reset chart view</MenuItem>
+      <MenuItem onClick={onResetView}>{resetLabel}</MenuItem>
       {onRefreshCandles !== undefined && (
         <MenuItem onClick={onRefreshCandles}>Refresh Yahoo candles</MenuItem>
       )}

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -15,7 +16,20 @@ import { IconButton } from "@mui/material";
 import { marketDataSymbol } from "../../api/marketChart";
 import { MarketChartLiveClient, type MarketChartLiveDelta } from "../../api/marketChartLive";
 import { readChartViewport } from "./chartViewport";
-import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
+import {
+  subscribeChartViewport,
+  type ChartSyncTarget,
+  type ChartViewport,
+} from "../../components/lightweight-chart/chartSync";
+import {
+  readStoredChartViewport,
+  writeStoredChartViewport,
+} from "../../components/lightweight-chart/chartViewportStorage";
+import {
+  ChartContextMenu,
+  type ChartMenuPosition,
+} from "../../components/lightweight-chart/ChartContextMenu";
+import { defaultChartBarSpacing } from "../../components/lightweight-chart/chartOptions";
 import "./weekly-chart-overlay.css";
 
 interface WeeklyChartOverlayProps {
@@ -49,6 +63,7 @@ const MarketChartContainer = lazy(() =>
 const defaultRect: Rect = { x: 16, y: 16, width: 420, height: 290 };
 const minimumWidth = 280;
 const minimumHeight = 200;
+const overlayViewportKey = "market-watch.weekly-chart-overlay.viewport";
 
 function readRect(key: string): Rect | undefined {
   try {
@@ -81,17 +96,64 @@ export function WeeklyChartOverlay({
   onChartContext,
   onClose,
 }: WeeklyChartOverlayProps) {
-  const [initialViewport] = useState(() => readChartViewport("W"));
+  const [initialViewport, setInitialViewport] = useState(
+    () => readStoredChartViewport(overlayViewportKey) ?? readChartViewport("W"),
+  );
+  const viewportRef = useRef<ChartViewport | undefined>(undefined);
+  const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
+  const [chartMenuPosition, setChartMenuPosition] = useState<ChartMenuPosition | null>(null);
+  const saveViewport = useCallback((viewport: ChartViewport) => {
+    if (viewport.barSpacing === viewportRef.current?.barSpacing) return;
+    viewportRef.current = viewport;
+    writeStoredChartViewport(overlayViewportKey, viewport);
+    setInitialViewport(viewport);
+  }, []);
+  const handleChartContext = useCallback((context: ChartSyncTarget | null) => {
+    setChartMenuPosition(null);
+    setChartContext(context);
+    onChartContext(context);
+  }, [onChartContext]);
+
+  useEffect(() => {
+    if (chartContext === null || chartContext.isDisposed()) return;
+    saveViewport({ barSpacing: chartContext.chart.timeScale().options().barSpacing });
+    // Save immediately so closing or minimizing cannot discard the latest zoom.
+    return subscribeChartViewport(chartContext, saveViewport);
+  }, [chartContext, saveViewport]);
+
+  const openChartMenu = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (chartContext === null || chartContext.isDisposed()) return;
+    setChartMenuPosition({ left: event.clientX, top: event.clientY });
+  };
+
+  const resetZoom = () => {
+    setChartMenuPosition(null);
+    if (chartContext === null || chartContext.isDisposed()) return;
+    const viewport = { barSpacing: defaultChartBarSpacing };
+    chartContext.chart.timeScale().applyOptions(viewport);
+    saveViewport(viewport);
+  };
+
   return (
-    <WeeklyChartOverlayFrame container={container} chartStage={chartStage} symbol={symbol} onClose={onClose}>
-      <LiveWeeklyChart
-        symbol={symbol}
-        tradingViewSymbol={tradingViewSymbol}
-        showAxes={showAxes}
-        initialViewport={initialViewport}
-        onChartContext={onChartContext}
+    <>
+      <WeeklyChartOverlayFrame container={container} chartStage={chartStage} symbol={symbol} onClose={onClose} onContextMenu={openChartMenu}>
+        <LiveWeeklyChart
+          symbol={symbol}
+          tradingViewSymbol={tradingViewSymbol}
+          showAxes={showAxes}
+          initialViewport={initialViewport}
+          onChartContext={handleChartContext}
+        />
+      </WeeklyChartOverlayFrame>
+      <ChartContextMenu
+        position={chartMenuPosition}
+        onClose={() => setChartMenuPosition(null)}
+        onResetView={resetZoom}
+        resetLabel="Reset zoom"
       />
-    </WeeklyChartOverlayFrame>
+    </>
   );
 }
 
@@ -143,10 +205,12 @@ export function WeeklyChartOverlayFrame({
   onClose,
   storageKey = "market-watch.weekly-chart-overlay",
   onChartInteraction,
+  onContextMenu,
   children,
 }: Pick<WeeklyChartOverlayProps, "container" | "chartStage" | "symbol" | "onClose"> & {
   storageKey?: string;
   onChartInteraction?: () => void;
+  onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const positionKey = `${storageKey}.lens-rect`;
@@ -281,6 +345,7 @@ export function WeeklyChartOverlayFrame({
         className="weekly-chart-overlay-body"
         onPointerDownCapture={onChartInteraction}
         onWheelCapture={onChartInteraction}
+        onContextMenu={onContextMenu}
       >
         {children}
       </div>}
