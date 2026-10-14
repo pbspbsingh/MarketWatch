@@ -177,6 +177,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_live.clone(),
         market_repositioning_dates.clone(),
         volume_run_rate,
+        &config.market,
     ));
     let market_explorer = Arc::new(MarketExplorerService::new(store.clone(), yahoo.clone()));
     let sector_analysis = Arc::new(SectorAnalysisService::new(

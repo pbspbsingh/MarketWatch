@@ -47,6 +47,7 @@ export type MarketChartLoadStatus = "loading" | "ready" | "error";
 
 interface MarketChartContainerProps {
   volumeRunRate?: VolumeRunRateControl;
+  showCandleReadout?: boolean;
   symbol: string;
   companyName?: string;
   companyNameHref?: string;
@@ -80,6 +81,7 @@ const automaticHistoryCheckDelayMs = 500;
 
 export function MarketChartContainer({
   volumeRunRate,
+  showCandleReadout = false,
   symbol,
   companyName,
   companyNameHref,
@@ -374,6 +376,7 @@ export function MarketChartContainer({
           key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
           volumeRunRate={volumeRunRate}
+          showCandleReadout={showCandleReadout}
           companyName={companyName}
           companyNameHref={companyNameHref}
           tradingViewSymbol={tradingViewSymbol}

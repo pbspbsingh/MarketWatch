@@ -84,30 +84,6 @@
   pointer-events: none;
 }
 
-.study-chart-readout {
-  display: flex;
-  min-width: 0;
-  margin-left: auto;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0.15rem 0.35rem;
-  border-radius: 0.2rem;
-  background: color-mix(in srgb, var(--color-canvas) 75%, transparent);
-  font-size: 0.65rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  pointer-events: none;
-
-  & > span {
-    white-space: nowrap;
-  }
-}
-
-.study-chart-readout-label {
-  color: var(--color-muted);
-}
-
 .study-chart-labels {
   display: flex;
   min-width: 0;

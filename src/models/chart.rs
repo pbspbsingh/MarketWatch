@@ -4,7 +4,9 @@ use std::collections::HashSet;
 use thiserror::Error;
 
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
-use super::{DailyCandle, TickerSymbol};
+use super::{
+    DailyCandle, TickerSymbol, average_daily_range_percent, average_volume, extension_from_50_sma,
+};
 
 const DAILY_MA_PERIODS: [usize; 6] = [5, 10, 20, 50, 150, 200];
 const WEEKLY_EMA_PERIODS: [usize; 3] = [5, 10, 20];
@@ -69,6 +71,20 @@ pub struct MarketChartSeries {
     pub points: Vec<MarketChartPoint>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ChartIndicatorPeriods {
+    pub adr_sessions: usize,
+    pub average_volume_sessions: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MarketChartIndicators {
+    pub date: NaiveDate,
+    pub adr_percent: Option<f64>,
+    pub extension_from_50_sma: Option<f64>,
+    pub average_volume: Option<i64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MarketChartSnapshot {
     pub symbol: TickerSymbol,
@@ -76,6 +92,7 @@ pub struct MarketChartSnapshot {
     pub candles: Vec<MarketChartCandle>,
     pub moving_averages: Vec<MarketChartSeries>,
     pub volume_average: MarketChartSeries,
+    pub indicators: Vec<MarketChartIndicators>,
     pub relative_strength: Option<MarketChartRelativeStrength>,
     pub earliest_date: Option<NaiveDate>,
     pub latest_date: Option<NaiveDate>,
@@ -273,6 +290,53 @@ fn mark_volume_events(
     candles
 }
 
+// Always calculate daily indicators from history ending at the hovered bar.
+// A weekly bar uses its last available trading day, including partial weeks.
+pub fn market_chart_indicators(
+    daily: &[MarketChartCandle],
+    candles: &[MarketChartCandle],
+    interval: MarketChartInterval,
+    periods: ChartIndicatorPeriods,
+) -> Vec<MarketChartIndicators> {
+    let ChartIndicatorPeriods {
+        adr_sessions,
+        average_volume_sessions,
+    } = periods;
+    let daily = daily
+        .iter()
+        .map(|candle| DailyCandle {
+            market_date: candle.date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume,
+        })
+        .collect::<Vec<_>>();
+    candles
+        .iter()
+        .map(|candle| {
+            let end = match interval {
+                MarketChartInterval::Daily => candle.date,
+                MarketChartInterval::Weekly => candle.date + chrono::Days::new(6),
+            };
+            let history = &daily[..daily.partition_point(|day| day.market_date <= end)];
+            let adr_history = &history[history.len().saturating_sub(adr_sessions)..];
+            let volume_history = &history[history.len().saturating_sub(average_volume_sessions)..];
+            MarketChartIndicators {
+                date: candle.date,
+                adr_percent: (adr_history.len() == adr_sessions)
+                    .then(|| average_daily_range_percent(adr_history)),
+                extension_from_50_sma: (adr_history.len() == adr_sessions)
+                    .then(|| extension_from_50_sma(history, adr_sessions))
+                    .flatten(),
+                average_volume: (volume_history.len() == average_volume_sessions)
+                    .then(|| average_volume(volume_history)),
+            }
+        })
+        .collect()
+}
+
 pub const fn market_chart_volume_average_period(interval: MarketChartInterval) -> usize {
     match interval {
         MarketChartInterval::Daily => DAILY_VOLUME_AVERAGE_PERIOD,
@@ -447,6 +511,77 @@ pub fn validate_market_chart_candle(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hover_indicators_use_configured_daily_history_without_future_candles() {
+        let start = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        let daily = (0..65)
+            .map(|day| {
+                let close = 100.0 + day as f64;
+                MarketChartCandle {
+                    date: start + chrono::Days::new(day),
+                    open: close,
+                    high: close + 2.0,
+                    low: close - 2.0,
+                    close,
+                    volume: (day as i64 + 1) * 100,
+                    volume_event: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let points = market_chart_indicators(
+            &daily,
+            &daily,
+            MarketChartInterval::Daily,
+            ChartIndicatorPeriods {
+                adr_sessions: 3,
+                average_volume_sessions: 4,
+            },
+        );
+        assert_eq!(points[1].adr_percent, None);
+        assert_eq!(points[2].average_volume, None);
+        assert_eq!(points[3].average_volume, Some(250));
+        assert_eq!(points[48].extension_from_50_sma, None);
+        assert_eq!(points[49].average_volume, Some(4_850));
+        assert!((points[49].extension_from_50_sma.unwrap() - 6.125).abs() < 1e-10);
+        let expected_adr = 100.0 * (4.0 / 145.0 + 4.0 / 146.0 + 4.0 / 147.0) / 3.0;
+        assert!((points[49].adr_percent.unwrap() - expected_adr).abs() < 1e-10);
+
+        let prefix = market_chart_indicators(
+            &daily[..50],
+            &daily[..50],
+            MarketChartInterval::Daily,
+            ChartIndicatorPeriods {
+                adr_sessions: 3,
+                average_volume_sessions: 4,
+            },
+        );
+        assert_eq!(&points[..50], prefix.as_slice());
+
+        let weekly = crate::models::chart::aggregate_market_weeks(&daily).unwrap();
+        let weekly_points = market_chart_indicators(
+            &daily,
+            &weekly,
+            MarketChartInterval::Weekly,
+            ChartIndicatorPeriods {
+                adr_sessions: 3,
+                average_volume_sessions: 4,
+            },
+        );
+        for point in weekly_points {
+            let last_daily = points
+                .iter()
+                .rfind(|day| day.date.iso_week() == point.date.iso_week())
+                .unwrap();
+            assert_eq!(
+                point,
+                MarketChartIndicators {
+                    date: point.date,
+                    ..last_daily.clone()
+                }
+            );
+        }
+    }
+
     use super::*;
 
     fn candles(count: u32) -> Vec<MarketChartCandle> {

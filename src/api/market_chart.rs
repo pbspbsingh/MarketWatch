@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::models::chart::{
-    MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength, MarketChartSeries,
-    MarketChartSnapshot,
+    MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartRelativeStrength,
+    MarketChartSeries, MarketChartSnapshot,
 };
 use crate::models::{TickerSymbol, YahooSymbol};
 use crate::providers::YahooError;
@@ -82,6 +82,7 @@ struct LiveChartDelta {
     candle: MarketChartCandle,
     moving_averages: Vec<MarketChartSeries>,
     volume_average: MarketChartSeries,
+    indicators: Option<MarketChartIndicators>,
     relative_strength: Option<MarketChartRelativeStrength>,
 }
 
@@ -100,6 +101,7 @@ struct LiveSessionDelta {
     session: LiveSessionKind,
     candle: Option<MarketChartCandle>,
     price: f64,
+    indicators: Option<MarketChartIndicators>,
 }
 
 #[derive(Serialize)]
@@ -268,7 +270,13 @@ async fn handle_live_chart_socket(
                         chart.interval == MarketChartInterval::Daily
                             && YahooSymbol::from(&chart.symbol) == *update.symbol()
                     }) {
-                        let delta = session_delta(chart, &update);
+                        let mut delta = session_delta(chart, &update);
+                        if let YahooLiveUpdate::PreMarket(update) = &update {
+                            match market_chart.pre_market_indicators(&chart.symbol, &update.candle).await {
+                                Ok(indicators) => delta.indicators = indicators,
+                                Err(error) => warn!(symbol = %chart.symbol, %error, "failed to calculate pre-market candle indicators"),
+                            }
+                        }
                         if !send_live_event(
                             &mut socket,
                             LiveChartEvent::Session { request_id, delta },
@@ -504,6 +512,7 @@ fn snapshot_delta(
             .map(last_only)
             .collect(),
         volume_average: last_only(snapshot.volume_average),
+        indicators: snapshot.indicators.into_iter().next_back(),
         relative_strength,
     })
 }
@@ -517,6 +526,7 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
             session: LiveSessionKind::PreMarket,
             candle: Some(MarketChartCandle::from(&update.candle)),
             price: update.candle.close,
+            indicators: None,
         },
         YahooLiveUpdate::PostMarket(update) => LiveSessionDelta {
             chart_id: chart.chart_id.clone(),
@@ -525,6 +535,7 @@ fn session_delta(chart: &LiveChartRequest, update: &YahooLiveUpdate) -> LiveSess
             session: LiveSessionKind::PostMarket,
             candle: None,
             price: update.price,
+            indicators: None,
         },
         YahooLiveUpdate::Regular(_) | YahooLiveUpdate::Volume(_) => {
             unreachable!("non-session updates use separate events")
@@ -682,6 +693,12 @@ mod tests {
             }],
             moving_averages: vec![series.clone()],
             volume_average: series,
+            indicators: vec![MarketChartIndicators {
+                date: date(16),
+                adr_percent: Some(2.0),
+                extension_from_50_sma: Some(1.5),
+                average_volume: Some(900),
+            }],
             relative_strength: None,
             earliest_date: Some(date(16)),
             latest_date: Some(date(16)),
@@ -701,6 +718,11 @@ mod tests {
         assert_eq!(delta.moving_averages[0].points.len(), 1);
         assert_eq!(delta.moving_averages[0].points[0].date, date(16));
         assert_eq!(delta.volume_average.points.len(), 1);
+        let indicators = delta.indicators.unwrap();
+        assert_eq!(indicators.date, date(16));
+        assert_eq!(indicators.adr_percent, Some(2.0));
+        assert_eq!(indicators.extension_from_50_sma, Some(1.5));
+        assert_eq!(indicators.average_volume, Some(900));
     }
 
     #[test]

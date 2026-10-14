@@ -2,6 +2,7 @@ import {
   marketDataSymbol,
   type MarketChartCandle,
   type MarketChartInterval,
+  type MarketChartIndicators,
   type MarketChartRelativeStrength,
   type MarketChartSeries,
 } from "./marketChart";
@@ -23,6 +24,7 @@ export interface MarketChartLiveDelta {
   moving_averages: MarketChartSeries[];
   volume_average: MarketChartSeries;
   relative_strength: MarketChartRelativeStrength | null;
+  indicators: MarketChartIndicators | null;
 }
 
 export interface MarketChartSessionDelta {
@@ -32,6 +34,7 @@ export interface MarketChartSessionDelta {
   session: "pre_market" | "post_market";
   candle: MarketChartCandle | null;
   price: number;
+  indicators: MarketChartIndicators | null;
 }
 
 interface LiveChartClientOptions {
@@ -160,6 +163,7 @@ function isSessionDelta(delta: MarketChartSessionDelta): boolean {
     && /^\d{4}-\d{2}-\d{2}$/.test(delta.date)
     && (delta.session === "pre_market" || delta.session === "post_market")
     && Number.isFinite(delta.price)
+    && (delta.indicators === null || isIndicators(delta.indicators) && delta.indicators.date === delta.date)
     && (delta.session === "pre_market" ? isCandle(delta.candle) : delta.candle === null);
 }
 
@@ -169,7 +173,15 @@ function isLiveDelta(delta: MarketChartLiveDelta): boolean {
     && (delta.interval === "daily" || delta.interval === "weekly")
     && isCandle(delta.candle)
     && Array.isArray(delta.moving_averages)
-    && Array.isArray(delta.volume_average?.points);
+    && Array.isArray(delta.volume_average?.points)
+    && (delta.indicators === null || isIndicators(delta.indicators) && delta.indicators.date === delta.candle.date);
+}
+
+function isIndicators(value: MarketChartIndicators | null | undefined): value is MarketChartIndicators {
+  return value !== null && value !== undefined
+    && /^\d{4}-\d{2}-\d{2}$/.test(value.date)
+    && [value.adr_percent, value.extension_from_50_sma, value.average_volume]
+      .every((metric) => metric === null || Number.isFinite(metric));
 }
 
 function isCandle(candle: MarketChartCandle | null | undefined): candle is MarketChartCandle {

@@ -75,7 +75,7 @@ import {
 } from "../charts/relativeStrengthSeries";
 import { chartCompanyNameLabel } from "../charts/chartLabels";
 import { shiftYears } from "./studyDates";
-import { StudyChartReadout } from "./StudyChartReadout";
+import { ChartCandleReadoutForDate } from "../charts/ChartCandleReadout";
 import {
   synchronizeDailyWeeklyRanges,
   synchronizeWeeklyOverlayCrosshairs,
@@ -704,7 +704,7 @@ export function StudyCharts({
             containerRef={topRef}
             companyName={result.series[0].company_name ?? undefined}
             readout={(
-              <StudyChartReadout
+              <ChartCandleReadoutForDate
                 series={result.series[0]}
                 date={hoveredDate}
               />
@@ -723,7 +723,7 @@ export function StudyCharts({
             containerRef={bottomRef}
             companyName={result.series[1]?.company_name ?? undefined}
             readout={result.series[1] !== undefined && (
-              <StudyChartReadout series={result.series[1]} date={hoveredDate} />
+              <ChartCandleReadoutForDate series={result.series[1]} date={hoveredDate} />
             )}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}

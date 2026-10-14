@@ -16,10 +16,12 @@ import {
   type ISeriesMarkersPluginApi,
   type ITextWatermarkPluginApi,
   type Time,
+  type MouseEventParams,
 } from "lightweight-charts";
 import type {
   MarketChartCandle,
   MarketChartData,
+  MarketChartIndicators,
   MarketChartRelativeStrength,
   MarketChartRelativeStrengthStructure,
   MarketChartInterval,
@@ -73,11 +75,13 @@ import {
 } from "./relativeStrengthSeries";
 import { chartCompanyNameLabel } from "./chartLabels";
 import { LeftPriceLineLabels } from "./priceLineLabels";
+import { ChartCandleReadout } from "./ChartCandleReadout";
 import { VolumeRunRateBadge } from "./VolumeRunRateBadge";
 import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
 interface MarketChartProps {
   volumeRunRate?: VolumeRunRateControl;
+  showCandleReadout?: boolean;
   data: MarketChartData;
   companyName?: string;
   companyNameHref?: string;
@@ -122,6 +126,7 @@ function watermarkLines(symbol: string, color: string) {
 
 export function MarketChart({
   volumeRunRate,
+  showCandleReadout = false,
   data,
   companyName,
   companyNameHref,
@@ -167,6 +172,18 @@ export function MarketChart({
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
   const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
+  const indicatorsByDateRef = useRef(new Map<string, MarketChartIndicators>());
+  const hoveredDateRef = useRef<string | undefined>(undefined);
+  const readoutCrosshairHandlerRef = useRef<((event: MouseEventParams<Time>) => void) | null>(null);
+  const [readout, setReadout] = useState<{ candle?: MarketChartCandle; indicators?: MarketChartIndicators }>({});
+  const refreshReadout = useCallback(() => {
+    const date = hoveredDateRef.current;
+    if (!showCandleReadout || date === undefined) return;
+    const candle = candlesByDateRef.current.get(date);
+    const indicators = indicatorsByDateRef.current.get(date);
+    setReadout((current) => current.candle === candle && current.indicators === indicators
+      ? current : { candle, indicators });
+  }, [showCandleReadout]);
   const chartContextRef = useRef<ChartSyncTarget>(null);
   const chartDisposedRef = useRef(true);
   const contextReportedRef = useRef(false);
@@ -322,11 +339,24 @@ export function MarketChart({
       candleAt: (date) => candlesByDateRef.current.get(date),
       isDisposed: () => chartDisposedRef.current,
     };
+    if (showCandleReadout) {
+      const handler = (event: MouseEventParams<Time>) => {
+        if (event.time === undefined) return;
+        hoveredDateRef.current = chartTimeToMarketDate(event.time);
+        refreshReadout();
+      };
+      readoutCrosshairHandlerRef.current = handler;
+      chart.subscribeCrosshairMove(handler);
+    }
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, [candlePalette, palette, rsLineStyle, theme]);
+  }, [candlePalette, palette, refreshReadout, rsLineStyle, showCandleReadout, theme]);
 
-  const destroyChart = useCallback(() => {
+  const destroyChart = useCallback((chart: IChartApi) => {
+    if (readoutCrosshairHandlerRef.current !== null) {
+      chart.unsubscribeCrosshairMove(readoutCrosshairHandlerRef.current);
+      readoutCrosshairHandlerRef.current = null;
+    }
     watermarkRef.current?.detach();
     watermarkRef.current = null;
     relativeStrengthHighsRef.current = null;
@@ -425,7 +455,13 @@ export function MarketChart({
     if (chart !== null && chart !== undefined && visibleRange !== undefined) {
       restoreAnchoredLogicalRange(chart, visibleRange);
     }
-  }, [data.candles, data.interval, data.symbol]);
+    refreshReadout();
+  }, [data.candles, data.interval, data.symbol, refreshReadout]);
+
+  useEffect(() => {
+    indicatorsByDateRef.current = new Map((data.indicators ?? []).map((point) => [point.date, point]));
+    refreshReadout();
+  }, [data.indicators, refreshReadout]);
 
   useEffect(() => {
     volumeAverageSeriesRef.current?.setData(lineData(data.volume_average));
@@ -531,6 +567,12 @@ export function MarketChart({
         ...candle,
         volume_event: persistedVolumeEvent,
       });
+      if (liveDelta.indicators?.date === candle.date) {
+        indicatorsByDateRef.current.set(candle.date, liveDelta.indicators);
+      } else {
+        indicatorsByDateRef.current.delete(candle.date);
+      }
+      refreshReadout();
     }
     updateHistogramSeries(volumeSeriesRef.current, {
       time: marketDateToChartTime(candle.date),
@@ -569,7 +611,7 @@ export function MarketChart({
         updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
       }
     }
-  }, [candlePalette, data.candles, data.interval, data.symbol, liveDelta, theme, updateRelativeStrengthStructure]);
+  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, theme, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -614,7 +656,15 @@ export function MarketChart({
         borderColor: outline,
         wickColor: outline,
       }, data.interval);
-      if (candleUpdated) candlesByDateRef.current.set(candle.date, candle);
+      if (candleUpdated) {
+        candlesByDateRef.current.set(candle.date, candle);
+        if (sessionDelta.indicators?.date === candle.date) {
+          indicatorsByDateRef.current.set(candle.date, sessionDelta.indicators);
+        } else {
+          indicatorsByDateRef.current.delete(candle.date);
+        }
+        refreshReadout();
+      }
       updateHistogramSeries(volumeSeriesRef.current, {
         time: marketDateToChartTime(candle.date),
         value: candle.volume,
@@ -643,7 +693,7 @@ export function MarketChart({
     } else {
       postMarketLineRef.current.applyOptions(options);
     }
-  }, [candlePalette, data.candles, data.interval, data.symbol, liveDelta, sessionDelta, theme]);
+  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, sessionDelta, theme]);
 
   useEffect(() => {
     if (data.candles.length === 0) return;
@@ -697,45 +747,48 @@ export function MarketChart({
         onChartReady={initializeSeries}
         onChartDestroy={destroyChart}
       />
-      {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined || volumeRunRate?.state.visible) && (
-        <div className="market-chart-labels">
-          {companyLabel !== undefined && (
-            companyNameHref === undefined ? (
-              <div className="market-chart-company-name" title={companyName}>
-                {companyLabel}
-              </div>
-            ) : (
-              <a
-                className="market-chart-company-name market-chart-company-link"
-                href={companyNameHref}
-                target="_blank"
-                rel="noreferrer"
-                title={companyName}
+      <div className={showCandleReadout ? "market-chart-header" : undefined}>
+        {(companyLabel !== undefined || relativeStrength !== null && relativeStrength !== undefined || volumeRunRate?.state.visible) && (
+          <div className="market-chart-labels">
+            {companyLabel !== undefined && (
+              companyNameHref === undefined ? (
+                <div className="market-chart-company-name" title={companyName}>
+                  {companyLabel}
+                </div>
+              ) : (
+                <a
+                  className="market-chart-company-name market-chart-company-link"
+                  href={companyNameHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={companyName}
+                >
+                  <span className="market-chart-company-link-label">{companyLabel}</span>
+                  <OpenInNewIcon fontSize="inherit" />
+                </a>
+              )
+            )}
+            {relativeStrength !== null && relativeStrength !== undefined && (
+              <button
+                type="button"
+                className={showRelativeStrength
+                  ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
+                  : "market-chart-metric-toggle market-chart-metric-hidden"}
+                aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
+                aria-pressed={showRelativeStrength}
+                title={`Relative Strength ${trendLabel}`}
+                onClick={() => setShowRelativeStrength((visible) => !visible)}
               >
-                <span className="market-chart-company-link-label">{companyLabel}</span>
-                <OpenInNewIcon fontSize="inherit" />
-              </a>
-            )
-          )}
-          {relativeStrength !== null && relativeStrength !== undefined && (
-            <button
-              type="button"
-              className={showRelativeStrength
-                ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
-                : "market-chart-metric-toggle market-chart-metric-hidden"}
-              aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
-              aria-pressed={showRelativeStrength}
-              title={`Relative Strength ${trendLabel}`}
-              onClick={() => setShowRelativeStrength((visible) => !visible)}
-            >
-              RS
-            </button>
-          )}
-          {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
-            <VolumeRunRateBadge control={volumeRunRate} />
-          )}
-        </div>
-      )}
+                RS
+              </button>
+            )}
+            {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
+              <VolumeRunRateBadge control={volumeRunRate} />
+            )}
+          </div>
+        )}
+        {showCandleReadout && <ChartCandleReadout {...readout} />}
+      </div>
     </>
   );
 }

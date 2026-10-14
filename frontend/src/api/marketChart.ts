@@ -52,16 +52,25 @@ export interface MarketChartRelativeStrength {
   structure: MarketChartRelativeStrengthStructure;
 }
 
+export interface MarketChartIndicators {
+  date: string;
+  adr_percent: number | null;
+  extension_from_50_sma: number | null;
+  average_volume: number | null;
+}
+
 export interface MarketChartData {
   symbol: string;
   interval: MarketChartInterval;
   candles: MarketChartCandle[];
   moving_averages: MarketChartSeries[];
   volume_average?: MarketChartSeries;
+  indicators?: MarketChartIndicators[];
 }
 
 export interface MarketChartSnapshot extends MarketChartData {
   volume_average: MarketChartSeries;
+  indicators: MarketChartIndicators[];
   relative_strength: MarketChartRelativeStrength | null;
   earliest_date: string | null;
   latest_date: string | null;

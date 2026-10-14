@@ -1,7 +1,9 @@
+use crate::config::MarketConfig;
 use crate::constants::{DAILY_CANDLE_HISTORY, WEEKLY_CANDLE_HISTORY};
 use crate::models::chart::{
-    ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
-    MarketChartSnapshot, market_chart_candles_for_interval, market_chart_moving_averages,
+    ChartCalculationError, ChartIndicatorPeriods, MarketChartCandle, MarketChartIndicators,
+    MarketChartInterval, MarketChartRelativeStrength, MarketChartSnapshot,
+    market_chart_candles_for_interval, market_chart_indicators, market_chart_moving_averages,
     market_chart_volume_average_period, validate_market_chart_candle, volume_sma,
 };
 use crate::models::{
@@ -23,6 +25,7 @@ pub struct MarketChartService {
     yahoo: Arc<YahooService>,
     yahoo_live: YahooLiveHandle,
     market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
+    indicator_periods: ChartIndicatorPeriods,
 }
 
 struct RelativeStrengthSource {
@@ -51,12 +54,17 @@ impl MarketChartService {
         yahoo_live: YahooLiveHandle,
         market_repositioning_dates: Arc<HashSet<chrono::NaiveDate>>,
         volume_run_rate: Arc<VolumeRunRateService>,
+        market: &MarketConfig,
     ) -> Self {
         Self {
             volume_run_rate,
             yahoo,
             yahoo_live,
             market_repositioning_dates,
+            indicator_periods: ChartIndicatorPeriods {
+                adr_sessions: usize::from(market.adr_sessions),
+                average_volume_sessions: usize::from(market.average_volume_sessions),
+            },
         }
     }
 
@@ -100,6 +108,7 @@ impl MarketChartService {
             Vec::new(),
             relative_strength,
             &self.market_repositioning_dates,
+            self.indicator_periods,
         )
     }
 
@@ -123,6 +132,7 @@ impl MarketChartService {
             Vec::new(),
             relative_strength,
             &self.market_repositioning_dates,
+            self.indicator_periods,
         )
     }
 
@@ -182,6 +192,30 @@ impl MarketChartService {
             .unwrap_or_default()
     }
 
+    pub async fn pre_market_indicators(
+        &self,
+        symbol: &TickerSymbol,
+        candle: &DailyCandle,
+    ) -> Result<Option<MarketChartIndicators>, MarketChartError> {
+        let daily = merge_live_candles(
+            self.candles_for_interval(symbol, MarketChartInterval::Daily)
+                .await?,
+            vec![candle.clone()],
+        )?;
+        let daily = daily
+            .iter()
+            .map(MarketChartCandle::from)
+            .collect::<Vec<_>>();
+        let candle = MarketChartCandle::from(candle);
+        Ok(market_chart_indicators(
+            &daily,
+            &[candle],
+            MarketChartInterval::Daily,
+            self.indicator_periods,
+        )
+        .pop())
+    }
+
     pub async fn history_snapshot(
         &self,
         symbol: &TickerSymbol,
@@ -223,6 +257,7 @@ impl MarketChartService {
             Vec::new(),
             relative_strength,
             &self.market_repositioning_dates,
+            self.indicator_periods,
         )?;
         snapshot.has_more_before = has_more_before;
         Ok(snapshot)
@@ -281,6 +316,7 @@ fn build_expanded_snapshot(
     ephemeral: Vec<DailyCandle>,
     relative_strength: Option<RelativeStrengthSource>,
     market_repositioning_dates: &HashSet<chrono::NaiveDate>,
+    indicator_periods: ChartIndicatorPeriods,
 ) -> Result<MarketChartSnapshot, MarketChartError> {
     let daily = merge_daily_candles(persisted, ephemeral)?;
     let relative_strength = if let Some(source) = relative_strength {
@@ -289,7 +325,13 @@ fn build_expanded_snapshot(
     } else {
         None
     };
-    let mut snapshot = build_snapshot(symbol, interval, &daily, market_repositioning_dates)?;
+    let mut snapshot = build_snapshot(
+        symbol,
+        interval,
+        &daily,
+        market_repositioning_dates,
+        indicator_periods,
+    )?;
     snapshot.relative_strength = relative_strength;
     Ok(snapshot)
 }
@@ -322,12 +364,14 @@ fn build_snapshot(
     interval: MarketChartInterval,
     daily: &[DailyCandle],
     market_repositioning_dates: &HashSet<chrono::NaiveDate>,
+    indicator_periods: ChartIndicatorPeriods,
 ) -> Result<MarketChartSnapshot, ChartCalculationError> {
     let daily = daily
         .iter()
         .map(MarketChartCandle::from)
         .collect::<Vec<_>>();
     let candles = market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
+    let indicators = market_chart_indicators(&daily, &candles, interval, indicator_periods);
     let volume_average_period = market_chart_volume_average_period(interval);
     let moving_averages = market_chart_moving_averages(&daily, &candles, interval)?;
     let volume_average = volume_sma(&candles, volume_average_period)?;
@@ -340,6 +384,7 @@ fn build_snapshot(
         candles,
         moving_averages,
         volume_average,
+        indicators,
         relative_strength: None,
         earliest_date,
         latest_date,
@@ -351,6 +396,11 @@ fn build_snapshot(
 mod tests {
     use super::*;
     use chrono::{Days, NaiveDate};
+
+    const INDICATOR_PERIODS: ChartIndicatorPeriods = ChartIndicatorPeriods {
+        adr_sessions: 20,
+        average_volume_sessions: 50,
+    };
 
     fn symbol(value: &str) -> TickerSymbol {
         TickerSymbol::parse(value).unwrap()
@@ -503,6 +553,73 @@ mod tests {
     }
 
     #[test]
+    fn live_daily_and_weekly_readouts_recompute_from_current_candle() {
+        let daily = candles(65, 1)
+            .into_iter()
+            .map(|mut candle| {
+                candle.open = 100.0;
+                candle.high = 102.0;
+                candle.low = 98.0;
+                candle.close = 100.0;
+                candle.volume = 1_000;
+                candle
+            })
+            .collect::<Vec<_>>();
+        let mut live = daily.last().unwrap().clone();
+        live.high = 105.0;
+        live.close = 102.0;
+        live.volume = 2_000;
+        let merged = merge_live_candles(daily.clone(), vec![live.clone()]).unwrap();
+        for interval in [MarketChartInterval::Daily, MarketChartInterval::Weekly] {
+            let before = build_snapshot(
+                symbol("TEST"),
+                interval,
+                &daily,
+                &HashSet::new(),
+                INDICATOR_PERIODS,
+            )
+            .unwrap();
+            let after = build_snapshot(
+                symbol("TEST"),
+                interval,
+                &merged,
+                &HashSet::new(),
+                INDICATOR_PERIODS,
+            )
+            .unwrap();
+            let point = after.indicators.last().unwrap();
+            assert_eq!(point.date, after.candles.last().unwrap().date);
+            assert_eq!(after.candles.last().unwrap().close, live.close);
+            assert!(
+                (point.adr_percent.unwrap() - 100.0 * (19.0 * 4.0 / 98.0 + 7.0 / 98.0) / 20.0)
+                    .abs()
+                    < 1e-10
+            );
+            assert!((point.extension_from_50_sma.unwrap() - 1.96 / 4.15).abs() < 1e-10);
+            assert_eq!(point.average_volume, Some(1_020));
+            assert_eq!(
+                &before.indicators[..before.indicators.len() - 1],
+                &after.indicators[..after.indicators.len() - 1]
+            );
+        }
+
+        // A new regular or pre-market day gets its own values using prior sessions.
+        live.market_date = live.market_date + Days::new(1);
+        let merged = merge_live_candles(daily, vec![live.clone()]).unwrap();
+        let after = build_snapshot(
+            symbol("TEST"),
+            MarketChartInterval::Daily,
+            &merged,
+            &HashSet::new(),
+            INDICATOR_PERIODS,
+        )
+        .unwrap();
+        assert_eq!(after.candles.len(), 66);
+        assert_eq!(after.indicators.last().unwrap().date, live.market_date);
+        assert_eq!(after.indicators.last().unwrap().average_volume, Some(1_020));
+    }
+
+    #[test]
     fn recomputes_daily_indicators_over_merged_history() {
         let all = candles(220, 1);
         let mut persisted = all[200..].to_vec();
@@ -516,6 +633,7 @@ mod tests {
             all,
             None,
             &HashSet::new(),
+            INDICATOR_PERIODS,
         )
         .unwrap();
 
@@ -536,6 +654,7 @@ mod tests {
             all[..200].to_vec(),
             None,
             &HashSet::new(),
+            INDICATOR_PERIODS,
         )
         .unwrap();
 
@@ -559,6 +678,7 @@ mod tests {
                 Vec::new(),
                 Some(relative_strength_source(comparison.clone())),
                 &HashSet::new(),
+                INDICATOR_PERIODS,
             )
             .unwrap();
             let relative_strength = snapshot.relative_strength.unwrap();
@@ -591,6 +711,7 @@ mod tests {
                 Vec::new(),
                 Some(relative_strength_source(recent_comparison.clone())),
                 &HashSet::new(),
+                INDICATOR_PERIODS,
             )
             .unwrap()
             .relative_strength
@@ -606,6 +727,7 @@ mod tests {
                     ephemeral: comparison.clone(),
                 }),
                 &HashSet::new(),
+                INDICATOR_PERIODS,
             )
             .unwrap()
             .relative_strength
@@ -632,6 +754,7 @@ mod tests {
             MarketChartInterval::Daily,
             &candles(220, 1),
             &HashSet::new(),
+            INDICATOR_PERIODS,
         )
         .unwrap();
 
@@ -663,6 +786,7 @@ mod tests {
             MarketChartInterval::Weekly,
             &candles(220, 7),
             &HashSet::new(),
+            INDICATOR_PERIODS,
         )
         .unwrap();
 
