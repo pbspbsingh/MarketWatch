@@ -1,3 +1,4 @@
+use crate::config::MarketConfig;
 use crate::models::chart::{
     ChartCalculationError, MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength,
     VolumeEventKind, market_chart_candles_for_interval, market_chart_moving_averages,
@@ -5,7 +6,8 @@ use crate::models::chart::{
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
-    analyze_relative_strength_structure, calculate_relative_strength_line,
+    analyze_relative_strength_structure, average_daily_range_percent, average_volume,
+    calculate_relative_strength_line, extension_from_50_sma,
 };
 use crate::providers::{ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::services::yahoo::YahooService;
@@ -37,6 +39,15 @@ pub struct StudySeries {
     pub candles: Vec<StudyCandle>,
     pub moving_averages: Vec<StudyMovingAverage>,
     pub volume_average: StudyMovingAverage,
+    pub indicators: Vec<StudyIndicators>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct StudyIndicators {
+    pub date: NaiveDate,
+    pub adr_percent: Option<f64>,
+    pub extension_from_50_sma: Option<f64>,
+    pub average_volume: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -107,6 +118,8 @@ pub struct StudyService {
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
     market_repositioning_dates: Arc<HashSet<NaiveDate>>,
+    adr_sessions: usize,
+    average_volume_sessions: usize,
     load_lock: AsyncMutex<()>,
     dataset: Mutex<Option<StudyDataset>>,
 }
@@ -117,12 +130,15 @@ impl StudyService {
         yahoo: Arc<YahooService>,
         market_schedule: MarketSchedule,
         market_repositioning_dates: Arc<HashSet<NaiveDate>>,
+        market: &MarketConfig,
     ) -> Self {
         Self {
             yahoo_client,
             yahoo,
             market_schedule,
             market_repositioning_dates,
+            adr_sessions: usize::from(market.adr_sessions),
+            average_volume_sessions: usize::from(market.average_volume_sessions),
             load_lock: AsyncMutex::new(()),
             dataset: Mutex::new(None),
         }
@@ -141,7 +157,14 @@ impl StudyService {
         let Some(dataset) = dataset else {
             return Ok(None);
         };
-        build_study_result(&dataset, interval, &self.market_repositioning_dates).map(Some)
+        build_study_result(
+            &dataset,
+            interval,
+            &self.market_repositioning_dates,
+            self.adr_sessions,
+            self.average_volume_sessions,
+        )
+        .map(Some)
     }
 
     pub async fn load(
@@ -188,6 +211,8 @@ impl StudyService {
                 &previous.expect("checked cached Study dataset"),
                 interval,
                 &self.market_repositioning_dates,
+                self.adr_sessions,
+                self.average_volume_sessions,
             )?;
             return Ok(result);
         }
@@ -207,7 +232,13 @@ impl StudyService {
             (extending_before && !dataset.has_more_before)
                 || (extending_after && !dataset.has_more_after)
         }) {
-            let result = build_study_result(dataset, interval, &self.market_repositioning_dates)?;
+            let result = build_study_result(
+                dataset,
+                interval,
+                &self.market_repositioning_dates,
+                self.adr_sessions,
+                self.average_volume_sessions,
+            )?;
             return Ok(result);
         }
         let mut series = Vec::with_capacity(2);
@@ -299,7 +330,13 @@ impl StudyService {
             },
             series,
         };
-        let result = build_study_result(&dataset, interval, &self.market_repositioning_dates)?;
+        let result = build_study_result(
+            &dataset,
+            interval,
+            &self.market_repositioning_dates,
+            self.adr_sessions,
+            self.average_volume_sessions,
+        )?;
         *self
             .dataset
             .lock()
@@ -312,6 +349,8 @@ fn build_study_result(
     dataset: &StudyDataset,
     interval: MarketChartInterval,
     market_repositioning_dates: &HashSet<NaiveDate>,
+    adr_sessions: usize,
+    average_volume_sessions: usize,
 ) -> Result<StudyResult, StudyError> {
     let series = dataset
         .series
@@ -324,6 +363,13 @@ fn build_study_result(
                 .collect::<Result<Vec<_>, _>>()?;
             let candles =
                 market_chart_candles_for_interval(&daily, interval, market_repositioning_dates)?;
+            let indicators = study_indicators(
+                &daily,
+                &candles,
+                interval,
+                adr_sessions,
+                average_volume_sessions,
+            );
             let moving_averages = market_chart_moving_averages(&daily, &candles, interval)?
                 .into_iter()
                 .map(|average| StudyMovingAverage {
@@ -361,6 +407,7 @@ fn build_study_result(
                 candles,
                 moving_averages,
                 volume_average,
+                indicators,
             })
         })
         .collect::<Result<Vec<_>, StudyError>>()?;
@@ -375,6 +422,50 @@ fn build_study_result(
         series,
         relative_strength,
     })
+}
+
+// Always calculate daily indicators from history ending at the hovered bar.
+// A weekly bar uses its last available trading day, including partial weeks.
+fn study_indicators(
+    daily: &[MarketChartCandle],
+    candles: &[MarketChartCandle],
+    interval: MarketChartInterval,
+    adr_sessions: usize,
+    average_volume_sessions: usize,
+) -> Vec<StudyIndicators> {
+    let daily = daily
+        .iter()
+        .map(|candle| DailyCandle {
+            market_date: candle.date,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume,
+        })
+        .collect::<Vec<_>>();
+    candles
+        .iter()
+        .map(|candle| {
+            let end = match interval {
+                MarketChartInterval::Daily => candle.date,
+                MarketChartInterval::Weekly => candle.date + chrono::Days::new(6),
+            };
+            let history = &daily[..daily.partition_point(|day| day.market_date <= end)];
+            let adr_history = &history[history.len().saturating_sub(adr_sessions)..];
+            let volume_history = &history[history.len().saturating_sub(average_volume_sessions)..];
+            StudyIndicators {
+                date: candle.date,
+                adr_percent: (adr_history.len() == adr_sessions)
+                    .then(|| average_daily_range_percent(adr_history)),
+                extension_from_50_sma: (adr_history.len() == adr_sessions)
+                    .then(|| extension_from_50_sma(history, adr_sessions))
+                    .flatten(),
+                average_volume: (volume_history.len() == average_volume_sessions)
+                    .then(|| average_volume(volume_history)),
+            }
+        })
+        .collect()
 }
 
 fn study_market_candle(candle: &StudyCandle) -> Result<MarketChartCandle, StudyError> {
@@ -605,6 +696,53 @@ mod tests {
     use chrono::Datelike;
 
     #[test]
+    fn hover_indicators_use_configured_daily_history_without_future_candles() {
+        let start = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        let daily = (0..65)
+            .map(|day| {
+                let close = 100.0 + day as f64;
+                MarketChartCandle {
+                    date: start + chrono::Days::new(day),
+                    open: close,
+                    high: close + 2.0,
+                    low: close - 2.0,
+                    close,
+                    volume: (day as i64 + 1) * 100,
+                    volume_event: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let points = study_indicators(&daily, &daily, MarketChartInterval::Daily, 3, 4);
+        assert_eq!(points[1].adr_percent, None);
+        assert_eq!(points[2].average_volume, None);
+        assert_eq!(points[3].average_volume, Some(250));
+        assert_eq!(points[48].extension_from_50_sma, None);
+        assert_eq!(points[49].average_volume, Some(4_850));
+        assert!((points[49].extension_from_50_sma.unwrap() - 6.125).abs() < 1e-10);
+        let expected_adr = 100.0 * (4.0 / 145.0 + 4.0 / 146.0 + 4.0 / 147.0) / 3.0;
+        assert!((points[49].adr_percent.unwrap() - expected_adr).abs() < 1e-10);
+
+        let prefix = study_indicators(&daily[..50], &daily[..50], MarketChartInterval::Daily, 3, 4);
+        assert_eq!(&points[..50], prefix.as_slice());
+
+        let weekly = crate::models::chart::aggregate_market_weeks(&daily).unwrap();
+        let weekly_points = study_indicators(&daily, &weekly, MarketChartInterval::Weekly, 3, 4);
+        for point in weekly_points {
+            let last_daily = points
+                .iter()
+                .rfind(|day| day.date.iso_week() == point.date.iso_week())
+                .unwrap();
+            assert_eq!(
+                point,
+                StudyIndicators {
+                    date: point.date,
+                    ..last_daily.clone()
+                }
+            );
+        }
+    }
+
+    #[test]
     fn validates_symbols_and_date() {
         let today = Utc::now().date_naive();
         let symbols = || {
@@ -781,11 +919,22 @@ mod tests {
         };
 
         let repositioning_dates = HashSet::from([start + chrono::Days::new(250)]);
-        let daily =
-            build_study_result(&dataset, MarketChartInterval::Daily, &repositioning_dates).unwrap();
-        let weekly =
-            build_study_result(&dataset, MarketChartInterval::Weekly, &repositioning_dates)
-                .unwrap();
+        let daily = build_study_result(
+            &dataset,
+            MarketChartInterval::Daily,
+            &repositioning_dates,
+            20,
+            50,
+        )
+        .unwrap();
+        let weekly = build_study_result(
+            &dataset,
+            MarketChartInterval::Weekly,
+            &repositioning_dates,
+            20,
+            50,
+        )
+        .unwrap();
 
         assert_eq!(daily.series[0].candles.len(), 300);
         assert_eq!(daily.series[0].candles[250].volume, 1_000);
@@ -834,6 +983,7 @@ mod tests {
                     volume_event: None,
                 })
                 .collect(),
+            indicators: Vec::new(),
             moving_averages: Vec::new(),
             volume_average: StudyMovingAverage {
                 period: 1,

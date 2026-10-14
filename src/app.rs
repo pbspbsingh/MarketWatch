@@ -214,6 +214,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo.clone(),
         market_schedule.clone(),
         market_repositioning_dates,
+        &config.market,
     ));
     let trade_analyzer = Arc::new(TradeAnalyzerService::new(
         store.trade_analyzer(),

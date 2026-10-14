@@ -28,6 +28,12 @@ export interface StudyResult {
     candles: StudyCandle[];
     moving_averages: MarketChartSeries[];
     volume_average: MarketChartSeries;
+    indicators: Array<{
+      date: string;
+      adr_percent: number | null;
+      extension_from_50_sma: number | null;
+      average_volume: number | null;
+    }>;
   }>;
 }
 

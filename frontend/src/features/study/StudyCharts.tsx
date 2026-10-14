@@ -7,6 +7,7 @@ import {
   type MouseEvent,
   type PointerEvent,
   type RefObject,
+  type ReactNode,
 } from "react";
 import {
   CandlestickSeries,
@@ -74,6 +75,7 @@ import {
 } from "../charts/relativeStrengthSeries";
 import { chartCompanyNameLabel } from "../charts/chartLabels";
 import { shiftYears } from "./studyDates";
+import { StudyChartReadout } from "./StudyChartReadout";
 import {
   synchronizeDailyWeeklyRanges,
   synchronizeWeeklyOverlayCrosshairs,
@@ -155,6 +157,7 @@ export function StudyCharts({
   const handledInteractionSequenceRef = useRef(0);
   const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   const [chartMenuPosition, setChartMenuPosition] = useState<ChartMenuPosition | null>(null);
+  const [hover, setHover] = useState<{ datasetKey: string; interval: StudyResult["interval"]; date?: string }>();
   const showRelativeStrengthRef = useRef(showRelativeStrength);
   const rsLineStyleRef = useRef(rsLineStyle);
   const firstSymbol = result.series[0]?.symbol ?? "";
@@ -470,6 +473,13 @@ export function StudyCharts({
       synchronizingCrosshair = true;
       try {
         const date = event.time === undefined ? undefined : timeKey(event.time);
+        if (date !== undefined) {
+          const interval = intervalRef.current;
+          setHover((current) => current?.datasetKey === datasetKey
+            && current.interval === interval && current.date === date
+            ? current
+            : { datasetKey, interval, date });
+        }
         const candle = date === undefined
           ? undefined
           : candlesByDateRef.current[targetIndex]?.get(date);
@@ -678,6 +688,10 @@ export function StudyCharts({
     };
   }, [rangeOwnerRef, result, setCrosshairOwner, tickerBVisible, weeklyChartContext]);
 
+  const hoveredDate = hover?.datasetKey === datasetKey && hover.interval === result.interval
+    ? hover.date
+    : undefined;
+
   return (
     <>
       <SplitPane
@@ -689,7 +703,12 @@ export function StudyCharts({
           <ChartContainer
             containerRef={topRef}
             companyName={result.series[0].company_name ?? undefined}
-            interval={result.interval}
+            readout={(
+              <StudyChartReadout
+                series={result.series[0]}
+                date={hoveredDate}
+              />
+            )}
             onPointerEnter={() => setCrosshairOwner(0)}
             showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
             onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
@@ -703,7 +722,9 @@ export function StudyCharts({
           <ChartContainer
             containerRef={bottomRef}
             companyName={result.series[1]?.company_name ?? undefined}
-            interval={result.interval}
+            readout={result.series[1] !== undefined && (
+              <StudyChartReadout series={result.series[1]} date={hoveredDate} />
+            )}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}
@@ -803,7 +824,7 @@ function addRelativeStrength(
 function ChartContainer({
   containerRef,
   companyName,
-  interval,
+  readout,
   onPointerEnter,
   showRelativeStrength,
   onToggleRelativeStrength,
@@ -814,7 +835,7 @@ function ChartContainer({
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
-  interval: StudyResult["interval"];
+  readout?: ReactNode;
   onPointerEnter: () => void;
   showRelativeStrength?: boolean;
   onToggleRelativeStrength?: () => void;
@@ -836,36 +857,29 @@ function ChartContainer({
       onContextMenu={onContextMenu}
     >
       <div ref={containerRef} className="study-chart" />
-      {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
-        <div className="study-chart-labels">
-          {companyLabel !== undefined && (
-            <div className="study-chart-company-name" title={companyName}>
-              {companyLabel}
-            </div>
-          )}
-          {showRelativeStrength !== undefined && (
-            <button
-              type="button"
-              className="study-chart-rs-toggle"
-              aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
-              aria-pressed={showRelativeStrength}
-              title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
-              onClick={onToggleRelativeStrength}
-            >
-              RS
-            </button>
-          )}
-        </div>
-      )}
-      <div
-        className="study-chart-legend"
-        aria-label="Moving averages"
-      >
-        {movingAverageSpecs(interval).map(({ period, type, color }) => (
-          <span key={period} style={{ color }}>
-            {type} {period}
-          </span>
-        ))}
+      <div className="study-chart-header">
+        {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
+          <div className="study-chart-labels">
+            {companyLabel !== undefined && (
+              <div className="study-chart-company-name" title={companyName}>
+                {companyLabel}
+              </div>
+            )}
+            {showRelativeStrength !== undefined && (
+              <button
+                type="button"
+                className="study-chart-rs-toggle"
+                aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
+                aria-pressed={showRelativeStrength}
+                title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
+                onClick={onToggleRelativeStrength}
+              >
+                RS
+              </button>
+            )}
+          </div>
+        )}
+        {readout}
       </div>
     </div>
   );

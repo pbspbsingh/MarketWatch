@@ -98,6 +98,26 @@ pub fn average_volume(candles: &[DailyCandle]) -> i64 {
     candles.iter().map(|candle| candle.volume).sum::<i64>() / candles.len() as i64
 }
 
+pub fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option<f64> {
+    const SMA_SESSIONS: usize = 50;
+    let latest_close = candles.last()?.close;
+    let sma_candles = latest_sessions(candles, SMA_SESSIONS);
+    if sma_candles.len() < SMA_SESSIONS {
+        return None;
+    }
+    let sma = sma_candles.iter().map(|candle| candle.close).sum::<f64>() / SMA_SESSIONS as f64;
+    let adr_candles = latest_sessions(candles, adr_sessions);
+    if adr_candles.is_empty() {
+        return None;
+    }
+    let adr = adr_candles
+        .iter()
+        .map(|candle| candle.high - candle.low)
+        .sum::<f64>()
+        / adr_candles.len() as f64;
+    (adr > 0.0).then_some((latest_close - sma) / adr)
+}
+
 pub fn close_above_sma(candles: &[DailyCandle], sessions: usize) -> Option<bool> {
     let latest_close = candles.last()?.close;
     let sma_candles = latest_sessions(candles, sessions);

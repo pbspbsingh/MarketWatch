@@ -1,6 +1,7 @@
 use crate::config::MarketConfig;
 use crate::models::{
     DailyCandle, TickerSymbol, TradingViewSymbol, average_daily_range_percent, average_volume,
+    extension_from_50_sma,
 };
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
@@ -9,8 +10,6 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::warn;
-
-const FIFTY_SESSION_SMA: usize = 50;
 
 pub struct ChartService {
     store: Store,
@@ -195,25 +194,6 @@ impl ChartService {
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
     &candles[candles.len().saturating_sub(sessions)..]
-}
-
-fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option<f64> {
-    let latest_close = candles.last()?.close;
-    let sma_candles = latest_sessions(candles, FIFTY_SESSION_SMA);
-    if sma_candles.len() < FIFTY_SESSION_SMA {
-        return None;
-    }
-    let sma = sma_candles.iter().map(|candle| candle.close).sum::<f64>() / FIFTY_SESSION_SMA as f64;
-    let adr_candles = latest_sessions(candles, adr_sessions);
-    if adr_candles.is_empty() {
-        return None;
-    }
-    let adr = adr_candles
-        .iter()
-        .map(|candle| candle.high - candle.low)
-        .sum::<f64>()
-        / adr_candles.len() as f64;
-    (adr > 0.0).then_some((latest_close - sma) / adr)
 }
 
 #[cfg(test)]
