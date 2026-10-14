@@ -483,7 +483,9 @@ export function StudyCharts({
         const candle = date === undefined
           ? undefined
           : candlesByDateRef.current[targetIndex]?.get(date);
-        if (candle === undefined || date === undefined) {
+        if (candle === undefined || date === undefined
+          || candleSeries[targetIndex].priceToCoordinate(candle.close) === null
+          || charts[targetIndex].timeScale().timeToCoordinate(date) === null) {
           charts[targetIndex].clearCrosshairPosition();
         } else {
           charts[targetIndex].setCrosshairPosition(candle.close, date, candleSeries[targetIndex]);

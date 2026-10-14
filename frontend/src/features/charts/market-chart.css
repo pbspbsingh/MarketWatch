@@ -28,6 +28,10 @@
   & .market-chart-labels {
     position: static;
     min-width: 0;
+    max-width: 100%;
+  }
+
+  &:has(.chart-candle-readout) .market-chart-labels {
     max-width: 35%;
   }
 }

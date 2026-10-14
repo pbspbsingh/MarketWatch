@@ -29,6 +29,7 @@ type StoredSettings = {
   theme: AppThemeMode;
   chartEngine: ChartEngine;
   logarithmicScale: boolean;
+  showCandleReadout: boolean;
   showWeeklyChartOverlay: boolean;
   showWeeklyOverlayAxes: boolean;
   syncWeeklyOverlayCrosshair: boolean;
@@ -42,6 +43,7 @@ type AppSettingsValue = StoredSettings & {
   setTheme: (theme: AppThemeMode) => void;
   setChartEngine: (chartEngine: ChartEngine) => void;
   setLogarithmicScale: (logarithmicScale: boolean) => void;
+  setShowCandleReadout: (show: boolean) => void;
   setShowWeeklyChartOverlay: (show: boolean) => void;
   setShowWeeklyOverlayAxes: (show: boolean) => void;
   setSyncWeeklyOverlayCrosshair: (sync: boolean) => void;
@@ -68,6 +70,7 @@ function readSettings(): StoredSettings {
         ? value.logarithmicScale
         : localStorage.getItem(legacyStudyLogarithmicScaleKey) === "true",
       showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
+      showCandleReadout: value.showCandleReadout !== false,
       showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
       syncWeeklyOverlayCrosshair: value.syncWeeklyOverlayCrosshair === true,
       candlePalette: validCandlePalette(value.candlePalette) ? value.candlePalette : "solid",
@@ -85,6 +88,7 @@ function readSettings(): StoredSettings {
         : "lightweight",
       logarithmicScale: localStorage.getItem(legacyStudyLogarithmicScaleKey) === "true",
       showWeeklyChartOverlay: false,
+      showCandleReadout: true,
       showWeeklyOverlayAxes: true,
       syncWeeklyOverlayCrosshair: false,
       candlePalette: "solid",
@@ -136,6 +140,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     setChartEngine: (chartEngine) => setSettings((current) => ({ ...current, chartEngine })),
     setLogarithmicScale: (logarithmicScale) =>
       setSettings((current) => ({ ...current, logarithmicScale })),
+    setShowCandleReadout: (showCandleReadout) =>
+      setSettings((current) => ({ ...current, showCandleReadout })),
     setShowWeeklyChartOverlay: (showWeeklyChartOverlay) =>
       setSettings((current) => ({ ...current, showWeeklyChartOverlay })),
     setShowWeeklyOverlayAxes: (showWeeklyOverlayAxes) =>

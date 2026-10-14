@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useAppSettings } from "../../app/AppSettings";
 import type { MarketChartCandle, MarketChartIndicators, MarketChartSnapshot } from "../../api/marketChart";
 import { formatVolume } from "../ticker-lens/utils";
 import "./chart-candle-readout.css";
@@ -7,11 +8,13 @@ export function ChartCandleReadout({ candle, indicators }: {
   candle?: Pick<MarketChartCandle, "date" | "close" | "volume">;
   indicators?: MarketChartIndicators;
 }) {
+  const { showCandleReadout } = useAppSettings();
+  if (!showCandleReadout || candle === undefined) return null;
   const extension = indicators?.extension_from_50_sma;
   const values = [
-    { label: "Date", value: candle?.date },
-    { label: "Price", value: candle?.close.toFixed(2) },
-    { label: "Vol", value: candle === undefined ? undefined : formatVolume(candle.volume) },
+    { label: "DATE", value: candle.date },
+    { label: "PRICE", value: candle.close.toFixed(2) },
+    { label: "VOL", value: formatVolume(candle.volume) },
     {
       label: "AVOL",
       value: indicators?.average_volume == null ? undefined : formatVolume(indicators.average_volume),

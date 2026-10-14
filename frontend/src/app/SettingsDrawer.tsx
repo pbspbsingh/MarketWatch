@@ -34,6 +34,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
     theme, setTheme,
     chartEngine, setChartEngine,
     logarithmicScale, setLogarithmicScale,
+    showCandleReadout, setShowCandleReadout,
     candlePalette, setCandlePalette,
     gridOpacity, setGridOpacity,
     fiveEmaOpacity, setFiveEmaOpacity,
@@ -123,6 +124,12 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         </SettingsSection>
 
         <SettingsSection title="Indicators">
+          <SettingsSwitch
+            label="Show candle readout"
+            description="Hovered candle values in TickerLens and Studies"
+            checked={showCandleReadout}
+            onChange={setShowCandleReadout}
+          />
           <div className="settings-control">
             <span className="settings-control-label">Relative strength line</span>
             <ToggleButtonGroup

@@ -82,12 +82,16 @@
   align-items: flex-start;
   gap: 0.5rem;
   pointer-events: none;
+
+  &:has(.chart-candle-readout) .study-chart-labels {
+    max-width: 35%;
+  }
 }
 
 .study-chart-labels {
   display: flex;
   min-width: 0;
-  max-width: 35%;
+  max-width: 100%;
   align-items: center;
   gap: 0.25rem;
   pointer-events: none;
