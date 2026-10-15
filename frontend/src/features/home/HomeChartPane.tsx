@@ -54,6 +54,7 @@ export function HomeChartPane({
     >
       {chartEngine === "lightweight" ? (
         <MarketChartContainer
+          showCandleReadout
           symbol={symbol}
           companyName={summary?.company_name ?? undefined}
           tradingViewSymbol={summary?.tradingview_symbol}

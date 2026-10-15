@@ -126,7 +126,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         <SettingsSection title="Indicators">
           <SettingsSwitch
             label="Show candle readout"
-            description="Hovered candle values in TickerLens and Studies"
+            description="Hovered candle values on Home, TickerLens and Studies"
             checked={showCandleReadout}
             onChange={setShowCandleReadout}
           />
