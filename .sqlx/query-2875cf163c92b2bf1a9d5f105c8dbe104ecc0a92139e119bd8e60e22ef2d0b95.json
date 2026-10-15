@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT payload AS \"payload!: String\" FROM fundamental_assessments WHERE symbol = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "payload!: String",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": {
+          "Table": {
+            "table": "fundamental_assessments",
+            "name": "payload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2875cf163c92b2bf1a9d5f105c8dbe104ecc0a92139e119bd8e60e22ef2d0b95"
+}

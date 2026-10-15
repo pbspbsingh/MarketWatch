@@ -6,12 +6,12 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import SyncAltRoundedIcon from "@mui/icons-material/SyncAltRounded";
 import { Alert, Button, Chip, CircularProgress, IconButton, Popover, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { fetchNFactor, isNFactorActive, refreshNFactor, type NFactorJob, type NFactorJobProgress, type NFactorPhase, type NFactorState, type NewsCoverage, type NewsItem, type NewsSource } from "../api/nFactor";
 import "./ticker-n-factor.css";
+import { AiOutputPreview } from "./AiOutputPreview";
 
 const sourceLabels: Record<NewsSource, string> = { stock_titan: "Stock Titan", finviz: "Finviz" };
 const progressPhases: Record<NFactorPhase, { label: string; stage: number; waiting?: boolean; description: string }> = {
@@ -255,21 +255,7 @@ function CoverageCaption({ news, coverage }: { news: NewsItem[]; coverage: NewsC
 }
 
 function AiPreview({ job }: { job: NFactorJob }) {
-  const previewRef = useRef<HTMLDivElement>(null);
-  const followOutput = useRef(true);
-  const response = job.live_response || job.live_reasoning;
-  useEffect(() => {
-    if (previewRef.current && followOutput.current) previewRef.current.scrollTop = previewRef.current.scrollHeight;
-  }, [response]);
-  return <details className="n-factor-ai-preview" onToggle={(event) => {
-    if (event.currentTarget.open && previewRef.current && followOutput.current) previewRef.current.scrollTop = previewRef.current.scrollHeight;
-  }}>
-    <summary><ExpandMoreRoundedIcon /><span>Live AI output</span><span className="n-factor-ai-preview-label">{job.phase === "failed" ? "Interrupted" : job.live_response ? "Writing report" : job.live_reasoning ? "Reasoning" : "Awaiting response"}</span></summary>
-    <div className="n-factor-ai-preview-body" ref={previewRef} onScroll={(event) => {
-      const element = event.currentTarget;
-      followOutput.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
-    }}><Typography component="pre" className="ticker-ai-stream">{response || "The AI request is in progress…"}</Typography></div>
-  </details>;
+  return <AiOutputPreview content={job.live_response || job.live_reasoning} status={job.phase === "failed" ? "Interrupted" : job.live_response ? "Writing report" : job.live_reasoning ? "Reasoning" : "Awaiting response"} />;
 }
 
 function JobProgress({ job, compact = false, children }: { job: NFactorJobProgress; compact?: boolean; children?: React.ReactNode }) {

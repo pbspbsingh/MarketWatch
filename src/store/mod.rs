@@ -14,6 +14,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 mod daily_notes;
+mod fundamental_assessments;
 mod fundamentals;
 mod industries;
 mod maintenance;

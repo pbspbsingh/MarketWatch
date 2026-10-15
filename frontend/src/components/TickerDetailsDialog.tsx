@@ -26,6 +26,7 @@ import {
   type ThemeTicker,
 } from "../api/themes";
 import { TickerFundamentalsTab } from "./TickerFundamentalsTab";
+import { TickerAssessmentTab } from "./TickerAssessmentTab";
 import { TickerProfileThemesTab } from "./TickerProfileThemesTab";
 import { TickerNFactorTab } from "./TickerNFactorTab";
 import { Toast } from "./Toast";
@@ -39,7 +40,7 @@ interface TickerDetailsDialogProps {
   onThemeChanged?: () => void;
 }
 
-const detailsTabs = ["fundamentals", "profile-themes", "n-factor"] as const;
+const detailsTabs = ["fundamentals", "assessment", "profile-themes", "n-factor"] as const;
 export type TickerDetailsTab = (typeof detailsTabs)[number];
 
 export function TickerDetailsDialog({
@@ -331,10 +332,13 @@ function OpenTickerDetailsDialog({
         <DialogContent className="ticker-details-content" dividers>
           <Tabs value={tab} onChange={(_, value: TickerDetailsTab) => setTab(value)}>
             <Tab value="fundamentals" label="Fundamentals" />
+            <Tab value="assessment" label="AI Assessment" />
             <Tab value="profile-themes" label="Profile / Themes" />
             <Tab value="n-factor" label="N-Factor" />
           </Tabs>
-          {tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : loading && details === undefined ? (
+          {tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
+            <TickerAssessmentTab symbol={symbol} fundamentals={details?.fundamentals} />
+          ) : loading && details === undefined ? (
             <div className="panel-status">
               <CircularProgress size="1rem" />
               <Typography color="text.secondary">Loading ticker details</Typography>

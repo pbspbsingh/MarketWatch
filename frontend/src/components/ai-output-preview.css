@@ -1,0 +1,43 @@
+.ai-output-preview {
+  margin-top: 0.5rem;
+  border-top: 0.0625rem solid var(--color-border);
+
+  & summary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0 0;
+    color: var(--color-text);
+    font-size: 0.7rem;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker { display: none; }
+    & > svg { font-size: 1rem; color: var(--color-muted); transition: transform 150ms; }
+    &:focus-visible { outline: 0.125rem solid var(--color-accent); outline-offset: 0.25rem; border-radius: 0.125rem; }
+  }
+
+  &[open] summary > svg { transform: rotate(180deg); }
+}
+
+.ai-output-preview-label { margin-left: auto; color: var(--color-muted); font-size: 0.625rem; }
+
+.ai-output-preview-body {
+  max-height: 12rem;
+  overflow: auto;
+  margin-top: 0.5rem;
+  padding: 0.625rem;
+  border-radius: 0.25rem;
+  background: var(--color-surface);
+  scrollbar-width: thin;
+
+  & pre {
+    margin: 0;
+    color: var(--color-muted);
+    font-family: var(--font-mono, monospace);
+    font-size: 0.675rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}

@@ -2,6 +2,7 @@ pub mod chart;
 mod chart_relative_strength;
 mod daily_notes;
 mod exchange;
+pub mod fundamental_assessment;
 mod fundamentals;
 mod market_data;
 pub mod n_factor;

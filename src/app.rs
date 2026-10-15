@@ -6,6 +6,7 @@ use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
+use crate::services::fundamental_assessment::FundamentalAssessmentService;
 use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
@@ -99,6 +100,7 @@ pub struct AppState {
     pub market_chart: Arc<MarketChartService>,
     pub market_explorer: Arc<MarketExplorerService>,
     pub n_factor: Arc<NFactorService>,
+    pub fundamental_assessment: Arc<FundamentalAssessmentService>,
     pub sector_analysis: Arc<SectorAnalysisService>,
     pub themes: Arc<ThemeService>,
     pub theme_audits: Arc<ThemeAuditService>,
@@ -121,6 +123,8 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo_client = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
+    let fundamental_assessment =
+        Arc::new(FundamentalAssessmentService::new(store.clone(), ai.clone()));
     let n_factor = Arc::new(NFactorService::new(
         store.clone(),
         finviz.clone(),
@@ -244,6 +248,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         market_chart,
         market_explorer,
         n_factor,
+        fundamental_assessment,
         sector_analysis,
         themes,
         theme_audits,

@@ -1,0 +1,812 @@
+[
+  {
+    "symbol": "CHEF",
+    "currency": null,
+    "quarters": [
+      {
+        "fiscal_period": "2026Q2",
+        "earnings_release_date": "2026-07-29T08:30:00Z",
+        "earnings_per_share": 0.78,
+        "earnings_per_share_estimate": 0.5897,
+        "gaap_earnings_per_share": 0.76,
+        "gaap_earnings_per_share_estimate": 0.5625,
+        "revenue": 1168613000.0,
+        "revenue_estimate": 1124985700.0
+      },
+      {
+        "fiscal_period": "2026Q1",
+        "earnings_release_date": "2026-04-29T08:30:00Z",
+        "earnings_per_share": 0.4,
+        "earnings_per_share_estimate": 0.2522,
+        "gaap_earnings_per_share": 0.403,
+        "gaap_earnings_per_share_estimate": 0.2433,
+        "revenue": 1059010000.0,
+        "revenue_estimate": 1008357900.0
+      },
+      {
+        "fiscal_period": "2025Q4",
+        "earnings_release_date": "2026-02-11T08:30:00Z",
+        "earnings_per_share": 0.68,
+        "earnings_per_share_estimate": 0.6243,
+        "gaap_earnings_per_share": 0.497,
+        "gaap_earnings_per_share_estimate": 0.59,
+        "revenue": 1142564000.0,
+        "revenue_estimate": 1098501600.0
+      },
+      {
+        "fiscal_period": "2025Q3",
+        "earnings_release_date": "2025-10-29T08:30:00Z",
+        "earnings_per_share": 0.5,
+        "earnings_per_share_estimate": 0.4179,
+        "gaap_earnings_per_share": 0.445,
+        "gaap_earnings_per_share_estimate": 0.3975,
+        "revenue": 1021319000.0,
+        "revenue_estimate": 985957800.0
+      },
+      {
+        "fiscal_period": "2025Q2",
+        "earnings_release_date": "2025-07-30T08:30:00Z",
+        "earnings_per_share": 0.52,
+        "earnings_per_share_estimate": 0.4612,
+        "gaap_earnings_per_share": 0.488,
+        "gaap_earnings_per_share_estimate": 0.4475,
+        "revenue": 1034906000.0,
+        "revenue_estimate": 1013532800.0
+      },
+      {
+        "fiscal_period": "2025Q1",
+        "earnings_release_date": "2025-04-30T08:30:00Z",
+        "earnings_per_share": 0.25,
+        "earnings_per_share_estimate": 0.195,
+        "gaap_earnings_per_share": 0.25,
+        "gaap_earnings_per_share_estimate": 0.1865,
+        "revenue": 950748000.0,
+        "revenue_estimate": 926571600.0
+      },
+      {
+        "fiscal_period": "2024Q4",
+        "earnings_release_date": "2025-02-12T08:30:00Z",
+        "earnings_per_share": 0.55,
+        "earnings_per_share_estimate": 0.5025,
+        "gaap_earnings_per_share": 0.547,
+        "gaap_earnings_per_share_estimate": 0.4948,
+        "revenue": 1033568000.0,
+        "revenue_estimate": 1003194700.0
+      },
+      {
+        "fiscal_period": "2024Q3",
+        "earnings_release_date": "2024-10-30T08:30:00Z",
+        "earnings_per_share": 0.36,
+        "earnings_per_share_estimate": 0.3426,
+        "gaap_earnings_per_share": 0.336,
+        "gaap_earnings_per_share_estimate": 0.3181,
+        "revenue": 931452000.0,
+        "revenue_estimate": 935886500.0
+      }
+    ],
+    "annual": [
+      {
+        "fiscal_period": "2023FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 1.27,
+        "earnings_per_share_estimate": 1.2133,
+        "gaap_earnings_per_share": 0.876,
+        "gaap_earnings_per_share_estimate": 0.854,
+        "revenue": 3433763000.0,
+        "revenue_estimate": 3393181000.0
+      },
+      {
+        "fiscal_period": "2024FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 1.47,
+        "earnings_per_share_estimate": 1.4122,
+        "gaap_earnings_per_share": 1.32,
+        "gaap_earnings_per_share_estimate": 1.2325,
+        "revenue": 3794212000.0,
+        "revenue_estimate": 3763897200.0
+      },
+      {
+        "fiscal_period": "2025FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 1.9,
+        "earnings_per_share_estimate": 1.8673,
+        "gaap_earnings_per_share": 1.68,
+        "gaap_earnings_per_share_estimate": 1.7567,
+        "revenue": 4149537000.0000005,
+        "revenue_estimate": 4104856399.9999995
+      },
+      {
+        "fiscal_period": "2026FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 2.5382,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 2.475,
+        "revenue": null,
+        "revenue_estimate": 4583966600.0
+      },
+      {
+        "fiscal_period": "2027FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 3.0586,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 3.0175,
+        "revenue": null,
+        "revenue_estimate": 4977621200.0
+      }
+    ],
+    "next_quarter": {
+      "fiscal_period": "2026Q3",
+      "earnings_release_date": "2026-10-28T08:30:00Z",
+      "earnings_per_share": 0.5815,
+      "gaap_earnings_per_share": 0.5575,
+      "revenue": 1118101400.0
+    },
+    "quarter_forecasts": [
+      {
+        "fiscal_period": "2026Q3",
+        "earnings_release_date": "2026-10-28T08:30:00Z",
+        "earnings_per_share": 0.5815,
+        "gaap_earnings_per_share": 0.5575,
+        "revenue": 1118101400.0
+      },
+      {
+        "fiscal_period": "2026Q4",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.7831,
+        "gaap_earnings_per_share": 0.7725,
+        "revenue": 1236232000.0
+      }
+    ],
+    "fetched_at": "2026-10-15T00:59:43.515517026Z"
+  },
+  {
+    "symbol": "GEV",
+    "currency": null,
+    "quarters": [
+      {
+        "fiscal_period": "2026Q2",
+        "earnings_release_date": "2026-07-22T08:30:00Z",
+        "earnings_per_share": 2.47,
+        "earnings_per_share_estimate": 3.172,
+        "gaap_earnings_per_share": 2.47,
+        "gaap_earnings_per_share_estimate": 3.1777,
+        "revenue": 11104000000.0,
+        "revenue_estimate": 10789499300.0
+      },
+      {
+        "fiscal_period": "2026Q1",
+        "earnings_release_date": "2026-04-22T08:30:00Z",
+        "earnings_per_share": 17.44,
+        "earnings_per_share_estimate": 1.9533,
+        "gaap_earnings_per_share": 17.445,
+        "gaap_earnings_per_share_estimate": 1.9533,
+        "revenue": 9339000000.0,
+        "revenue_estimate": 9251625100.0
+      },
+      {
+        "fiscal_period": "2025Q4",
+        "earnings_release_date": "2026-01-28T08:30:00Z",
+        "earnings_per_share": 13.39,
+        "earnings_per_share_estimate": 2.9275,
+        "gaap_earnings_per_share": 13.372,
+        "gaap_earnings_per_share_estimate": 3.2822,
+        "revenue": 10956000000.0,
+        "revenue_estimate": 10205758100.0
+      },
+      {
+        "fiscal_period": "2025Q3",
+        "earnings_release_date": "2025-10-22T08:30:00Z",
+        "earnings_per_share": 1.6801,
+        "earnings_per_share_estimate": 1.7153,
+        "gaap_earnings_per_share": 1.644,
+        "gaap_earnings_per_share_estimate": 1.9533,
+        "revenue": 9969000000.0,
+        "revenue_estimate": 9143236500.0
+      },
+      {
+        "fiscal_period": "2025Q2",
+        "earnings_release_date": "2025-07-23T08:30:00Z",
+        "earnings_per_share": 1.7286,
+        "earnings_per_share_estimate": 1.484,
+        "gaap_earnings_per_share": 1.862,
+        "gaap_earnings_per_share_estimate": 1.7602,
+        "revenue": 9111000000.0,
+        "revenue_estimate": 8807816600.0
+      },
+      {
+        "fiscal_period": "2025Q1",
+        "earnings_release_date": "2025-04-23T08:30:00Z",
+        "earnings_per_share": 1.0742,
+        "earnings_per_share_estimate": 0.4686,
+        "gaap_earnings_per_share": 0.91,
+        "gaap_earnings_per_share_estimate": 0.6549,
+        "revenue": 8032000000.0,
+        "revenue_estimate": 7552568300.0
+      },
+      {
+        "fiscal_period": "2024Q4",
+        "earnings_release_date": "2025-01-22T08:30:00Z",
+        "earnings_per_share": 0.8086,
+        "earnings_per_share_estimate": 2.2786,
+        "gaap_earnings_per_share": 1.754,
+        "gaap_earnings_per_share_estimate": 2.5638,
+        "revenue": 10559000000.0,
+        "revenue_estimate": 10701878100.0
+      },
+      {
+        "fiscal_period": "2024Q3",
+        "earnings_release_date": "2024-10-23T08:30:00Z",
+        "earnings_per_share": -0.1591,
+        "earnings_per_share_estimate": 0.1916,
+        "gaap_earnings_per_share": -0.348,
+        "gaap_earnings_per_share_estimate": 0.3495,
+        "revenue": 8921000000.0,
+        "revenue_estimate": 8751641400.0
+      }
+    ],
+    "annual": [
+      {
+        "fiscal_period": "2023FY",
+        "earnings_release_date": null,
+        "earnings_per_share": -2.0867,
+        "earnings_per_share_estimate": null,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": null,
+        "revenue": 33239000000.0,
+        "revenue_estimate": null
+      },
+      {
+        "fiscal_period": "2024FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.5548,
+        "earnings_per_share_estimate": 3.0287,
+        "gaap_earnings_per_share": 5.626,
+        "gaap_earnings_per_share_estimate": 6.4282,
+        "revenue": 34935000000.0,
+        "revenue_estimate": 35053474400.0
+      },
+      {
+        "fiscal_period": "2025FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 17.69,
+        "earnings_per_share_estimate": 7.276,
+        "gaap_earnings_per_share": 17.69,
+        "gaap_earnings_per_share_estimate": 7.9408,
+        "revenue": 38068000000.0,
+        "revenue_estimate": 37338957700.0
+      },
+      {
+        "fiscal_period": "2026FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 30.3677,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 30.3677,
+        "revenue": null,
+        "revenue_estimate": 46328839500.0
+      },
+      {
+        "fiscal_period": "2027FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 24.4255,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 24.4255,
+        "revenue": null,
+        "revenue_estimate": 53107471200.0
+      }
+    ],
+    "next_quarter": {
+      "fiscal_period": "2026Q3",
+      "earnings_release_date": "2026-10-28T08:30:00Z",
+      "earnings_per_share": 3.9942,
+      "gaap_earnings_per_share": 3.9942,
+      "revenue": 11991697400.0
+    },
+    "quarter_forecasts": [
+      {
+        "fiscal_period": "2026Q3",
+        "earnings_release_date": "2026-10-28T08:30:00Z",
+        "earnings_per_share": 3.9942,
+        "gaap_earnings_per_share": 3.9942,
+        "revenue": 11991697400.0
+      },
+      {
+        "fiscal_period": "2026Q4",
+        "earnings_release_date": null,
+        "earnings_per_share": 6.2273,
+        "gaap_earnings_per_share": 6.2273,
+        "revenue": 13896698400.0
+      }
+    ],
+    "fetched_at": "2026-10-15T00:55:38.222907212Z"
+  },
+  {
+    "symbol": "FROG",
+    "currency": null,
+    "quarters": [
+      {
+        "fiscal_period": "2026Q2",
+        "earnings_release_date": "2026-08-06T16:30:00Z",
+        "earnings_per_share": 0.27,
+        "earnings_per_share_estimate": 0.2405,
+        "gaap_earnings_per_share": -0.03,
+        "gaap_earnings_per_share_estimate": -0.1245,
+        "revenue": 163772000.0,
+        "revenue_estimate": 155626000.0
+      },
+      {
+        "fiscal_period": "2026Q1",
+        "earnings_release_date": "2026-05-07T16:30:00Z",
+        "earnings_per_share": 0.27,
+        "earnings_per_share_estimate": 0.2133,
+        "gaap_earnings_per_share": -0.069,
+        "gaap_earnings_per_share_estimate": -0.1399,
+        "revenue": 153977000.0,
+        "revenue_estimate": 147448700.0
+      },
+      {
+        "fiscal_period": "2025Q4",
+        "earnings_release_date": "2026-02-12T16:30:00Z",
+        "earnings_per_share": 0.22,
+        "earnings_per_share_estimate": 0.1891,
+        "gaap_earnings_per_share": -0.128,
+        "gaap_earnings_per_share_estimate": -0.1854,
+        "revenue": 145306000.0,
+        "revenue_estimate": 138090200.0
+      },
+      {
+        "fiscal_period": "2025Q3",
+        "earnings_release_date": "2025-11-06T16:30:00Z",
+        "earnings_per_share": 0.22,
+        "earnings_per_share_estimate": 0.1637,
+        "gaap_earnings_per_share": -0.14,
+        "gaap_earnings_per_share_estimate": -0.203,
+        "revenue": 136907000.0,
+        "revenue_estimate": 128345900.0
+      },
+      {
+        "fiscal_period": "2025Q2",
+        "earnings_release_date": "2025-08-07T16:30:00Z",
+        "earnings_per_share": 0.18,
+        "earnings_per_share_estimate": 0.1634,
+        "gaap_earnings_per_share": -0.188,
+        "gaap_earnings_per_share_estimate": -0.2048,
+        "revenue": 127200000.0,
+        "revenue_estimate": 122801100.0
+      },
+      {
+        "fiscal_period": "2025Q1",
+        "earnings_release_date": "2025-05-08T16:30:00Z",
+        "earnings_per_share": 0.2,
+        "earnings_per_share_estimate": 0.1635,
+        "gaap_earnings_per_share": -0.163,
+        "gaap_earnings_per_share_estimate": -0.1679,
+        "revenue": 122407000.0,
+        "revenue_estimate": 117428500.0
+      },
+      {
+        "fiscal_period": "2024Q4",
+        "earnings_release_date": "2025-02-13T16:30:00Z",
+        "earnings_per_share": 0.19,
+        "earnings_per_share_estimate": 0.1393,
+        "gaap_earnings_per_share": -0.207,
+        "gaap_earnings_per_share_estimate": -0.2103,
+        "revenue": 116078000.0,
+        "revenue_estimate": 114248200.0
+      },
+      {
+        "fiscal_period": "2024Q3",
+        "earnings_release_date": "2024-11-07T16:30:00Z",
+        "earnings_per_share": 0.15,
+        "earnings_per_share_estimate": 0.106,
+        "gaap_earnings_per_share": -0.207,
+        "gaap_earnings_per_share_estimate": -0.1738,
+        "revenue": 109056000.0,
+        "revenue_estimate": 105593400.0
+      }
+    ],
+    "annual": [
+      {
+        "fiscal_period": "2023FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.51,
+        "earnings_per_share_estimate": 0.4437,
+        "gaap_earnings_per_share": -0.593,
+        "gaap_earnings_per_share_estimate": -0.6,
+        "revenue": 349886000.0,
+        "revenue_estimate": 345707200.0
+      },
+      {
+        "fiscal_period": "2024FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.65,
+        "earnings_per_share_estimate": 0.5989,
+        "gaap_earnings_per_share": -0.631,
+        "gaap_earnings_per_share_estimate": -0.6203,
+        "revenue": 428488000.0,
+        "revenue_estimate": 426594600.0
+      },
+      {
+        "fiscal_period": "2025FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.82,
+        "earnings_per_share_estimate": 0.7921,
+        "gaap_earnings_per_share": -0.62,
+        "gaap_earnings_per_share_estimate": -0.664,
+        "revenue": 531840000.00000006,
+        "revenue_estimate": 524610800.00000006
+      },
+      {
+        "fiscal_period": "2026FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 0.9802,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": -0.3529,
+        "revenue": null,
+        "revenue_estimate": 651888600.0
+      },
+      {
+        "fiscal_period": "2027FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 1.1451,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": -0.3003,
+        "revenue": null,
+        "revenue_estimate": 767725800.0
+      }
+    ],
+    "next_quarter": {
+      "fiscal_period": "2026Q3",
+      "earnings_release_date": "2026-11-05T20:00:00Z",
+      "earnings_per_share": 0.2317,
+      "gaap_earnings_per_share": -0.1161,
+      "revenue": 165845700.0
+    },
+    "quarter_forecasts": [
+      {
+        "fiscal_period": "2026Q3",
+        "earnings_release_date": "2026-11-05T20:00:00Z",
+        "earnings_per_share": 0.2317,
+        "gaap_earnings_per_share": -0.1161,
+        "revenue": 165845700.0
+      },
+      {
+        "fiscal_period": "2026Q4",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.2088,
+        "gaap_earnings_per_share": -0.1352,
+        "revenue": 168359800.0
+      }
+    ],
+    "fetched_at": "2026-10-15T00:55:34.363173185Z"
+  },
+  {
+    "symbol": "FORM",
+    "currency": null,
+    "quarters": [
+      {
+        "fiscal_period": "2026Q2",
+        "earnings_release_date": "2026-07-29T16:30:00Z",
+        "earnings_per_share": 0.82,
+        "earnings_per_share_estimate": 0.6095,
+        "gaap_earnings_per_share": 0.71,
+        "gaap_earnings_per_share_estimate": 0.4914,
+        "revenue": 258242000.00000003,
+        "revenue_estimate": 239999800.0
+      },
+      {
+        "fiscal_period": "2026Q1",
+        "earnings_release_date": "2026-04-29T16:30:00Z",
+        "earnings_per_share": 0.56,
+        "earnings_per_share_estimate": 0.4403,
+        "gaap_earnings_per_share": 0.257,
+        "gaap_earnings_per_share_estimate": 0.2857,
+        "revenue": 226144000.0,
+        "revenue_estimate": 225537800.0
+      },
+      {
+        "fiscal_period": "2025Q4",
+        "earnings_release_date": "2026-02-04T16:30:00Z",
+        "earnings_per_share": 0.46,
+        "earnings_per_share_estimate": 0.3515,
+        "gaap_earnings_per_share": 0.294,
+        "gaap_earnings_per_share_estimate": 0.2221,
+        "revenue": 215163000.0,
+        "revenue_estimate": 210561700.0
+      },
+      {
+        "fiscal_period": "2025Q3",
+        "earnings_release_date": "2025-10-29T16:30:00Z",
+        "earnings_per_share": 0.33,
+        "earnings_per_share_estimate": 0.2486,
+        "gaap_earnings_per_share": 0.201,
+        "gaap_earnings_per_share_estimate": 0.1143,
+        "revenue": 202676000.0,
+        "revenue_estimate": 199972400.0
+      },
+      {
+        "fiscal_period": "2025Q2",
+        "earnings_release_date": "2025-07-30T16:30:00Z",
+        "earnings_per_share": 0.27,
+        "earnings_per_share_estimate": 0.3004,
+        "gaap_earnings_per_share": 0.117,
+        "gaap_earnings_per_share_estimate": 0.1571,
+        "revenue": 195798000.0,
+        "revenue_estimate": 190169800.0
+      },
+      {
+        "fiscal_period": "2025Q1",
+        "earnings_release_date": "2025-04-30T16:30:00Z",
+        "earnings_per_share": 0.23,
+        "earnings_per_share_estimate": 0.1897,
+        "gaap_earnings_per_share": 0.082,
+        "gaap_earnings_per_share_estimate": 0.0483,
+        "revenue": 171356000.0,
+        "revenue_estimate": 170025300.0
+      },
+      {
+        "fiscal_period": "2024Q4",
+        "earnings_release_date": "2025-02-05T16:30:00Z",
+        "earnings_per_share": 0.27,
+        "earnings_per_share_estimate": 0.2906,
+        "gaap_earnings_per_share": 0.124,
+        "gaap_earnings_per_share_estimate": 0.1757,
+        "revenue": 189483000.0,
+        "revenue_estimate": 190119000.0
+      },
+      {
+        "fiscal_period": "2024Q3",
+        "earnings_release_date": "2024-10-30T16:30:00Z",
+        "earnings_per_share": 0.35,
+        "earnings_per_share_estimate": 0.3125,
+        "gaap_earnings_per_share": 0.239,
+        "gaap_earnings_per_share_estimate": 0.1886,
+        "revenue": 207917000.0,
+        "revenue_estimate": 200288500.0
+      }
+    ],
+    "annual": [
+      {
+        "fiscal_period": "2023FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.73,
+        "earnings_per_share_estimate": 0.7203,
+        "gaap_earnings_per_share": 1.054,
+        "gaap_earnings_per_share_estimate": 0.1525,
+        "revenue": 663102000.0,
+        "revenue_estimate": 660249100.0
+      },
+      {
+        "fiscal_period": "2024FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 1.15,
+        "earnings_per_share_estimate": 1.1678,
+        "gaap_earnings_per_share": 0.888,
+        "gaap_earnings_per_share_estimate": 0.8671,
+        "revenue": 763599000.0,
+        "revenue_estimate": 764193200.0
+      },
+      {
+        "fiscal_period": "2025FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 1.3,
+        "earnings_per_share_estimate": 1.1288,
+        "gaap_earnings_per_share": 0.69,
+        "gaap_earnings_per_share_estimate": 0.6223,
+        "revenue": 784993000.0,
+        "revenue_estimate": 780137000.0
+      },
+      {
+        "fiscal_period": "2026FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 3.0494,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 2.4075,
+        "revenue": null,
+        "revenue_estimate": 1033019399.9999999
+      },
+      {
+        "fiscal_period": "2027FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 3.8058,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 3.2502,
+        "revenue": null,
+        "revenue_estimate": 1208395900.0
+      }
+    ],
+    "next_quarter": {
+      "fiscal_period": "2026Q3",
+      "earnings_release_date": "2026-10-28T16:30:00Z",
+      "earnings_per_share": 0.863,
+      "gaap_earnings_per_share": 0.7586,
+      "revenue": 270468600.0
+    },
+    "quarter_forecasts": [
+      {
+        "fiscal_period": "2026Q3",
+        "earnings_release_date": "2026-10-28T16:30:00Z",
+        "earnings_per_share": 0.863,
+        "gaap_earnings_per_share": 0.7586,
+        "revenue": 270468600.0
+      },
+      {
+        "fiscal_period": "2026Q4",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.8114,
+        "gaap_earnings_per_share": 0.6986,
+        "revenue": 277522500.0
+      }
+    ],
+    "fetched_at": "2026-10-15T00:51:26.946690412Z"
+  },
+  {
+    "symbol": "FIGS",
+    "currency": null,
+    "quarters": [
+      {
+        "fiscal_period": "2026Q2",
+        "earnings_release_date": "2026-08-06T16:30:00Z",
+        "earnings_per_share": 0.15,
+        "earnings_per_share_estimate": 0.0673,
+        "gaap_earnings_per_share": 0.15,
+        "gaap_earnings_per_share_estimate": 0.0673,
+        "revenue": 196619000.0,
+        "revenue_estimate": 186172900.0
+      },
+      {
+        "fiscal_period": "2026Q1",
+        "earnings_release_date": "2026-05-07T16:30:00Z",
+        "earnings_per_share": 0.03,
+        "earnings_per_share_estimate": 0.0144,
+        "gaap_earnings_per_share": 0.032,
+        "gaap_earnings_per_share_estimate": 0.0144,
+        "revenue": 159902000.0,
+        "revenue_estimate": 153145000.0
+      },
+      {
+        "fiscal_period": "2025Q4",
+        "earnings_release_date": "2026-02-26T16:30:00Z",
+        "earnings_per_share": 0.1,
+        "earnings_per_share_estimate": 0.02,
+        "gaap_earnings_per_share": 0.097,
+        "gaap_earnings_per_share_estimate": 0.02,
+        "revenue": 201896000.0,
+        "revenue_estimate": 165317800.0
+      },
+      {
+        "fiscal_period": "2025Q3",
+        "earnings_release_date": "2025-11-06T16:30:00Z",
+        "earnings_per_share": 0.05,
+        "earnings_per_share_estimate": 0.0178,
+        "gaap_earnings_per_share": 0.048,
+        "gaap_earnings_per_share_estimate": 0.0178,
+        "revenue": 151661000.0,
+        "revenue_estimate": 142457800.0
+      },
+      {
+        "fiscal_period": "2025Q2",
+        "earnings_release_date": "2025-08-07T16:30:00Z",
+        "earnings_per_share": 0.04,
+        "earnings_per_share_estimate": 0.0187,
+        "gaap_earnings_per_share": 0.041,
+        "gaap_earnings_per_share_estimate": 0.0187,
+        "revenue": 152640000.0,
+        "revenue_estimate": 144160800.0
+      },
+      {
+        "fiscal_period": "2025Q1",
+        "earnings_release_date": "2025-05-08T16:30:00Z",
+        "earnings_per_share": 0.0,
+        "earnings_per_share_estimate": 0.0,
+        "gaap_earnings_per_share": -0.001,
+        "gaap_earnings_per_share_estimate": 0.0,
+        "revenue": 124901000.0,
+        "revenue_estimate": 119117200.0
+      },
+      {
+        "fiscal_period": "2024Q4",
+        "earnings_release_date": "2025-02-27T16:30:00Z",
+        "earnings_per_share": 0.01,
+        "earnings_per_share_estimate": 0.0127,
+        "gaap_earnings_per_share": 0.011,
+        "gaap_earnings_per_share_estimate": 0.0127,
+        "revenue": 151832000.0,
+        "revenue_estimate": 139527800.0
+      },
+      {
+        "fiscal_period": "2024Q3",
+        "earnings_release_date": "2024-11-07T16:30:00Z",
+        "earnings_per_share": -0.01,
+        "earnings_per_share_estimate": -0.0069,
+        "gaap_earnings_per_share": -0.01,
+        "gaap_earnings_per_share_estimate": -0.0069,
+        "revenue": 140209000.0,
+        "revenue_estimate": 143930100.0
+      }
+    ],
+    "annual": [
+      {
+        "fiscal_period": "2023FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.12,
+        "earnings_per_share_estimate": 0.0876,
+        "gaap_earnings_per_share": 0.124,
+        "gaap_earnings_per_share_estimate": 0.0876,
+        "revenue": 545646000.0,
+        "revenue_estimate": 550276000.0
+      },
+      {
+        "fiscal_period": "2024FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.02,
+        "earnings_per_share_estimate": 0.0171,
+        "gaap_earnings_per_share": 0.015,
+        "gaap_earnings_per_share_estimate": 0.0171,
+        "revenue": 555558000.0,
+        "revenue_estimate": 543527000.0
+      },
+      {
+        "fiscal_period": "2025FY",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.19,
+        "earnings_per_share_estimate": 0.11,
+        "gaap_earnings_per_share": 0.19,
+        "gaap_earnings_per_share_estimate": 0.11,
+        "revenue": 631098000.0,
+        "revenue_estimate": 594961300.0
+      },
+      {
+        "fiscal_period": "2026FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 0.3667,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 0.3667,
+        "revenue": null,
+        "revenue_estimate": 761041900.0
+      },
+      {
+        "fiscal_period": "2027FY",
+        "earnings_release_date": null,
+        "earnings_per_share": null,
+        "earnings_per_share_estimate": 0.3744,
+        "gaap_earnings_per_share": null,
+        "gaap_earnings_per_share_estimate": 0.3744,
+        "revenue": null,
+        "revenue_estimate": 831069600.0
+      }
+    ],
+    "next_quarter": {
+      "fiscal_period": "2026Q3",
+      "earnings_release_date": "2026-11-05T20:00:00Z",
+      "earnings_per_share": 0.0711,
+      "gaap_earnings_per_share": 0.0711,
+      "revenue": 182822200.0
+    },
+    "quarter_forecasts": [
+      {
+        "fiscal_period": "2026Q3",
+        "earnings_release_date": "2026-11-05T20:00:00Z",
+        "earnings_per_share": 0.0711,
+        "gaap_earnings_per_share": 0.0711,
+        "revenue": 182822200.0
+      },
+      {
+        "fiscal_period": "2026Q4",
+        "earnings_release_date": null,
+        "earnings_per_share": 0.1178,
+        "gaap_earnings_per_share": 0.1178,
+        "revenue": 221758200.0
+      }
+    ],
+    "fetched_at": "2026-10-15T00:47:58.463042989Z"
+  }
+]
