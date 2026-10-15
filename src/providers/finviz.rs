@@ -618,6 +618,14 @@ fn selector(value: &str) -> anyhow::Result<Selector> {
 }
 
 #[cfg(test)]
+impl FinvizClient {
+    pub(crate) fn with_stock_url(mut self, url: &str) -> Self {
+        self.stock_url = Url::parse(url).expect("valid test stock URL");
+        self
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Config;

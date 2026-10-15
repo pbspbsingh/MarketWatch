@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO theme_stocks (theme_id, symbol, source, assigned_at) VALUES (1, 'AUTO', 'automatic_ai', ?), (1, 'MANUAL', 'manual', ?), (1, 'MANAI', 'manual_ai', ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1f8bf1350e599c4e8081548411a6120ac22eecfc6b090e578e86cb5f9df0885d"
+}

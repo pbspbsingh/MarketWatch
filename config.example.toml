@@ -52,11 +52,13 @@ membership_fresh_days = 15
 [n_factor]
 default_source = "stock_titan" # "stock_titan" or "finviz"
 
-# Optional: refresh N-Factor reports while user-started AI work is idle.
+# Optional: refresh Assessment and N-Factor reports while user-started AI work is idle.
 # Requires [ai] configuration. Leave this block commented to disable it.
-# [n_factor.background]
+# [fundamentals.background]
 # idle_delay_secs = 300
 # refresh_days = 7
+# Assessment always refetches fundamentals, reuses unchanged analysis, and schedules
+# its next check from the last successful check. Failed jobs retry separately.
 # Only tickers with stored industry mappings are eligible; mapped ETFs are excluded.
 # process_non_watchlist = false # Process non-watchlist tickers after eligible watchlist tickers.
-# Non-watchlist jobs have a 30-second pause after each ticker.
+# Non-watchlist work has a 10-second pause plus 0–5 seconds of jitter after each feature job.

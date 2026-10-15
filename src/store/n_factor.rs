@@ -2,13 +2,6 @@ use super::Store;
 use crate::models::TickerSymbol;
 use crate::models::n_factor::{NFactorReport, NewsSource};
 use anyhow::Context;
-use chrono::{DateTime, Utc};
-
-pub(crate) struct NFactorCandidate {
-    pub symbol: TickerSymbol,
-    pub checked_at: Option<DateTime<Utc>>,
-    pub in_watchlist: bool,
-}
 
 impl Store {
     pub async fn n_factor_reports(
@@ -25,61 +18,6 @@ impl Store {
         .into_iter()
         .map(|payload| serde_json::from_str(&payload).context("invalid saved N-Factor report"))
         .collect()
-    }
-
-    pub(crate) async fn n_factor_candidate(
-        &self,
-        process_non_watchlist: bool,
-        cutoff: DateTime<Utc>,
-        excluded: &[TickerSymbol],
-        // Restrict the same query to one ticker when rechecking a running job.
-        symbol: Option<&TickerSymbol>,
-    ) -> anyhow::Result<Option<NFactorCandidate>> {
-        let cutoff = cutoff.to_rfc3339();
-        let excluded = serde_json::to_string(excluded)?;
-        let symbol = symbol.map(TickerSymbol::as_str);
-        let row = sqlx::query!(
-            r#"WITH candidates AS (
-                   SELECT DISTINCT c.symbol,
-                       EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,
-                       (SELECT COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))
-                        FROM n_factor_reports r WHERE r.symbol = c.symbol
-                        ORDER BY julianday(COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))) DESC
-                        LIMIT 1) AS checked_at
-                   FROM industry_membership_tickers c
-                   WHERE (?1 OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
-                       AND (?4 IS NULL OR c.symbol = ?4)
-                       AND NOT EXISTS (
-                           SELECT 1 FROM industry_membership_tickers im
-                           WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'
-                       )
-                       AND NOT EXISTS (SELECT 1 FROM json_each(?3) WHERE value = c.symbol)
-               )
-               SELECT symbol AS "symbol!", in_watchlist AS "in_watchlist!: bool",
-                   checked_at AS "checked_at?: String"
-               FROM candidates
-               WHERE checked_at IS NULL OR julianday(checked_at) <= julianday(?2)
-               ORDER BY in_watchlist DESC, julianday(checked_at), RANDOM()
-               LIMIT 1"#,
-            process_non_watchlist,
-            cutoff,
-            excluded,
-            symbol,
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-        row.map(|row| {
-            Ok(NFactorCandidate {
-                symbol: TickerSymbol::try_from(row.symbol)?,
-                checked_at: row
-                    .checked_at
-                    .map(|value| value.parse::<DateTime<Utc>>())
-                    .transpose()
-                    .context("invalid N-Factor news check timestamp")?,
-                in_watchlist: row.in_watchlist,
-            })
-        })
-        .transpose()
     }
 
     pub async fn n_factor_report(
@@ -121,6 +59,8 @@ impl Store {
 mod tests {
     use super::*;
     use crate::models::AssignmentSource;
+    use crate::models::fundamentals_background::{FundamentalsFeature, FundamentalsTask};
+    use chrono::Utc;
     use sqlx::sqlite::SqlitePoolOptions;
 
     #[tokio::test]
@@ -178,69 +118,98 @@ mod tests {
             .unwrap();
         let cutoff = Utc::now() - chrono::Duration::days(7);
         let watch = store
-            .n_factor_candidate(false, cutoff, &[], None)
+            .fundamentals_candidate(false, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(watch.symbol.as_str(), "WATCH");
+        assert_eq!(watch.task.symbol.as_str(), "WATCH");
         assert!(watch.in_watchlist);
         let all = store
-            .n_factor_candidate(true, cutoff, &[], None)
+            .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(all.symbol.as_str(), "WATCH");
+        assert_eq!(all.task.symbol.as_str(), "WATCH");
         let other = store
-            .n_factor_candidate(true, cutoff, std::slice::from_ref(&watch.symbol), None)
+            .fundamentals_candidate(
+                true,
+                cutoff,
+                std::slice::from_ref(&watch.task),
+                None,
+                Some(FundamentalsFeature::NFactor),
+            )
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(other.symbol.as_str(), "INDUSTRY");
+        assert_eq!(other.task.symbol.as_str(), "INDUSTRY");
         assert!(!other.in_watchlist);
         // Rechecking picks up watchlist changes and newly learned ETF mappings.
         store
-            .remove_watchlist_symbol(watchlist.id, &watch.symbol)
+            .remove_watchlist_symbol(watchlist.id, &watch.task.symbol)
             .await
             .unwrap();
         assert!(
             store
-                .n_factor_candidate(false, cutoff, &[], None)
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[],
+                    None,
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
         );
         assert!(
             !store
-                .n_factor_candidate(true, cutoff, &[], None)
+                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
                 .await
                 .unwrap()
                 .unwrap()
                 .in_watchlist
         );
         store
-            .add_ticker_industry("exchangetradedfund", "Exchange Traded Fund", &other.symbol)
+            .add_ticker_industry(
+                "exchangetradedfund",
+                "Exchange Traded Fund",
+                &other.task.symbol,
+            )
             .await
             .unwrap();
         assert!(
             store
-                .n_factor_candidate(true, cutoff, &[], Some(&other.symbol))
+                .fundamentals_candidate(
+                    true,
+                    cutoff,
+                    &[],
+                    Some(&other.task.symbol),
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
         );
         // A newly added watchlist ticker is selected on the very next query.
         store
-            .add_watchlist_symbol(watchlist.id, &watch.symbol)
+            .add_watchlist_symbol(watchlist.id, &watch.task.symbol)
             .await
             .unwrap();
         assert_eq!(
             store
-                .n_factor_candidate(false, cutoff, &[], None)
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[],
+                    None,
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .unwrap()
+                .task
                 .symbol,
-            watch.symbol
+            watch.task.symbol
         );
     }
 
@@ -339,22 +308,34 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         let cutoff = now - chrono::Duration::days(7);
         let missing = store
-            .n_factor_candidate(false, cutoff, &[], None)
+            .fundamentals_candidate(false, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(missing.symbol.as_str(), "BBB");
+        assert_eq!(missing.task.symbol.as_str(), "BBB");
         assert!(missing.checked_at.is_none());
         assert!(
             store
-                .n_factor_candidate(false, cutoff, &[missing.symbol], None)
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[missing.task],
+                    None,
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
         );
         assert!(
             store
-                .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[],
+                    Some(&symbol),
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
@@ -364,7 +345,13 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         assert!(
             store
-                .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[],
+                    Some(&symbol),
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
@@ -373,7 +360,13 @@ mod tests {
         report.news_fetched_at = report.generated_at;
         store.save_n_factor_report(&report).await.unwrap();
         let stale = store
-            .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+            .fundamentals_candidate(
+                false,
+                cutoff,
+                &[],
+                Some(&symbol),
+                Some(FundamentalsFeature::NFactor),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -430,24 +423,40 @@ mod tests {
         // A stale watchlist report outranks a missing non-watchlist report.
         assert_eq!(
             store
-                .n_factor_candidate(true, cutoff, &[], None)
+                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
                 .await
                 .unwrap()
                 .unwrap()
+                .task
                 .symbol,
             watch
         );
         // Running jobs and failures in backoff are excluded in SQL.
-        let excluded = std::slice::from_ref(&watch);
+        let excluded = [FundamentalsTask {
+            symbol: watch.clone(),
+            feature: FundamentalsFeature::NFactor,
+        }];
         let fallback = store
-            .n_factor_candidate(true, cutoff, excluded, None)
+            .fundamentals_candidate(
+                true,
+                cutoff,
+                &excluded,
+                None,
+                Some(FundamentalsFeature::NFactor),
+            )
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(fallback.symbol.as_str(), "OTHER");
+        assert_eq!(fallback.task.symbol.as_str(), "OTHER");
         assert!(
             store
-                .n_factor_candidate(false, cutoff, excluded, None)
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &excluded,
+                    None,
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_none()
@@ -458,10 +467,11 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         assert_eq!(
             store
-                .n_factor_candidate(true, cutoff, &[], None)
+                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
                 .await
                 .unwrap()
                 .unwrap()
+                .task
                 .symbol,
             fresh
         );
@@ -471,23 +481,30 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         assert!(
             store
-                .n_factor_candidate(false, cutoff, &[], Some(&fresh))
+                .fundamentals_candidate(
+                    false,
+                    cutoff,
+                    &[],
+                    Some(&fresh),
+                    Some(FundamentalsFeature::NFactor)
+                )
                 .await
                 .unwrap()
                 .is_some()
         );
         // A new watchlist addition with no report takes priority immediately.
-        let newcomer = fallback.symbol;
+        let newcomer = fallback.task.symbol;
         store
             .add_watchlist_symbol(watchlist.id, &newcomer)
             .await
             .unwrap();
         assert_eq!(
             store
-                .n_factor_candidate(true, cutoff, &[], None)
+                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
                 .await
                 .unwrap()
                 .unwrap()
+                .task
                 .symbol,
             newcomer
         );

@@ -40,7 +40,7 @@ interface TickerDetailsDialogProps {
   onThemeChanged?: () => void;
 }
 
-const detailsTabs = ["fundamentals", "assessment", "profile-themes", "n-factor"] as const;
+const detailsTabs = ["fundamentals", "assessment", "n-factor", "profile-themes"] as const;
 export type TickerDetailsTab = (typeof detailsTabs)[number];
 
 export function TickerDetailsDialog({
@@ -333,8 +333,8 @@ function OpenTickerDetailsDialog({
           <Tabs value={tab} onChange={(_, value: TickerDetailsTab) => setTab(value)}>
             <Tab value="fundamentals" label="Fundamentals" />
             <Tab value="assessment" label="AI Assessment" />
-            <Tab value="profile-themes" label="Profile / Themes" />
             <Tab value="n-factor" label="N-Factor" />
+            <Tab value="profile-themes" label="Profile / Themes" />
           </Tabs>
           {tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
             <TickerAssessmentTab symbol={symbol} fundamentals={details?.fundamentals} />

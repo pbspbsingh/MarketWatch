@@ -1,5 +1,3 @@
-mod background;
-
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -11,12 +9,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, watch};
 use tracing::{Instrument, error, info, info_span, warn};
 
-use super::themes::strip_code_fence;
+use super::{
+    ai_job::{AiAdmission, AiJobCompletion, AiJobControl, background_admission},
+    themes::strip_code_fence,
+};
 use crate::providers::AiError;
 use crate::{
-    config::NFactorBackgroundConfig,
+    config::FundamentalsBackgroundConfig,
     models::{
         TickerSymbol,
+        fundamentals_background::FundamentalsFeature,
         n_factor::{
             NFactorFinding, NFactorJob, NFactorJobProgress, NFactorPhase, NFactorReport,
             NewsCoverage, NewsItem, NewsSource, NewsStopReason,
@@ -44,23 +46,19 @@ pub struct NFactorService {
     ai: Option<Arc<AiClient>>,
     default_source: NewsSource,
     jobs: Mutex<HashMap<JobKey, JobEntry>>,
-    job_changes: Notify,
+    pub(super) job_changes: Notify,
 }
 
 struct JobEntry {
     job: NFactorJob,
-    user_job: Option<UserAiJob>,
-    background: watch::Sender<bool>,
-    finished: watch::Sender<bool>,
+    control: AiJobControl,
 }
 
 impl JobEntry {
     fn new(job: NFactorJob, user_job: Option<UserAiJob>) -> Self {
         Self {
-            background: watch::channel(job.background).0,
-            finished: watch::channel(false).0,
+            control: AiJobControl::new(job.background, user_job),
             job,
-            user_job,
         }
     }
 }
@@ -180,6 +178,34 @@ impl NFactorService {
         })
     }
 
+    pub(super) fn active_symbols(&self) -> Vec<TickerSymbol> {
+        self.jobs
+            .lock()
+            .expect("N-Factor registry lock")
+            .values()
+            .filter(|entry| entry.job.phase.is_active())
+            .map(|entry| entry.job.symbol.clone())
+            .collect()
+    }
+
+    async fn background_eligible(
+        &self,
+        symbol: &TickerSymbol,
+        config: FundamentalsBackgroundConfig,
+    ) -> anyhow::Result<bool> {
+        Ok(self
+            .store
+            .fundamentals_candidate(
+                config.process_non_watchlist,
+                Utc::now() - Duration::days(i64::from(config.refresh_days)),
+                &[],
+                Some(symbol),
+                Some(FundamentalsFeature::NFactor),
+            )
+            .await?
+            .is_some())
+    }
+
     pub fn default_source(&self) -> NewsSource {
         self.default_source
     }
@@ -201,12 +227,12 @@ impl NFactorService {
         self.start_job(symbol, source, None).map(|(job, _)| job)
     }
 
-    fn start_job(
+    pub(super) fn start_job(
         self: &Arc<Self>,
         symbol: TickerSymbol,
         source: NewsSource,
-        background: Option<NFactorBackgroundConfig>,
-    ) -> Result<(NFactorJob, watch::Receiver<bool>), NFactorStartError> {
+        background: Option<FundamentalsBackgroundConfig>,
+    ) -> Result<(NFactorJob, AiJobCompletion), NFactorStartError> {
         let ai = self.ai.clone().ok_or(NFactorStartError::AiDisabled)?;
         let key = (symbol.clone(), source);
         let mut jobs = self.jobs.lock().expect("N-Factor registry lock");
@@ -217,14 +243,13 @@ impl NFactorService {
             if background.is_none() && entry.job.background {
                 // A manual request for an existing background job promotes it;
                 // otherwise its own user-job registration would block admission.
-                entry.user_job = Some(ai.user_job());
+                entry.control.promote(&ai);
                 entry.job.background = false;
-                entry.background.send_replace(false);
                 info!(job_id = %entry.job.id, %symbol, source = source.as_str(), "Background N-Factor job promoted to manual request");
             } else {
                 info!(job_id = %entry.job.id, %symbol, source = source.as_str(), background = entry.job.background, "Reusing active N-Factor job");
             }
-            return Ok((entry.job.clone(), entry.finished.subscribe()));
+            return Ok((entry.job.clone(), entry.control.completion()));
         }
         if jobs
             .values()
@@ -256,8 +281,9 @@ impl NFactorService {
             error: None,
         };
         let entry = JobEntry::new(job.clone(), background.is_none().then(|| ai.user_job()));
-        let origin = entry.background.subscribe();
-        let finished = entry.finished.subscribe();
+        let origin = entry.control.background.subscribe();
+        let finished = entry.control.completion();
+        let finish = entry.control.finish_signal();
         jobs.insert(key.clone(), entry);
         drop(jobs);
         let service = self.clone();
@@ -284,6 +310,7 @@ impl NFactorService {
                     Ok(Err(error)) => Some(error),
                     Err(error) => Some(error.into()),
                 };
+                let succeeded = failure.is_none();
                 if let Some(failure) = failure {
                     let phase = service.job(&id).map(|job| job.phase);
                     error!(?phase, error = %format!("{failure:#}"), "N-Factor job failed");
@@ -303,9 +330,9 @@ impl NFactorService {
                     info!(phase = ?entry.job.phase, background = entry.job.background,
                     elapsed_secs = (Utc::now() - entry.job.started_at).num_seconds(),
                     "N-Factor job finished");
-                    entry.user_job.take();
-                    entry.finished.send_replace(true);
+                    entry.control.release_user_job();
                 }
+                finish(succeeded);
                 service.job_changes.notify_waiters();
             }
             .instrument(span),
@@ -356,7 +383,7 @@ impl NFactorService {
         key: &JobKey,
         id: &str,
         ai: &AiClient,
-        background: Option<NFactorBackgroundConfig>,
+        background: Option<FundamentalsBackgroundConfig>,
         origin: watch::Receiver<bool>,
     ) -> anyhow::Result<()> {
         let now = Utc::now();
@@ -399,7 +426,7 @@ impl NFactorService {
         key: &JobKey,
         id: &str,
         ai: &AiClient,
-        background: Option<NFactorBackgroundConfig>,
+        background: Option<FundamentalsBackgroundConfig>,
         mut origin: watch::Receiver<bool>,
         batch: NewsBatch,
     ) -> anyhow::Result<()> {
@@ -468,44 +495,25 @@ impl NFactorService {
             )
         } else {
             let prompt = build_prompt(&key.0, key.1, &news, &coverage)?;
-            let mut request = None;
-            if let Some(config) = background {
-                info!(
-                    idle_delay_secs = config.idle_delay_secs,
-                    "Waiting for background N-Factor AI admission"
-                );
-                loop {
-                    if !*origin.borrow() {
-                        break;
-                    }
-                    let permit = tokio::select! {
-                        permit = ai.background_request(std::time::Duration::from_secs(u64::from(config.idle_delay_secs))) => permit,
-                        result = origin.changed() => { result?; continue; },
-                    };
-                    if !*origin.borrow() {
-                        break;
-                    }
-                    // Freshness, watchlist scope, or industry mappings may have
-                    // changed while the background job fetched news or waited.
-                    let eligible = self.background_eligible(&key.0, config).await?;
-                    if !*origin.borrow() {
-                        break;
-                    }
-                    if !eligible {
-                        info!(
-                            "Skipping background N-Factor analysis: ticker is fresh or no longer eligible"
-                        );
+            let request = if let Some(config) = background {
+                match background_admission(
+                    ai,
+                    std::time::Duration::from_secs(u64::from(config.idle_delay_secs)),
+                    &mut origin,
+                    || self.background_eligible(&key.0, config),
+                )
+                .await?
+                {
+                    AiAdmission::Background(request) => Some(request),
+                    AiAdmission::User => None,
+                    AiAdmission::Skip => {
                         self.update(key, id, |job| job.phase = NFactorPhase::Completed);
                         return Ok(());
                     }
-                    if permit.user_work_pending() {
-                        info!("Yielding background N-Factor AI admission to user-started work");
-                        continue;
-                    }
-                    request = Some(permit);
-                    break;
                 }
-            }
+            } else {
+                None
+            };
             self.update(key, id, |job| job.phase = NFactorPhase::Analyzing);
             let on_delta =
                 |delta: AiStreamDelta<'_>| self.update(key, id, |job| record_ai_delta(job, delta));
@@ -811,7 +819,7 @@ mod tests {
                     coverage: None,
                 };
                 store.save_n_factor_report(&saved).await.unwrap();
-                let config = NFactorBackgroundConfig {
+                let config = FundamentalsBackgroundConfig {
                     idle_delay_secs: 300,
                     refresh_days: 7,
                     process_non_watchlist: false,
@@ -836,7 +844,7 @@ mod tests {
                     error: None,
                 };
                 let entry = JobEntry::new(job.clone(), None);
-                let origin = entry.background.subscribe();
+                let origin = entry.control.background.subscribe();
                 let key = (symbol.clone(), source);
                 service.jobs.lock().unwrap().insert(key.clone(), entry);
                 let mut fetched = saved.news.clone();
@@ -951,7 +959,7 @@ mod tests {
             Some(ai.clone()),
             NewsSource::StockTitan,
         );
-        let config = NFactorBackgroundConfig {
+        let config = FundamentalsBackgroundConfig {
             idle_delay_secs: 300,
             refresh_days: 7,
             process_non_watchlist: false,
@@ -1009,7 +1017,7 @@ mod tests {
                 error: None,
             };
             let entry = JobEntry::new(job.clone(), None);
-            let origin = entry.background.subscribe();
+            let origin = entry.control.background.subscribe();
             let key = (symbol.clone(), source);
             service.jobs.lock().unwrap().insert(key.clone(), entry);
             let batch = NewsBatch {
@@ -1043,7 +1051,7 @@ mod tests {
             );
             assert_eq!(service.job(&job.id).unwrap().phase, NFactorPhase::Completed);
             assert!(!service.background_eligible(&symbol, config).await.unwrap());
-            let expanded = NFactorBackgroundConfig {
+            let expanded = FundamentalsBackgroundConfig {
                 process_non_watchlist: true,
                 ..config
             };
@@ -1425,7 +1433,7 @@ mod tests {
             error: None,
         };
         let entry = JobEntry::new(job, None);
-        let mut origin = entry.background.subscribe();
+        let mut origin = entry.control.background.subscribe();
         service
             .jobs
             .lock()
@@ -1452,8 +1460,8 @@ mod tests {
             .values_mut()
             .next()
             .unwrap()
-            .user_job
-            .take();
+            .control
+            .release_user_job();
         tokio::time::timeout(
             std::time::Duration::from_millis(10),
             ai.wait_idle(std::time::Duration::ZERO),

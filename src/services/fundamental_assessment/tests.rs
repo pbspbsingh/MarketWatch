@@ -8,13 +8,130 @@ use crate::{
     models::{CompanyProfile, Exchange},
 };
 
+fn assessment_service(store: Store, ai: Option<Arc<AiClient>>) -> FundamentalAssessmentService {
+    service_with_source(store, ai, "http://127.0.0.1:1/stock")
+}
+
+fn service_with_source(
+    store: Store,
+    ai: Option<Arc<AiClient>>,
+    url: &str,
+) -> FundamentalAssessmentService {
+    use crate::{
+        providers::{FinvizClient, YahooClient},
+        services::yahoo::YahooService,
+        utils::MarketSchedule,
+    };
+    let mut config: crate::config::Config =
+        toml::from_str(include_str!("../../../config.example.toml")).unwrap();
+    config.providers.min_delay_ms = 0;
+    config.providers.max_delay_ms = 0;
+    config.providers.connect_timeout_secs = 1;
+    config.providers.request_timeout_secs = 1;
+    let finviz = Arc::new(
+        FinvizClient::new(&config.finviz, &config.providers)
+            .unwrap()
+            .with_stock_url(url),
+    );
+    let yahoo = Arc::new(
+        YahooService::new(
+            store.clone(),
+            Arc::new(YahooClient::new(&config.providers)),
+            &config.market,
+            HashSet::new(),
+        )
+        .unwrap(),
+    );
+    let schedule =
+        MarketSchedule::with_holidays(&config.market, std::time::Duration::ZERO, HashSet::new())
+            .unwrap();
+    let details = Arc::new(TickerDetailsService::new(
+        store.clone(),
+        finviz,
+        yahoo,
+        schedule,
+    ));
+    FundamentalAssessmentService::new(store, ai, details)
+}
+
+struct MockFundamentals {
+    response: Mutex<(axum::http::StatusCode, String)>,
+    requests: std::sync::atomic::AtomicUsize,
+}
+
+fn financial_html(data: &Fundamentals) -> String {
+    let period = |period: &crate::models::FundamentalPeriod| {
+        json!({
+            "fiscalPeriod": period.fiscal_period,
+            "earningsDate": "2099-12-01T08:30:00",
+            "epsActual": period.earnings_per_share,
+            "epsEstimate": period.earnings_per_share_estimate,
+            "epsReportedActual": period.gaap_earnings_per_share,
+            "epsReportedEstimate": period.gaap_earnings_per_share_estimate,
+            "salesActual": period.revenue.map(|value| value / 1_000_000.0),
+            "salesEstimate": period.revenue_estimate.map(|value| value / 1_000_000.0),
+        })
+    };
+    let mut quarters = data.quarters.iter().map(period).collect::<Vec<_>>();
+    quarters.extend(data.quarter_forecasts.iter().map(|forecast| {
+        json!({
+            "fiscalPeriod": forecast.fiscal_period,
+            "earningsDate": "2099-12-01T08:30:00",
+            "epsEstimate": forecast.earnings_per_share,
+            "epsReportedEstimate": forecast.gaap_earnings_per_share,
+            "salesEstimate": forecast.revenue.map(|value| value / 1_000_000.0),
+        })
+    }));
+    let route = json!({"earningsData": quarters, "earningsAnnualData": data.annual.iter().flatten().map(period).collect::<Vec<_>>()});
+    format!("<script id=\"route-init-data\" type=\"application/json\">{route}</script>")
+}
+
+async fn fundamentals_server() -> (String, Arc<MockFundamentals>, tokio::task::JoinHandle<()>) {
+    let mock = Arc::new(MockFundamentals {
+        response: Mutex::new((axum::http::StatusCode::OK, financial_html(&fixture()))),
+        requests: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let router = Router::new()
+        .route(
+            "/stock",
+            axum::routing::get(|State(mock): State<Arc<MockFundamentals>>| async move {
+                mock.requests
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let (status, html) = mock.response.lock().unwrap().clone();
+                (status, axum::response::Html(html))
+            }),
+        )
+        .with_state(mock.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/stock", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    (url, mock, server)
+}
+
 fn fixture() -> Fundamentals {
     serde_json::from_str::<Vec<Fundamentals>>(include_str!("fixtures/refreshed.json"))
         .unwrap()
         .remove(0)
 }
 
+async fn save_report(store: &Store, report: &FundamentalAssessment) {
+    store
+        .save_fundamental_assessment(
+            &report.symbol,
+            &AssessmentResult::Report(Box::new(report.clone())),
+        )
+        .await
+        .unwrap();
+}
+
 async fn seed(store: &Store, data: &Fundamentals) {
+    seed_profile(store, data).await;
+    store.upsert_fundamentals(data).await.unwrap();
+}
+
+async fn seed_profile(store: &Store, data: &Fundamentals) {
     store
         .upsert_company_profile(&CompanyProfile {
             symbol: data.symbol.clone(),
@@ -25,7 +142,6 @@ async fn seed(store: &Store, data: &Fundamentals) {
         })
         .await
         .unwrap();
-    store.upsert_fundamentals(data).await.unwrap();
 }
 
 fn ai_response() -> Value {
@@ -54,6 +170,7 @@ fn report(data: Fundamentals) -> FundamentalAssessment {
     FundamentalAssessment {
         symbol: data.symbol.clone(),
         generated_at: Utc::now(),
+        last_checked_at: None,
         model: "test".into(),
         rubric_version: RUBRIC_VERSION,
         prompt_version: PROMPT_VERSION,
@@ -209,8 +326,8 @@ async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timesta
     let mut data = fixture();
     seed(&store, &data).await;
     let saved = report(data.clone());
-    store.save_fundamental_assessment(&saved).await.unwrap();
-    let service = FundamentalAssessmentService::new(store.clone(), None);
+    save_report(&store, &saved).await;
+    let service = assessment_service(store.clone(), None);
     assert!(!service.state(&data.symbol).await.unwrap().stale);
     data.fetched_at += chrono::Duration::days(1);
     store.upsert_fundamentals(&data).await.unwrap();
@@ -222,11 +339,11 @@ async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timesta
     assert_eq!(state.report.unwrap().generated_at, saved.generated_at);
     let mut saved = report(data.clone());
     saved.rubric_version += 1;
-    store.save_fundamental_assessment(&saved).await.unwrap();
+    save_report(&store, &saved).await;
     assert!(service.state(&data.symbol).await.unwrap().stale);
     saved.rubric_version = RUBRIC_VERSION;
     saved.prompt_version += 1;
-    store.save_fundamental_assessment(&saved).await.unwrap();
+    save_report(&store, &saved).await;
     assert!(service.state(&data.symbol).await.unwrap().stale);
 }
 
@@ -235,9 +352,9 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let data = fixture();
     seed(&store, &data).await;
-    let service = FundamentalAssessmentService::new(store.clone(), None);
+    let service = assessment_service(store.clone(), None);
     let saved = report(data.clone());
-    store.save_fundamental_assessment(&saved).await.unwrap();
+    save_report(&store, &saved).await;
     assert!(!service.state(&data.symbol).await.unwrap().stale);
     store
         .add_ticker_industry(
@@ -271,11 +388,12 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
     assert!(service.state(&data.symbol).await.unwrap().stale);
     let mut saved = saved;
     saved.context = context;
-    store.save_fundamental_assessment(&saved).await.unwrap();
+    save_report(&store, &saved).await;
     assert!(!service.state(&data.symbol).await.unwrap().stale);
 }
 
 struct MockAi {
+    store: Store,
     entered: Notify,
     release: Notify,
     response: Mutex<String>,
@@ -286,7 +404,18 @@ async fn mock_ai(State(mock): State<Arc<MockAi>>, Json(request): Json<Value>) ->
     assert!(prompt.contains("YOU choose the assessment profile"));
     let raw: Value =
         serde_json::from_str(prompt.split("FINANCIAL SNAPSHOT:\n").nth(1).unwrap()).unwrap();
-    assert_eq!(raw, serde_json::to_value(fixture()).unwrap());
+    let data: Fundamentals = serde_json::from_value(raw).unwrap();
+    let fetched = mock
+        .store
+        .assessment_fundamentals(&data.symbol)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&data).unwrap(),
+        serde_json::to_value(fetched).unwrap()
+    );
+    assert_ne!(data.fetched_at, fixture().fetched_at);
     mock.entered.notify_one();
     let response = mock.response.lock().unwrap().clone();
     axum::body::Body::from_stream(futures_util::stream::unfold(
@@ -314,7 +443,7 @@ async fn wait_for_job(
     service: &FundamentalAssessmentService,
     symbol: &TickerSymbol,
 ) -> AssessmentState {
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let state = service.state(symbol).await.unwrap();
             if state.job.as_ref().is_some_and(|job| !job.phase.is_active()) {
@@ -331,8 +460,9 @@ async fn wait_for_job(
 async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on_failure() {
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let data = fixture();
-    seed(&store, &data).await;
+    seed_profile(&store, &data).await;
     let mock = Arc::new(MockAi {
+        store: store.clone(),
         entered: Notify::new(),
         release: Notify::new(),
         response: Mutex::new(ai_response().to_string()),
@@ -352,7 +482,29 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
         max_concurrent_requests: 1,
         read_timeout_secs: 5,
     }));
-    let service = Arc::new(FundamentalAssessmentService::new(store.clone(), Some(ai)));
+    let (url, financials, financial_server) = fundamentals_server().await;
+    let service = Arc::new(service_with_source(store.clone(), Some(ai), &url));
+    assert!(!service.state(&data.symbol).await.unwrap().data_ready);
+
+    // A manual retry after a saved 404 uses the same runner and can replace it
+    // with a real assessment as soon as the source recovers.
+    *financials.response.lock().unwrap() = (axum::http::StatusCode::NOT_FOUND, String::new());
+    let (_, completion) = service.start_job(data.symbol.clone(), None).unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), completion.wait())
+            .await
+            .unwrap()
+    );
+    assert!(
+        service
+            .state(&data.symbol)
+            .await
+            .unwrap()
+            .not_found_at
+            .is_some()
+    );
+    *financials.response.lock().unwrap() = (axum::http::StatusCode::OK, financial_html(&data));
+
     let job = service.start(data.symbol.clone()).await.unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(5), mock.entered.notified())
         .await
@@ -380,6 +532,7 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
             .get("scores")
             .is_none()
     );
+    let captured = preview_job.snapshot.unwrap();
     assert!(preview.report.is_none());
     assert!(!preview.job_stale);
     let mut changed = data.clone();
@@ -391,8 +544,9 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     let state = wait_for_job(&service, &data.symbol).await;
     assert_eq!(state.job.unwrap().phase, AssessmentPhase::Completed);
     assert!(state.stale);
+    assert!(state.not_found_at.is_none());
     let saved = state.report.unwrap();
-    assert_eq!(saved.fingerprint, fingerprint(&data).unwrap());
+    assert_eq!(saved.fingerprint, captured.fingerprint);
     assert_eq!(saved.scores.total, Some(75.0));
     assert_eq!(saved.scores.rows[0].score, Some(23.0));
     assert_eq!(
@@ -401,19 +555,29 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     );
     *mock.response.lock().unwrap() = "not JSON".into();
     store.upsert_fundamentals(&data).await.unwrap();
+    let mut outdated = saved.clone();
+    outdated.prompt_version = 0;
+    save_report(&store, &outdated).await;
     service.start(data.symbol.clone()).await.unwrap();
     mock.release.notify_one();
     let state = wait_for_job(&service, &data.symbol).await;
     assert_eq!(state.job.unwrap().phase, AssessmentPhase::Failed);
     assert_eq!(state.report.unwrap().generated_at, saved.generated_at);
+    assert_eq!(
+        financials
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3
+    );
+    financial_server.abort();
     server.abort();
 }
 
 #[tokio::test]
-async fn missing_data_and_disabled_ai_do_not_start_jobs() {
+async fn disabled_ai_is_rejected_and_failed_refresh_does_not_create_a_report() {
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let data = fixture();
-    let service = Arc::new(FundamentalAssessmentService::new(store.clone(), None));
+    let service = Arc::new(assessment_service(store.clone(), None));
     assert!(matches!(
         service.start(data.symbol.clone()).await,
         Err(AssessmentStartError::AiDisabled)
@@ -425,12 +589,449 @@ async fn missing_data_and_disabled_ai_do_not_start_jobs() {
         max_concurrent_requests: 1,
         read_timeout_secs: 1,
     }));
-    let service = Arc::new(FundamentalAssessmentService::new(store, Some(ai)));
-    assert!(matches!(
-        service.start(data.symbol).await,
-        Err(AssessmentStartError::DataUnavailable)
+    let service = Arc::new(assessment_service(store, Some(ai)));
+    service.start(data.symbol.clone()).await.unwrap();
+    let state = wait_for_job(&service, &data.symbol).await;
+    assert_eq!(state.job.unwrap().phase, AssessmentPhase::Failed);
+    assert!(state.report.is_none());
+}
+
+#[tokio::test]
+async fn source_404_is_saved_without_ai_for_manual_and_background_requests() {
+    use std::sync::atomic::Ordering;
+    for background in [false, true] {
+        for had_report in [false, true] {
+            let store = Store::connect("sqlite::memory:").await.unwrap();
+            let data = fixture();
+            seed(&store, &data).await;
+            let watchlist = store.watchlists().await.unwrap().remove(0);
+            store
+                .add_watchlist_symbol(watchlist.id, &data.symbol)
+                .await
+                .unwrap();
+            store
+                .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
+                .await
+                .unwrap();
+            if had_report {
+                let mut saved = report(data.clone());
+                saved.generated_at = Utc::now() - Duration::days(10);
+                save_report(&store, &saved).await;
+            }
+            let (url, financials, server) = fundamentals_server().await;
+            *financials.response.lock().unwrap() =
+                (axum::http::StatusCode::NOT_FOUND, String::new());
+            let service = Arc::new(service_with_source(
+                store.clone(),
+                Some(unreachable_ai()),
+                &url,
+            ));
+            let (_, completion) = service
+                .start_job(data.symbol.clone(), background.then(background_config))
+                .unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(5), completion.wait())
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(financials.requests.load(Ordering::SeqCst), 1);
+            let state = service.state(&data.symbol).await.unwrap();
+            assert_eq!(state.job.unwrap().phase, AssessmentPhase::Completed);
+            assert!(state.report.is_none());
+            assert!(!state.stale);
+            let not_found_at = state.not_found_at.unwrap();
+            let result = store
+                .fundamental_assessment(&data.symbol)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(result).unwrap(),
+                json!({"not_found_at": not_found_at})
+            );
+
+            // The persisted result suppresses background work after restart.
+            let restarted = Arc::new(service_with_source(
+                store.clone(),
+                Some(unreachable_ai()),
+                &url,
+            ));
+            assert_eq!(
+                restarted.state(&data.symbol).await.unwrap().not_found_at,
+                Some(not_found_at)
+            );
+            assert!(
+                !restarted
+                    .background_eligible(&data.symbol, background_config())
+                    .await
+                    .unwrap()
+            );
+            let (_, completion) = restarted
+                .start_job(data.symbol.clone(), Some(background_config()))
+                .unwrap();
+            assert!(completion.wait().await);
+            assert_eq!(financials.requests.load(Ordering::SeqCst), 1);
+
+            // Check the interval boundary without waiting for wall-clock days.
+            assert!(
+                store
+                    .fundamentals_candidate(
+                        false,
+                        not_found_at - Duration::seconds(1),
+                        &[],
+                        Some(&data.symbol),
+                        Some(FundamentalsFeature::Assessment)
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                store
+                    .fundamentals_candidate(
+                        false,
+                        not_found_at,
+                        &[],
+                        Some(&data.symbol),
+                        Some(FundamentalsFeature::Assessment)
+                    )
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            server.abort();
+        }
+    }
+}
+
+fn unreachable_ai() -> Arc<AiClient> {
+    Arc::new(AiClient::new(&AiConfig::Ollama {
+        endpoint: "http://127.0.0.1:1/chat".into(),
+        model: "test".into(),
+        batch_size: 1,
+        max_concurrent_requests: 1,
+        read_timeout_secs: 1,
+    }))
+}
+
+fn background_config() -> FundamentalsBackgroundConfig {
+    FundamentalsBackgroundConfig {
+        idle_delay_secs: 0,
+        refresh_days: 7,
+        process_non_watchlist: false,
+    }
+}
+
+#[tokio::test]
+async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_clock() {
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let (url, financials, server) = fundamentals_server().await;
+    let service = Arc::new(service_with_source(
+        store.clone(),
+        Some(unreachable_ai()),
+        &url,
     ));
-    assert!(service.jobs.lock().unwrap().is_empty());
+    let symbol = fixture().symbol;
+    seed(&store, &fixture()).await;
+    let watchlist = store.watchlists().await.unwrap().remove(0);
+    store
+        .add_watchlist_symbol(watchlist.id, &symbol)
+        .await
+        .unwrap();
+    store
+        .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+        .await
+        .unwrap();
+    let data = service.details.refresh_fundamentals(&symbol).await.unwrap();
+    let mut saved = report(data);
+    saved.context = service.context(&symbol).await.unwrap();
+    saved.generated_at = Utc::now() - Duration::days(10);
+    saved.last_checked_at = Some(saved.generated_at);
+    save_report(&store, &saved).await;
+
+    let (_, completion) = service
+        .start_job(symbol.clone(), Some(background_config()))
+        .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), completion.wait())
+            .await
+            .unwrap()
+    );
+    let checked = store
+        .fundamental_assessment(&symbol)
+        .await
+        .unwrap()
+        .and_then(AssessmentResult::into_report)
+        .unwrap();
+    assert_eq!(checked.generated_at, saved.generated_at);
+    assert_eq!(checked.fingerprint, saved.fingerprint);
+    assert_eq!(checked.scores.total, saved.scores.total);
+    assert_eq!(
+        checked.fundamentals.fetched_at,
+        saved.fundamentals.fetched_at
+    );
+    assert!(checked.last_checked_at.unwrap() > saved.last_checked_at.unwrap());
+    assert_eq!(
+        financials
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2
+    );
+    assert!(
+        !service
+            .background_eligible(&symbol, background_config())
+            .await
+            .unwrap()
+    );
+
+    // The persisted check clock also governs a newly constructed service.
+    let restarted = service_with_source(store.clone(), Some(unreachable_ai()), &url);
+    assert!(
+        !restarted
+            .background_eligible(&symbol, background_config())
+            .await
+            .unwrap()
+    );
+    // Even a stale queued request must recheck the interval before fetching.
+    let (_, completion) = service
+        .start_job(symbol.clone(), Some(background_config()))
+        .unwrap();
+    assert!(completion.wait().await);
+    assert_eq!(
+        financials
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2
+    );
+
+    // A manual check is immediate but still avoids AI for unchanged inputs.
+    let (_, completion) = service.start_job(symbol.clone(), None).unwrap();
+    assert!(completion.wait().await);
+    assert_eq!(
+        financials
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3
+    );
+
+    // A provider failure cannot fall back to the fresh cache or move the clock.
+    let before_failure = store
+        .fundamental_assessment(&symbol)
+        .await
+        .unwrap()
+        .and_then(AssessmentResult::into_report)
+        .unwrap();
+    *financials.response.lock().unwrap() =
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, String::new());
+    let (_, completion) = service.start_job(symbol.clone(), None).unwrap();
+    assert!(
+        !tokio::time::timeout(std::time::Duration::from_secs(10), completion.wait())
+            .await
+            .unwrap()
+    );
+    let after_failure = store
+        .fundamental_assessment(&symbol)
+        .await
+        .unwrap()
+        .and_then(AssessmentResult::into_report)
+        .unwrap();
+    assert_eq!(
+        after_failure.last_checked_at,
+        before_failure.last_checked_at
+    );
+    assert_eq!(after_failure.generated_at, before_failure.generated_at);
+
+    // Financial changes invalidate reuse and require an AI request. Its failure
+    // must still preserve the previously saved assessment and check timestamp.
+    let mut changed = fixture();
+    changed.quarters[0].revenue = Some(42.0);
+    *financials.response.lock().unwrap() = (axum::http::StatusCode::OK, financial_html(&changed));
+    let (_, completion) = service.start_job(symbol.clone(), None).unwrap();
+    assert!(!completion.wait().await);
+    let state = service.state(&symbol).await.unwrap();
+    assert!(state.stale);
+    assert!(state.job.unwrap().snapshot.is_some());
+    assert_eq!(
+        state.report.unwrap().last_checked_at,
+        before_failure.last_checked_at
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn reuse_requires_matching_financials_context_and_assessment_settings() {
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let service = assessment_service(store, Some(unreachable_ai()));
+    let data = fixture();
+    let saved = report(data.clone());
+    let hash = fingerprint(&data).unwrap();
+    assert!(service.reusable(&saved, Some(&hash), &saved.context));
+    let mut changed = data;
+    changed.quarters[0].gaap_earnings_per_share = Some(999.0);
+    assert!(!service.reusable(
+        &saved,
+        Some(&fingerprint(&changed).unwrap()),
+        &saved.context
+    ));
+    let context = AssessmentContext {
+        company_name: Some("Changed".into()),
+        ..saved.context.clone()
+    };
+    assert!(!service.reusable(&saved, Some(&hash), &context));
+    for field in ["model", "rubric", "prompt"] {
+        let mut outdated = saved.clone();
+        match field {
+            "model" => outdated.model = "old".into(),
+            "rubric" => outdated.rubric_version = 0,
+            _ => outdated.prompt_version = 0,
+        }
+        assert!(!service.reusable(&outdated, Some(&hash), &saved.context));
+    }
+}
+
+#[tokio::test]
+async fn manual_request_promotes_background_assessment_waiting_for_ai() {
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let (url, financials, server) = fundamentals_server().await;
+    let ai = unreachable_ai();
+    let user_job = ai.user_job();
+    let service = Arc::new(service_with_source(store.clone(), Some(ai.clone()), &url));
+    let symbol = fixture().symbol;
+    seed(&store, &fixture()).await;
+    let watchlist = store.watchlists().await.unwrap().remove(0);
+    store
+        .add_watchlist_symbol(watchlist.id, &symbol)
+        .await
+        .unwrap();
+    store
+        .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+        .await
+        .unwrap();
+    let (background, completion) = service
+        .start_job(symbol.clone(), Some(background_config()))
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let state = service.state(&symbol).await.unwrap();
+            if state.job.unwrap().phase == AssessmentPhase::WaitingForAi {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let manual = service.start(symbol.clone()).await.unwrap();
+    assert_eq!(manual.id, background.id);
+    assert!(!manual.background);
+    // Promotion must leave the idle wait, rather than deadlocking behind its
+    // own user-job registration. The deliberately unreachable AI then fails.
+    assert!(
+        !tokio::time::timeout(std::time::Duration::from_secs(5), completion.wait())
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        financials
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    assert_eq!(service.jobs.lock().unwrap().len(), 1);
+    drop(user_job);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        ai.wait_idle(std::time::Duration::ZERO),
+    )
+    .await
+    .unwrap();
+    server.abort();
+}
+
+#[tokio::test]
+async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
+    use crate::{
+        models::n_factor::NewsSource,
+        providers::{FinvizClient, news::StockTitanClient},
+        services::{
+            fundamentals_background::FundamentalsBackgroundService, n_factor::NFactorService,
+        },
+    };
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let symbol = fixture().symbol;
+    seed(&store, &fixture()).await;
+    store
+        .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+        .await
+        .unwrap();
+    let watchlist = store.watchlists().await.unwrap().remove(0);
+    store
+        .add_watchlist_symbol(watchlist.id, &symbol)
+        .await
+        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/stock", listener.local_addr().unwrap());
+    let router = Router::new().route("/stock", axum::routing::get(
+        |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| async move {
+            if query.contains_key("ty") {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "fundamentals unavailable")
+            } else {
+                (axum::http::StatusCode::OK, "<table id=\"news-table\"></table>")
+            }
+        }
+    ));
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let ai = unreachable_ai();
+    let assessment = Arc::new(service_with_source(store.clone(), Some(ai.clone()), &url));
+    let mut config: crate::config::Config =
+        toml::from_str(include_str!("../../../config.example.toml")).unwrap();
+    config.providers.min_delay_ms = 0;
+    config.providers.max_delay_ms = 0;
+    let n_factor = Arc::new(NFactorService::new(
+        store.clone(),
+        Arc::new(
+            FinvizClient::new(&config.finviz, &config.providers)
+                .unwrap()
+                .with_stock_url(&url),
+        ),
+        StockTitanClient::new(&config.providers).unwrap(),
+        Some(ai.clone()),
+        NewsSource::Finviz,
+    ));
+    let (membership, changes) = watch::channel(());
+    FundamentalsBackgroundService::spawn(
+        store.clone(),
+        Some(ai),
+        assessment.clone(),
+        n_factor,
+        background_config(),
+        changes,
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let state = assessment.state(&symbol).await.unwrap();
+            let news = store
+                .n_factor_report(&symbol, NewsSource::Finviz)
+                .await
+                .unwrap();
+            if state
+                .job
+                .is_some_and(|job| job.phase == AssessmentPhase::Failed)
+                && news.is_some()
+            {
+                assert!(state.report.is_none());
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(membership);
+    server.abort();
 }
 
 #[tokio::test]

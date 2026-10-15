@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_stocks WHERE symbol = 'TEST'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "2b1f86dfc8aa97c00e2f1002193a1925f103bb4a3b2860f4816a429194e3770d"
+}

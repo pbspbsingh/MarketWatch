@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT status FROM theme_audits WHERE symbol = 'TEST'",
+  "describe": {
+    "columns": [
+      {
+        "name": "status",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_audits",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "abb2dbc1f26fb6750e63c1772edaf3f1ba41fb9a1f6bb0112b62c036e89f4728"
+}

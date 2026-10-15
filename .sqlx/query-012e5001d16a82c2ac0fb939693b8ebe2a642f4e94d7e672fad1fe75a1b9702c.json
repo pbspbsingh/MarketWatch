@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT job_id FROM theme_ai_processed_symbols WHERE symbol = 'APPLIED'",
+  "describe": {
+    "columns": [
+      {
+        "name": "job_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_processed_symbols",
+            "name": "job_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "012e5001d16a82c2ac0fb939693b8ebe2a642f4e94d7e672fad1fe75a1b9702c"
+}

@@ -123,8 +123,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo_client = Arc::new(YahooClient::new(&config.providers));
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
-    let fundamental_assessment =
-        Arc::new(FundamentalAssessmentService::new(store.clone(), ai.clone()));
     let n_factor = Arc::new(NFactorService::new(
         store.clone(),
         finviz.clone(),
@@ -149,6 +147,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         yahoo.clone(),
         market_schedule.clone(),
+    ));
+    let fundamental_assessment = Arc::new(FundamentalAssessmentService::new(
+        store.clone(),
+        ai.clone(),
+        details.clone(),
     ));
     let global_search = Arc::new(GlobalSearchService::new(store.clone()));
     let industry_analysis = Arc::new(IndustryAnalysisService::new(store.clone()));
@@ -190,7 +193,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         &config.market,
     )?);
     let theme_audits = Arc::new(ThemeAuditService::new(store.clone(), ai.clone()));
-    let themes = Arc::new(ThemeService::new(store.clone(), ai, ticker_catalog.clone()));
+    let themes = Arc::new(ThemeService::new(
+        store.clone(),
+        ai.clone(),
+        ticker_catalog.clone(),
+    ));
     let theme_analysis = Arc::new(ThemeAnalysisService::new(
         store.clone(),
         yahoo.clone(),
@@ -203,11 +210,18 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     ));
     let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
     if let Some(background) = config
-        .n_factor
+        .fundamentals
         .as_ref()
         .and_then(|config| config.background)
     {
-        n_factor.spawn_background(background, watchlists.subscribe_membership_changes());
+        crate::services::fundamentals_background::FundamentalsBackgroundService::spawn(
+            store.clone(),
+            ai,
+            fundamental_assessment.clone(),
+            n_factor.clone(),
+            background,
+            watchlists.subscribe_membership_changes(),
+        );
     }
     let top_stocks = Arc::new(TopStocksService::new(
         store.clone(),

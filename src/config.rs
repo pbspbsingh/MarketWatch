@@ -41,6 +41,8 @@ pub struct Config {
     pub ai: Option<AiConfig>,
     #[serde(default)]
     pub n_factor: Option<NFactorConfig>,
+    #[serde(default)]
+    pub fundamentals: Option<FundamentalsConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -48,12 +50,17 @@ pub struct Config {
 pub struct NFactorConfig {
     #[serde(default)]
     pub default_source: NewsSource,
-    pub background: Option<NFactorBackgroundConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FundamentalsConfig {
+    pub background: Option<FundamentalsBackgroundConfig>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct NFactorBackgroundConfig {
+pub struct FundamentalsBackgroundConfig {
     pub idle_delay_secs: u32,
     pub refresh_days: u32,
     #[serde(default)]
@@ -256,16 +263,20 @@ impl Config {
         if let Some(ai) = &self.ai {
             ai.validate()?;
         }
-        if let Some(background) = self.n_factor.as_ref().and_then(|config| config.background) {
+        if let Some(background) = self
+            .fundamentals
+            .as_ref()
+            .and_then(|config| config.background)
+        {
             anyhow::ensure!(
                 background.refresh_days > 0,
-                "n_factor.background.refresh_days must be positive"
+                "fundamentals.background.refresh_days must be positive"
             );
             anyhow::ensure!(
                 Utc::now()
                     .checked_add_signed(Duration::days(i64::from(background.refresh_days)))
                     .is_some(),
-                "n_factor.background.refresh_days is too large"
+                "fundamentals.background.refresh_days is too large"
             );
         }
         Ok(())
@@ -359,7 +370,7 @@ mod tests {
         assert_eq!(absent.default_source, NewsSource::StockTitan);
         let finviz: NFactorConfig = toml::from_str("default_source = 'finviz'").unwrap();
         assert_eq!(finviz.default_source, NewsSource::Finviz);
-        assert!(finviz.background.is_none());
+
         assert!(toml::from_str::<NFactorConfig>("default_source = 'unknown'").is_err());
     }
 
@@ -370,29 +381,36 @@ mod tests {
         let absent: Config = toml::from_str(example.split("\n[n_factor]").next().unwrap()).unwrap();
         absent.validate().unwrap();
         assert!(absent.n_factor.is_none());
-        let configured =
-            format!("{example}\n[n_factor.background]\nidle_delay_secs = 0\nrefresh_days = 7\n");
+        let configured = format!(
+            "{example}\n[fundamentals.background]\nidle_delay_secs = 0\nrefresh_days = 7\n"
+        );
         let configured: Config = toml::from_str(&configured).unwrap();
-        let background = configured.n_factor.as_ref().unwrap().background.unwrap();
+        let background = configured
+            .fundamentals
+            .as_ref()
+            .unwrap()
+            .background
+            .unwrap();
         assert_eq!(background.idle_delay_secs, 0);
         assert_eq!(background.refresh_days, 7);
         assert!(!background.process_non_watchlist);
         configured.validate().unwrap();
         let enabled: Config = toml::from_str(&format!(
-            "{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 7\nprocess_non_watchlist = true\n"
+            "{example}\n[fundamentals.background]\nidle_delay_secs = 5\nrefresh_days = 7\nprocess_non_watchlist = true\n"
         ))
         .unwrap();
         enabled.validate().unwrap();
         assert!(
             enabled
-                .n_factor
+                .fundamentals
                 .unwrap()
                 .background
                 .unwrap()
                 .process_non_watchlist
         );
-        let invalid =
-            format!("{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 0\n");
+        let invalid = format!(
+            "{example}\n[fundamentals.background]\nidle_delay_secs = 5\nrefresh_days = 0\n"
+        );
         let invalid: Config = toml::from_str(&invalid).unwrap();
         assert!(
             invalid
@@ -401,10 +419,10 @@ mod tests {
                 .to_string()
                 .contains("refresh_days")
         );
-        let incomplete = format!("{example}\n[n_factor.background]\nidle_delay_secs = 5\n");
+        let incomplete = format!("{example}\n[fundamentals.background]\nidle_delay_secs = 5\n");
         assert!(toml::from_str::<Config>(&incomplete).is_err());
         let excessive = format!(
-            "{example}\n[n_factor.background]\nidle_delay_secs = 5\nrefresh_days = 4294967295\n"
+            "{example}\n[fundamentals.background]\nidle_delay_secs = 5\nrefresh_days = 4294967295\n"
         );
         let excessive: Config = toml::from_str(&excessive).unwrap();
         assert!(

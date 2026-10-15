@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO theme_ai_processed_symbols (symbol, outcome, processed_at) VALUES ('AUTO', 'assigned', ?), ('MANUAL', 'assigned', ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d87248ab18a0aa86503f55ed9fe5d350ea83e5066dda74cfcfcc4cd62e11b567"
+}

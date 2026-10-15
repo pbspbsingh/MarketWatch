@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT detached_at IS NULL FROM daily_note_images WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "detached_at IS NULL",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "891214d170ac048145486e2d6e3f91bf991ca7690fb3c118b507d72690859ba9"
+}

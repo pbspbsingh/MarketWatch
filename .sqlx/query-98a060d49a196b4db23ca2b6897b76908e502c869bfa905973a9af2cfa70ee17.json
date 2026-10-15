@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT theme_id, source FROM theme_stocks WHERE symbol = 'TEST'",
+  "describe": {
+    "columns": [
+      {
+        "name": "theme_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "theme_id"
+          }
+        }
+      },
+      {
+        "name": "source",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "98a060d49a196b4db23ca2b6897b76908e502c869bfa905973a9af2cfa70ee17"
+}

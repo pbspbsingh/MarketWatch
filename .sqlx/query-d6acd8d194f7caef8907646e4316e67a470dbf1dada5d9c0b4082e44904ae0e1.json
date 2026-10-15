@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_tags (id, name) VALUES (1, 'swing'), (2, 'reviewed')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "d6acd8d194f7caef8907646e4316e67a470dbf1dada5d9c0b4082e44904ae0e1"
+}

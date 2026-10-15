@@ -16,6 +16,7 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 mod daily_notes;
 mod fundamental_assessments;
 mod fundamentals;
+mod fundamentals_background;
 mod industries;
 mod maintenance;
 mod market_data;

@@ -4,6 +4,7 @@ mod daily_notes;
 mod exchange;
 pub mod fundamental_assessment;
 mod fundamentals;
+pub(crate) mod fundamentals_background;
 mod market_data;
 pub mod n_factor;
 mod performance;

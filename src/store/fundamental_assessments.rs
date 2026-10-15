@@ -1,7 +1,7 @@
 use anyhow::Context;
 
 use super::Store;
-use crate::models::{Fundamentals, TickerSymbol, fundamental_assessment::FundamentalAssessment};
+use crate::models::{Fundamentals, TickerSymbol, fundamental_assessment::AssessmentResult};
 
 impl Store {
     /// Inspect the persisted shape before deserialization erases the distinction
@@ -26,7 +26,7 @@ impl Store {
     pub async fn fundamental_assessment(
         &self,
         symbol: &TickerSymbol,
-    ) -> anyhow::Result<Option<FundamentalAssessment>> {
+    ) -> anyhow::Result<Option<AssessmentResult>> {
         let symbol = symbol.as_str();
         sqlx::query_scalar!(
             r#"SELECT payload AS "payload!: String" FROM fundamental_assessments WHERE symbol = ?"#,
@@ -42,10 +42,11 @@ impl Store {
 
     pub async fn save_fundamental_assessment(
         &self,
-        report: &FundamentalAssessment,
+        symbol: &TickerSymbol,
+        result: &AssessmentResult,
     ) -> anyhow::Result<()> {
-        let symbol = report.symbol.as_str();
-        let payload = serde_json::to_string(report)?;
+        let symbol = symbol.as_str();
+        let payload = serde_json::to_string(result)?;
         sqlx::query!(
             "INSERT INTO fundamental_assessments (symbol, payload) VALUES (?, ?) ON CONFLICT (symbol) DO UPDATE SET payload = excluded.payload",
             symbol,

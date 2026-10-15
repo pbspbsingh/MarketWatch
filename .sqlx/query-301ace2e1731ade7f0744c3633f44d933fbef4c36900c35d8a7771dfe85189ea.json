@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "301ace2e1731ade7f0744c3633f44d933fbef4c36900c35d8a7771dfe85189ea"
+}

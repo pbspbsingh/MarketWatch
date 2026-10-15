@@ -346,7 +346,7 @@ export function ChartPanel({
       } else {
         setDetailsSelection({
           tickerSelection,
-          initialTab: event.key === "ArrowRight" ? "fundamentals" : "n-factor",
+          initialTab: event.key === "ArrowRight" ? "fundamentals" : "profile-themes",
         });
       }
     };

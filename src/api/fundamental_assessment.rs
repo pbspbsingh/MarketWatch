@@ -51,13 +51,8 @@ async fn refresh(
         .map_err(|failure| {
             let status = match &failure {
                 AssessmentStartError::AiDisabled => StatusCode::SERVICE_UNAVAILABLE,
-                AssessmentStartError::DataUnavailable => StatusCode::CONFLICT,
                 AssessmentStartError::Busy => StatusCode::TOO_MANY_REQUESTS,
-                AssessmentStartError::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
-            if let AssessmentStartError::Persistence(error) = &failure {
-                error!(%error, "failed to start fundamental assessment");
-            }
             (status, Json(json!({"error":failure.to_string()})))
         })
 }

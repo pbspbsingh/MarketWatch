@@ -22,6 +22,7 @@ export interface AssessmentScores {
 export interface FundamentalAssessment {
   symbol: string;
   generated_at: string;
+  last_checked_at: string | null;
   model: string;
   rubric_version: number;
   prompt_version: number;
@@ -36,11 +37,14 @@ export interface FundamentalAssessment {
 export interface AssessmentJob {
   id: string;
   symbol: string;
-  phase: "queued" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "failed";
+  phase: "queued" | "fetching_fundamentals" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "failed";
   updated_at: string;
-  fundamentals_fetched_at: string;
-  fingerprint: string;
-  context: AssessmentContext;
+  background: boolean;
+  snapshot: {
+    fundamentals_fetched_at: string;
+    fingerprint: string;
+    context: AssessmentContext;
+  } | null;
   live_response: string;
   error: string | null;
 }
@@ -54,6 +58,7 @@ export interface AssessmentContext {
 
 export interface AssessmentState {
   report: FundamentalAssessment | null;
+  not_found_at: string | null;
   job: AssessmentJob | null;
   stale: boolean;
   job_stale: boolean;

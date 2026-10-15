@@ -11,6 +11,7 @@ import "./ticker-assessment.css";
 
 const phaseLabels: Record<AssessmentJob["phase"], string> = {
   queued: "Queued",
+  fetching_fundamentals: "Refreshing fundamentals",
   waiting_for_ai: "Waiting for AI",
   analyzing: "Analyzing fundamentals",
   saving: "Saving assessment",
@@ -83,25 +84,26 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   const lastUpdated = report == null ? "" : new Date(report.generated_at).toLocaleString();
   const snapshotAt = report?.fundamentals.fetched_at;
   const concerns = (report?.concerns ?? []).map(concern => `${concern.reason} (${concern.evidence_ids.join(" · ")})`);
-  const stage = job?.phase === "queued" ? 0 : job?.phase === "saving" ? 2 : 1;
+  const stage = job?.phase === "queued" || job?.phase === "fetching_fundamentals" ? 0 : job?.phase === "saving" ? 2 : 1;
   return <div className="assessment-tab">
     <div className="assessment-toolbar">
       <div className="assessment-title"><AutoAwesomeOutlinedIcon /><div><Typography component="h3">Fundamental growth</Typography><Typography>{symbol} · EPS and revenue assessment</Typography></div></div>
       <div className="assessment-actions">
         {stale && <Chip size="small" color="warning" label="Stale" />}
         {scores?.provisional && <Chip size="small" variant="outlined" label="Provisional" />}
-        <Button size="small" variant="contained" startIcon={active ? <CircularProgress size="0.85rem" color="inherit" /> : report ? <RefreshIcon /> : <AutoAwesomeOutlinedIcon />} onClick={() => void analyze()} disabled={state == null || !state.ai_enabled || !state.data_ready || active}>{active ? "Scoring…" : report == null ? "Analyze" : "Reassess"}</Button>
+        <Button size="small" variant="contained" startIcon={active ? <CircularProgress size="0.85rem" color="inherit" /> : report ? <RefreshIcon /> : <AutoAwesomeOutlinedIcon />} onClick={() => void analyze()} disabled={state == null || !state.ai_enabled || active}>{active ? "Scoring…" : report == null ? "Analyze" : "Reassess"}</Button>
       </div>
     </div>
     {error && <Alert severity="error">{error}</Alert>}
     {job?.phase === "failed" && <Alert severity="error">{job.error} {report && "Your saved assessment is unchanged."}</Alert>}
     {state != null && !state.ai_enabled && <Alert severity="info">Configure AI to generate assessments. Saved assessments remain available.</Alert>}
-    {state != null && !state.data_ready && <Alert severity="info">Refresh fundamentals to load adjusted EPS, GAAP EPS, and forecasts before assessing.</Alert>}
+    {state?.not_found_at && <Alert severity="info">Fundamentals returned HTTP 404. No assessment is available. Background checks resume after the configured refresh interval; you can retry manually.</Alert>}
+    {state != null && !state.not_found_at && !state.data_ready && <Alert severity="info">Assessment will refresh fundamentals before analyzing.</Alert>}
     {stale && <Alert severity="warning">Financial data, company context, or assessment settings have changed. Reassess to update this score.</Alert>}
     {active && state?.job_stale && <Alert severity="warning">Inputs changed while AI is assessing the captured snapshot. The completed assessment will be marked stale.</Alert>}
     {(active || (job?.phase === "failed" && job.live_response)) && <section className="assessment-progress" aria-label="Assessment progress">
-      <div className="assessment-progress-heading" role="status">{job?.phase === "failed" ? <InfoOutlinedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}<strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{report ? "Saved assessment remains below" : "AI is reviewing the financial history"}</span></div>
-      <ol className="assessment-stages">{["Snapshot", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage ? "is-current" : ""}><span>{index + 1}</span>{label}</li>)}</ol>
+      <div className="assessment-progress-heading" role="status">{job?.phase === "failed" ? <InfoOutlinedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}<strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{job?.background ? "Background · " : ""}{report ? "Saved assessment remains below" : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history"}</span></div>
+      <ol className="assessment-stages">{["Refresh fundamentals", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage ? "is-current" : ""}><span>{index + 1}</span>{label}</li>)}</ol>
       <AiOutputPreview content={job?.live_response ?? ""} status={job?.phase === "failed" ? "Interrupted" : job?.live_response ? "Writing assessment" : "Awaiting response"} expanded />
     </section>}
     {scores ? <>
@@ -112,8 +114,8 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
       </div>
       <section className="assessment-panel" aria-label="Scoring breakdown"><div className="assessment-panel-heading"><FactCheckOutlinedIcon /><Typography component="h3">Scoring breakdown</Typography><span>AI-assigned scores · reported results first</span></div><ScoreTable scores={scores} summary={summary} lastUpdated={lastUpdated} /></section>
       {concerns.length > 0 && <section className="assessment-panel assessment-concerns"><div className="assessment-panel-heading"><InfoOutlinedIcon /><Typography component="h3">What to watch</Typography></div><ul>{concerns.map(concern => <li key={concern}><AssessmentText text={concern} limit={300} /></li>)}</ul></section>}
-      <div className="assessment-footer"><span>Custom rubric informed by Minervini · {report?.model}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
-    </> : !active && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS and revenue strength, acceleration, and consistency."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
+      <div className="assessment-footer"><span>Custom rubric informed by Minervini · {report?.model}</span><span>{report?.last_checked_at && <>Last checked <time dateTime={report.last_checked_at}>{new Date(report.last_checked_at).toLocaleString()}</time></>}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
+    </> : !active && !state?.not_found_at && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS and revenue strength, acceleration, and consistency."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
   </div>;
 }
 

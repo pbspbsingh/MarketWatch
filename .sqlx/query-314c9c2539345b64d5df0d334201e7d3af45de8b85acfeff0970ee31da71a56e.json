@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_journals (trade_id, comment) VALUES (?, 'Breakout setup')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "314c9c2539345b64d5df0d334201e7d3af45de8b85acfeff0970ee31da71a56e"
+}

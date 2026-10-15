@@ -1,5 +1,5 @@
 use crate::models::{CompanyProfile, FundamentalPeriod, Fundamentals, TickerSymbol};
-use crate::providers::FinvizClient;
+use crate::providers::{FinvizClient, is_http_not_found};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
@@ -130,6 +130,16 @@ impl TickerDetailsService {
         Ok(self.upcoming_earnings_date(&fundamentals))
     }
 
+    /// Fetch and persist a new snapshot, with no fallback to cached data.
+    pub(crate) async fn refresh_fundamentals(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> Result<Fundamentals, TickerDetailsError> {
+        self.load_fundamentals(symbol, true)
+            .await
+            .map(|(data, _)| data)
+    }
+
     async fn load_fundamentals(
         &self,
         symbol: &TickerSymbol,
@@ -206,7 +216,7 @@ impl TickerDetailsService {
                     }
                     return Ok(fundamentals);
                 }
-                Err(error) if attempt < MAX_PROVIDER_ATTEMPTS => {
+                Err(error) if attempt < MAX_PROVIDER_ATTEMPTS && !is_http_not_found(&error) => {
                     let retry_delay = jitter(delay);
                     warn!(
                         %symbol,

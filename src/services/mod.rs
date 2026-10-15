@@ -1,7 +1,9 @@
+mod ai_job;
 pub mod chart;
 pub mod daily_notes;
 pub mod details;
 pub mod fundamental_assessment;
+pub mod fundamentals_background;
 pub mod global_search;
 pub mod industries;
 pub mod industry_analysis;

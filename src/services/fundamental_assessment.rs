@@ -8,19 +8,28 @@ use std::{
 };
 
 use anyhow::{Context, ensure};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tokio::sync::{Notify, watch};
+use tracing::{error, info};
+
+use super::{
+    ai_job::{AiAdmission, AiJobCompletion, AiJobControl, background_admission},
+    details::TickerDetailsService,
+};
 
 use crate::{
+    config::FundamentalsBackgroundConfig,
     models::{
         Fundamentals, TickerSymbol,
         fundamental_assessment::{
             AssessmentConcern, AssessmentContext, AssessmentJob, AssessmentPhase,
-            AssessmentProfile, AssessmentScores, FundamentalAssessment,
+            AssessmentProfile, AssessmentResult, AssessmentScores, AssessmentSnapshot,
+            FundamentalAssessment,
         },
+        fundamentals_background::FundamentalsFeature,
     },
-    providers::{AiClient, AiStreamDelta},
+    providers::{AiClient, AiStreamDelta, is_http_not_found},
     store::Store,
 };
 use input::{evidence_ids, fingerprint};
@@ -34,12 +43,20 @@ const MAX_RETAINED_JOBS: usize = 128;
 pub struct FundamentalAssessmentService {
     store: Store,
     ai: Option<Arc<AiClient>>,
-    jobs: Mutex<HashMap<TickerSymbol, AssessmentJob>>,
+    details: Arc<TickerDetailsService>,
+    jobs: Mutex<HashMap<TickerSymbol, JobEntry>>,
+    pub(super) job_changes: Notify,
+}
+
+struct JobEntry {
+    job: AssessmentJob,
+    control: AiJobControl,
 }
 
 #[derive(Serialize)]
 pub struct AssessmentState {
     pub report: Option<FundamentalAssessment>,
+    pub not_found_at: Option<chrono::DateTime<Utc>>,
     pub job: Option<AssessmentJob>,
     pub stale: bool,
     pub job_stale: bool,
@@ -52,12 +69,8 @@ pub struct AssessmentState {
 pub enum AssessmentStartError {
     #[error("AI is not configured")]
     AiDisabled,
-    #[error("Refresh fundamentals first to load adjusted EPS, GAAP EPS, and forecasts")]
-    DataUnavailable,
     #[error("Too many assessments are running; try again when one finishes")]
     Busy,
-    #[error("Could not load assessment inputs")]
-    Persistence(#[from] anyhow::Error),
 }
 
 #[derive(Deserialize)]
@@ -69,10 +82,16 @@ struct Analysis {
 }
 
 impl FundamentalAssessmentService {
-    pub fn new(store: Store, ai: Option<Arc<AiClient>>) -> Self {
+    pub fn new(
+        store: Store,
+        ai: Option<Arc<AiClient>>,
+        details: Arc<TickerDetailsService>,
+    ) -> Self {
         Self {
             store,
             ai,
+            details,
+            job_changes: Notify::new(),
             jobs: Mutex::new(HashMap::new()),
         }
     }
@@ -84,27 +103,28 @@ impl FundamentalAssessmentService {
             .lock()
             .expect("assessment registry lock")
             .get(symbol)
-            .cloned();
-        let report = self.store.fundamental_assessment(symbol).await?;
+            .map(|entry| entry.job.clone());
+        let (report, not_found_at) = match self.store.fundamental_assessment(symbol).await? {
+            Some(AssessmentResult::Report(report)) => (Some(*report), None),
+            Some(AssessmentResult::NotFound { not_found_at }) => (None, Some(not_found_at)),
+            None => (None, None),
+        };
         let data = self.store.assessment_fundamentals(symbol).await?;
         let context = self.context(symbol).await?;
         let current_fingerprint = data.as_ref().map(fingerprint).transpose()?;
-        let stale = report.as_ref().is_some_and(|report| {
-            current_fingerprint.as_deref() != Some(report.fingerprint.as_str())
-                || report.rubric_version != RUBRIC_VERSION
-                || report.prompt_version != PROMPT_VERSION
-                || report.context != context
-                || self
-                    .ai
-                    .as_ref()
-                    .is_some_and(|ai| ai.model() != report.model)
-        });
-        let job_stale = job.as_ref().is_some_and(|job| {
-            current_fingerprint.as_deref() != Some(job.fingerprint.as_str())
-                || job.context != context
-        });
+        let stale = report
+            .as_ref()
+            .is_some_and(|report| !self.reusable(report, current_fingerprint.as_deref(), &context));
+        let job_stale = job
+            .as_ref()
+            .and_then(|job| job.snapshot.as_ref())
+            .is_some_and(|snapshot| {
+                current_fingerprint.as_deref() != Some(snapshot.fingerprint.as_str())
+                    || snapshot.context != context
+            });
         Ok(AssessmentState {
             report,
+            not_found_at,
             job,
             stale,
             job_stale,
@@ -118,27 +138,50 @@ impl FundamentalAssessmentService {
         self: &Arc<Self>,
         symbol: TickerSymbol,
     ) -> Result<AssessmentJob, AssessmentStartError> {
+        self.start_job(symbol, None).map(|(job, _)| job)
+    }
+
+    pub(super) fn active_symbols(&self) -> Vec<TickerSymbol> {
+        self.jobs
+            .lock()
+            .expect("assessment registry lock")
+            .values()
+            .filter(|entry| entry.job.phase.is_active())
+            .map(|entry| entry.job.symbol.clone())
+            .collect()
+    }
+
+    pub(super) fn start_job(
+        self: &Arc<Self>,
+        symbol: TickerSymbol,
+        background: Option<FundamentalsBackgroundConfig>,
+    ) -> Result<(AssessmentJob, AiJobCompletion), AssessmentStartError> {
         let ai = self.ai.clone().ok_or(AssessmentStartError::AiDisabled)?;
-        // Capture once. Assessment never fetches or refreshes fundamentals implicitly.
-        let data = self
-            .store
-            .assessment_fundamentals(&symbol)
-            .await?
-            .ok_or(AssessmentStartError::DataUnavailable)?;
-        let fingerprint = fingerprint(&data)?;
-        let context = self.context(&symbol).await?;
         let mut jobs = self.jobs.lock().expect("assessment registry lock");
-        if let Some(job) = jobs.get(&symbol).filter(|job| job.phase.is_active()) {
-            return Ok(job.clone());
+        if let Some(entry) = jobs
+            .get_mut(&symbol)
+            .filter(|entry| entry.job.phase.is_active())
+        {
+            if background.is_none() && entry.job.background {
+                entry.control.promote(&ai);
+                entry.job.background = false;
+                entry.job.updated_at = Utc::now();
+            }
+            return Ok((entry.job.clone(), entry.control.completion()));
         }
-        if jobs.values().filter(|job| job.phase.is_active()).count() >= MAX_ACTIVE_JOBS {
+        if jobs
+            .values()
+            .filter(|entry| entry.job.phase.is_active())
+            .count()
+            >= MAX_ACTIVE_JOBS
+        {
             return Err(AssessmentStartError::Busy);
         }
         while jobs.len() >= MAX_RETAINED_JOBS {
             let oldest = jobs
                 .iter()
-                .filter(|(_, job)| !job.phase.is_active())
-                .min_by_key(|(_, job)| job.updated_at)
+                .filter(|(_, entry)| !entry.job.phase.is_active())
+                .min_by_key(|(_, entry)| entry.job.updated_at)
                 .map(|(symbol, _)| symbol.clone());
             if let Some(symbol) = oldest {
                 jobs.remove(&symbol);
@@ -151,25 +194,33 @@ impl FundamentalAssessmentService {
             symbol: symbol.clone(),
             phase: AssessmentPhase::Queued,
             updated_at: Utc::now(),
-            fundamentals_fetched_at: data.fetched_at,
-            fingerprint,
-            context: context.clone(),
+            background: background.is_some(),
+            snapshot: None,
             live_response: String::new(),
             error: None,
         };
-        jobs.insert(symbol.clone(), job.clone());
+        let control =
+            AiJobControl::new(job.background, background.is_none().then(|| ai.user_job()));
+        let origin = control.background.subscribe();
+        let completion = control.completion();
+        let finish = control.finish_signal();
+        jobs.insert(
+            symbol.clone(),
+            JobEntry {
+                job: job.clone(),
+                control,
+            },
+        );
         drop(jobs);
         let service = self.clone();
         let id = job.id.clone();
-        let user_job = ai.user_job();
         tokio::spawn(async move {
-            let _user_job = user_job;
             let worker = service.clone();
             let worker_symbol = symbol.clone();
             let worker_id = id.clone();
             let result = tokio::spawn(async move {
                 worker
-                    .run(&worker_symbol, &worker_id, &ai, data, context)
+                    .run(&worker_symbol, &worker_id, &ai, background, origin)
                     .await
             })
             .await;
@@ -178,19 +229,56 @@ impl FundamentalAssessmentService {
                 Ok(Err(error)) => Some(error),
                 Err(error) => Some(error.into()),
             };
+            let succeeded = failure.is_none();
             if let Some(failure) = failure {
                 error!(%symbol, job_id = %id, error = %format!("{failure:#}"), "Fundamental assessment failed");
-                service.update(
-                    &symbol,
-                    &id,
-                    AssessmentPhase::Failed,
-                    Some(
-                        "Assessment failed. Check the configured AI provider and try again.".into(),
-                    ),
-                );
+                service.update(&symbol, &id, AssessmentPhase::Failed, Some(
+                    "Assessment failed while refreshing fundamentals or analyzing data. Check logs and retry.".into()));
             }
+            if let Some(entry) = service
+                .jobs
+                .lock()
+                .expect("assessment registry lock")
+                .get_mut(&symbol)
+                .filter(|entry| entry.job.id == id)
+            {
+                entry.control.release_user_job();
+            }
+            finish(succeeded);
+            service.job_changes.notify_waiters();
         });
-        Ok(job)
+        Ok((job, completion))
+    }
+
+    fn reusable(
+        &self,
+        report: &FundamentalAssessment,
+        fingerprint: Option<&str>,
+        context: &AssessmentContext,
+    ) -> bool {
+        fingerprint == Some(report.fingerprint.as_str())
+            && report.rubric_version == RUBRIC_VERSION
+            && report.prompt_version == PROMPT_VERSION
+            && report.context == *context
+            && self.ai.as_ref().is_none_or(|ai| ai.model() == report.model)
+    }
+
+    async fn background_eligible(
+        &self,
+        symbol: &TickerSymbol,
+        config: FundamentalsBackgroundConfig,
+    ) -> anyhow::Result<bool> {
+        Ok(self
+            .store
+            .fundamentals_candidate(
+                config.process_non_watchlist,
+                Utc::now() - Duration::days(i64::from(config.refresh_days)),
+                &[],
+                Some(symbol),
+                Some(FundamentalsFeature::Assessment),
+            )
+            .await?
+            .is_some())
     }
 
     fn update(
@@ -232,15 +320,15 @@ impl FundamentalAssessmentService {
     }
 
     fn update_job(&self, symbol: &TickerSymbol, id: &str, update: impl FnOnce(&mut AssessmentJob)) {
-        if let Some(job) = self
+        if let Some(entry) = self
             .jobs
             .lock()
             .expect("assessment registry lock")
             .get_mut(symbol)
-            .filter(|job| job.id == id)
+            .filter(|entry| entry.job.id == id)
         {
-            update(job);
-            job.updated_at = Utc::now();
+            update(&mut entry.job);
+            entry.job.updated_at = Utc::now();
         }
     }
 
@@ -249,32 +337,125 @@ impl FundamentalAssessmentService {
         symbol: &TickerSymbol,
         id: &str,
         ai: &AiClient,
-        data: Fundamentals,
-        context: AssessmentContext,
+        background: Option<FundamentalsBackgroundConfig>,
+        mut origin: watch::Receiver<bool>,
     ) -> anyhow::Result<()> {
+        if let Some(config) = background {
+            let eligible = self.background_eligible(symbol, config).await?;
+            if *origin.borrow() && !eligible {
+                self.update(symbol, id, AssessmentPhase::Completed, None);
+                return Ok(());
+            }
+        }
+        self.update(symbol, id, AssessmentPhase::FetchingFundamentals, None);
+        let refreshed = self
+            .details
+            .refresh_fundamentals(symbol)
+            .await
+            .map_err(anyhow::Error::from);
+        if let Some(config) = background {
+            let eligible = self.background_eligible(symbol, config).await?;
+            if *origin.borrow() && !eligible {
+                self.update(symbol, id, AssessmentPhase::Completed, None);
+                return Ok(());
+            }
+        }
+        let data = match refreshed {
+            Ok(data) => data,
+            Err(error) if is_http_not_found(&error) => {
+                self.update(symbol, id, AssessmentPhase::Saving, None);
+                self.store
+                    .save_fundamental_assessment(
+                        symbol,
+                        &AssessmentResult::NotFound {
+                            not_found_at: Utc::now(),
+                        },
+                    )
+                    .await?;
+                self.update(symbol, id, AssessmentPhase::Completed, None);
+                info!(%symbol, "Fundamentals returned HTTP 404; saved not-found result without AI");
+                return Ok(());
+            }
+            Err(error) => return Err(error.context("Could not refresh assessment fundamentals")),
+        };
+        ensure!(
+            !data.quarters.is_empty(),
+            "No quarterly fundamentals available for assessment"
+        );
+        let context = self.context(symbol).await?;
         let fingerprint = fingerprint(&data)?;
+        self.update_job(symbol, id, |job| {
+            job.snapshot = Some(AssessmentSnapshot {
+                fundamentals_fetched_at: data.fetched_at,
+                fingerprint: fingerprint.clone(),
+                context: context.clone(),
+            });
+        });
+        let previous = self
+            .store
+            .fundamental_assessment(symbol)
+            .await?
+            .and_then(AssessmentResult::into_report)
+            .filter(|report| self.reusable(report, Some(&fingerprint), &context));
+        if let Some(mut report) = previous {
+            // Preserve the analyzed snapshot and generation time; a successful
+            // unchanged-data check advances only the background refresh clock.
+            report.last_checked_at = Some(Utc::now());
+            self.update(symbol, id, AssessmentPhase::Saving, None);
+            self.store
+                .save_fundamental_assessment(symbol, &AssessmentResult::Report(Box::new(report)))
+                .await?;
+            self.update(symbol, id, AssessmentPhase::Completed, None);
+            info!(%symbol, "Fundamentals unchanged; reusing saved assessment without AI");
+            return Ok(());
+        }
         let prompt = build_prompt(&data, &context)?;
         self.update(symbol, id, AssessmentPhase::WaitingForAi, None);
-        let response = ai
-            .complete_with_updates(&prompt, |delta| {
-                self.update_job(symbol, id, |job| {
-                    job.phase = AssessmentPhase::Analyzing;
-                    if let AiStreamDelta::Content(content) = delta {
-                        job.live_response.push_str(content);
-                        let mut cutoff = job.live_response.len().saturating_sub(20_000);
-                        while !job.live_response.is_char_boundary(cutoff) {
-                            cutoff += 1;
-                        }
-                        job.live_response.drain(..cutoff);
+        let request = if let Some(config) = background {
+            match background_admission(
+                ai,
+                std::time::Duration::from_secs(u64::from(config.idle_delay_secs)),
+                &mut origin,
+                || self.background_eligible(symbol, config),
+            )
+            .await?
+            {
+                AiAdmission::Background(request) => Some(request),
+                AiAdmission::User => None,
+                AiAdmission::Skip => {
+                    self.update(symbol, id, AssessmentPhase::Completed, None);
+                    return Ok(());
+                }
+            }
+        } else {
+            None
+        };
+        let on_delta = |delta: AiStreamDelta<'_>| {
+            self.update_job(symbol, id, |job| {
+                job.phase = AssessmentPhase::Analyzing;
+                if let AiStreamDelta::Content(content) = delta {
+                    job.live_response.push_str(content);
+                    let mut cutoff = job.live_response.len().saturating_sub(20_000);
+                    while !job.live_response.is_char_boundary(cutoff) {
+                        cutoff += 1;
                     }
-                });
-            })
-            .await
-            .context("AI assessment failed")?;
+                    job.live_response.drain(..cutoff);
+                }
+            });
+        };
+        let response = match request {
+            Some(request) => {
+                ai.complete_background_with_updates(&prompt, request, on_delta)
+                    .await
+            }
+            None => ai.complete_with_updates(&prompt, on_delta).await,
+        }
+        .context("AI assessment failed")?;
         let analysis = validate_analysis(&response, &data)?;
         let report = FundamentalAssessment {
             symbol: symbol.clone(),
             generated_at: Utc::now(),
+            last_checked_at: Some(Utc::now()),
             model: ai.model().to_owned(),
             rubric_version: RUBRIC_VERSION,
             prompt_version: PROMPT_VERSION,
@@ -286,7 +467,9 @@ impl FundamentalAssessmentService {
             concerns: analysis.concerns,
         };
         self.update(symbol, id, AssessmentPhase::Saving, None);
-        self.store.save_fundamental_assessment(&report).await?;
+        self.store
+            .save_fundamental_assessment(symbol, &AssessmentResult::Report(Box::new(report)))
+            .await?;
         self.update_job(symbol, id, |job| {
             job.phase = AssessmentPhase::Completed;
             job.live_response.clear();
