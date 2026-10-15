@@ -11,7 +11,7 @@ use anyhow::{Context, ensure};
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, watch};
-use tracing::{error, info};
+use tracing::{Instrument, error, info, info_span, warn};
 
 use super::{
     ai_job::{AiAdmission, AiJobCompletion, AiJobControl, background_admission},
@@ -32,7 +32,7 @@ use crate::{
     providers::{AiClient, AiStreamDelta, is_http_not_found},
     store::Store,
 };
-use input::{evidence_ids, fingerprint};
+use input::fingerprint;
 
 const RUBRIC_VERSION: u32 = 1;
 
@@ -166,6 +166,11 @@ impl FundamentalAssessmentService {
                 entry.control.promote(&ai);
                 entry.job.background = false;
                 entry.job.updated_at = Utc::now();
+                info!(job_id = %entry.job.id, %symbol,
+                    "Background assessment promoted to manual request");
+            } else {
+                info!(job_id = %entry.job.id, %symbol, background = entry.job.background,
+                    "Reusing active fundamental assessment job");
             }
             return Ok((entry.job.clone(), entry.control.completion()));
         }
@@ -175,6 +180,8 @@ impl FundamentalAssessmentService {
             .count()
             >= MAX_ACTIVE_JOBS
         {
+            warn!(%symbol, limit = MAX_ACTIVE_JOBS,
+                "Fundamental assessment rejected because the registry is full");
             return Err(AssessmentStartError::Busy);
         }
         while jobs.len() >= MAX_RETAINED_JOBS {
@@ -214,39 +221,51 @@ impl FundamentalAssessmentService {
         drop(jobs);
         let service = self.clone();
         let id = job.id.clone();
-        tokio::spawn(async move {
-            let worker = service.clone();
-            let worker_symbol = symbol.clone();
-            let worker_id = id.clone();
-            let result = tokio::spawn(async move {
-                worker
-                    .run(&worker_symbol, &worker_id, &ai, background, origin)
-                    .await
-            })
-            .await;
-            let failure = match result {
-                Ok(Ok(())) => None,
-                Ok(Err(error)) => Some(error),
-                Err(error) => Some(error.into()),
-            };
-            let succeeded = failure.is_none();
-            if let Some(failure) = failure {
-                error!(%symbol, job_id = %id, error = %format!("{failure:#}"), "Fundamental assessment failed");
-                service.update(&symbol, &id, AssessmentPhase::Failed, Some(
-                    "Assessment failed while refreshing fundamentals or analyzing data. Check logs and retry.".into()));
+        let started = std::time::Instant::now();
+        info!(job_id = %id, %symbol, background = job.background,
+            "Fundamental assessment job queued");
+        let span = info_span!("fundamental_assessment_job", job_id = %id, %symbol);
+        tokio::spawn(
+            async move {
+                let worker = service.clone();
+                let worker_symbol = symbol.clone();
+                let worker_id = id.clone();
+                let result = tokio::spawn(
+                    async move {
+                        worker
+                            .run(&worker_symbol, &worker_id, &ai, background, origin)
+                            .await
+                    }
+                    .in_current_span(),
+                )
+                .await;
+                let failure = match result {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error),
+                    Err(error) => Some(error.into()),
+                };
+                let succeeded = failure.is_none();
+                if let Some(failure) = failure {
+                    error!(%symbol, job_id = %id, error = %format!("{failure:#}"), "Fundamental assessment failed");
+                    service.update(&symbol, &id, AssessmentPhase::Failed, Some(
+                        "Assessment failed while refreshing fundamentals or analyzing data. Check logs and retry.".into()));
+                }
+                if let Some(entry) = service
+                    .jobs
+                    .lock()
+                    .expect("assessment registry lock")
+                    .get_mut(&symbol)
+                    .filter(|entry| entry.job.id == id)
+                {
+                    entry.control.release_user_job();
+                }
+                info!(succeeded, elapsed_ms = started.elapsed().as_millis(),
+                    "Fundamental assessment job finished");
+                finish(succeeded);
+                service.job_changes.notify_waiters();
             }
-            if let Some(entry) = service
-                .jobs
-                .lock()
-                .expect("assessment registry lock")
-                .get_mut(&symbol)
-                .filter(|entry| entry.job.id == id)
-            {
-                entry.control.release_user_job();
-            }
-            finish(succeeded);
-            service.job_changes.notify_waiters();
-        });
+            .instrument(span),
+        );
         Ok((job, completion))
     }
 
@@ -327,8 +346,14 @@ impl FundamentalAssessmentService {
             .get_mut(symbol)
             .filter(|entry| entry.job.id == id)
         {
+            let previous_phase = entry.job.phase;
             update(&mut entry.job);
             entry.job.updated_at = Utc::now();
+            if entry.job.phase != previous_phase {
+                info!(job_id = %id, %symbol, background = entry.job.background,
+                    from = ?previous_phase, phase = ?entry.job.phase,
+                    "Fundamental assessment job phase changed");
+            }
         }
     }
 
@@ -343,6 +368,10 @@ impl FundamentalAssessmentService {
         if let Some(config) = background {
             let eligible = self.background_eligible(symbol, config).await?;
             if *origin.borrow() && !eligible {
+                info!(
+                    stage = "before_refresh",
+                    "Skipping background assessment: ticker is fresh or no longer eligible"
+                );
                 self.update(symbol, id, AssessmentPhase::Completed, None);
                 return Ok(());
             }
@@ -356,6 +385,10 @@ impl FundamentalAssessmentService {
         if let Some(config) = background {
             let eligible = self.background_eligible(symbol, config).await?;
             if *origin.borrow() && !eligible {
+                info!(
+                    stage = "after_refresh",
+                    "Skipping background assessment: ticker is fresh or no longer eligible"
+                );
                 self.update(symbol, id, AssessmentPhase::Completed, None);
                 return Ok(());
             }
@@ -378,6 +411,10 @@ impl FundamentalAssessmentService {
             }
             Err(error) => return Err(error.context("Could not refresh assessment fundamentals")),
         };
+        info!(fetched_at = %data.fetched_at, quarters = data.quarters.len(),
+            annual_periods = data.annual.as_ref().map_or(0, Vec::len),
+            quarterly_forecasts = data.quarter_forecasts.len(),
+            "Assessment fundamentals refresh finished");
         ensure!(
             !data.quarters.is_empty(),
             "No quarterly fundamentals available for assessment"
@@ -451,7 +488,11 @@ impl FundamentalAssessmentService {
             None => ai.complete_with_updates(&prompt, on_delta).await,
         }
         .context("AI assessment failed")?;
-        let analysis = validate_analysis(&response, &data)?;
+        info!(
+            response_bytes = response.len(),
+            "Validating fundamental assessment AI response"
+        );
+        let analysis = validate_analysis(&response)?;
         let report = FundamentalAssessment {
             symbol: symbol.clone(),
             generated_at: Utc::now(),
@@ -511,7 +552,7 @@ fn build_prompt(data: &Fundamentals, context: &AssessmentContext) -> anyhow::Res
         .replace("<<COMPANY_CONTEXT>>", &serde_json::to_string(context)?))
 }
 
-fn validate_analysis(response: &str, data: &Fundamentals) -> anyhow::Result<Analysis> {
+fn validate_analysis(response: &str) -> anyhow::Result<Analysis> {
     let mut analysis: Analysis = serde_json::from_str(super::themes::strip_code_fence(response))
         .context("invalid AI assessment JSON")?;
     let text_ok = |text: &str| !text.trim().is_empty();
@@ -533,7 +574,6 @@ fn validate_analysis(response: &str, data: &Fundamentals) -> anyhow::Result<Anal
         analysis.scores.rows.len() == expected.len(),
         "missing assessment rows"
     );
-    let evidence = evidence_ids(data);
     let mut seen = HashSet::new();
     for row in &mut analysis.scores.rows {
         let (_, label, maximum) = expected
@@ -551,14 +591,7 @@ fn validate_analysis(response: &str, data: &Fundamentals) -> anyhow::Result<Anal
             "criterion score outside bounds"
         );
         ensure!(text_ok(&row.reason), "invalid criterion explanation");
-        ensure!(
-            row.score.is_none() || !row.evidence_ids.is_empty(),
-            "missing criterion evidence"
-        );
-        ensure!(
-            row.evidence_ids.iter().all(|id| evidence.contains(id)),
-            "invalid criterion evidence"
-        );
+        // Preserve citation issues for the UI to flag against the saved snapshot.
         row.label = (*label).to_owned();
     }
     ensure!(
@@ -571,11 +604,6 @@ fn validate_analysis(response: &str, data: &Fundamentals) -> anyhow::Result<Anal
     ensure!(analysis.concerns.len() <= 5, "too many assessment concerns");
     for concern in &analysis.concerns {
         ensure!(text_ok(&concern.reason), "invalid assessment concern");
-        ensure!(
-            !concern.evidence_ids.is_empty()
-                && concern.evidence_ids.iter().all(|id| evidence.contains(id)),
-            "invalid concern evidence"
-        );
     }
     Ok(analysis)
 }

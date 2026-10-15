@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration as StdDuration};
 
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
-use tracing::{info, warn};
+use tracing::{Instrument, info, info_span, warn};
 
 use super::{
     ai_job::AiJobCompletion,
@@ -55,7 +55,8 @@ impl FundamentalsBackgroundService {
                 assessment,
                 n_factor,
             }
-            .run(config, membership_changes),
+            .run(config, membership_changes)
+            .instrument(info_span!("fundamentals_background")),
         );
     }
 
@@ -76,7 +77,14 @@ impl FundamentalsBackgroundService {
             assessment_changed.as_mut().enable();
             n_factor_changed.as_mut().enable();
             let now = Utc::now();
-            failures.retain(|_, deadline| *deadline > now);
+            failures.retain(|task, deadline| {
+                if *deadline > now {
+                    return true;
+                }
+                info!(symbol = %task.symbol, feature = task.feature.as_str(),
+                    "Background fundamentals retry backoff expired");
+                false
+            });
             let mut excluded =
                 self.assessment
                     .active_symbols()
@@ -118,18 +126,30 @@ impl FundamentalsBackgroundService {
                 match self.start(&task, config) {
                     Ok(finished) => {
                         if !finished.wait().await {
-                            failures.insert(task, Utc::now() + FAILURE_BACKOFF);
+                            let retry_at = Utc::now() + FAILURE_BACKOFF;
+                            warn!(symbol = %task.symbol, feature = task.feature.as_str(),
+                                %retry_at, retry_after_secs = FAILURE_BACKOFF.num_seconds(),
+                                "Background fundamentals task failed; retry deferred");
+                            failures.insert(task.clone(), retry_at);
                         }
                         if !candidate.in_watchlist {
                             let jitter = StdDuration::from_millis(fastrand::u64(
                                 0..=NON_WATCHLIST_JITTER_MS,
                             ));
-                            tokio::time::sleep(NON_WATCHLIST_DELAY + jitter).await;
+                            let delay = NON_WATCHLIST_DELAY + jitter;
+                            info!(symbol = %task.symbol, feature = task.feature.as_str(),
+                                delay_ms = delay.as_millis(), "Pausing between non-watchlist fundamentals tasks");
+                            tokio::time::sleep(delay).await;
                         }
                     }
-                    Err(StartError::AiDisabled) => return,
+                    Err(StartError::AiDisabled) => {
+                        warn!("Background fundamentals worker stopped: AI is disabled");
+                        return;
+                    }
                     Err(StartError::Busy) => {
                         // A manual job can fill capacity after candidate selection.
+                        info!(symbol = %task.symbol, feature = task.feature.as_str(),
+                            "Background fundamentals waiting for feature job capacity");
                         tokio::select! {
                             () = &mut assessment_changed => {},
                             () = &mut n_factor_changed => {},
@@ -150,12 +170,22 @@ impl FundamentalsBackgroundService {
                 })
                 .unwrap_or(CANDIDATE_RECHECK)
                 .min(CANDIDATE_RECHECK);
-            tokio::select! {
-                () = tokio::time::sleep(recheck) => {},
-                () = &mut assessment_changed => {},
-                () = &mut n_factor_changed => {},
-                result = membership_changes.changed() => { if result.is_err() { return; } },
-            }
+            info!(excluded_tasks = excluded.len(), retry_backoffs = failures.len(),
+                next_retry_at = ?failures.values().min(), recheck_after_secs = recheck.as_secs_f64(),
+                "No eligible background fundamentals tasks; waiting for changes or next check");
+            let wake_reason = tokio::select! {
+                () = tokio::time::sleep(recheck) => "timer",
+                () = &mut assessment_changed => "assessment_finished",
+                () = &mut n_factor_changed => "n_factor_finished",
+                result = membership_changes.changed() => {
+                    if result.is_err() {
+                        info!("Background fundamentals worker stopped: watchlist subscription closed");
+                        return;
+                    }
+                    "watchlist_changed"
+                },
+            };
+            info!(wake_reason, "Rechecking background fundamentals candidates");
         }
     }
 

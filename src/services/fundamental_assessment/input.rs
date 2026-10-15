@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 
@@ -30,17 +28,4 @@ pub fn fingerprint(data: &Fundamentals) -> anyhow::Result<String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect())
-}
-
-pub fn evidence_ids(data: &Fundamentals) -> HashSet<String> {
-    data.quarters
-        .iter()
-        .chain(data.annual.as_deref().unwrap_or_default())
-        .map(|period| period.fiscal_period.clone())
-        .chain(
-            data.quarter_forecasts
-                .iter()
-                .filter_map(|period| period.fiscal_period.clone()),
-        )
-        .collect()
 }

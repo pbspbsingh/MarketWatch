@@ -1,4 +1,5 @@
 use tokio::sync::watch;
+use tracing::info;
 
 use crate::providers::{AiClient, BackgroundAiRequest, UserAiJob};
 
@@ -20,6 +21,10 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<bool>>,
 {
+    info!(
+        idle_delay_secs = idle_delay.as_secs(),
+        "Checking background AI admission"
+    );
     loop {
         if !*origin.borrow() {
             return Ok(AiAdmission::User);
@@ -36,11 +41,14 @@ where
             return Ok(AiAdmission::User);
         }
         if !eligible {
+            info!("Skipping background AI work: ticker is fresh or no longer eligible");
             return Ok(AiAdmission::Skip);
         }
         if !permit.user_work_pending() {
+            info!("Background AI admission granted");
             return Ok(AiAdmission::Background(permit));
         }
+        info!("Yielding background AI admission to user-started work");
     }
 }
 

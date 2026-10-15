@@ -175,7 +175,7 @@ fn report(data: Fundamentals) -> FundamentalAssessment {
         rubric_version: RUBRIC_VERSION,
         prompt_version: PROMPT_VERSION,
         fingerprint: fingerprint(&data).unwrap(),
-        scores: validate_analysis(&ai_response().to_string(), &data)
+        scores: validate_analysis(&ai_response().to_string())
             .unwrap()
             .scores,
         fundamentals: data,
@@ -187,32 +187,28 @@ fn report(data: Fundamentals) -> FundamentalAssessment {
 
 #[test]
 fn ai_decides_scores_and_validation_only_enforces_contract_and_bounds() {
-    let input = fixture();
     let valid = ai_response();
-    let analysis = validate_analysis(&valid.to_string(), &input).unwrap();
+    let analysis = validate_analysis(&valid.to_string()).unwrap();
     assert_eq!(analysis.scores.total, Some(75.0));
     assert_eq!(analysis.scores.rows[0].score, Some(23.0));
     let mut different = valid.clone();
     different["scores"]["rows"][0]["score"] = json!(18.0);
     different["scores"]["total"] = json!(70.0);
-    let analysis = validate_analysis(&different.to_string(), &input).unwrap();
+    let analysis = validate_analysis(&different.to_string()).unwrap();
     assert_eq!(analysis.scores.rows[0].score, Some(18.0));
     assert_eq!(analysis.scores.total, Some(70.0));
     let mut invalid = valid.clone();
     invalid["scores"]["rows"][0]["score"] = json!(31.0);
-    assert!(validate_analysis(&invalid.to_string(), &input).is_err());
+    assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
     invalid["scores"]["rows"].as_array_mut().unwrap().pop();
-    assert!(validate_analysis(&invalid.to_string(), &input).is_err());
-    invalid = valid.clone();
-    invalid["scores"]["rows"][0]["evidence_ids"] = json!(["2099Q1"]);
-    assert!(validate_analysis(&invalid.to_string(), &input).is_err());
+    assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
     invalid["scores"]["rows"][1] = invalid["scores"]["rows"][0].clone();
-    assert!(validate_analysis(&invalid.to_string(), &input).is_err());
+    assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
     invalid["scores"]["rows"][0]["available"] = json!(30);
-    assert!(validate_analysis(&invalid.to_string(), &input).is_err());
+    assert!(validate_analysis(&invalid.to_string()).is_err());
 
     let explanation = "Evidence supports the assessment. ".repeat(30);
     let mut longer = valid.clone();
@@ -222,17 +218,16 @@ fn ai_decides_scores_and_validation_only_enforces_contract_and_bounds() {
     }
     longer["scores"]["rows"][0]["reason"] = json!(explanation);
     longer["concerns"] = json!([{ "reason": explanation, "evidence_ids": ["2026Q2"] }]);
-    let accepted = validate_analysis(&longer.to_string(), &input).unwrap();
+    let accepted = validate_analysis(&longer.to_string()).unwrap();
     assert_eq!(accepted.summary, explanation);
     assert_eq!(accepted.scores.rows[0].reason, explanation);
     assert_eq!(accepted.concerns[0].reason, explanation);
     longer["scores"]["rows"][0]["reason"] = json!(" \n ");
-    assert!(validate_analysis(&longer.to_string(), &input).is_err());
+    assert!(validate_analysis(&longer.to_string()).is_err());
 }
 
 #[test]
 fn ai_can_select_the_revenue_focused_profile_with_its_own_scores() {
-    let data = fixture();
     let mut response = ai_response();
     response["scores"]["profile"] = json!("revenue_focused");
     response["scores"]["profile_reason"] =
@@ -244,7 +239,7 @@ fn ai_can_select_the_revenue_focused_profile_with_its_own_scores() {
         {"id":"forecasts","score":6.0,"maximum":10.0,"reason":"Estimates suggest further progress.","evidence_ids":["2026Q3"]}
     ]);
     response["scores"]["total"] = json!(77.0);
-    let analysis = validate_analysis(&response.to_string(), &data).unwrap();
+    let analysis = validate_analysis(&response.to_string()).unwrap();
     assert_eq!(analysis.scores.profile, AssessmentProfile::RevenueFocused);
     assert_eq!(analysis.scores.total, Some(77.0));
     assert_eq!(analysis.scores.rows.len(), 4);
@@ -318,6 +313,47 @@ fn fingerprint_ignores_fetch_dates_and_order_but_tracks_financial_changes() {
         .unwrap()
         .earnings_per_share_estimate = Some(1.0);
     assert_ne!(fingerprint(&changed).unwrap(), original);
+}
+
+#[tokio::test]
+async fn persisted_financial_floats_preserve_fingerprints_and_fresh_scores() {
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let mut data = fixture();
+    // APPN's revenue estimate changed on JSON reload without float_roundtrip.
+    data.quarters[0].revenue_estimate = Some(131_417_200.000_000_01);
+    data.quarters[0].earnings_per_share_estimate = Some(1.234_567_890_123_456_7);
+    seed(&store, &data).await;
+    let saved = report(data.clone());
+    save_report(&store, &saved).await;
+
+    for reloaded in [
+        store.fundamentals(&data.symbol).await.unwrap().unwrap(),
+        store
+            .assessment_fundamentals(&data.symbol)
+            .await
+            .unwrap()
+            .unwrap(),
+    ] {
+        assert_eq!(fingerprint(&reloaded).unwrap(), saved.fingerprint);
+        assert_eq!(
+            reloaded.quarters[0].revenue_estimate,
+            data.quarters[0].revenue_estimate
+        );
+        assert_eq!(
+            reloaded.quarters[0].earnings_per_share_estimate,
+            data.quarters[0].earnings_per_share_estimate
+        );
+    }
+    let service = assessment_service(store, None);
+    let state = service.state(&data.symbol).await.unwrap();
+    assert!(!state.stale);
+    let reloaded = state.report.unwrap();
+    assert_eq!(
+        fingerprint(&reloaded.fundamentals).unwrap(),
+        saved.fingerprint
+    );
+    assert_eq!(reloaded.generated_at, saved.generated_at);
+    assert_eq!(reloaded.scores.total, saved.scores.total);
 }
 
 #[tokio::test]
@@ -461,11 +497,18 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let data = fixture();
     seed_profile(&store, &data).await;
+    let mut response = ai_response();
+    response["scores"]["rows"][2]["evidence_ids"] = json!(["2026Q2", "2022Q2"]);
+    response["scores"]["rows"][3]["evidence_ids"] = json!([]);
+    response["concerns"] = json!([
+        {"reason":"An unsupported historical comparison.", "evidence_ids":["2022Q2"]},
+        {"reason":"A concern without citations.", "evidence_ids":[]}
+    ]);
     let mock = Arc::new(MockAi {
         store: store.clone(),
         entered: Notify::new(),
         release: Notify::new(),
-        response: Mutex::new(ai_response().to_string()),
+        response: Mutex::new(response.to_string()),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/chat", listener.local_addr().unwrap());
@@ -549,6 +592,10 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     assert_eq!(saved.fingerprint, captured.fingerprint);
     assert_eq!(saved.scores.total, Some(75.0));
     assert_eq!(saved.scores.rows[0].score, Some(23.0));
+    assert_eq!(saved.scores.rows[2].evidence_ids, ["2026Q2", "2022Q2"]);
+    assert!(saved.scores.rows[3].evidence_ids.is_empty());
+    assert_eq!(saved.concerns[0].evidence_ids, ["2022Q2"]);
+    assert!(saved.concerns[1].evidence_ids.is_empty());
     assert_eq!(
         saved.fundamentals.quarters[0].revenue,
         data.quarters[0].revenue
@@ -1087,7 +1134,7 @@ async fn live_configured_assessments() -> anyhow::Result<()> {
                 if !replay {
                     std::fs::write(path("raw.txt"), &response)?;
                 }
-                match validate_analysis(&response, &data) {
+                match validate_analysis(&response) {
                     Ok(analysis) => {
                         let output = json!({"scores":analysis.scores,"summary":analysis.summary,"concerns":analysis.concerns});
                         std::fs::write(

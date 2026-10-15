@@ -89,11 +89,22 @@
 }
 .assessment-evidence { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.4rem; }
 .assessment-evidence > span { padding: 0.05rem 0.3rem; border: 0.0625rem solid var(--color-border); border-radius: 0.2rem; background: var(--color-surface); color: var(--color-muted); font-size: 0.575rem; font-variant-numeric: tabular-nums; }
+.assessment-evidence > .is-invalid { color: var(--color-negative); border-color: var(--color-negative); }
+.assessment-evidence-error { margin-top: 0.3rem; color: var(--color-negative); font-size: 0.65rem; }
+.assessment-table .is-evidence-invalid {
+  & .assessment-criterion,
+  & .assessment-row-score,
+  & .assessment-reason { color: var(--color-negative); }
+  & .MuiLinearProgress-bar { background-color: var(--color-negative); }
+}
+.is-evidence-invalid .assessment-subtext { color: inherit; }
 .assessment-subtext { display: block; margin-top: 0.3rem; color: var(--color-muted); font-size: 0.9em; font-weight: 400; overflow-wrap: anywhere; }
 .assessment-concerns {
   & ul { display: grid; gap: 0.4rem; margin: 0; padding: 0.75rem 1rem 0.75rem 1.8rem; }
   & li { color: var(--color-muted); font-size: 0.7rem; line-height: 1.5; }
   & li::marker { color: var(--color-accent); }
+  & li.is-evidence-invalid,
+  & li.is-evidence-invalid::marker { color: var(--color-negative); }
 }
 .assessment-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem 1rem; color: var(--color-muted); font-size: 0.625rem; }
 .assessment-progress { padding: 0.75rem; }

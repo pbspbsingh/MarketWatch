@@ -7,6 +7,7 @@ import { Alert, Button, Chip, CircularProgress, LinearProgress, Table, TableBody
 import type { Fundamentals } from "../api/details";
 import { fetchFundamentalAssessment, isAssessmentActive, reassessFundamentals, type AssessmentJob, type AssessmentScores, type AssessmentState } from "../api/fundamentalAssessment";
 import { AiOutputPreview } from "./AiOutputPreview";
+import { availableEvidence, evidenceError } from "./assessmentEvidence";
 import "./ticker-assessment.css";
 
 const phaseLabels: Record<AssessmentJob["phase"], string> = {
@@ -83,7 +84,11 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   const summary = report?.summary ?? "";
   const lastUpdated = report == null ? "" : new Date(report.generated_at).toLocaleString();
   const snapshotAt = report?.fundamentals.fetched_at;
-  const concerns = (report?.concerns ?? []).map(concern => `${concern.reason} (${concern.evidence_ids.join(" · ")})`);
+  const concerns = report?.concerns ?? [];
+  const evidence = report == null ? new Set<string>() : availableEvidence(report.fundamentals);
+  const rowErrors = (scores?.rows ?? []).map(row => evidenceError(row.evidence_ids, evidence, row.score != null));
+  const concernErrors = concerns.map(concern => evidenceError(concern.evidence_ids, evidence));
+  const hasEvidenceErrors = [...rowErrors, ...concernErrors].some(Boolean);
   const stage = job?.phase === "queued" || job?.phase === "fetching_fundamentals" ? 0 : job?.phase === "saving" ? 2 : 1;
   return <div className="assessment-tab">
     <div className="assessment-toolbar">
@@ -91,6 +96,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
       <div className="assessment-actions">
         {stale && <Chip size="small" color="warning" label="Stale" />}
         {scores?.provisional && <Chip size="small" variant="outlined" label="Provisional" />}
+        {hasEvidenceErrors && <Chip size="small" color="error" label="Evidence issues" />}
         <Button size="small" variant="contained" startIcon={active ? <CircularProgress size="0.85rem" color="inherit" /> : report ? <RefreshIcon /> : <AutoAwesomeOutlinedIcon />} onClick={() => void analyze()} disabled={state == null || !state.ai_enabled || active}>{active ? "Scoring…" : report == null ? "Analyze" : "Reassess"}</Button>
       </div>
     </div>
@@ -100,6 +106,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
     {state?.not_found_at && <Alert severity="info">Fundamentals returned HTTP 404. No assessment is available. Background checks resume after the configured refresh interval; you can retry manually.</Alert>}
     {state != null && !state.not_found_at && !state.data_ready && <Alert severity="info">Assessment will refresh fundamentals before analyzing.</Alert>}
     {stale && <Alert severity="warning">Financial data, company context, or assessment settings have changed. Reassess to update this score.</Alert>}
+    {hasEvidenceErrors && <Alert severity="warning">Some citations are missing or reference periods outside the supplied data. Affected fields are marked in red; the AI score is shown unchanged.</Alert>}
     {active && state?.job_stale && <Alert severity="warning">Inputs changed while AI is assessing the captured snapshot. The completed assessment will be marked stale.</Alert>}
     {(active || (job?.phase === "failed" && job.live_response)) && <section className="assessment-progress" aria-label="Assessment progress">
       <div className="assessment-progress-heading" role="status">{job?.phase === "failed" ? <InfoOutlinedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}<strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{job?.background ? "Background · " : ""}{report ? "Saved assessment remains below" : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history"}</span></div>
@@ -112,8 +119,8 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
         <section className="assessment-card assessment-profile"><span className="assessment-eyebrow">Assessment profile</span><Typography component="h4">{scores.profile === "profitable" ? "Profitable" : "Revenue-focused"}</Typography><Typography><AssessmentText text={scores.profile_reason} limit={300} /></Typography>{report && <Typography className="assessment-industry">{[...report.context.industries, ...report.context.themes].join(" · ")}</Typography>}<Chip size="small" variant="outlined" label={<AssessmentText text={scores.gaap_status} limit={160} />} /></section>
         <section className="assessment-card assessment-summary"><span className="assessment-eyebrow">Assessment</span><Typography><AssessmentText text={summary} /></Typography><div className="assessment-data-quality"><span>Data quality</span><Typography><AssessmentText text={scores.data_quality} limit={300} /></Typography></div></section>
       </div>
-      <section className="assessment-panel" aria-label="Scoring breakdown"><div className="assessment-panel-heading"><FactCheckOutlinedIcon /><Typography component="h3">Scoring breakdown</Typography><span>AI-assigned scores · reported results first</span></div><ScoreTable scores={scores} summary={summary} lastUpdated={lastUpdated} /></section>
-      {concerns.length > 0 && <section className="assessment-panel assessment-concerns"><div className="assessment-panel-heading"><InfoOutlinedIcon /><Typography component="h3">What to watch</Typography></div><ul>{concerns.map(concern => <li key={concern}><AssessmentText text={concern} limit={300} /></li>)}</ul></section>}
+      <section className="assessment-panel" aria-label="Scoring breakdown"><div className="assessment-panel-heading"><FactCheckOutlinedIcon /><Typography component="h3">Scoring breakdown</Typography><span>AI-assigned scores · reported results first</span></div><ScoreTable scores={scores} summary={summary} lastUpdated={lastUpdated} evidence={evidence} errors={rowErrors} /></section>
+      {concerns.length > 0 && <section className="assessment-panel assessment-concerns"><div className="assessment-panel-heading"><InfoOutlinedIcon /><Typography component="h3">What to watch</Typography></div><ul>{concerns.map((concern, index) => <li key={index} className={concernErrors[index] ? "is-evidence-invalid" : undefined}><AssessmentText text={concern.reason} limit={300} /><AssessmentEvidence ids={concern.evidence_ids} available={evidence} error={concernErrors[index]} /></li>)}</ul></section>}
       <div className="assessment-footer"><span>Custom rubric informed by Minervini · {report?.model}</span><span>{report?.last_checked_at && <>Last checked <time dateTime={report.last_checked_at}>{new Date(report.last_checked_at).toLocaleString()}</time></>}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
     </> : !active && !state?.not_found_at && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS and revenue strength, acceleration, and consistency."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
   </div>;
@@ -127,14 +134,21 @@ function AssessmentText({ text, limit = 400 }: { text: string; limit?: number })
   return <>{text.slice(0, split)}<span className="assessment-subtext">{text.slice(split)}</span></>;
 }
 
-function ScoreTable({ scores, summary, lastUpdated }: { scores: AssessmentScores; summary: string; lastUpdated: string }) {
+function AssessmentEvidence({ ids, available, error }: { ids: string[]; available: ReadonlySet<string>; error?: string }) {
+  return <>
+    <div className="assessment-evidence">{ids.map((id, index) => <span key={`${id}-${index}`} className={available.has(id) ? undefined : "is-invalid"}>{id}</span>)}</div>
+    {error && <div className="assessment-evidence-error">{error}</div>}
+  </>;
+}
+
+function ScoreTable({ scores, summary, lastUpdated, evidence, errors }: { scores: AssessmentScores; summary: string; lastUpdated: string; evidence: ReadonlySet<string>; errors: (string | undefined)[] }) {
   return <TableContainer className="assessment-table-container"><Table size="small" className="assessment-table" aria-label="Fundamental assessment scores">
     <TableHead><TableRow><TableCell>Criterion</TableCell><TableCell align="right">Score</TableCell><TableCell align="right">Maximum</TableCell><TableCell>Reason</TableCell><TableCell>Last updated</TableCell></TableRow></TableHead>
-    <TableBody>{scores.rows.map(row => <TableRow key={row.id}>
+    <TableBody>{scores.rows.map((row, index) => <TableRow key={row.id} className={errors[index] ? "is-evidence-invalid" : undefined}>
       <TableCell className="assessment-criterion">{row.label}</TableCell>
       <TableCell align="right" className="assessment-row-score"><strong>{row.score == null ? "N/A" : row.score.toFixed(1)}</strong><LinearProgress variant="determinate" value={(row.score ?? 0) / row.maximum * 100} aria-label={`${row.label} score`} /></TableCell>
       <TableCell align="right" className="assessment-maximum">{row.maximum}</TableCell>
-      <TableCell className="assessment-reason"><AssessmentText text={row.reason} /><div className="assessment-evidence">{row.evidence_ids.map(id => <span key={id}>{id}</span>)}</div></TableCell>
+      <TableCell className="assessment-reason"><AssessmentText text={row.reason} /><AssessmentEvidence ids={row.evidence_ids} available={evidence} error={errors[index]} /></TableCell>
       <TableCell className="assessment-updated">{lastUpdated}</TableCell>
     </TableRow>)}<TableRow className="assessment-total"><TableCell>Final score{scores.provisional && <span>Provisional</span>}</TableCell><TableCell align="right">{scores.total == null ? "N/A" : scores.total.toFixed(1)}</TableCell><TableCell align="right">100</TableCell><TableCell><AssessmentText text={summary} /></TableCell><TableCell className="assessment-updated">{lastUpdated}</TableCell></TableRow></TableBody>
   </Table></TableContainer>;
