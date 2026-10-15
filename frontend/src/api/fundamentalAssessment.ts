@@ -60,6 +60,7 @@ export interface AssessmentState {
   report: FundamentalAssessment | null;
   not_found_at: string | null;
   job: AssessmentJob | null;
+  other_jobs: AssessmentJob[];
   stale: boolean;
   job_stale: boolean;
   data_ready: boolean;

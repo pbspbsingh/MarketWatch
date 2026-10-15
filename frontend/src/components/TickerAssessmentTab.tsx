@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import { Alert, Button, Chip, CircularProgress, LinearProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
+import { Alert, Button, Chip, CircularProgress, IconButton, LinearProgress, Popover, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
 import type { Fundamentals } from "../api/details";
 import { fetchFundamentalAssessment, isAssessmentActive, reassessFundamentals, type AssessmentJob, type AssessmentScores, type AssessmentState } from "../api/fundamentalAssessment";
 import { AiOutputPreview } from "./AiOutputPreview";
@@ -29,6 +32,9 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
   const [reload, setReload] = useState(0);
+  const [activityAnchor, setActivityAnchor] = useState<HTMLButtonElement | null>(null);
+  const activityId = useId();
+  const activityOpen = activityAnchor !== null;
   const startController = useRef<AbortController | undefined>(undefined);
   const active = starting || isAssessmentActive(state?.job);
   const report = state?.report;
@@ -44,7 +50,11 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
       try {
         const next = await fetchFundamentalAssessment(symbol, controller.signal);
         if (!controller.signal.aborted) { setState(next); setError(undefined); }
-        if (!controller.signal.aborted && document.visibilityState === "visible") timeout = window.setTimeout(() => void poll(), isAssessmentActive(next.job) ? 750 : 15_000);
+        if (!controller.signal.aborted && document.visibilityState === "visible") {
+          const otherActive = (next.other_jobs?.length ?? 0) > 0;
+          const interval = isAssessmentActive(next.job) || (activityOpen && otherActive) ? 750 : otherActive ? 5_000 : 15_000;
+          timeout = window.setTimeout(() => void poll(), interval);
+        }
       } catch (failure) {
         if (!controller.signal.aborted) {
           setError(failure instanceof Error ? failure.message : "Could not load assessment");
@@ -58,7 +68,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
     document.addEventListener("visibilitychange", onVisibility);
     void poll();
     return () => { controller.abort(); if (timeout !== undefined) window.clearTimeout(timeout); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [symbol, fundamentals, reload]);
+  }, [symbol, fundamentals, reload, activityOpen]);
 
   useEffect(() => () => startController.current?.abort(), []);
 
@@ -79,6 +89,9 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   };
 
   const job = state?.job;
+  const otherJobs = state?.other_jobs ?? [];
+  const activityJobs = job && (isAssessmentActive(job) || job.phase === "failed") ? [job, ...otherJobs] : otherJobs;
+  const activeJobs = otherJobs.length + Number(isAssessmentActive(job));
   const scores = report?.scores;
   const stale = state?.stale;
   const summary = report?.summary ?? "";
@@ -89,7 +102,6 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   const rowErrors = (scores?.rows ?? []).map(row => evidenceError(row.evidence_ids, evidence, row.score != null));
   const concernErrors = concerns.map(concern => evidenceError(concern.evidence_ids, evidence));
   const hasEvidenceErrors = [...rowErrors, ...concernErrors].some(Boolean);
-  const stage = job?.phase === "queued" || job?.phase === "fetching_fundamentals" ? 0 : job?.phase === "saving" ? 2 : 1;
   return <div className="assessment-tab">
     <div className="assessment-toolbar">
       <div className="assessment-title"><AutoAwesomeOutlinedIcon /><div><Typography component="h3">Fundamental growth</Typography><Typography>{symbol} · EPS and revenue assessment</Typography></div></div>
@@ -98,8 +110,18 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
         {scores?.provisional && <Chip size="small" variant="outlined" label="Provisional" />}
         {hasEvidenceErrors && <Chip size="small" color="error" label="Evidence issues" />}
         <Button size="small" variant="contained" startIcon={active ? <CircularProgress size="0.85rem" color="inherit" /> : report ? <RefreshIcon /> : <AutoAwesomeOutlinedIcon />} onClick={() => void analyze()} disabled={state == null || !state.ai_enabled || active}>{active ? "Scoring…" : report == null ? "Analyze" : "Reassess"}</Button>
+        <Button size="small" variant="outlined" color={job?.phase === "failed" ? "error" : "primary"} startIcon={<ScheduleRoundedIcon />} disabled={activityJobs.length === 0}
+          aria-label={`Assessment activity, ${activeJobs} active jobs`} aria-haspopup="dialog" aria-expanded={activityOpen} aria-controls={activityOpen ? activityId : undefined}
+          title={activityJobs.length > 0 ? activityJobs.map(activityJob => `${activityJob.symbol}: ${phaseLabels[activityJob.phase]}`).join(" · ") : "No active assessments"}
+          onClick={event => setActivityAnchor(event.currentTarget)}>Activity · {activeJobs}</Button>
       </div>
     </div>
+    <Popover open={activityOpen} anchorEl={activityAnchor} onClose={() => setActivityAnchor(null)} disableScrollLock
+      anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
+      slotProps={{ paper: { id: activityId, className: "assessment-activity-popover", role: "dialog", "aria-label": "Assessment activity" } }}>
+      <div className="assessment-activity-heading"><Typography component="h3">Assessment activity</Typography><IconButton size="small" aria-label="Close assessment activity" onClick={() => setActivityAnchor(null)}><CloseRoundedIcon /></IconButton></div>
+      {activityJobs.length > 0 ? activityJobs.map(activityJob => <AssessmentProgress key={activityJob.id} job={activityJob} />) : <Typography className="assessment-activity-empty">No active assessments.</Typography>}
+    </Popover>
     {error && <Alert severity="error">{error}</Alert>}
     {job?.phase === "failed" && <Alert severity="error">{job.error} {report && "Your saved assessment is unchanged."}</Alert>}
     {state != null && !state.ai_enabled && <Alert severity="info">Configure AI to generate assessments. Saved assessments remain available.</Alert>}
@@ -108,11 +130,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
     {stale && <Alert severity="warning">Financial data, company context, or assessment settings have changed. Reassess to update this score.</Alert>}
     {hasEvidenceErrors && <Alert severity="warning">Some citations are missing or reference periods outside the supplied data. Affected fields are marked in red; the AI score is shown unchanged.</Alert>}
     {active && state?.job_stale && <Alert severity="warning">Inputs changed while AI is assessing the captured snapshot. The completed assessment will be marked stale.</Alert>}
-    {(active || (job?.phase === "failed" && job.live_response)) && <section className="assessment-progress" aria-label="Assessment progress">
-      <div className="assessment-progress-heading" role="status">{job?.phase === "failed" ? <InfoOutlinedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}<strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{job?.background ? "Background · " : ""}{report ? "Saved assessment remains below" : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history"}</span></div>
-      <ol className="assessment-stages">{["Refresh fundamentals", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage ? "is-current" : ""}><span>{index + 1}</span>{label}</li>)}</ol>
-      <AiOutputPreview content={job?.live_response ?? ""} status={job?.phase === "failed" ? "Interrupted" : job?.live_response ? "Writing assessment" : "Awaiting response"} expanded />
-    </section>}
+    {(active || (job?.phase === "failed" && job.live_response)) && <AssessmentProgress job={job} savedReport={report != null} />}
     {scores ? <>
       <div className="assessment-overview">
         <section className={`assessment-card assessment-score${stale ? " is-stale" : ""}`} aria-label="Overall growth score"><span className="assessment-eyebrow">Growth score</span><div className="assessment-score-number">{scores.total == null ? "—" : scores.total.toFixed(1)}<span>/ 100</span></div><Typography>{scores.total == null ? "Insufficient comparable history" : scores.provisional ? "Provisional · limited evidence" : "AI assessment of EPS and revenue"}</Typography></section>
@@ -124,6 +142,23 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
       <div className="assessment-footer"><span>Custom rubric informed by Minervini · {report?.model}</span><span>{report?.last_checked_at && <>Last checked <time dateTime={report.last_checked_at}>{new Date(report.last_checked_at).toLocaleString()}</time></>}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
     </> : !active && !state?.not_found_at && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS and revenue strength, acceleration, and consistency."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
   </div>;
+}
+
+function AssessmentProgress({ job, savedReport = false }: { job?: AssessmentJob | null; savedReport?: boolean }) {
+  const failed = job?.phase === "failed";
+  const completed = job?.phase === "completed";
+  const stage = completed ? 3 : job?.phase === "queued" || job?.phase === "fetching_fundamentals" ? 0 : job?.phase === "saving" ? 2 : 1;
+  const description = job?.error ?? (completed ? "Assessment saved." : savedReport ? "Saved assessment remains below" : job?.phase === "waiting_for_ai" && job.background ? "Waiting for AI to be idle." : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history");
+  return <section className="assessment-progress" aria-label={job ? `${job.symbol} assessment progress` : "Assessment progress"}>
+    <div className="assessment-progress-heading" role="status">{failed ? <InfoOutlinedIcon fontSize="small" /> : completed ? <CheckRoundedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}
+      {job && <a className="assessment-progress-symbol" href={`/market-watch?ticker=${encodeURIComponent(job.symbol)}`} target="_blank" rel="noopener noreferrer" title={`Open ${job.symbol} in Market Watch in a new tab`}>{job.symbol}</a>}
+      <strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{job?.background ? "Background" : "Manual"}</span>
+    </div>
+    <Typography className="assessment-progress-description">{description}</Typography>
+    <ol className="assessment-stages">{["Refresh fundamentals", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage && !failed ? "is-current" : ""} aria-current={index === stage && !failed ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
+    {job && <div className="assessment-progress-times"><span>Last update <time dateTime={job.updated_at}>{new Date(job.updated_at).toLocaleString()}</time></span>{job.snapshot && <span>Financial data refreshed <time dateTime={job.snapshot.fundamentals_fetched_at}>{new Date(job.snapshot.fundamentals_fetched_at).toLocaleString()}</time></span>}</div>}
+    <AiOutputPreview content={job?.live_response ?? ""} status={failed ? "Interrupted" : completed ? "Complete" : job?.live_response ? "Writing assessment" : "Awaiting response"} expanded />
+  </section>;
 }
 
 function AssessmentText({ text, limit = 400 }: { text: string; limit?: number }) {

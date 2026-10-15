@@ -58,6 +58,7 @@ pub struct AssessmentState {
     pub report: Option<FundamentalAssessment>,
     pub not_found_at: Option<chrono::DateTime<Utc>>,
     pub job: Option<AssessmentJob>,
+    pub other_jobs: Vec<AssessmentJob>,
     pub stale: bool,
     pub job_stale: bool,
     pub data_ready: bool,
@@ -98,12 +99,17 @@ impl FundamentalAssessmentService {
 
     pub async fn state(&self, symbol: &TickerSymbol) -> anyhow::Result<AssessmentState> {
         // Snapshot jobs first, as in N-Factor, so completion cannot race an older report read.
-        let job = self
-            .jobs
-            .lock()
-            .expect("assessment registry lock")
-            .get(symbol)
-            .map(|entry| entry.job.clone());
+        let (job, mut other_jobs) = {
+            let jobs = self.jobs.lock().expect("assessment registry lock");
+            let job = jobs.get(symbol).map(|entry| entry.job.clone());
+            let other_jobs = jobs
+                .values()
+                .filter(|entry| entry.job.symbol != *symbol && entry.job.phase.is_active())
+                .map(|entry| entry.job.clone())
+                .collect::<Vec<_>>();
+            (job, other_jobs)
+        };
+        other_jobs.sort_by(|left, right| left.symbol.cmp(&right.symbol));
         let (report, not_found_at) = match self.store.fundamental_assessment(symbol).await? {
             Some(AssessmentResult::Report(report)) => (Some(*report), None),
             Some(AssessmentResult::NotFound { not_found_at }) => (None, Some(not_found_at)),
@@ -126,6 +132,7 @@ impl FundamentalAssessmentService {
             report,
             not_found_at,
             job,
+            other_jobs,
             stale,
             job_stale,
             data_ready: data.is_some(),

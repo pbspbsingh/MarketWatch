@@ -316,6 +316,73 @@ fn fingerprint_ignores_fetch_dates_and_order_but_tracks_financial_changes() {
 }
 
 #[tokio::test]
+async fn state_exposes_full_active_jobs_for_other_tickers() {
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let data = fixture();
+    seed(&store, &data).await;
+    let service = assessment_service(store, None);
+    for (symbol, phase, background) in [
+        ("MXL", AssessmentPhase::Analyzing, true),
+        ("APPN", AssessmentPhase::FetchingFundamentals, true),
+        (data.symbol.as_str(), AssessmentPhase::WaitingForAi, true),
+        ("MANUAL", AssessmentPhase::Analyzing, false),
+        ("DONE", AssessmentPhase::Completed, true),
+        ("FAILED", AssessmentPhase::Failed, true),
+    ] {
+        let symbol = TickerSymbol::parse(symbol).unwrap();
+        let job = AssessmentJob {
+            id: format!("job-{symbol}"),
+            symbol: symbol.clone(),
+            phase,
+            updated_at: Utc::now(),
+            background,
+            snapshot: Some(AssessmentSnapshot {
+                fundamentals_fetched_at: data.fetched_at,
+                fingerprint: "snapshot".into(),
+                context: AssessmentContext::default(),
+            }),
+            live_response: format!("Response for {symbol}"),
+            error: None,
+        };
+        service.jobs.lock().unwrap().insert(
+            symbol,
+            JobEntry {
+                job,
+                control: AiJobControl::new(background, None),
+            },
+        );
+    }
+    let state = service.state(&data.symbol).await.unwrap();
+    assert_eq!(state.job.unwrap().symbol, data.symbol);
+    assert_eq!(
+        state
+            .other_jobs
+            .iter()
+            .map(|job| job.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["APPN", "MANUAL", "MXL"]
+    );
+    let serialized = serde_json::to_value(&state.other_jobs).unwrap();
+    assert_eq!(serialized[1]["live_response"], "Response for MANUAL");
+    assert_eq!(serialized[1]["snapshot"]["fingerprint"], "snapshot");
+    assert_eq!(serialized[1]["background"], false);
+
+    let appn = TickerSymbol::parse("APPN").unwrap();
+    service.update(&appn, "job-APPN", AssessmentPhase::Completed, None);
+    let state = service.state(&data.symbol).await.unwrap();
+    assert_eq!(state.other_jobs.len(), 2);
+    assert_eq!(state.other_jobs[0].symbol.as_str(), "MANUAL");
+    assert_eq!(state.other_jobs[1].symbol.as_str(), "MXL");
+    service.update_job(&TickerSymbol::parse("MXL").unwrap(), "job-MXL", |job| {
+        job.background = false
+    });
+    let state = service.state(&data.symbol).await.unwrap();
+    assert_eq!(state.other_jobs.len(), 2);
+    assert_eq!(state.other_jobs[1].symbol.as_str(), "MXL");
+    assert!(!state.other_jobs[1].background);
+}
+
+#[tokio::test]
 async fn persisted_financial_floats_preserve_fingerprints_and_fresh_scores() {
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let mut data = fixture();

@@ -283,7 +283,7 @@ function JobProgress({ job, compact = false, children }: { job: NFactorJobProgre
   const activityAge = activityTime ? Math.max(0, Math.floor(((active ? now : Date.parse(job.updated_at)) - activityTime.getTime()) / 1_000)) : undefined;
   return <div className={`n-factor-progress${compact ? " n-factor-progress-compact" : ""}${failed ? " n-factor-progress-failed" : ""}${waiting ? " n-factor-progress-waiting" : ""}`}>
     <div className="n-factor-progress-heading">
-      <span className="n-factor-progress-symbol">{job.symbol}</span>
+      <a className="n-factor-progress-symbol" href={`/market-watch?ticker=${encodeURIComponent(job.symbol)}`} target="_blank" rel="noopener noreferrer" title={`Open ${job.symbol} in Market Watch in a new tab`}>{job.symbol}</a>
       <span className="n-factor-progress-source">{sourceLabels[job.source]}</span>
       <span className="n-factor-progress-origin">{job.background ? "Background" : "Manual"}</span>
       {compact && <span className="n-factor-progress-elapsed">{formatDuration(elapsed)}</span>}
