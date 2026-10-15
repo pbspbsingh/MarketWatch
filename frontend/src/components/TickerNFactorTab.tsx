@@ -45,6 +45,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
   const evidenceKeyRef = useRef<string | undefined>(undefined);
   const active = isNFactorActive(state?.job);
   const report = state?.report;
+  const noNews = report != null && report.news.length === 0;
   const job = state?.job;
   const otherJobs = state?.other_jobs ?? [];
   const showCurrentProgress = job != null && (active || job.phase === "failed");
@@ -159,11 +160,12 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
           </Button>
         </div>
         <Typography className="n-factor-updated" color="text.secondary">
-          {report ? <><span>Last updated <time dateTime={report.generated_at}>{new Date(report.generated_at).toLocaleString()}</time></span><span>· {report.model} · {report.news.length} items</span></> : "Last six months · Up to 50 newest articles"}
+          {report ? <><span>{noNews ? "Last checked" : "Analyzed"} <time dateTime={noNews ? report.news_fetched_at : report.generated_at}>{new Date(noNews ? report.news_fetched_at : report.generated_at).toLocaleString()}</time></span><span>· {noNews ? "AI analysis skipped" : `${report.model} · ${report.news.length} items`}</span>{report.analysis_reused && <span>· News checked <time dateTime={report.news_fetched_at}>{new Date(report.news_fetched_at).toLocaleString()}</time></span>}</> : "Last six months · Up to 50 newest articles"}
         </Typography>
       </div>
       {error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => setReload((current) => current + 1)}>Retry load</Button>}>{error}</Alert>}
       {startError && <Alert severity="error" onClose={() => setStartError(undefined)}>{startError}</Alert>}
+      {report?.analysis_reused && !active && job?.phase !== "failed" && <Alert severity="info">No new or changed news. Existing analysis kept; AI was not run again.</Alert>}
       {state && !state.ai_enabled && <Alert severity="info">Configure AI to generate an N-Factor report. Saved reports remain available.</Alert>}
       <Popover open={activityAnchor !== null} anchorEl={activityAnchor} onClose={() => setActivityAnchor(null)} disableScrollLock
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
@@ -215,7 +217,7 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
               {news.length > 0 ? <>
                 <Typography className="n-factor-note" color="text.secondary">{showingRefreshNews ? "News from the current refresh." : `Fetched ${new Date(report?.news_fetched_at ?? "").toLocaleString()}.`} {newsSource === "stock_titan" ? "Summaries provided by Stock Titan AI." : "Finviz provides headlines; summaries may be unavailable."}</Typography>
                 {news.map((item) => <NewsArticle key={`${showingRefreshNews ? job?.id : report?.generated_at}-${item.url}`} item={item} selected={selectedNewsId === item.id} />)}
-              </> : <div className="n-factor-empty"><NewspaperOutlinedIcon /><Typography component="h4">News behind the analysis</Typography><Typography color="text.secondary">{coverage?.stop_reason === "source_not_found" ? "The source news page is unavailable (HTTP 404)." : coverage ? "No articles available in the requested six-month window." : "Titles, summaries, dates, and source links appear here after news is fetched."}</Typography></div>}
+              </> : <div className="n-factor-empty"><NewspaperOutlinedIcon /><Typography component="h4">{coverage?.stop_reason === "source_not_found" ? "News page unavailable" : coverage ? "No news available" : "News behind the analysis"}</Typography><Typography color="text.secondary">{coverage?.stop_reason === "source_not_found" ? `${sourceLabels[newsSource]} returned HTTP 404 for this ticker.` : coverage ? "No articles available in the requested six-month window." : "Titles, summaries, dates, and source links appear here after news is fetched."}</Typography>{noNews && !showingRefreshNews && <Typography color="text.secondary">This result is saved. AI analysis was skipped. You can refresh manually or choose another source.</Typography>}</div>}
             </div>
           </section>
         </div>

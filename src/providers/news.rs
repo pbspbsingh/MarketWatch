@@ -473,12 +473,24 @@ pub(crate) fn parse_finviz_news(html: &str, now: DateTime<Utc>) -> anyhow::Resul
             url: url.to_string(),
         });
     }
-    // An intact, empty news table is valid; rows with unrecognized links are not.
-    if items.is_empty()
+    // Finviz omits the entire news section on valid stock pages with no news.
+    let table = document.select(&selector("#news-table")).next();
+    let quote_without_news = table.is_none()
         && document
-            .select(&selector("#news-table"))
+            .select(&selector("h1.js-recent-quote-ticker[data-ticker]"))
             .next()
-            .is_some_and(|table| table.select(&selector("tr")).next().is_none())
+            .is_some()
+        && document
+            .select(&selector("table.snapshot-table2"))
+            .next()
+            .is_some()
+        && document
+            .select(&selector("a.tab-link-news[href]"))
+            .next()
+            .is_none();
+    if items.is_empty()
+        && (quote_without_news
+            || table.is_some_and(|table| table.select(&selector("tr")).next().is_none()))
     {
         return Ok(items);
     }
@@ -574,6 +586,12 @@ mod tests {
     #[test]
     fn empty_news_requires_a_recognized_source_page() {
         let now = Utc::now();
+        let empty_quote = r#"<h1 class="js-recent-quote-ticker" data-ticker="JDZG">JDZG</h1><table class="snapshot-table2"></table>"#;
+        assert!(parse_finviz_news(empty_quote, now).unwrap().is_empty());
+        assert!(
+            parse_finviz_news(&empty_quote.replace("snapshot-table2", "unknown"), now).is_err()
+        );
+        assert!(parse_finviz_news(&format!("{empty_quote}<a class='tab-link-news' href='https://example.com/news'>Moved news</a>"), now).is_err());
         assert!(
             parse_finviz_news("<table id='news-table'></table>", now)
                 .unwrap()

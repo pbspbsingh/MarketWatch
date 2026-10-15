@@ -74,6 +74,8 @@ pub struct NFactorReport {
     pub source: NewsSource,
     pub generated_at: DateTime<Utc>,
     pub news_fetched_at: DateTime<Utc>,
+    #[serde(default)]
+    pub analysis_reused: bool,
     pub model: String,
     pub prompt_version: u32,
     pub overview: String,

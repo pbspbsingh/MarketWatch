@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 
 pub(crate) struct NFactorCandidate {
     pub symbol: TickerSymbol,
-    pub generated_at: Option<DateTime<Utc>>,
+    pub checked_at: Option<DateTime<Utc>>,
     pub in_watchlist: bool,
 }
 
@@ -42,10 +42,10 @@ impl Store {
             r#"WITH candidates AS (
                    SELECT DISTINCT c.symbol,
                        EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,
-                       (SELECT json_extract(r.payload, '$.generated_at')
+                       (SELECT COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))
                         FROM n_factor_reports r WHERE r.symbol = c.symbol
-                        ORDER BY julianday(json_extract(r.payload, '$.generated_at')) DESC
-                        LIMIT 1) AS generated_at
+                        ORDER BY julianday(COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))) DESC
+                        LIMIT 1) AS checked_at
                    FROM industry_membership_tickers c
                    WHERE (?1 OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
                        AND (?4 IS NULL OR c.symbol = ?4)
@@ -56,10 +56,10 @@ impl Store {
                        AND NOT EXISTS (SELECT 1 FROM json_each(?3) WHERE value = c.symbol)
                )
                SELECT symbol AS "symbol!", in_watchlist AS "in_watchlist!: bool",
-                   generated_at AS "generated_at?: String"
+                   checked_at AS "checked_at?: String"
                FROM candidates
-               WHERE generated_at IS NULL OR julianday(generated_at) <= julianday(?2)
-               ORDER BY in_watchlist DESC, julianday(generated_at), RANDOM()
+               WHERE checked_at IS NULL OR julianday(checked_at) <= julianday(?2)
+               ORDER BY in_watchlist DESC, julianday(checked_at), RANDOM()
                LIMIT 1"#,
             process_non_watchlist,
             cutoff,
@@ -71,11 +71,11 @@ impl Store {
         row.map(|row| {
             Ok(NFactorCandidate {
                 symbol: TickerSymbol::try_from(row.symbol)?,
-                generated_at: row
-                    .generated_at
+                checked_at: row
+                    .checked_at
                     .map(|value| value.parse::<DateTime<Utc>>())
                     .transpose()
-                    .context("invalid N-Factor report timestamp")?,
+                    .context("invalid N-Factor news check timestamp")?,
                 in_watchlist: row.in_watchlist,
             })
         })
@@ -323,7 +323,8 @@ mod tests {
             symbol: symbol.clone(),
             source: NewsSource::StockTitan,
             generated_at: now - chrono::Duration::days(10),
-            news_fetched_at: now,
+            news_fetched_at: now - chrono::Duration::days(10),
+            analysis_reused: false,
             model: "test".to_owned(),
             prompt_version: 3,
             overview: "Saved".to_owned(),
@@ -334,6 +335,7 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         report.source = NewsSource::Finviz;
         report.generated_at = now;
+        report.news_fetched_at = now;
         store.save_n_factor_report(&report).await.unwrap();
         let cutoff = now - chrono::Duration::days(7);
         let missing = store
@@ -342,7 +344,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(missing.symbol.as_str(), "BBB");
-        assert!(missing.generated_at.is_none());
+        assert!(missing.checked_at.is_none());
         assert!(
             store
                 .n_factor_candidate(false, cutoff, &[missing.symbol], None)
@@ -357,15 +359,25 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        // Both sources must be stale before the ticker becomes eligible again.
+        // An unchanged-news check defers refresh without changing the AI analysis date.
         report.generated_at = now - chrono::Duration::days(8);
+        store.save_n_factor_report(&report).await.unwrap();
+        assert!(
+            store
+                .n_factor_candidate(false, cutoff, &[], Some(&symbol))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // Both sources must be due for a news check before the ticker is eligible again.
+        report.news_fetched_at = report.generated_at;
         store.save_n_factor_report(&report).await.unwrap();
         let stale = store
             .n_factor_candidate(false, cutoff, &[], Some(&symbol))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(stale.generated_at, Some(report.generated_at));
+        assert_eq!(stale.checked_at, Some(report.news_fetched_at));
         assert_eq!(store.n_factor_reports(&symbol).await.unwrap().len(), 2);
     }
 
@@ -401,7 +413,8 @@ mod tests {
             symbol: watch.clone(),
             source: NewsSource::Finviz,
             generated_at: now - chrono::Duration::days(10),
-            news_fetched_at: now,
+            news_fetched_at: now - chrono::Duration::days(10),
+            analysis_reused: false,
             model: "test".to_owned(),
             prompt_version: 3,
             overview: "Saved".to_owned(),
@@ -412,6 +425,7 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         report.symbol = fresh.clone();
         report.generated_at = now;
+        report.news_fetched_at = now;
         store.save_n_factor_report(&report).await.unwrap();
         // A stale watchlist report outranks a missing non-watchlist report.
         assert_eq!(
@@ -440,6 +454,7 @@ mod tests {
         );
         // The oldest eligible watchlist report wins.
         report.generated_at = now - chrono::Duration::days(20);
+        report.news_fetched_at = report.generated_at;
         store.save_n_factor_report(&report).await.unwrap();
         assert_eq!(
             store
@@ -452,6 +467,7 @@ mod tests {
         );
         // Report expiry includes the exact refresh boundary.
         report.generated_at = cutoff;
+        report.news_fetched_at = cutoff;
         store.save_n_factor_report(&report).await.unwrap();
         assert!(
             store

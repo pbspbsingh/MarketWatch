@@ -29,6 +29,7 @@ export interface NFactorReport {
   source: NewsSource;
   generated_at: string;
   news_fetched_at: string;
+  analysis_reused: boolean;
   model: string;
   prompt_version: number;
   overview: string;

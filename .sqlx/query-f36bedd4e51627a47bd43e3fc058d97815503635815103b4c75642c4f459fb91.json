@@ -1,0 +1,40 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH candidates AS (\n                   SELECT DISTINCT c.symbol,\n                       EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,\n                       (SELECT COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))\n                        FROM n_factor_reports r WHERE r.symbol = c.symbol\n                        ORDER BY julianday(COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))) DESC\n                        LIMIT 1) AS checked_at\n                   FROM industry_membership_tickers c\n                   WHERE (?1 OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))\n                       AND (?4 IS NULL OR c.symbol = ?4)\n                       AND NOT EXISTS (\n                           SELECT 1 FROM industry_membership_tickers im\n                           WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'\n                       )\n                       AND NOT EXISTS (SELECT 1 FROM json_each(?3) WHERE value = c.symbol)\n               )\n               SELECT symbol AS \"symbol!\", in_watchlist AS \"in_watchlist!: bool\",\n                   checked_at AS \"checked_at?: String\"\n               FROM candidates\n               WHERE checked_at IS NULL OR julianday(checked_at) <= julianday(?2)\n               ORDER BY in_watchlist DESC, julianday(checked_at), RANDOM()\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_membership_tickers",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "in_watchlist!: bool",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "checked_at?: String",
+        "ordinal": 2,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f36bedd4e51627a47bd43e3fc058d97815503635815103b4c75642c4f459fb91"
+}

@@ -81,7 +81,7 @@ impl NFactorService {
             };
             if let Some(candidate) = candidate {
                 let symbol = candidate.symbol.clone();
-                info!(%symbol, last_updated = ?candidate.generated_at, in_watchlist = candidate.in_watchlist,
+                info!(%symbol, last_checked = ?candidate.checked_at, in_watchlist = candidate.in_watchlist,
                     "Selected background N-Factor ticker");
                 // start_job shares the same registry and completion signal as
                 // manual jobs. Await the entire ticker before selecting another.

@@ -24,7 +24,7 @@ use crate::{
     },
     providers::{
         AiClient, AiStreamDelta, FinvizClient, UserAiJob,
-        news::{NewsBatch, NewsProgress, StockTitanClient, limit_finviz_news},
+        news::{NewsBatch, NewsProgress, StockTitanClient},
     },
     store::Store,
 };
@@ -387,7 +387,7 @@ impl NFactorService {
             }
             NewsSource::Finviz => {
                 self.update(key, id, |job| job.phase = NFactorPhase::FetchingNews);
-                limit_finviz_news(self.finviz.news(&key.0).await?, now)?
+                self.finviz.news(&key.0).await?
             }
         };
         self.analyze_and_save(key, id, ai, background, origin, batch)
@@ -403,14 +403,25 @@ impl NFactorService {
         mut origin: watch::Receiver<bool>,
         batch: NewsBatch,
     ) -> anyhow::Result<()> {
-        let news = batch.items;
+        let mut news = batch.items;
         let coverage = batch.coverage;
         let news_fetched_at = Utc::now();
+        let previous = self
+            .store
+            .n_factor_report(&key.0, key.1)
+            .await?
+            .filter(|report| {
+                report.model == ai.model()
+                    && report.prompt_version == PROMPT_VERSION
+                    && unchanged_news(&report.news, &news)
+            });
+        let generated_at = previous.as_ref().map(|report| report.generated_at);
+        let analysis_reused = previous.is_some();
         info!(news_items = news.len(), pages_fetched = coverage.pages_fetched,
             stop_reason = ?coverage.stop_reason, requested_since = %coverage.requested_since,
             "N-Factor news fetch finished");
         self.update(key, id, |job| {
-            job.phase = if news.is_empty() {
+            job.phase = if news.is_empty() || previous.is_some() {
                 NFactorPhase::Saving
             } else {
                 NFactorPhase::WaitingForAi
@@ -420,17 +431,28 @@ impl NFactorService {
             job.pages_fetched = coverage.pages_fetched;
             job.coverage = Some(coverage.clone());
         });
-        let (analysis, model) = if news.is_empty() {
-            if let Some(config) = background {
-                let eligible = self.background_eligible(&key.0, config).await?;
-                if *origin.borrow() && !eligible {
-                    info!(
-                        "Skipping background N-Factor save: ticker is fresh or no longer eligible"
-                    );
-                    self.update(key, id, |job| job.phase = NFactorPhase::Completed);
-                    return Ok(());
-                }
+        if (news.is_empty() || previous.is_some())
+            && let Some(config) = background
+        {
+            let eligible = self.background_eligible(&key.0, config).await?;
+            if *origin.borrow() && !eligible {
+                info!("Skipping background N-Factor save: ticker is fresh or no longer eligible");
+                self.update(key, id, |job| job.phase = NFactorPhase::Completed);
+                return Ok(());
             }
+        }
+        let (analysis, model) = if let Some(report) = previous {
+            info!(generated_at = %report.generated_at, "News unchanged; reusing N-Factor analysis without AI");
+            // Keep the analyzed IDs so every saved finding still cites the same article.
+            news = report.news;
+            (
+                Analysis {
+                    overview: report.overview,
+                    findings: report.findings,
+                },
+                report.model,
+            )
+        } else if news.is_empty() {
             info!(reason = ?coverage.stop_reason, "Saving empty N-Factor result without AI");
             let overview = if coverage.stop_reason == NewsStopReason::SourceNotFound {
                 "The source news page is unavailable (HTTP 404). No AI analysis was performed."
@@ -505,8 +527,9 @@ impl NFactorService {
         let report = NFactorReport {
             symbol: key.0.clone(),
             source: key.1,
-            generated_at: Utc::now(),
+            generated_at: generated_at.unwrap_or_else(Utc::now),
             news_fetched_at,
+            analysis_reused,
             model,
             prompt_version: PROMPT_VERSION,
             overview: analysis.overview,
@@ -528,6 +551,22 @@ impl NFactorService {
         });
         Ok(())
     }
+}
+
+fn unchanged_news(previous: &[NewsItem], current: &[NewsItem]) -> bool {
+    fn content(item: &NewsItem) -> (&str, &str, Option<&str>, Option<chrono::DateTime<Utc>>) {
+        (
+            &item.url,
+            &item.title,
+            item.summary.as_deref(),
+            item.published_at,
+        )
+    }
+    let mut previous = previous.iter().map(content).collect::<Vec<_>>();
+    let mut current = current.iter().map(content).collect::<Vec<_>>();
+    previous.sort_unstable();
+    current.sort_unstable();
+    previous == current
 }
 
 fn record_ai_delta(job: &mut NFactorJob, delta: AiStreamDelta<'_>) {
@@ -672,6 +711,226 @@ mod tests {
         }]
     }
 
+    #[test]
+    fn unchanged_news_ignores_ids_and_order_but_detects_content_and_window_changes() {
+        let mut previous = news();
+        let mut second = previous[0].clone();
+        second.url.push_str("/second");
+        second.id = 2;
+        previous.push(second);
+        let mut reordered = previous.clone();
+        reordered.reverse();
+        reordered[0].id = 90;
+        reordered[1].id = 91;
+        assert!(unchanged_news(&previous, &reordered));
+        for field in [
+            "url",
+            "title",
+            "summary",
+            "published_at",
+            "removed",
+            "added",
+        ] {
+            let mut changed = previous.clone();
+            match field {
+                "url" => changed[0].url.push_str("/updated"),
+                "title" => changed[0].title.push_str(" updated"),
+                "summary" => changed[0].summary = Some("Updated summary".into()),
+                "published_at" => changed[0].published_at = Some(Utc::now()),
+                "removed" => {
+                    changed.pop();
+                }
+                "added" => changed.push(changed[0].clone()),
+                _ => unreachable!(),
+            }
+            assert!(!unchanged_news(&previous, &changed), "{field}");
+        }
+    }
+
+    #[tokio::test]
+    async fn unchanged_news_preserves_analysis_and_citations_and_defers_background_refresh() {
+        for source in [NewsSource::StockTitan, NewsSource::Finviz] {
+            for background in [false, true] {
+                let store = Store::connect("sqlite::memory:").await.unwrap();
+                let symbol = TickerSymbol::parse("SAME").unwrap();
+                store
+                    .upsert_company_profile(&CompanyProfile {
+                        symbol: symbol.clone(),
+                        name: None,
+                        exchange: Exchange::Nasdaq,
+                        description: None,
+                        fetched_at: Utc::now(),
+                    })
+                    .await
+                    .unwrap();
+                let watchlist = store.watchlists().await.unwrap().remove(0);
+                store
+                    .add_watchlist_symbol(watchlist.id, &symbol)
+                    .await
+                    .unwrap();
+                store
+                    .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+                    .await
+                    .unwrap();
+                // Any attempted AI request fails. A background admission would wait five minutes.
+                let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+                    endpoint: "http://127.0.0.1:1".into(),
+                    model: "test".into(),
+                    batch_size: 1,
+                    max_concurrent_requests: 1,
+                    read_timeout_secs: 1,
+                }));
+                let (finviz, stock_titan) = clients();
+                let service = NFactorService::new(
+                    store.clone(),
+                    finviz,
+                    stock_titan,
+                    Some(ai.clone()),
+                    source,
+                );
+                let now = Utc::now();
+                let old = now - Duration::days(8);
+                let mut items = news();
+                items[0].id = 7;
+                let mut second = items[0].clone();
+                second.id = 11;
+                second.url.push_str("/second");
+                items.push(second);
+                let analysis = validate_analysis(r#"{"overview":"Potential product catalyst","findings":[{"title":"Product","category":"product","what_is_new":"Launched","potential_impact":"New market","uncertainty":"Adoption unknown","evidence_ids":[7]}]}"#, &items).unwrap();
+                let saved = NFactorReport {
+                    symbol: symbol.clone(),
+                    source,
+                    generated_at: old,
+                    news_fetched_at: old,
+                    analysis_reused: false,
+                    model: "test".into(),
+                    prompt_version: PROMPT_VERSION,
+                    overview: analysis.overview,
+                    findings: analysis.findings,
+                    news: items,
+                    coverage: None,
+                };
+                store.save_n_factor_report(&saved).await.unwrap();
+                let config = NFactorBackgroundConfig {
+                    idle_delay_secs: 300,
+                    refresh_days: 7,
+                    process_non_watchlist: false,
+                };
+                assert!(service.background_eligible(&symbol, config).await.unwrap());
+                let job = NFactorJob {
+                    id: "unchanged".into(),
+                    symbol: symbol.clone(),
+                    source,
+                    background,
+                    phase: NFactorPhase::FetchingNews,
+                    started_at: now,
+                    updated_at: now,
+                    retry_at: None,
+                    news_count: 0,
+                    pages_fetched: 0,
+                    news: vec![],
+                    coverage: None,
+                    ai_activity_at: None,
+                    live_reasoning: String::new(),
+                    live_response: String::new(),
+                    error: None,
+                };
+                let entry = JobEntry::new(job.clone(), None);
+                let origin = entry.background.subscribe();
+                let key = (symbol.clone(), source);
+                service.jobs.lock().unwrap().insert(key.clone(), entry);
+                let mut fetched = saved.news.clone();
+                fetched.reverse();
+                fetched[0].id = 1;
+                fetched[1].id = 2;
+                let coverage = NewsCoverage {
+                    requested_since: now - Duration::days(180),
+                    pages_fetched: 2,
+                    stop_reason: NewsStopReason::SourceExhausted,
+                };
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    service.analyze_and_save(
+                        &key,
+                        &job.id,
+                        &ai,
+                        background.then_some(config),
+                        origin.clone(),
+                        NewsBatch {
+                            items: fetched.clone(),
+                            coverage: coverage.clone(),
+                        },
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                let report = store
+                    .n_factor_report(&symbol, source)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(report.generated_at, old);
+                assert!(report.analysis_reused);
+                assert!(report.news_fetched_at >= now);
+                assert_eq!(report.overview, saved.overview);
+                assert_eq!(
+                    serde_json::to_value(&report.findings).unwrap(),
+                    serde_json::to_value(&saved.findings).unwrap()
+                );
+                assert_eq!(
+                    serde_json::to_value(&report.news).unwrap(),
+                    serde_json::to_value(&saved.news).unwrap()
+                );
+                assert_eq!(report.coverage.unwrap().pages_fetched, 2);
+                assert!(!service.background_eligible(&symbol, config).await.unwrap());
+                let finished = service.job(&job.id).unwrap();
+                assert_eq!(finished.phase, NFactorPhase::Completed);
+                assert!(finished.ai_activity_at.is_none());
+
+                // Changed inputs/settings must attempt AI and preserve the report if AI fails.
+                for change in ["news", "model", "prompt"] {
+                    let mut previous = saved.clone();
+                    let mut current = fetched.clone();
+                    match change {
+                        "news" => current[0].title.push_str(" updated"),
+                        "model" => previous.model = "old-model".into(),
+                        "prompt" => previous.prompt_version -= 1,
+                        _ => unreachable!(),
+                    }
+                    store.save_n_factor_report(&previous).await.unwrap();
+                    let error = service
+                        .analyze_and_save(
+                            &key,
+                            &job.id,
+                            &ai,
+                            None,
+                            origin.clone(),
+                            NewsBatch {
+                                items: current,
+                                coverage: coverage.clone(),
+                            },
+                        )
+                        .await
+                        .unwrap_err();
+                    assert!(
+                        error.chain().any(|cause| cause.is::<AiError>()),
+                        "{change}: {error:#}"
+                    );
+                    let retained = store
+                        .n_factor_report(&symbol, source)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(
+                        serde_json::to_value(retained).unwrap(),
+                        serde_json::to_value(previous).unwrap()
+                    );
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn empty_and_unavailable_news_are_saved_without_ai_and_wait_for_refresh() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
@@ -705,6 +964,11 @@ mod tests {
             ),
             ("OLDNEWS", NewsSource::StockTitan, NewsStopReason::SixMonths),
             ("EMPTY", NewsSource::Finviz, NewsStopReason::SourceLimited),
+            (
+                "FINMISSING",
+                NewsSource::Finviz,
+                NewsStopReason::SourceNotFound,
+            ),
         ] {
             let symbol = TickerSymbol::parse(symbol_text).unwrap();
             store
@@ -771,6 +1035,7 @@ mod tests {
             assert!(saved.generated_at >= now);
             assert!(saved.news.is_empty() && saved.findings.is_empty());
             assert_eq!(saved.model, "No AI needed");
+            assert!(!saved.analysis_reused);
             assert_eq!(saved.coverage.as_ref().unwrap().stop_reason, reason);
             assert_eq!(
                 saved.overview.contains("HTTP 404"),
@@ -793,6 +1058,7 @@ mod tests {
                 .await
                 .unwrap();
             saved.generated_at = Utc::now() - Duration::days(8);
+            saved.news_fetched_at = saved.generated_at;
             store.save_n_factor_report(&saved).await.unwrap();
             assert!(!service.background_eligible(&symbol, config).await.unwrap());
             assert!(
@@ -850,6 +1116,7 @@ mod tests {
             source: NewsSource::StockTitan,
             generated_at: Utc::now(),
             news_fetched_at: Utc::now(),
+            analysis_reused: false,
             model: "test".to_owned(),
             prompt_version: 1,
             overview: "Saved".to_owned(),
@@ -969,6 +1236,7 @@ mod tests {
             source: NewsSource::StockTitan,
             generated_at: now - Duration::days(10),
             news_fetched_at: now,
+            analysis_reused: false,
             model: "test".to_owned(),
             prompt_version: 3,
             overview: "Stock Titan report".to_owned(),

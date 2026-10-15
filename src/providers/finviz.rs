@@ -1,8 +1,8 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
-use crate::models::n_factor::NewsItem;
+use crate::models::n_factor::NewsStopReason;
 use crate::models::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
-use crate::providers::news::parse_finviz_news;
+use crate::providers::news::{NewsBatch, limit_finviz_news, parse_finviz_news};
 use crate::providers::request_throttle::RequestThrottle;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -62,13 +62,31 @@ struct ScreenerPage {
 }
 
 impl FinvizClient {
-    pub async fn news(&self, ticker: &TickerSymbol) -> anyhow::Result<Vec<NewsItem>> {
+    pub async fn news(&self, ticker: &TickerSymbol) -> anyhow::Result<NewsBatch> {
         let mut url = self.stock_url.clone();
         url.query_pairs_mut()
             .clear()
             .append_pair("t", ticker.as_str())
             .append_pair("p", "d");
-        parse_finviz_news(&self.get(url).await?, Utc::now())
+        let html = match self.get(url).await {
+            Ok(html) => html,
+            Err(error)
+                if error.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<reqwest::Error>()
+                        .is_some_and(|error| error.status() == Some(reqwest::StatusCode::NOT_FOUND))
+                }) =>
+            {
+                info!(%ticker, "Finviz ticker news page is unavailable (HTTP 404)");
+                let mut batch = limit_finviz_news(Vec::new(), Utc::now())?;
+                batch.coverage.pages_fetched = 0;
+                batch.coverage.stop_reason = NewsStopReason::SourceNotFound;
+                return Ok(batch);
+            }
+            Err(error) => return Err(error),
+        };
+        let now = Utc::now();
+        limit_finviz_news(parse_finviz_news(&html, now)?, now)
     }
 
     pub fn new(finviz: &FinvizConfig, provider: &ProviderConfig) -> anyhow::Result<Self> {
@@ -603,6 +621,78 @@ fn selector(value: &str) -> anyhow::Result<Selector> {
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    #[tokio::test]
+    async fn news_404_and_empty_quote_pages_complete_without_ai_or_retries() {
+        use axum::{Router, http::StatusCode, routing::get};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let empty_quote = r#"<h1 class="js-recent-quote-ticker" data-ticker="TEST">TEST</h1><table class="snapshot-table2"></table>"#;
+        for (status, html, expected) in [
+            (
+                StatusCode::NOT_FOUND,
+                "",
+                Some(NewsStopReason::SourceNotFound),
+            ),
+            (
+                StatusCode::OK,
+                empty_quote,
+                Some(NewsStopReason::SourceLimited),
+            ),
+            (
+                StatusCode::OK,
+                "<table id='news-table'></table>",
+                Some(NewsStopReason::SourceLimited),
+            ),
+            (StatusCode::OK, "<html>Access denied</html>", None),
+            (StatusCode::SERVICE_UNAVAILABLE, "", None),
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let requests = calls.clone();
+            let app = Router::new().route(
+                "/",
+                get(move || {
+                    requests.fetch_add(1, Ordering::SeqCst);
+                    async move { (status, html) }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let mut client = FinvizClient::new(
+                &FinvizConfig {
+                    industry_membership_filters: vec![],
+                    top_stocks_additional_filters: vec![],
+                    membership_fresh_days: 1,
+                },
+                &ProviderConfig {
+                    connect_timeout_secs: 1,
+                    request_timeout_secs: 2,
+                    min_delay_ms: 25,
+                    max_delay_ms: 25,
+                },
+            )
+            .unwrap();
+            client.stock_url = url;
+            let result = client.news(&TickerSymbol::parse("TEST").unwrap()).await;
+            if let Some(reason) = expected {
+                let batch = result.unwrap();
+                assert!(batch.items.is_empty());
+                assert_eq!(batch.coverage.stop_reason, reason);
+                assert_eq!(
+                    batch.coverage.pages_fetched,
+                    usize::from(status != StatusCode::NOT_FOUND)
+                );
+            } else {
+                assert!(result.is_err());
+            }
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            server.abort();
+        }
+    }
 
     #[test]
     fn parses_annual_actuals_and_estimates_in_dollars() {
