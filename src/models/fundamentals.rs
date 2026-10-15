@@ -11,6 +11,8 @@ pub struct Fundamentals {
     #[serde(default)]
     pub annual: Option<Vec<FundamentalPeriod>>,
     pub next_quarter: Forecast,
+    #[serde(default)]
+    pub quarter_forecasts: Vec<Forecast>,
     pub fetched_at: DateTime<Utc>,
 }
 
@@ -20,16 +22,19 @@ pub struct FundamentalPeriod {
     pub earnings_release_date: Option<DateTime<Utc>>,
     pub earnings_per_share: Option<f64>,
     pub earnings_per_share_estimate: Option<f64>,
+    pub gaap_earnings_per_share: Option<f64>,
+    pub gaap_earnings_per_share_estimate: Option<f64>,
     pub revenue: Option<f64>,
     pub revenue_estimate: Option<f64>,
 }
 
 pub type QuarterFundamentals = FundamentalPeriod;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Forecast {
     pub fiscal_period: Option<String>,
     pub earnings_release_date: Option<DateTime<Utc>>,
     pub earnings_per_share: Option<f64>,
+    pub gaap_earnings_per_share: Option<f64>,
     pub revenue: Option<f64>,
 }

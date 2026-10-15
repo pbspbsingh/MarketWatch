@@ -46,12 +46,11 @@ interface FundamentalChartProps {
   title: string;
   summary: string[];
   model: FundamentalChartModel;
-  forecastSummary?: string;
+  forecastSummaries?: Array<{ value: string; growth?: number | null }>;
   legendTitle?: string;
   summaryLabel?: string;
   summarySeparator?: "divider" | "arrow";
   summaryGrowth?: Array<number | null>;
-  forecastGrowth?: number | null;
   empty?: boolean;
 }
 
@@ -65,12 +64,11 @@ export function FundamentalChart({
   title,
   summary,
   model,
-  forecastSummary,
+  forecastSummaries,
   legendTitle,
   summaryLabel,
   summarySeparator = "divider",
   summaryGrowth,
-  forecastGrowth,
   empty = false,
 }: FundamentalChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
@@ -238,24 +236,30 @@ export function FundamentalChart({
               <PercentageText value={value} highlightGrowth={(summaryGrowth?.[index] ?? 0) > 25} />
             </Typography>
           ))}
-          {forecastSummary !== undefined && (
-            <Typography className="fundamentals-forecast-summary" color="text.secondary">
-              <PercentageText value={forecastSummary} highlightGrowth={(forecastGrowth ?? 0) > 25} />
+          {forecastSummaries?.map(({ value, growth }, index) => (
+            <Typography key={index} className="fundamentals-forecast-summary" color="text.secondary">
+              <PercentageText value={value} highlightGrowth={(growth ?? 0) > 25} underline />
             </Typography>
-          )}
+          ))}
         </div>
       </div>
     </section>
   );
 }
 
-function PercentageText({ value, highlightGrowth = false }: { value: string; highlightGrowth?: boolean }) {
+function PercentageText({ value, highlightGrowth = false, underline = false }: {
+  value: string;
+  highlightGrowth?: boolean;
+  underline?: boolean;
+}) {
   return value.split(/([+-]?\d+%)/g).map((part, index) => {
-    if (index % 2 === 0) return part;
-    const percentage = Number.parseFloat(part);
-    const className = percentage < 0 ? "fundamentals-negative-percent"
+    const percentage = index % 2 === 1 ? Number.parseFloat(part) : null;
+    const percentageClass = percentage === null ? undefined
+      : percentage < 0 ? "fundamentals-negative-percent"
       : highlightGrowth ? "fundamentals-positive-percent" : undefined;
-    return className === undefined ? part : <span key={index} className={className}>{part}</span>;
+    const className = [percentageClass, underline ? "fundamentals-forecast-value" : undefined]
+      .filter(Boolean).join(" ");
+    return className === "" ? part : <span key={index} className={className}>{part}</span>;
   });
 }
 

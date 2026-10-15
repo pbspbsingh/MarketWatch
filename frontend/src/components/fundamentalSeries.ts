@@ -1,4 +1,11 @@
-export type FundamentalField = "earnings_per_share" | "revenue";
+export type FundamentalField = "earnings_per_share" | "gaap_earnings_per_share" | "revenue";
+
+export function extendForecast(history: Array<number | null>, forecasts: Array<number | null>) {
+  if (forecasts.length === 0) return [];
+  const values = history.map((): number | null => null);
+  if (history.length > 0) values[history.length - 1] = history.at(-1) ?? null;
+  return [...values, ...forecasts];
+}
 
 // Symmetric log preserves zero and negative growth; the transition is at 1%.
 export function symmetricLog(value: number) {

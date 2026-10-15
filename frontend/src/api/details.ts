@@ -3,6 +3,8 @@ export interface FundamentalPeriod {
   earnings_release_date: string | null;
   earnings_per_share: number | null;
   earnings_per_share_estimate: number | null;
+  gaap_earnings_per_share: number | null;
+  gaap_earnings_per_share_estimate: number | null;
   revenue: number | null;
   revenue_estimate: number | null;
 }
@@ -14,13 +16,17 @@ export interface Fundamentals {
   currency: string | null;
   quarters: QuarterFundamentals[];
   annual: FundamentalPeriod[] | null;
-  next_quarter: {
-    fiscal_period: string | null;
-    earnings_release_date: string | null;
-    earnings_per_share: number | null;
-    revenue: number | null;
-  };
+  next_quarter: FundamentalForecast;
+  quarter_forecasts: FundamentalForecast[];
   fetched_at: string;
+}
+
+export interface FundamentalForecast {
+  fiscal_period: string | null;
+  earnings_release_date: string | null;
+  earnings_per_share: number | null;
+  gaap_earnings_per_share: number | null;
+  revenue: number | null;
 }
 
 export interface FundamentalGrowthPoint {
@@ -32,12 +38,7 @@ export interface FundamentalGrowthPoint {
 
 export interface FundamentalGrowthSeries {
   historical: FundamentalGrowthPoint[];
-  forecast: {
-    period: string | null;
-    value: number | null;
-    growth: number | null;
-    sma_2: number | null;
-  };
+  forecasts: FundamentalGrowthPoint[];
 }
 
 export interface FundamentalGrowthMetric {
@@ -54,7 +55,7 @@ export interface TickerDetails {
     description: string | null;
   };
   fundamentals: Fundamentals;
-  fundamental_growth: Record<"earnings_per_share" | "revenue", FundamentalGrowthMetric>;
+  fundamental_growth: Record<"earnings_per_share" | "gaap_earnings_per_share" | "revenue", FundamentalGrowthMetric>;
   stale_fundamentals: boolean;
 }
 

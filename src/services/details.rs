@@ -35,6 +35,7 @@ pub struct TickerDetails {
 #[derive(Serialize)]
 pub struct FundamentalGrowthDetails {
     pub earnings_per_share: FundamentalGrowthMetric,
+    pub gaap_earnings_per_share: FundamentalGrowthMetric,
     pub revenue: FundamentalGrowthMetric,
 }
 
@@ -48,20 +49,12 @@ pub struct FundamentalGrowthMetric {
 #[derive(Serialize)]
 pub struct FundamentalGrowthSeries {
     pub historical: Vec<FundamentalGrowthPoint>,
-    pub forecast: FundamentalGrowthForecast,
+    pub forecasts: Vec<FundamentalGrowthPoint>,
 }
 
 #[derive(Serialize)]
 pub struct FundamentalGrowthPoint {
     pub period: String,
-    pub value: Option<f64>,
-    pub growth: Option<f64>,
-    pub sma_2: Option<f64>,
-}
-
-#[derive(Serialize)]
-pub struct FundamentalGrowthForecast {
-    pub period: Option<String>,
     pub value: Option<f64>,
     pub growth: Option<f64>,
     pub sma_2: Option<f64>,
@@ -201,6 +194,9 @@ impl TickerDetailsService {
                         match self.yahoo.earnings_date(symbol).await {
                             Ok(Some(date)) => {
                                 fundamentals.next_quarter.earnings_release_date = Some(date);
+                                if let Some(forecast) = fundamentals.quarter_forecasts.first_mut() {
+                                    forecast.earnings_release_date = Some(date);
+                                }
                             }
                             Ok(None) => {}
                             Err(error) => {
@@ -233,6 +229,7 @@ impl TickerDetailsService {
 #[derive(Clone, Copy)]
 enum FundamentalField {
     EarningsPerShare,
+    GaapEarningsPerShare,
     Revenue,
 }
 
@@ -246,6 +243,7 @@ impl FundamentalField {
     fn actual(self, period: &FundamentalPeriod) -> Option<f64> {
         match self {
             Self::EarningsPerShare => period.earnings_per_share,
+            Self::GaapEarningsPerShare => period.gaap_earnings_per_share,
             Self::Revenue => period.revenue,
         }
     }
@@ -253,6 +251,7 @@ impl FundamentalField {
     fn estimate(self, period: &FundamentalPeriod) -> Option<f64> {
         match self {
             Self::EarningsPerShare => period.earnings_per_share_estimate,
+            Self::GaapEarningsPerShare => period.gaap_earnings_per_share_estimate,
             Self::Revenue => period.revenue_estimate,
         }
     }
@@ -266,34 +265,49 @@ fn fundamental_growth(fundamentals: &Fundamentals) -> FundamentalGrowthDetails {
         .as_deref()
         .unwrap_or_default()
         .iter()
-        .filter(|period| period.earnings_per_share.is_some() || period.revenue.is_some())
+        .filter(|period| {
+            period.earnings_per_share.is_some()
+                || period.gaap_earnings_per_share.is_some()
+                || period.revenue.is_some()
+        })
         .collect::<Vec<_>>();
     annual.sort_unstable_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
     let latest_year = annual.last().map(|period| period.fiscal_period.as_str());
-    let next_year = fundamentals
+    let mut next_years = fundamentals
         .annual
         .as_deref()
         .unwrap_or_default()
         .iter()
         .filter(|period| latest_year.is_none_or(|latest| period.fiscal_period.as_str() > latest))
         .filter(|period| {
-            period.earnings_per_share_estimate.is_some() || period.revenue_estimate.is_some()
+            period.earnings_per_share_estimate.is_some()
+                || period.gaap_earnings_per_share_estimate.is_some()
+                || period.revenue_estimate.is_some()
         })
-        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+        .collect::<Vec<_>>();
+    next_years.sort_unstable_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+    next_years.truncate(2);
 
     FundamentalGrowthDetails {
         earnings_per_share: growth_metric(
             fundamentals,
             &quarters,
             &annual,
-            next_year,
+            &next_years,
             FundamentalField::EarningsPerShare,
+        ),
+        gaap_earnings_per_share: growth_metric(
+            fundamentals,
+            &quarters,
+            &annual,
+            &next_years,
+            FundamentalField::GaapEarningsPerShare,
         ),
         revenue: growth_metric(
             fundamentals,
             &quarters,
             &annual,
-            next_year,
+            &next_years,
             FundamentalField::Revenue,
         ),
     }
@@ -303,38 +317,41 @@ fn growth_metric(
     fundamentals: &Fundamentals,
     quarters: &[&FundamentalPeriod],
     annual: &[&FundamentalPeriod],
-    next_year: Option<&FundamentalPeriod>,
+    next_years: &[&FundamentalPeriod],
     field: FundamentalField,
 ) -> FundamentalGrowthMetric {
-    let quarter_forecast = match field {
-        FundamentalField::EarningsPerShare => fundamentals.next_quarter.earnings_per_share,
-        FundamentalField::Revenue => fundamentals.next_quarter.revenue,
-    };
+    let quarter_forecasts = fundamentals
+        .quarter_forecasts
+        .iter()
+        .filter_map(|forecast| {
+            let value = match field {
+                FundamentalField::EarningsPerShare => forecast.earnings_per_share,
+                FundamentalField::GaapEarningsPerShare => forecast.gaap_earnings_per_share,
+                FundamentalField::Revenue => forecast.revenue,
+            };
+            Some((forecast.fiscal_period.as_deref()?, value))
+        })
+        .collect::<Vec<_>>();
+    let annual_forecasts = next_years
+        .iter()
+        .map(|period| (period.fiscal_period.as_str(), field.estimate(period)))
+        .collect::<Vec<_>>();
     FundamentalGrowthMetric {
         qoq: growth_series(
             quarters,
             field,
             1,
             GrowthSmoothing::TwoPeriodSma,
-            fundamentals.next_quarter.fiscal_period.as_deref(),
-            quarter_forecast,
+            &quarter_forecasts,
         ),
         yoy: growth_series(
             quarters,
             field,
             4,
             GrowthSmoothing::TwoPeriodSma,
-            fundamentals.next_quarter.fiscal_period.as_deref(),
-            quarter_forecast,
+            &quarter_forecasts,
         ),
-        annual: growth_series(
-            annual,
-            field,
-            1,
-            GrowthSmoothing::None,
-            next_year.map(|period| period.fiscal_period.as_str()),
-            next_year.and_then(|period| field.estimate(period)),
-        ),
+        annual: growth_series(annual, field, 1, GrowthSmoothing::None, &annual_forecasts),
     }
 }
 
@@ -343,10 +360,9 @@ fn growth_series(
     field: FundamentalField,
     lag: i32,
     smoothing: GrowthSmoothing,
-    forecast_period: Option<&str>,
-    forecast_value: Option<f64>,
+    forecast_values: &[(&str, Option<f64>)],
 ) -> FundamentalGrowthSeries {
-    let values = periods
+    let mut values = periods
         .iter()
         .filter_map(|period| Some((period_index(&period.fiscal_period)?, field.actual(period))))
         .collect::<HashMap<_, _>>();
@@ -383,25 +399,42 @@ fn growth_series(
             }
         }
     }
-    let forecast_index = forecast_period.and_then(period_index);
-    let forecast_growth = forecast_index.and_then(|index| {
-        growth_percent(
-            forecast_value,
-            values.get(&(index - lag)).copied().flatten(),
-        )
-    });
-    let forecast_sma_2 = match smoothing {
-        GrowthSmoothing::None => None,
-        GrowthSmoothing::TwoPeriodSma => points.last().and_then(|(last_index, last)| {
-            let consecutive = last_index
-                .zip(forecast_index)
-                .is_some_and(|(previous, current)| current == previous + 1);
-            match (consecutive, last.growth, forecast_growth) {
-                (true, Some(previous), Some(current)) => Some((previous + current) / 2.0),
-                _ => None,
+    let mut previous = points.last().map(|(index, point)| (*index, point.growth));
+    let forecasts = forecast_values
+        .iter()
+        .map(|(period, value)| {
+            let index = period_index(period);
+            let growth = index.and_then(|index| {
+                growth_percent(*value, values.get(&(index - lag)).copied().flatten())
+            });
+            let sma_2 = match smoothing {
+                GrowthSmoothing::None => None,
+                GrowthSmoothing::TwoPeriodSma => {
+                    previous.and_then(|(previous_index, previous_growth)| {
+                        let consecutive = previous_index
+                            .zip(index)
+                            .is_some_and(|(previous, current)| current == previous + 1);
+                        match (consecutive, previous_growth, growth) {
+                            (true, Some(previous), Some(current)) => {
+                                Some((previous + current) / 2.0)
+                            }
+                            _ => None,
+                        }
+                    })
+                }
+            };
+            if let Some(index) = index {
+                values.insert(index, *value);
             }
-        }),
-    };
+            previous = Some((index, growth));
+            FundamentalGrowthPoint {
+                period: (*period).to_owned(),
+                value: *value,
+                growth,
+                sma_2,
+            }
+        })
+        .collect();
     let first = points.iter().position(|(_, point)| point.growth.is_some());
     let historical = first.map_or_else(Vec::new, |first| {
         let start = first.max(points.len().saturating_sub(12));
@@ -414,12 +447,7 @@ fn growth_series(
 
     FundamentalGrowthSeries {
         historical,
-        forecast: FundamentalGrowthForecast {
-            period: forecast_period.map(str::to_owned),
-            value: forecast_value,
-            growth: forecast_growth,
-            sma_2: forecast_sma_2,
-        },
+        forecasts,
     }
 }
 
@@ -501,10 +529,12 @@ mod tests {
             currency: None,
             quarters: Vec::new(),
             annual: Some(Vec::new()),
+            quarter_forecasts: Vec::new(),
             next_quarter: Forecast {
                 fiscal_period: None,
                 earnings_release_date: earnings_at,
                 earnings_per_share: None,
+                gaap_earnings_per_share: None,
                 revenue: None,
             },
             fetched_at,
@@ -606,8 +636,7 @@ mod tests {
             FundamentalField::EarningsPerShare,
             1,
             GrowthSmoothing::TwoPeriodSma,
-            Some("2026Q2"),
-            Some(242.0),
+            &[("2026Q2", Some(242.0))],
         );
 
         assert_eq!(series.historical[0].period, "2025Q1");
@@ -617,8 +646,8 @@ mod tests {
         assert_eq!(series.historical[1].sma_2, Some(15.0));
         assert_eq!(series.historical[2].growth, None);
         assert_eq!(series.historical[3].sma_2, None);
-        assert_eq!(series.forecast.growth, Some(10.0));
-        assert!((series.forecast.sma_2.unwrap() - 10.555_555_555_555_555).abs() < 1e-10);
+        assert_eq!(series.forecasts[0].growth, Some(10.0));
+        assert!((series.forecasts[0].sma_2.unwrap() - 10.555_555_555_555_555).abs() < 1e-10);
     }
 
     #[test]
@@ -634,11 +663,10 @@ mod tests {
             FundamentalField::Revenue,
             4,
             GrowthSmoothing::TwoPeriodSma,
-            Some("2025Q2"),
-            Some(6.0),
+            &[("2025Q2", Some(6.0))],
         );
         assert_eq!(yoy.historical[0].growth, Some(50.0));
-        assert_eq!(yoy.forecast.growth, Some(50.0));
+        assert_eq!(yoy.forecasts[0].growth, Some(50.0));
 
         let years = [
             period("2022FY", 2.0),
@@ -651,14 +679,196 @@ mod tests {
             FundamentalField::EarningsPerShare,
             1,
             GrowthSmoothing::None,
-            Some("2026FY"),
-            Some(9.0),
+            &[("2026FY", Some(9.0))],
         );
         assert_eq!(annual.historical[0].growth, Some(50.0));
         assert_eq!(annual.historical[1].growth, None);
-        assert_eq!(annual.forecast.growth, Some(50.0));
+        assert_eq!(annual.forecasts[0].growth, Some(50.0));
         assert!(annual.historical.iter().all(|point| point.sma_2.is_none()));
-        assert_eq!(annual.forecast.sma_2, None);
+        assert_eq!(annual.forecasts[0].sma_2, None);
+    }
+
+    #[test]
+    fn forecast_growth_does_not_bridge_missing_values_or_quarters() {
+        let periods = [period("2025Q1", 100.0), period("2025Q2", 110.0)];
+        let refs = periods.iter().collect::<Vec<_>>();
+        let missing = growth_series(
+            &refs,
+            FundamentalField::EarningsPerShare,
+            1,
+            GrowthSmoothing::TwoPeriodSma,
+            &[("2025Q3", None), ("2025Q4", Some(132.0))],
+        );
+        assert!(
+            missing
+                .forecasts
+                .iter()
+                .all(|point| point.growth.is_none() && point.sma_2.is_none())
+        );
+        let gap = growth_series(
+            &refs,
+            FundamentalField::EarningsPerShare,
+            1,
+            GrowthSmoothing::TwoPeriodSma,
+            &[("2025Q4", Some(120.0)), ("2026Q1", Some(132.0))],
+        );
+        assert_eq!(gap.forecasts[0].growth, None);
+        assert_eq!(gap.forecasts[1].growth, Some(10.0));
+        assert_eq!(gap.forecasts[1].sma_2, None);
+    }
+
+    #[test]
+    fn calculates_standard_and_gaap_eps_growth_independently() {
+        let mut data = fundamentals(Utc::now(), None);
+        let eps_period = |fiscal_period: &str, eps: f64, gaap: f64| {
+            let mut point = period(fiscal_period, eps);
+            point.gaap_earnings_per_share = Some(gaap);
+            point
+        };
+        data.quarters = vec![
+            eps_period("2024Q1", 2.0, 1.0),
+            eps_period("2024Q2", 4.0, 4.0),
+            eps_period("2024Q3", 6.0, 3.0),
+            eps_period("2024Q4", 8.0, 2.0),
+            eps_period("2025Q1", 10.0, 4.0),
+        ];
+        data.next_quarter.fiscal_period = Some("2025Q2".into());
+        data.next_quarter.earnings_per_share = Some(12.0);
+        data.next_quarter.gaap_earnings_per_share = Some(8.0);
+        data.quarter_forecasts = vec![
+            data.next_quarter.clone(),
+            Forecast {
+                fiscal_period: Some("2025Q3".into()),
+                earnings_per_share: Some(18.0),
+                gaap_earnings_per_share: Some(12.0),
+                ..Forecast::default()
+            },
+        ];
+        let mut annual_forecast = period("2025FY", 0.0);
+        annual_forecast.earnings_per_share = None;
+        annual_forecast.revenue = None;
+        annual_forecast.earnings_per_share_estimate = Some(6.0);
+        annual_forecast.gaap_earnings_per_share_estimate = Some(6.0);
+        annual_forecast.revenue_estimate = Some(6.0);
+        let mut second_year = annual_forecast.clone();
+        second_year.fiscal_period = "2026FY".into();
+        second_year.earnings_per_share_estimate = Some(9.0);
+        second_year.gaap_earnings_per_share_estimate = Some(12.0);
+        second_year.revenue_estimate = Some(9.0);
+        let mut third_year = second_year.clone();
+        third_year.fiscal_period = "2027FY".into();
+        data.annual = Some(vec![
+            third_year,
+            eps_period("2023FY", 2.0, 1.0),
+            second_year,
+            eps_period("2024FY", 3.0, 4.0),
+            annual_forecast,
+        ]);
+
+        let growth = fundamental_growth(&data);
+        let eps = growth.earnings_per_share;
+        let gaap = growth.gaap_earnings_per_share;
+        assert_eq!(eps.qoq.historical.last().unwrap().growth, Some(25.0));
+        assert_eq!(gaap.qoq.historical.last().unwrap().growth, Some(100.0));
+        assert_eq!(eps.qoq.forecasts[0].growth, Some(20.0));
+        assert_eq!(gaap.qoq.forecasts[0].growth, Some(100.0));
+        assert_eq!(eps.qoq.forecasts[0].sma_2, Some(22.5));
+        assert_eq!(gaap.qoq.forecasts[0].sma_2, Some(100.0));
+        assert_eq!(eps.qoq.forecasts.len(), 2);
+        assert_eq!(eps.qoq.forecasts[1].growth, Some(50.0));
+        assert_eq!(gaap.qoq.forecasts[1].growth, Some(50.0));
+        assert_eq!(eps.qoq.forecasts[1].sma_2, Some(35.0));
+        assert_eq!(gaap.qoq.forecasts[1].sma_2, Some(75.0));
+        assert_eq!(eps.yoy.historical[0].growth, Some(400.0));
+        assert_eq!(gaap.yoy.historical[0].growth, Some(300.0));
+        assert_eq!(eps.yoy.forecasts[0].growth, Some(200.0));
+        assert_eq!(gaap.yoy.forecasts[0].growth, Some(100.0));
+        assert_eq!(eps.yoy.forecasts[1].growth, Some(200.0));
+        assert_eq!(gaap.yoy.forecasts[1].growth, Some(300.0));
+        assert_eq!(eps.annual.historical[0].growth, Some(50.0));
+        assert_eq!(gaap.annual.historical[0].growth, Some(300.0));
+        assert_eq!(eps.annual.forecasts[0].growth, Some(100.0));
+        assert_eq!(gaap.annual.forecasts[0].growth, Some(50.0));
+        assert_eq!(eps.annual.forecasts.len(), 2);
+        assert_eq!(eps.annual.forecasts[0].period, "2025FY");
+        assert_eq!(eps.annual.forecasts[1].period, "2026FY");
+        assert_eq!(eps.annual.forecasts[1].growth, Some(50.0));
+        assert_eq!(gaap.annual.forecasts[1].growth, Some(100.0));
+        assert_eq!(growth.revenue.annual.forecasts.len(), 2);
+        assert_eq!(growth.revenue.annual.forecasts[1].growth, Some(50.0));
+        assert!(
+            eps.annual
+                .forecasts
+                .iter()
+                .all(|point| point.sma_2.is_none())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Finviz endpoints"]
+    async fn live_validates_two_annual_forecasts() -> anyhow::Result<()> {
+        let config = crate::config::Config::load("config.toml")?;
+        let client = FinvizClient::new(&config.finviz, &config.providers)?;
+        for symbol in ["NVDA", "TSLA", "APPN"] {
+            let data = client.fundamentals(&TickerSymbol::parse(symbol)?).await?;
+            let annual = data.annual.as_ref().expect("annual data");
+            let latest = annual
+                .iter()
+                .filter(|period| {
+                    period.earnings_per_share.is_some()
+                        || period.gaap_earnings_per_share.is_some()
+                        || period.revenue.is_some()
+                })
+                .max_by_key(|period| &period.fiscal_period)
+                .expect("annual actuals");
+            let mut expected = annual
+                .iter()
+                .filter(|period| {
+                    period.fiscal_period > latest.fiscal_period
+                        && (period.earnings_per_share_estimate.is_some()
+                            || period.gaap_earnings_per_share_estimate.is_some()
+                            || period.revenue_estimate.is_some())
+                })
+                .collect::<Vec<_>>();
+            expected.sort_by_key(|period| &period.fiscal_period);
+            let growth = fundamental_growth(&data);
+            for (field, series) in [
+                (
+                    FundamentalField::EarningsPerShare,
+                    &growth.earnings_per_share.annual,
+                ),
+                (
+                    FundamentalField::GaapEarningsPerShare,
+                    &growth.gaap_earnings_per_share.annual,
+                ),
+                (FundamentalField::Revenue, &growth.revenue.annual),
+            ] {
+                assert_eq!(
+                    series.forecasts.len(),
+                    2,
+                    "{symbol} annual forecast coverage"
+                );
+                let mut previous_value = field.actual(latest);
+                for (forecast, period) in series.forecasts.iter().zip(expected.iter()) {
+                    assert_eq!(forecast.period, period.fiscal_period);
+                    assert_eq!(forecast.value, field.estimate(period));
+                    let expected_growth = forecast
+                        .value
+                        .zip(previous_value)
+                        .filter(|(_, previous)| *previous != 0.0)
+                        .map(|(value, previous)| (value - previous) / previous.abs() * 100.0);
+                    assert_eq!(forecast.growth, expected_growth);
+                    assert_eq!(forecast.sma_2, None);
+                    previous_value = forecast.value;
+                }
+            }
+            println!(
+                "{symbol}: {} and {} annual forecasts match live Finviz estimates; EPS, GAAP EPS, and revenue growth verified",
+                growth.earnings_per_share.annual.forecasts[0].period,
+                growth.earnings_per_share.annual.forecasts[1].period
+            );
+        }
+        Ok(())
     }
 
     fn period(fiscal_period: &str, value: f64) -> FundamentalPeriod {
@@ -667,6 +877,8 @@ mod tests {
             earnings_release_date: None,
             earnings_per_share: Some(value),
             earnings_per_share_estimate: None,
+            gaap_earnings_per_share: None,
+            gaap_earnings_per_share_estimate: None,
             revenue: Some(value),
             revenue_estimate: None,
         }

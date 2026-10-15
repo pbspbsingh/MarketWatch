@@ -19,6 +19,7 @@ const STOCK_URL: &str = "https://finviz.com/stock";
 const SCREENER_OVERVIEW_VIEW: &str = "111";
 const SCREENER_PAGE_SIZE: usize = 20;
 const FUNDAMENTAL_QUARTERS: usize = 16;
+const FORECAST_QUARTERS: usize = 2;
 const FINVIZ_SECTOR_COUNT: usize = 11;
 
 pub struct FinvizClient {
@@ -432,7 +433,7 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
     let mut reported = route_data
         .earnings_data
         .iter()
-        .filter(|period| period.eps_reported_actual.is_some() || period.sales_actual.is_some())
+        .filter(|period| period.has_actuals())
         .collect::<Vec<_>>();
     reported.sort_unstable_by(|left, right| right.fiscal_period.cmp(&left.fiscal_period));
 
@@ -445,19 +446,33 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
                 .earnings_date
                 .as_deref()
                 .and_then(parse_finviz_datetime),
-            earnings_per_share: period.eps_reported_actual,
-            earnings_per_share_estimate: period.eps_reported_estimate,
+            earnings_per_share: period.eps_actual,
+            earnings_per_share_estimate: period.eps_estimate,
+            gaap_earnings_per_share: period.eps_reported_actual,
+            gaap_earnings_per_share_estimate: period.eps_reported_estimate,
             revenue: period.sales_actual.map(millions),
             revenue_estimate: period.sales_estimate.map(millions),
         })
         .collect::<Vec<_>>();
 
-    let forecast_period = next_forecast_period(
+    let quarter_forecasts = next_forecast_periods(
         &route_data.earnings_data,
         quarters
             .first()
             .map(|quarter| quarter.fiscal_period.as_str()),
-    );
+    )
+    .into_iter()
+    .map(|period| Forecast {
+        fiscal_period: Some(period.fiscal_period.clone()),
+        earnings_release_date: period
+            .earnings_date
+            .as_deref()
+            .and_then(parse_finviz_datetime),
+        earnings_per_share: period.eps_estimate,
+        gaap_earnings_per_share: period.eps_reported_estimate,
+        revenue: period.sales_estimate.map(millions),
+    })
+    .collect::<Vec<_>>();
 
     Ok(Fundamentals {
         symbol: symbol.clone(),
@@ -473,23 +488,17 @@ fn parse_fundamentals(symbol: &TickerSymbol, html: &str) -> anyhow::Result<Funda
                         .earnings_date
                         .as_deref()
                         .and_then(parse_finviz_datetime),
-                    earnings_per_share: period.eps_reported_actual,
-                    earnings_per_share_estimate: period.eps_reported_estimate,
+                    earnings_per_share: period.eps_actual,
+                    earnings_per_share_estimate: period.eps_estimate,
+                    gaap_earnings_per_share: period.eps_reported_actual,
+                    gaap_earnings_per_share_estimate: period.eps_reported_estimate,
                     revenue: period.sales_actual.map(millions),
                     revenue_estimate: period.sales_estimate.map(millions),
                 })
                 .collect(),
         ),
-        next_quarter: Forecast {
-            fiscal_period: forecast_period.map(|period| period.fiscal_period.clone()),
-            earnings_release_date: forecast_period
-                .and_then(|period| period.earnings_date.as_deref())
-                .and_then(parse_finviz_datetime),
-            earnings_per_share: forecast_period.and_then(|period| period.eps_reported_estimate),
-            revenue: forecast_period
-                .and_then(|period| period.sales_estimate)
-                .map(millions),
-        },
+        next_quarter: quarter_forecasts.first().cloned().unwrap_or_default(),
+        quarter_forecasts,
         fetched_at: Utc::now(),
     })
 }
@@ -507,24 +516,42 @@ struct EarningsRouteData {
 struct EarningsPeriod {
     fiscal_period: String,
     earnings_date: Option<String>,
+    eps_actual: Option<f64>,
+    eps_estimate: Option<f64>,
     eps_reported_actual: Option<f64>,
     eps_reported_estimate: Option<f64>,
     sales_actual: Option<f64>,
     sales_estimate: Option<f64>,
 }
 
-fn next_forecast_period<'a>(
+impl EarningsPeriod {
+    fn has_actuals(&self) -> bool {
+        self.eps_actual.is_some()
+            || self.eps_reported_actual.is_some()
+            || self.sales_actual.is_some()
+    }
+
+    fn has_estimates(&self) -> bool {
+        self.eps_estimate.is_some()
+            || self.eps_reported_estimate.is_some()
+            || self.sales_estimate.is_some()
+    }
+}
+
+fn next_forecast_periods<'a>(
     periods: &'a [EarningsPeriod],
     latest_reported_period: Option<&str>,
-) -> Option<&'a EarningsPeriod> {
-    periods
+) -> Vec<&'a EarningsPeriod> {
+    let mut forecasts = periods
         .iter()
-        .filter(|period| period.eps_reported_actual.is_none() && period.sales_actual.is_none())
-        .filter(|period| period.eps_reported_estimate.is_some() || period.sales_estimate.is_some())
+        .filter(|period| !period.has_actuals() && period.has_estimates())
         .filter(|period| {
             latest_reported_period.is_none_or(|latest| period.fiscal_period.as_str() > latest)
         })
-        .min_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period))
+        .collect::<Vec<_>>();
+    forecasts.sort_unstable_by(|left, right| left.fiscal_period.cmp(&right.fiscal_period));
+    forecasts.truncate(FORECAST_QUARTERS);
+    forecasts
 }
 
 fn parse_finviz_datetime(value: &str) -> Option<DateTime<Utc>> {
@@ -582,18 +609,22 @@ mod tests {
         let html = r#"<script id="route-init-data">{
             "earningsData": [],
             "earningsAnnualData": [
-                {"fiscalPeriod":"2025FY","epsReportedActual":7.46,"epsReportedEstimate":7.38,"salesActual":416161,"salesEstimate":415407},
-                {"fiscalPeriod":"2026FY","epsReportedEstimate":8.83,"salesEstimate":477421}
+                {"fiscalPeriod":"2025FY","epsActual":7.8,"epsEstimate":7.7,"epsReportedActual":7.46,"epsReportedEstimate":7.38,"salesActual":416161,"salesEstimate":415407},
+                {"fiscalPeriod":"2026FY","epsEstimate":9.1,"epsReportedEstimate":8.83,"salesEstimate":477421}
             ]
         }</script>"#;
         let data = parse_fundamentals(&TickerSymbol::parse("AAPL").unwrap(), html).unwrap();
         let annual = data.annual.unwrap();
         assert_eq!(annual.len(), 2);
         assert_eq!(annual[0].fiscal_period, "2025FY");
-        assert_eq!(annual[0].earnings_per_share, Some(7.46));
+        assert_eq!(annual[0].earnings_per_share, Some(7.8));
+        assert_eq!(annual[0].earnings_per_share_estimate, Some(7.7));
+        assert_eq!(annual[0].gaap_earnings_per_share, Some(7.46));
+        assert_eq!(annual[0].gaap_earnings_per_share_estimate, Some(7.38));
         assert_eq!(annual[0].revenue, Some(416_161_000_000.0));
         assert_eq!(annual[1].earnings_per_share, None);
-        assert_eq!(annual[1].earnings_per_share_estimate, Some(8.83));
+        assert_eq!(annual[1].earnings_per_share_estimate, Some(9.1));
+        assert_eq!(annual[1].gaap_earnings_per_share_estimate, Some(8.83));
         assert_eq!(annual[1].revenue_estimate, Some(477_421_000_000.0));
     }
 
@@ -608,17 +639,69 @@ mod tests {
     }
 
     #[test]
-    fn forecast_is_the_first_unreported_period_after_the_latest_report() {
+    fn parses_both_eps_series_without_substituting_missing_values() {
+        let html = r#"<script id="route-init-data">{
+            "earningsData": [
+                {"fiscalPeriod":"2025Q1","epsActual":0.81,"epsEstimate":0.74,"epsReportedActual":0.76,"epsReportedEstimate":0.71},
+                {"fiscalPeriod":"2025Q2","epsActual":1.05,"epsReportedEstimate":0.95},
+                {"fiscalPeriod":"2025Q3","epsReportedActual":1.3},
+                {"fiscalPeriod":"2026Q2","epsEstimate":2.0,"epsReportedEstimate":1.9},
+                {"fiscalPeriod":"2026Q1","epsEstimate":1.8,"salesEstimate":50000},
+                {"fiscalPeriod":"2025Q4","epsEstimate":1.6,"epsReportedEstimate":1.5}
+            ]
+        }</script>"#;
+        let data = parse_fundamentals(&TickerSymbol::parse("NVDA").unwrap(), html).unwrap();
+        assert_eq!(data.quarters.len(), 3);
+        let both = &data.quarters[2];
+        assert_eq!(both.earnings_per_share, Some(0.81));
+        assert_eq!(both.earnings_per_share_estimate, Some(0.74));
+        assert_eq!(both.gaap_earnings_per_share, Some(0.76));
+        assert_eq!(both.gaap_earnings_per_share_estimate, Some(0.71));
+        assert_eq!(data.quarters[1].gaap_earnings_per_share, None);
+        assert_eq!(data.quarters[0].earnings_per_share, None);
+        assert_eq!(data.next_quarter.fiscal_period.as_deref(), Some("2025Q4"));
+        assert_eq!(data.next_quarter.earnings_per_share, Some(1.6));
+        assert_eq!(data.next_quarter.gaap_earnings_per_share, Some(1.5));
+        assert_eq!(data.quarter_forecasts.len(), 2);
+        assert_eq!(
+            data.quarter_forecasts[1].fiscal_period.as_deref(),
+            Some("2026Q1")
+        );
+        assert_eq!(data.quarter_forecasts[1].earnings_per_share, Some(1.8));
+        assert_eq!(data.quarter_forecasts[1].gaap_earnings_per_share, None);
+        assert_eq!(data.quarter_forecasts[1].revenue, Some(50_000_000_000.0));
+    }
+
+    #[test]
+    fn recognizes_forecasts_with_only_standard_eps_estimates() {
+        let html = r#"<script id="route-init-data">{
+            "earningsData": [{"fiscalPeriod":"2025Q4","epsEstimate":1.6}]
+        }</script>"#;
+        let data = parse_fundamentals(&TickerSymbol::parse("TEST").unwrap(), html).unwrap();
+        assert_eq!(data.next_quarter.fiscal_period.as_deref(), Some("2025Q4"));
+        assert_eq!(data.next_quarter.earnings_per_share, Some(1.6));
+        assert_eq!(data.next_quarter.gaap_earnings_per_share, None);
+        assert_eq!(data.quarter_forecasts.len(), 1);
+    }
+
+    #[test]
+    fn forecasts_are_the_first_two_unreported_periods_after_the_latest_report() {
         let periods = [
             earnings_period("2025Q4", None, Some(0.4)),
             earnings_period("2026Q2", Some(0.5), Some(0.45)),
             earnings_period("2026Q4", None, Some(0.7)),
+            earnings_period("2027Q1", None, Some(0.8)),
             earnings_period("2026Q3", None, Some(0.6)),
         ];
 
-        let forecast = next_forecast_period(&periods, Some("2026Q2")).unwrap();
-
-        assert_eq!(forecast.fiscal_period, "2026Q3");
+        let forecasts = next_forecast_periods(&periods, Some("2026Q2"));
+        assert_eq!(
+            forecasts
+                .iter()
+                .map(|period| period.fiscal_period.as_str())
+                .collect::<Vec<_>>(),
+            ["2026Q3", "2026Q4"]
+        );
     }
 
     #[tokio::test]
@@ -709,6 +792,77 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "calls live Finviz endpoints"]
+    async fn live_validates_two_quarter_forecasts() -> anyhow::Result<()> {
+        let config = Config::load("config.toml")?;
+        let client = FinvizClient::new(&config.finviz, &config.providers)?;
+        for symbol in ["NVDA", "TSLA", "APPN"] {
+            let mut url = client.stock_url.clone();
+            url.query_pairs_mut()
+                .append_pair("t", symbol)
+                .append_pair("ty", "ea")
+                .append_pair("p", "d")
+                .append_pair("b", "1");
+            let html = client.get(url).await?;
+            let parsed = parse_fundamentals(&TickerSymbol::parse(symbol)?, &html)?;
+            let document = Html::parse_document(&html);
+            let raw: serde_json::Value = serde_json::from_str(&text(
+                document
+                    .select(&selector("script#route-init-data")?)
+                    .next()
+                    .context("missing route data")?,
+            ))?;
+            let raw_quarters = raw["earningsData"].as_array().context("missing quarters")?;
+            let latest = parsed.quarters.first().context("missing actuals")?;
+            let mut expected = raw_quarters
+                .iter()
+                .filter(|period| {
+                    period["fiscalPeriod"]
+                        .as_str()
+                        .is_some_and(|fiscal| fiscal > latest.fiscal_period.as_str())
+                        && ["epsActual", "epsReportedActual", "salesActual"]
+                            .iter()
+                            .all(|field| period[field].is_null())
+                        && ["epsEstimate", "epsReportedEstimate", "salesEstimate"]
+                            .iter()
+                            .any(|field| period[field].is_number())
+                })
+                .collect::<Vec<_>>();
+            expected.sort_by_key(|period| period["fiscalPeriod"].as_str().unwrap());
+            assert_eq!(parsed.quarter_forecasts.len(), expected.len().min(2));
+            assert_eq!(
+                parsed.quarter_forecasts.len(),
+                2,
+                "{symbol} live forecast coverage"
+            );
+            for (forecast, raw) in parsed.quarter_forecasts.iter().zip(expected.iter()) {
+                assert_eq!(
+                    forecast.fiscal_period.as_deref(),
+                    raw["fiscalPeriod"].as_str()
+                );
+                assert_eq!(forecast.earnings_per_share, raw["epsEstimate"].as_f64());
+                assert_eq!(
+                    forecast.gaap_earnings_per_share,
+                    raw["epsReportedEstimate"].as_f64()
+                );
+                assert_eq!(
+                    forecast.revenue,
+                    raw["salesEstimate"]
+                        .as_f64()
+                        .map(|value| value * 1_000_000.0)
+                );
+                println!(
+                    "{symbol} {:?}: EPS={:?} GAAP={:?}; matches raw Finviz data",
+                    forecast.fiscal_period,
+                    forecast.earnings_per_share,
+                    forecast.gaap_earnings_per_share
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "calls live Finviz endpoints"]
     async fn live_fetches_fundamentals() -> anyhow::Result<()> {
         let config = Config::load("config.toml")?;
         let client = FinvizClient::new(&config.finviz, &config.providers)?;
@@ -767,6 +921,8 @@ mod tests {
         EarningsPeriod {
             fiscal_period: fiscal_period.to_owned(),
             earnings_date: None,
+            eps_actual: actual_eps,
+            eps_estimate: estimated_eps,
             eps_reported_actual: actual_eps,
             eps_reported_estimate: estimated_eps,
             sales_actual: None,

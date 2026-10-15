@@ -1,16 +1,22 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { Checkbox, FormControlLabel, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import type { FundamentalGrowthSeries, QuarterFundamentals, TickerDetails } from "../api/details";
+import type { FundamentalForecast, FundamentalGrowthSeries, QuarterFundamentals, TickerDetails } from "../api/details";
 import { useAppSettings } from "../app/AppSettings";
 import { appPalettes, featureAccents } from "../app/theme";
 import { FundamentalChart, type FundamentalChartModel } from "./FundamentalChart";
-import { growthPercent, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
+import { extendForecast, growthPercent, inverseSymmetricLog, symmetricLog, type FundamentalField } from "./fundamentalSeries";
 import { visualizationColors } from "./lightweight-chart/chartOptions";
 
 const growthLogScaleKey = "fundamentals.growth-log-scale";
 const growthSmaKey = "fundamentals.growth-2-sma";
 const qoqGrowthVisibleKey = "fundamentals.qoq-growth-visible";
+const gaapEpsVisibleKey = "fundamentals.gaap-eps-visible";
+const fundamentalMetrics = [
+  { field: "earnings_per_share", label: "EPS", estimateField: "earnings_per_share_estimate" },
+  { field: "gaap_earnings_per_share", label: "GAAP EPS", estimateField: "gaap_earnings_per_share_estimate" },
+  { field: "revenue", label: "Revenue", estimateField: "revenue_estimate" },
+] as const;
 
 interface TickerFundamentalsTabProps {
   details: TickerDetails;
@@ -24,6 +30,7 @@ export function TickerFundamentalsTab({
   const [logScale, setLogScale] = useState(() => localStorage.getItem(growthLogScaleKey) === "true");
   const [smaVisible, setSmaVisible] = useState(() => localStorage.getItem(growthSmaKey) === "true");
   const [qoqVisible, setQoqVisible] = useState(() => localStorage.getItem(qoqGrowthVisibleKey) === "true");
+  const [gaapVisible, setGaapVisible] = useState(() => localStorage.getItem(gaapEpsVisibleKey) === "true");
   const quarters = useMemo(
     () => details.fundamentals.quarters.slice(0, 16).reverse(),
     [details.fundamentals.quarters],
@@ -56,21 +63,23 @@ export function TickerFundamentalsTab({
             }} />}
             label="QoQ Growth" />
         </Tooltip>
+        <Tooltip title="Show GAAP EPS charts below the EPS charts.">
+          <FormControlLabel className="fundamentals-scale-control"
+            control={<Checkbox size="small" checked={gaapVisible} onChange={(_, checked) => {
+              setGaapVisible(checked);
+              localStorage.setItem(gaapEpsVisibleKey, String(checked));
+            }} />}
+            label="GAAP EPS" />
+        </Tooltip>
       </div>
       <div className={`fundamentals-grid${qoqVisible ? "" : " fundamentals-grid-no-qoq"}`}>
-        {(["earnings_per_share", "revenue"] as const).map((field) => {
-          const label = field === "revenue" ? "Revenue" : "EPS";
-          const estimateField = field === "revenue" ? "revenue_estimate" : "earnings_per_share_estimate";
+        {fundamentalMetrics.filter(({ field }) => field !== "gaap_earnings_per_share" || gaapVisible).map(({ field, label, estimateField }) => {
           const color = field === "revenue" ? palette.warning : palette.accent;
-          const forecast = {
-            fiscal_period: details.fundamentals.next_quarter.fiscal_period,
-            value: details.fundamentals.next_quarter[field],
-          };
           const growth = details.fundamental_growth[field];
           return (
             <Fragment key={field}>
               <EstimateChart title={`${label} Actual / Estimate`} quarters={quarters}
-                actualField={field} estimateField={estimateField} forecast={forecast.value} />
+                actualField={field} estimateField={estimateField} forecasts={details.fundamentals.quarter_forecasts} />
               <GrowthChart title={`${label} YoY Growth`} series={growth.yoy} field={field}
                 color={color} logScale={logScale} smaVisible={smaVisible} />
               {qoqVisible && <GrowthChart title={`${label} QoQ Growth`} series={growth.qoq} field={field}
@@ -106,27 +115,23 @@ function GrowthChart({
     () => series.historical.map((point) => point.growth),
     [series.historical],
   );
-  const forecastGrowth = series.forecast.growth;
-  const forecastValues = useMemo(() => {
-    const values = Array<number | null>(historical.length + 1).fill(null);
-    if (historical.length > 0) values[historical.length - 1] = historical.at(-1) ?? null;
-    values[historical.length] = forecastGrowth;
-    return values;
-  }, [forecastGrowth, historical]);
+  const forecastValues = useMemo(
+    () => extendForecast(historical, series.forecasts.map((point) => point.growth)),
+    [historical, series.forecasts],
+  );
   const smaValues = useMemo(() => [
     ...series.historical.map((point) => point.sma_2),
-    ...(series.forecast.period === null ? [] : [series.forecast.sma_2]),
-  ], [series.forecast.period, series.forecast.sma_2, series.historical]);
+    ...series.forecasts.map((point) => point.sma_2),
+  ], [series.forecasts, series.historical]);
   const summaryValues = useMemo(
     () => smaVisible ? series.historical.map((point) => point.sma_2) : historical,
     [historical, series.historical, smaVisible],
   );
-  const forecastSummaryValue = smaVisible ? series.forecast.sma_2 : forecastGrowth;
-  const metricLabel = field === "revenue" ? "Revenue" : "EPS";
+  const metricLabel = fundamentalMetrics.find((metric) => metric.field === field)!.label;
   const historicalColor = alpha(color, smaVisible ? 0.25 : 1);
-  const smaColor = field === "earnings_per_share"
-    ? featureAccents[theme].purple
-    : featureAccents[theme].amber;
+  const smaColor = field === "revenue"
+    ? featureAccents[theme].amber
+    : featureAccents[theme].purple;
   const scale = useCallback(
     (value: number | null) => value === null ? null : logScale ? symmetricLog(value) : value,
     [logScale],
@@ -138,27 +143,24 @@ function GrowthChart({
   const model = useMemo<FundamentalChartModel>(() => {
     const periods = [
       ...series.historical.map((point) => point.period),
-      ...(series.forecast.period === null ? [] : [series.forecast.period]),
+      ...series.forecasts.map((point) => point.period),
     ];
-    const historicalData = (
-      series.forecast.period === null ? historical : [...historical, null]
-    ).map(scale);
+    const historicalData = [...historical, ...series.forecasts.map(() => null)].map(scale);
     const tooltipRows = periods.map((_, index) => {
-      const forecastIndex = series.historical.length;
       const historicalPoint = series.historical[index];
-      const isForecast = series.forecast.period !== null && index === forecastIndex;
+      const forecastPoint = series.forecasts[index - series.historical.length];
       const lines = [];
       if (historicalPoint?.growth !== null && historicalPoint?.growth !== undefined) {
         lines.push({ label: "Historical", value: formatPercent(historicalPoint.growth), color: historicalColor });
       }
-      const sma = isForecast ? series.forecast.sma_2 : historicalPoint?.sma_2;
+      const sma = forecastPoint?.sma_2 ?? historicalPoint?.sma_2;
       if (smaVisible && sma !== null && sma !== undefined) {
         lines.push({ label: "2 SMA", value: formatPercent(sma), color: smaColor });
       }
-      if (isForecast && series.forecast.growth !== null) {
-        lines.push({ label: "Forecast", value: formatPercent(series.forecast.growth), color: palette.muted });
+      if (forecastPoint && forecastPoint.growth !== null) {
+        lines.push({ label: "Forecast", value: formatPercent(forecastPoint.growth), color: palette.muted });
       }
-      const value = isForecast ? series.forecast.value : historicalPoint?.value;
+      const value = forecastPoint?.value ?? historicalPoint?.value;
       return {
         lines,
         detail: `${metricLabel}: ${value == null ? "N/A" : field === "revenue" ? compact(value) : value.toFixed(2)}`,
@@ -187,7 +189,7 @@ function GrowthChart({
           kind: "line",
           label: "Forecast",
           color: alpha(palette.muted, smaVisible ? 0.25 : 0.65),
-          data: series.forecast.period === null ? [] : forecastValues.map(scale),
+          data: forecastValues.map(scale),
           dashed: true,
           width: 1,
         },
@@ -213,12 +215,14 @@ function GrowthChart({
     <FundamentalChart
       title={title}
       summary={summaryValues.slice(-4).map(formatPercent)}
-      forecastSummary={series.forecast.period === null ? undefined : `${formatPercent(forecastSummaryValue)} (forecast)`}
+      forecastSummaries={series.forecasts.map((point) => {
+        const growth = smaVisible ? point.sma_2 : point.growth;
+        return { value: formatPercent(growth), growth };
+      })}
       summaryLabel={smaVisible ? "Growth MA" : "Growth"}
       summarySeparator="arrow"
       summaryGrowth={summaryValues.slice(-4)}
-      forecastGrowth={forecastSummaryValue}
-      empty={historical.every((value) => value === null) && forecastGrowth === null}
+      empty={historical.every((value) => value === null) && series.forecasts.every((point) => point.growth === null)}
       model={model}
     />
   );
@@ -229,13 +233,13 @@ function EstimateChart({
   quarters,
   actualField,
   estimateField,
-  forecast,
+  forecasts,
 }: {
   title: string;
   quarters: QuarterFundamentals[];
-  actualField: "earnings_per_share" | "revenue";
-  estimateField: "earnings_per_share_estimate" | "revenue_estimate";
-  forecast: number | null;
+  actualField: FundamentalField;
+  estimateField: typeof fundamentalMetrics[number]["estimateField"];
+  forecasts: FundamentalForecast[];
 }) {
   const { theme } = useAppSettings();
   const palette = appPalettes[theme];
@@ -252,18 +256,20 @@ function EstimateChart({
     () => quarters.map((quarter) => quarter[estimateField]),
     [estimateField, quarters],
   );
-  const forecastValues = useMemo(() => {
-    const values = Array<number | null>(quarters.length + 1).fill(null);
-    if (quarters.length > 0) values[quarters.length - 1] = estimates.at(-1) ?? null;
-    values[quarters.length] = forecast;
-    return values;
-  }, [estimates, forecast, quarters.length]);
+  const forecastPoints = useMemo(
+    () => forecasts.filter((point) => point.fiscal_period !== null),
+    [forecasts],
+  );
+  const forecastValues = useMemo(
+    () => extendForecast(estimates, forecastPoints.map((point) => point[actualField])),
+    [actualField, estimates, forecastPoints],
+  );
   const surprises = useMemo(
     () => actual.map((value, index) => growthPercent(value, estimates[index])),
     [actual, estimates],
   );
   const model = useMemo<FundamentalChartModel>(() => {
-    const periods = [...quarters.map((quarter) => quarter.fiscal_period), "Next Q"];
+    const periods = [...quarters.map((quarter) => quarter.fiscal_period), ...forecastPoints.map((point) => point.fiscal_period!)];
     const actualColors = actual.map((value, index) =>
       value === null || estimates[index] === null
         ? palette.muted
@@ -281,8 +287,9 @@ function EstimateChart({
       if (actualValue !== null && actualValue !== undefined) {
         lines.push({ label: "Actual", value: format(actualValue), color: actualColors[index] });
       }
-      if (index === quarters.length && forecast !== null) {
-        lines.push({ label: "Forecast", value: format(forecast), color: palette.muted });
+      const forecastValue = forecastPoints[index - quarters.length]?.[actualField];
+      if (forecastValue !== null && forecastValue !== undefined) {
+        lines.push({ label: "Forecast", value: format(forecastValue), color: palette.muted });
       }
       return {
         lines,
@@ -301,7 +308,7 @@ function EstimateChart({
           kind: "line",
           label: "Estimate",
           color: palette.muted,
-          data: [...estimates, null],
+          data: [...estimates, ...forecastPoints.map(() => null)],
         },
         {
           kind: "line",
@@ -315,12 +322,12 @@ function EstimateChart({
           kind: "histogram",
           label: "Actual",
           color: visualizationColors.up,
-          colors: [...actualColors, palette.muted],
-          data: [...actual, null],
+          colors: [...actualColors, ...forecastPoints.map(() => palette.muted)],
+          data: [...actual, ...forecastPoints.map(() => null)],
         },
       ],
     };
-  }, [actual, actualField, estimates, forecast, forecastValues, format, palette, quarters]);
+  }, [actual, actualField, estimates, forecastPoints, forecastValues, format, palette, quarters]);
 
   return (
     <FundamentalChart
@@ -328,10 +335,13 @@ function EstimateChart({
       summary={actual.map((value, index) =>
         `${value === null ? "N/A" : formatSummary(value)} (${signedPercent(surprises[index] ?? null)})`
       ).slice(-4)}
-      forecastSummary={`${forecast === null ? "N/A" : formatSummary(forecast)} (forecast)`}
+      forecastSummaries={forecastPoints.map((point) => {
+        const value = point[actualField];
+        return { value: value === null ? "N/A" : formatSummary(value) };
+      })}
       legendTitle={`${quarters.at(-1)?.fiscal_period ?? "Latest quarter"} Surprise: ${signedPercent(surprises.at(-1) ?? null)}`}
       summaryLabel="Actual"
-      empty={actual.every((value) => value === null) && estimates.every((value) => value === null) && forecast === null}
+      empty={actual.every((value) => value === null) && estimates.every((value) => value === null) && forecastPoints.every((point) => point[actualField] === null)}
       model={model}
     />
   );
