@@ -52,6 +52,11 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TradingViewWidget | undefined>(undefined);
   const requestedChart = useRef({ symbol, interval });
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     requestedChart.current = { symbol, interval };
@@ -91,7 +96,9 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
         });
       })
       .catch((error: unknown) => {
-        onError(error instanceof Error ? error.message : "Failed to load TradingView chart");
+        if (active) {
+          onErrorRef.current(error instanceof Error ? error.message : "Failed to load TradingView chart");
+        }
       });
 
     return () => {
@@ -104,7 +111,7 @@ export function TradingViewChart({ symbol, interval, onError }: TradingViewChart
       widgetRef.current = undefined;
       container?.replaceChildren();
     };
-  }, [containerId, logarithmicScale, onError, palette, theme]);
+  }, [containerId, logarithmicScale, palette, theme]);
 
   useEffect(() => {
     const widget = widgetRef.current;
