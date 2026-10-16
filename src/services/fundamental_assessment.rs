@@ -403,16 +403,7 @@ impl FundamentalAssessmentService {
         let data = match refreshed {
             Ok(data) => data,
             Err(error) if is_http_not_found(&error) => {
-                self.update(symbol, id, AssessmentPhase::Saving, None);
-                self.store
-                    .save_fundamental_assessment(
-                        symbol,
-                        &AssessmentResult::NotFound {
-                            not_found_at: Utc::now(),
-                        },
-                    )
-                    .await?;
-                self.update(symbol, id, AssessmentPhase::Completed, None);
+                self.save_unavailable(symbol, id).await?;
                 info!(%symbol, "Fundamentals returned HTTP 404; saved not-found result without AI");
                 return Ok(());
             }
@@ -422,10 +413,11 @@ impl FundamentalAssessmentService {
             annual_periods = data.annual.as_ref().map_or(0, Vec::len),
             quarterly_forecasts = data.quarter_forecasts.len(),
             "Assessment fundamentals refresh finished");
-        ensure!(
-            !data.quarters.is_empty(),
-            "No quarterly fundamentals available for assessment"
-        );
+        if data.quarters.is_empty() {
+            self.save_unavailable(symbol, id).await?;
+            info!(%symbol, "No quarterly fundamentals available; saved not-found result without AI");
+            return Ok(());
+        }
         let context = self.context(symbol).await?;
         let fingerprint = fingerprint(&data)?;
         self.update_job(symbol, id, |job| {
@@ -522,6 +514,20 @@ impl FundamentalAssessmentService {
             job.phase = AssessmentPhase::Completed;
             job.live_response.clear();
         });
+        Ok(())
+    }
+
+    async fn save_unavailable(&self, symbol: &TickerSymbol, id: &str) -> anyhow::Result<()> {
+        self.update(symbol, id, AssessmentPhase::Saving, None);
+        self.store
+            .save_fundamental_assessment(
+                symbol,
+                &AssessmentResult::NotFound {
+                    not_found_at: Utc::now(),
+                },
+            )
+            .await?;
+        self.update(symbol, id, AssessmentPhase::Completed, None);
         Ok(())
     }
 }

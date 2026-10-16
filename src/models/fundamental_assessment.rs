@@ -66,7 +66,8 @@ pub struct FundamentalAssessment {
     pub concerns: Vec<AssessmentConcern>,
 }
 
-/// A source 404 is a saved result with its own check time and no analysis.
+/// Unavailable fundamentals (source 404 or no reported quarters) are saved with
+/// their own check time and no analysis.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AssessmentResult {

@@ -596,8 +596,8 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     let service = Arc::new(service_with_source(store.clone(), Some(ai), &url));
     assert!(!service.state(&data.symbol).await.unwrap().data_ready);
 
-    // A manual retry after a saved 404 uses the same runner and can replace it
-    // with a real assessment as soon as the source recovers.
+    // Manual retries after a saved 404 or empty quarterly data use the same
+    // runner and can replace the unavailable result when the source recovers.
     *financials.response.lock().unwrap() = (axum::http::StatusCode::NOT_FOUND, String::new());
     let (_, completion) = service.start_job(data.symbol.clone(), None).unwrap();
     assert!(
@@ -613,6 +613,15 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
             .not_found_at
             .is_some()
     );
+    let mut unavailable = data.clone();
+    unavailable.quarters.clear();
+    *financials.response.lock().unwrap() =
+        (axum::http::StatusCode::OK, financial_html(&unavailable));
+    let (_, completion) = service.start_job(data.symbol.clone(), None).unwrap();
+    assert!(completion.wait().await);
+    let state = service.state(&data.symbol).await.unwrap();
+    assert!(state.not_found_at.is_some());
+    assert!(state.report.is_none());
     *financials.response.lock().unwrap() = (axum::http::StatusCode::OK, financial_html(&data));
 
     let job = service.start(data.symbol.clone()).await.unwrap();
@@ -681,7 +690,7 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
         financials
             .requests
             .load(std::sync::atomic::Ordering::SeqCst),
-        3
+        4
     );
     financial_server.abort();
     server.abort();
@@ -712,6 +721,17 @@ async fn disabled_ai_is_rejected_and_failed_refresh_does_not_create_a_report() {
 
 #[tokio::test]
 async fn source_404_is_saved_without_ai_for_manual_and_background_requests() {
+    assert_unavailable_fundamentals((axum::http::StatusCode::NOT_FOUND, String::new())).await;
+}
+
+#[tokio::test]
+async fn no_quarters_is_saved_without_ai_for_manual_and_background_requests() {
+    let mut data = fixture();
+    data.quarters.clear();
+    assert_unavailable_fundamentals((axum::http::StatusCode::OK, financial_html(&data))).await;
+}
+
+async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, String)) {
     use std::sync::atomic::Ordering;
     for background in [false, true] {
         for had_report in [false, true] {
@@ -733,8 +753,7 @@ async fn source_404_is_saved_without_ai_for_manual_and_background_requests() {
                 save_report(&store, &saved).await;
             }
             let (url, financials, server) = fundamentals_server().await;
-            *financials.response.lock().unwrap() =
-                (axum::http::StatusCode::NOT_FOUND, String::new());
+            *financials.response.lock().unwrap() = response.clone();
             let service = Arc::new(service_with_source(
                 store.clone(),
                 Some(unreachable_ai()),

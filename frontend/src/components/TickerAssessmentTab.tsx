@@ -125,7 +125,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
     {error && <Alert severity="error">{error}</Alert>}
     {job?.phase === "failed" && <Alert severity="error">{job.error} {report && "Your saved assessment is unchanged."}</Alert>}
     {state != null && !state.ai_enabled && <Alert severity="info">Configure AI to generate assessments. Saved assessments remain available.</Alert>}
-    {state?.not_found_at && <Alert severity="info">Fundamentals returned HTTP 404. No assessment is available. Background checks resume after the configured refresh interval; you can retry manually.</Alert>}
+    {state?.not_found_at && <Alert severity="info">No fundamental information is available for assessment. Background checks resume after the configured refresh interval; you can retry manually.</Alert>}
     {state != null && !state.not_found_at && !state.data_ready && <Alert severity="info">Assessment will refresh fundamentals before analyzing.</Alert>}
     {stale && <Alert severity="warning">Financial data, company context, or assessment settings have changed. Reassess to update this score.</Alert>}
     {hasEvidenceErrors && <Alert severity="warning">Some citations are missing or reference periods outside the supplied data. Affected fields are marked in red; the AI score is shown unchanged.</Alert>}
