@@ -19,6 +19,7 @@ const legacyStudyLogarithmicScaleKey = "market-watch.study-logarithmic-scale";
 
 export type ChartEngine = "tradingview" | "lightweight";
 export type CandlePalette = "solid" | "hollow" | "monochrome";
+export type RelativeStrengthDisplay = "top-line" | "bottom-line";
 export type RelativeStrengthLineStyle =
   | "solid"
   | "dashed"
@@ -37,6 +38,7 @@ type StoredSettings = {
   fiveEmaOpacity: number;
   gridOpacity: number;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
+  relativeStrengthDisplay: RelativeStrengthDisplay;
 };
 
 type AppSettingsValue = StoredSettings & {
@@ -51,13 +53,14 @@ type AppSettingsValue = StoredSettings & {
   setFiveEmaOpacity: (opacity: number) => void;
   setGridOpacity: (opacity: number) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
+  setRelativeStrengthDisplay: (display: RelativeStrengthDisplay) => void;
 };
 
 const AppSettingsContext = createContext<AppSettingsValue | undefined>(undefined);
 
 function readSettings(): StoredSettings {
   try {
-    const value = JSON.parse(localStorage.getItem(settingsKey) ?? "{}") as Partial<StoredSettings>;
+    const value = JSON.parse(localStorage.getItem(settingsKey) ?? "{}") as Partial<Omit<StoredSettings, "relativeStrengthDisplay">> & { relativeStrengthDisplay?: unknown };
     const legacyChartEngine = localStorage.getItem(legacyChartEngineKey);
     return {
       theme: value.theme === "light" ? "light" : "dark",
@@ -76,6 +79,8 @@ function readSettings(): StoredSettings {
       candlePalette: validCandlePalette(value.candlePalette) ? value.candlePalette : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       gridOpacity: validOpacity(value.gridOpacity) ? value.gridOpacity : 1,
+      relativeStrengthDisplay: value.relativeStrengthDisplay === "bottom-line" || value.relativeStrengthDisplay === "bottom-bars"
+        ? "bottom-line" : "top-line",
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
@@ -95,6 +100,7 @@ function readSettings(): StoredSettings {
       fiveEmaOpacity: 0.9,
       gridOpacity: 1,
       relativeStrengthLineStyle: "large-dashed",
+      relativeStrengthDisplay: "top-line",
     };
   }
 }
@@ -154,6 +160,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       setSettings((current) => ({ ...current, fiveEmaOpacity })),
     setGridOpacity: (gridOpacity) =>
       setSettings((current) => ({ ...current, gridOpacity })),
+    setRelativeStrengthDisplay: (relativeStrengthDisplay) =>
+      setSettings((current) => ({ ...current, relativeStrengthDisplay })),
     setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
       setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);

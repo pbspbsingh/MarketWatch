@@ -46,6 +46,7 @@ import {
   getChartColors,
   chartThemeOptions,
   candleSeriesOptions,
+  bottomRelativeStrengthLayout,
   fiveEmaColor,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
@@ -120,8 +121,10 @@ export function StudyCharts({
     fiveEmaOpacity,
     gridOpacity,
     relativeStrengthLineStyle: rsLineStyle,
+    relativeStrengthDisplay,
     theme,
   } = useAppSettings();
+  const bottomRs = relativeStrengthDisplay === "bottom-line" && tickerBVisible;
   const palette = appPalettes[theme];
   const chartColors = useMemo(() => getChartColors(theme, gridOpacity), [theme, gridOpacity]);
   const topRef = useRef<HTMLDivElement>(null);
@@ -143,6 +146,7 @@ export function StudyCharts({
   const intervalRef = useRef(result.interval);
   const crosshairOwnerRef = useRef<0 | 1>(0);
   const logarithmicScaleRef = useRef(logarithmicScale);
+  const relativeStrengthChartRef = useRef<IChartApi | undefined>(undefined);
   const relativeStrengthSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const relativeStrengthInnerRef = useRef<ISeriesApi<"Line"> | undefined>(undefined);
   const historyLoadingRef = useRef(historyLoading);
@@ -303,6 +307,9 @@ export function StudyCharts({
     chartsRef.current.forEach((chart) => chart.priceScale("right").applyOptions({
       mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
     }));
+    relativeStrengthSeriesRef.current[0]?.priceScale().applyOptions({
+      mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
   }, [logarithmicScale]);
 
   const openChartMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
@@ -519,6 +526,7 @@ export function StudyCharts({
       movingAverageSeriesRef.current = [];
       markerSeriesRef.current = [];
       watermarkRef.current = [];
+      relativeStrengthChartRef.current = undefined;
       relativeStrengthSeriesRef.current = [];
       relativeStrengthInnerRef.current = undefined;
       candlesByDateRef.current = [];
@@ -624,20 +632,6 @@ export function StudyCharts({
       });
     }
 
-    relativeStrengthSeriesRef.current.forEach((series) => charts[0].removeSeries(series));
-    const relativeStrength = result.relative_strength === null
-      ? { series: [], provisionalInner: undefined }
-      : addRelativeStrength(
-        charts[0],
-        result.relative_strength,
-        showRelativeStrengthRef.current,
-        appearanceRef.current.chartColors.background,
-        rsLineStyleRef.current,
-        candlePaletteRef.current,
-        appearanceRef.current.theme,
-      );
-    relativeStrengthSeriesRef.current = relativeStrength.series;
-    relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
     const markerDate = dates.find((date) => date >= result.date) ?? dates.at(-1);
     markerSeriesRef.current.forEach((markers) => markers.setMarkers(
       markerDate === undefined
@@ -665,6 +659,44 @@ export function StudyCharts({
       rangeSynchronizationPausedRef.current = false;
     };
   }, [centerSelectedDate, datasetKey, result]);
+
+  useEffect(() => {
+    const chart = chartsRef.current[bottomRs ? 1 : 0];
+    if (chart === undefined) return;
+    const previous = relativeStrengthChartRef.current;
+    relativeStrengthSeriesRef.current.forEach((series) => previous?.removeSeries(series));
+    const relativeStrength = result.relative_strength === null
+      ? { series: [], provisionalInner: undefined }
+      : addRelativeStrength(
+        chart,
+        result.relative_strength,
+        showRelativeStrengthRef.current,
+        appearanceRef.current.chartColors.background,
+        rsLineStyleRef.current,
+        candlePaletteRef.current,
+        appearanceRef.current.theme,
+      );
+    relativeStrengthChartRef.current = chart;
+    relativeStrengthSeriesRef.current = relativeStrength.series;
+    relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
+    relativeStrength.series[0]?.priceScale().applyOptions({
+      mode: logarithmicScaleRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      scaleMargins: bottomRs ? bottomRelativeStrengthLayout.scaleMargins : relativeStrengthScaleMargins,
+    });
+    relativeStrength.series[0]?.applyOptions({ lastValueVisible: !bottomRs });
+    chartsRef.current[1]?.priceScale("right").applyOptions({
+      scaleMargins: {
+        ...overlappingPriceScaleMargins,
+        top: bottomRs ? bottomRelativeStrengthLayout.candleTopMargin : overlappingPriceScaleMargins.top,
+      },
+    });
+    movingAverageSeriesRef.current.forEach((series, index) => {
+      series.forEach((line) => line.applyOptions({ visible: !bottomRs || index === 0 }));
+    });
+    volumeAverageSeriesRef.current.forEach((line, index) => {
+      line.applyOptions({ visible: !bottomRs || index === 0 });
+    });
+  }, [bottomRs, result]);
 
   useEffect(() => {
     const charts = chartsRef.current;
@@ -712,7 +744,7 @@ export function StudyCharts({
               />
             )}
             onPointerEnter={() => setCrosshairOwner(0)}
-            showRelativeStrength={result.relative_strength !== null ? showRelativeStrength : undefined}
+            showRelativeStrength={!bottomRs && result.relative_strength !== null ? showRelativeStrength : undefined}
             onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}
@@ -727,6 +759,8 @@ export function StudyCharts({
             readout={result.series[1] !== undefined && (
               <ChartCandleReadoutForDate series={result.series[1]} date={hoveredDate} />
             )}
+            showRelativeStrength={bottomRs && result.relative_strength !== null ? showRelativeStrength : undefined}
+            onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}

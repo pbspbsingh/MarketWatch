@@ -39,6 +39,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
     gridOpacity, setGridOpacity,
     fiveEmaOpacity, setFiveEmaOpacity,
     relativeStrengthLineStyle, setRelativeStrengthLineStyle,
+    relativeStrengthDisplay, setRelativeStrengthDisplay,
     showWeeklyChartOverlay, setShowWeeklyChartOverlay,
     showWeeklyOverlayAxes, setShowWeeklyOverlayAxes,
     syncWeeklyOverlayCrosshair, setSyncWeeklyOverlayCrosshair,
@@ -59,7 +60,6 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         <span className="settings-header-icon" aria-hidden="true"><TuneIcon /></span>
         <div className="settings-header-copy">
           <h2 id="settings-title">Settings</h2>
-          <p>Display &amp; chart preferences</p>
         </div>
         <IconButton size="small" aria-label="Close settings" onClick={onClose}>
           <CloseIcon fontSize="small" />
@@ -88,7 +88,6 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               <ToggleButton value="lightweight" aria-label="Lightweight Charts">Lightweight</ToggleButton>
             </ToggleButtonGroup>
           </div>
-          {!lightweight && <p className="settings-hint">Choose Lightweight to customize chart styles.</p>}
           <div className="settings-choice-row">
             <span id={scaleLabelId} className="settings-control-label">Price scale</span>
             <ToggleButtonGroup
@@ -104,37 +103,49 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               <ToggleButton value="logarithmic"><PriceScaleSample logarithmic /> Log</ToggleButton>
             </ToggleButtonGroup>
           </div>
-          <p className="settings-hint">Applies to all price charts, including Studies. TradingView reloads when changed.</p>
-          <div className="settings-choice-row">
-            <span id={candleLabelId} className="settings-control-label">Candle style</span>
-            <ToggleButtonGroup
-              className="settings-choice-segments settings-visual-choices" disabled={!lightweight} exclusive size="small"
-              value={candlePalette} aria-labelledby={candleLabelId}
-              onChange={(_, value) => {
-                if (validCandlePalette(value)) setCandlePalette(value);
-              }}
-            >
-              <ToggleButton value="solid" aria-label="Red and green candles"><CandleSample /> Solid</ToggleButton>
-              <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample palette="hollow" /> Hollow</ToggleButton>
-              <ToggleButton value="monochrome" aria-label="Monochrome candles" title="Monochrome"><CandleSample palette="monochrome" /> Mono</ToggleButton>
-            </ToggleButtonGroup>
-          </div>
-          {candlePalette === "monochrome" && <p className="settings-hint">Up: hollow candles, lighter volume. Down: filled candles, darker volume.</p>}
-          <OpacityControl label="Grid opacity" value={gridOpacity} onChange={setGridOpacity} disabled={!lightweight} />
+          {lightweight && (
+            <>
+              <div className="settings-choice-row">
+                <span id={candleLabelId} className="settings-control-label">Candle style</span>
+                <ToggleButtonGroup
+                  className="settings-choice-segments settings-visual-choices" exclusive size="small"
+                  value={candlePalette} aria-labelledby={candleLabelId}
+                  onChange={(_, value) => {
+                    if (validCandlePalette(value)) setCandlePalette(value);
+                  }}
+                >
+                  <ToggleButton value="solid" aria-label="Red and green candles"><CandleSample /> Solid</ToggleButton>
+                  <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample palette="hollow" /> Hollow</ToggleButton>
+                  <ToggleButton value="monochrome" aria-label="Monochrome candles" title="Monochrome"><CandleSample palette="monochrome" /> Mono</ToggleButton>
+                </ToggleButtonGroup>
+              </div>
+              <OpacityControl label="Grid opacity" value={gridOpacity} onChange={setGridOpacity} />
+            </>
+          )}
         </SettingsSection>
 
-        <SettingsSection title="Indicators">
+        {lightweight && <SettingsSection title="Indicators">
           <SettingsSwitch
             label="Show candle readout"
-            description="Hovered candle values on Home, TickerLens and Studies"
             checked={showCandleReadout}
             onChange={setShowCandleReadout}
           />
+          <div className="settings-choice-row">
+            <span className="settings-control-label">RS display</span>
+            <ToggleButtonGroup className="settings-choice-segments settings-visual-choices" exclusive size="small"
+              value={relativeStrengthDisplay} aria-label="RS display"
+              onChange={(_, value) => {
+                if (value === "top-line" || value === "bottom-line") setRelativeStrengthDisplay(value);
+              }}>
+              <ToggleButton value="top-line" aria-label="Top RS line"><RelativeStrengthSample /> Top line</ToggleButton>
+              <ToggleButton value="bottom-line" aria-label="Bottom RS line"><RelativeStrengthSample bottom /> Bottom line</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
           <div className="settings-control">
             <span className="settings-control-label">Relative strength line</span>
             <ToggleButtonGroup
               className="settings-line-styles"
-              disabled={!lightweight} exclusive fullWidth size="small"
+              exclusive fullWidth size="small"
               value={relativeStrengthLineStyle} aria-label="Relative strength line style"
               onChange={(_, value) => {
                 if (validRelativeStrengthLineStyle(value)) setRelativeStrengthLineStyle(value);
@@ -150,32 +161,29 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               ))}
             </ToggleButtonGroup>
           </div>
-          <OpacityControl label="5 EMA opacity" value={fiveEmaOpacity} onChange={setFiveEmaOpacity} disabled={!lightweight} />
-        </SettingsSection>
+          <OpacityControl label="5 EMA opacity" value={fiveEmaOpacity} onChange={setFiveEmaOpacity} />
+        </SettingsSection>}
 
         <SettingsSection title="Weekly overlay">
           <SettingsSwitch
             label="Show weekly overlay"
-            description="A floating chart in Ticker Lens"
             checked={showWeeklyChartOverlay}
             onChange={setShowWeeklyChartOverlay}
           />
-          <p className="settings-shortcut"><kbd>Alt / Option</kbd><span>+</span><kbd>W</kbd><span>to toggle</span></p>
+          <p className="settings-shortcut"><kbd>Alt / Option</kbd><span>+</span><kbd>W</kbd></p>
           <div className="settings-overlay-options">
             <SettingsSwitch
               label="Price & time axes"
-              description="Show price and date labels on the overlay"
               checked={showWeeklyOverlayAxes}
               onChange={setShowWeeklyOverlayAxes}
               disabled={!showWeeklyChartOverlay}
             />
-            <SettingsSwitch
+            {lightweight && <SettingsSwitch
               label="Sync crosshair"
-              description="Follow the weekly chart’s date and price"
               checked={syncWeeklyOverlayCrosshair}
               onChange={setSyncWeeklyOverlayCrosshair}
-              disabled={!showWeeklyChartOverlay || !lightweight}
-            />
+              disabled={!showWeeklyChartOverlay}
+            />}
           </div>
         </SettingsSection>
       </div>
@@ -193,19 +201,15 @@ function SettingsSection({ title, children }: { title: string; children: ReactNo
   );
 }
 
-function SettingsSwitch({ label, description, checked, onChange, disabled = false }: {
+function SettingsSwitch({ label, checked, onChange, disabled = false }: {
   label: string;
-  description?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
 }) {
   return (
     <label className={`settings-switch-row${disabled ? " settings-control-disabled" : ""}`}>
-      <span className="settings-switch-copy">
-        <span className="settings-control-label">{label}</span>
-        {description && <span className="settings-description">{description}</span>}
-      </span>
+      <span className="settings-control-label">{label}</span>
       <Switch
         size="small" checked={checked} disabled={disabled}
         onChange={(_, value) => onChange(value)}
@@ -215,11 +219,11 @@ function SettingsSwitch({ label, description, checked, onChange, disabled = fals
   );
 }
 
-function OpacityControl({ label, value, onChange, disabled }: {
+function OpacityControl({ label, value, onChange, disabled = false }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
-  disabled: boolean;
+  disabled?: boolean;
 }) {
   const id = useId();
   const percent = Math.round(value * 100);
@@ -248,6 +252,16 @@ function PriceScaleSample({ logarithmic = false }: { logarithmic?: boolean }) {
         d={logarithmic ? "M6 14C8 6 13 4 21 3" : "M6 14L21 3"}
         fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function RelativeStrengthSample({ bottom = false }: { bottom?: boolean }) {
+  return (
+    <svg className="settings-scale-sample" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 1h20v10H2zM2 13h20v10H2z" fill="none" stroke="currentColor" opacity="0.35" />
+      <path d={bottom ? "M4 20l4-3 4 2 4-4 4 1" : "M4 8l4-3 4 2 4-4 4 1"}
+        fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

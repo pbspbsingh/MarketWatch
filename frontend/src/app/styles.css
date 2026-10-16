@@ -378,12 +378,6 @@ body,
   letter-spacing: -0.02em;
 }
 
-.settings-header-copy p {
-  margin: 0.2rem 0 0;
-  font-size: 0.7rem;
-  color: var(--color-muted);
-}
-
 .settings-drawer-body {
   display: flex;
   min-height: 0;
@@ -449,24 +443,6 @@ body,
 
 .settings-switch-row {
   cursor: pointer;
-}
-
-.settings-switch-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.settings-description,
-.settings-hint {
-  color: var(--color-muted);
-  font-size: 0.68rem;
-  line-height: 1.5;
-}
-
-.settings-hint {
-  margin: -0.5rem 0 0;
 }
 
 .settings-switch-row .MuiSwitch-root {

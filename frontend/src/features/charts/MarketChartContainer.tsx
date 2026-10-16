@@ -14,6 +14,7 @@ import {
   refreshMarketChartSnapshot,
   type MarketChartInterval,
   type MarketChartSnapshot,
+  type MarketChartRelativeStrength,
 } from "../../api/marketChart";
 import type {
   MarketChartLiveDelta,
@@ -64,6 +65,12 @@ interface MarketChartContainerProps {
   onError?: (message: string | undefined) => void;
   historyInteractionTrackerRef?: RefObject<ChartHistoryInteractionTracker>;
   relativeStrengthComparisonSymbol?: string;
+  relativeStrengthPlacement?: "top" | "bottom" | "hidden";
+  /** Null clears the overlay; undefined uses this chart's own RS history. */
+  relativeStrengthOverlay?: MarketChartRelativeStrength | null;
+  relativeStrengthLive?: MarketChartRelativeStrength | null;
+  onRelativeStrengthChange?: (data: MarketChartRelativeStrength | null) => void;
+  hideMovingAverages?: boolean;
   showLoadingOverlay?: boolean;
   onLoadStatusChange?: (status: MarketChartLoadStatus) => void;
   refreshCandlesVersion?: number;
@@ -98,6 +105,11 @@ export function MarketChartContainer({
   onError,
   historyInteractionTrackerRef,
   relativeStrengthComparisonSymbol,
+  relativeStrengthPlacement = "top",
+  relativeStrengthOverlay,
+  relativeStrengthLive,
+  onRelativeStrengthChange,
+  hideMovingAverages = false,
   showLoadingOverlay = true,
   onLoadStatusChange,
   refreshCandlesVersion = 0,
@@ -110,6 +122,7 @@ export function MarketChartContainer({
 }: MarketChartContainerProps) {
   const datasetKey = `${symbol}\0${interval}`;
   const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
+  const snapshotRequestKeyRef = useRef<string | undefined>(undefined);
   const generationRef = useRef(0);
   const snapshotRef = useRef<MarketChartSnapshot | undefined>(undefined);
   const snapshotDatasetKeyRef = useRef<string | undefined>(undefined);
@@ -134,6 +147,11 @@ export function MarketChartContainer({
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
+
+  useEffect(() => {
+    onRelativeStrengthChange?.(snapshotRequestKeyRef.current === requestKey
+      ? snapshot?.relative_strength ?? null : null);
+  }, [onRelativeStrengthChange, requestKey, snapshot]);
 
   useEffect(() => {
     onErrorRef.current = onError;
@@ -196,6 +214,7 @@ export function MarketChartContainer({
     })
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
+        snapshotRequestKeyRef.current = requestKey;
         if (backgroundReload) {
           setSnapshot((current) => (
             current === undefined || snapshotDatasetKeyRef.current !== datasetKey
@@ -387,7 +406,10 @@ export function MarketChartContainer({
           rightOffsetPixels={rightOffsetPixels}
           attributionLogo={attributionLogo}
           onChartContext={handleChartContext}
-          relativeStrength={snapshot.relative_strength}
+          relativeStrength={relativeStrengthOverlay === undefined ? snapshot.relative_strength : relativeStrengthOverlay}
+          relativeStrengthPlacement={relativeStrengthPlacement}
+          relativeStrengthLive={relativeStrengthLive}
+          hideMovingAverages={hideMovingAverages}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
           markers={markers}

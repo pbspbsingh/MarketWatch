@@ -34,7 +34,7 @@ import {
   overlappingPriceScaleMargins,
 } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
-import { marketDataSymbol } from "../../api/marketChart";
+import { marketDataSymbol, type MarketChartRelativeStrength } from "../../api/marketChart";
 import {
   type MarketChartLiveDelta,
   type MarketChartSessionDelta,
@@ -97,7 +97,17 @@ export default function SplitLightweightCharts({
   topMarkers,
   topPriceLines,
 }: SplitLightweightChartsProps) {
-  const { syncWeeklyOverlayCrosshair } = useAppSettings();
+  const { syncWeeklyOverlayCrosshair, relativeStrengthDisplay } = useAppSettings();
+  const bottomRs = relativeStrengthDisplay === "bottom-line";
+  const rsKey = `${marketDataSymbol(topSymbol)}\0${marketDataSymbol(bottomSymbol)}\0${interval}`;
+  const [rsState, setRsState] = useState<{ key: string; data: MarketChartRelativeStrength | null }>();
+  const receiveRelativeStrength = useCallback((data: MarketChartRelativeStrength | null) => {
+    setRsState({ key: rsKey, data });
+  }, [rsKey]);
+  const rsData = rsState?.key === rsKey ? rsState.data : null;
+  const rsLive = topLiveDelta?.symbol === marketDataSymbol(topSymbol)
+    && topLiveDelta.interval === (interval === "D" ? "daily" : "weekly")
+    && topLiveDelta.relative_strength?.comparison_symbol === marketDataSymbol(bottomSymbol) ? topLiveDelta.relative_strength : null;
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [chartMenu, setChartMenu] = useState<ChartMenuState | null>(null);
@@ -295,6 +305,8 @@ export default function SplitLightweightCharts({
               priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
               historyInteractionTrackerRef={historyInteractionTrackerRef}
               relativeStrengthComparisonSymbol={bottomSymbol}
+              relativeStrengthPlacement={bottomRs ? "hidden" : "top"}
+              onRelativeStrengthChange={receiveRelativeStrength}
               showLoadingOverlay={false}
               refreshCandlesVersion={topRefreshVersion}
               reloadVersion={topReloadVersion}
@@ -321,6 +333,10 @@ export default function SplitLightweightCharts({
             <MarketChartContainer
               showCandleReadout
               symbol={bottomSymbol}
+              relativeStrengthPlacement={bottomRs ? "bottom" : "hidden"}
+              relativeStrengthOverlay={bottomRs ? rsData : null}
+              relativeStrengthLive={bottomRs ? rsLive : null}
+              hideMovingAverages={bottomRs}
               companyName={bottomCompanyName}
               companyNameHref={tickerMarketWatchUrl(marketDataSymbol(bottomSymbol))}
               tradingViewSymbol={bottomTradingViewSymbol}

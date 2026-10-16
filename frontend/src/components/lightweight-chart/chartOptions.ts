@@ -156,6 +156,10 @@ export const volumeSeriesOptions = {
 
 export const volumeScaleMargins = { top: 0.78, bottom: 0 } as const;
 export const relativeStrengthScaleMargins = { top: 0.02, bottom: 0.68 } as const;
+export const bottomRelativeStrengthLayout = {
+  candleTopMargin: 0.25,
+  scaleMargins: { top: 0.02, bottom: 0.62 },
+} as const;
 
 export const indicatorSeriesOptions = {
   lineWidth: 1 as const,
