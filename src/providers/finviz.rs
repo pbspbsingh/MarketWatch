@@ -9,15 +9,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 const INDUSTRY_URL: &str = "https://finviz.com/groups?g=industry&v=140&o=-perf1w&st=d1";
-const SCREENER_URL: &str = "https://finviz.com/screener";
-const QUOTE_URL: &str = "https://finviz.com/quote";
+const SCREENER_URL: &str = "https://finviz.com/screener/stocks";
 const STOCK_URL: &str = "https://finviz.com/stock";
 const SCREENER_OVERVIEW_VIEW: &str = "111";
-const SCREENER_PAGE_SIZE: usize = 20;
 const FUNDAMENTAL_QUARTERS: usize = 16;
 const FORECAST_QUARTERS: usize = 2;
 const FINVIZ_SECTOR_COUNT: usize = 11;
@@ -26,7 +25,6 @@ pub struct FinvizClient {
     http: Client,
     industry_url: Url,
     screener_url: Url,
-    quote_url: Url,
     stock_url: Url,
     industry_membership_filters: Vec<String>,
     request_throttle: RequestThrottle,
@@ -59,6 +57,73 @@ pub struct IndustryClassification {
 struct ScreenerPage {
     tickers: Vec<String>,
     total: usize,
+    first_row: usize,
+}
+
+#[derive(Deserialize)]
+struct ScreenerProps {
+    filters: ScreenerFilters,
+    data: ScreenerData,
+}
+
+#[derive(Deserialize)]
+struct ScreenerFilters {
+    filters: Vec<ScreenerFilter>,
+}
+
+#[derive(Deserialize)]
+struct ScreenerFilter {
+    key: String,
+    options: Vec<ScreenerOption>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenerOption {
+    value: String,
+    label: String,
+    group: Option<String>,
+    #[serde(default)]
+    is_elite_only: bool,
+    #[serde(default)]
+    is_excluded_from_select_all: bool,
+}
+
+impl ScreenerOption {
+    fn is_identity(&self) -> bool {
+        !self.value.trim().is_empty() && !self.is_elite_only && !self.is_excluded_from_select_all
+    }
+
+    fn identity(&self) -> anyhow::Result<IndustryIdentity> {
+        anyhow::ensure!(
+            !self.label.trim().is_empty(),
+            "Finviz filter label is empty"
+        );
+        Ok(IndustryIdentity {
+            key: self.value.clone(),
+            name: self.label.clone(),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenerData {
+    rows: Vec<ScreenerRow>,
+    total_count: usize,
+    first_row: usize,
+    page_size: usize,
+}
+
+#[derive(Deserialize)]
+struct ScreenerRow {
+    text: ScreenerRowText,
+}
+
+#[derive(Deserialize)]
+struct ScreenerRowText {
+    ticker: String,
+    sector: Option<String>,
 }
 
 impl FinvizClient {
@@ -102,7 +167,6 @@ impl FinvizClient {
             http,
             industry_url: Url::parse(INDUSTRY_URL).context("invalid Finviz industry URL")?,
             screener_url: Url::parse(SCREENER_URL).context("invalid Finviz screener URL")?,
-            quote_url: Url::parse(QUOTE_URL).context("invalid Finviz quote URL")?,
             stock_url: Url::parse(STOCK_URL).context("invalid Finviz stock URL")?,
             industry_membership_filters: finviz.industry_membership_filters.clone(),
             request_throttle: RequestThrottle::new(
@@ -127,33 +191,76 @@ impl FinvizClient {
         base_url
             .query_pairs_mut()
             .append_pair("v", SCREENER_OVERVIEW_VIEW);
-        let sectors = parse_select_options(&self.get(base_url).await?, "#fs_sec")?;
+        let props = parse_screener_props(&self.get(base_url).await?)?;
+        let sector_options = screener_options(&props.filters, "sec")?;
+        let industry_options = screener_options(&props.filters, "industry")?;
+        let sectors = sector_options
+            .iter()
+            .filter(|option| option.is_identity())
+            .map(|option| option.identity())
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        if !industry_options.iter().any(ScreenerOption::is_identity) {
+            return Ok(Vec::new());
+        }
         anyhow::ensure!(
             sectors.len() == FINVIZ_SECTOR_COUNT,
             "expected {FINVIZ_SECTOR_COUNT} Finviz sectors, found {}",
             sectors.len()
         );
 
+        let sectors_by_key = sectors
+            .iter()
+            .map(|sector| (sector.key.as_str(), sector))
+            .collect::<HashMap<_, _>>();
+        anyhow::ensure!(
+            sectors_by_key.len() == sectors.len(),
+            "Finviz returned duplicate sectors"
+        );
         let mut classifications = Vec::new();
-        for sector in sectors {
-            let mut url = self.screener_url.clone();
-            url.query_pairs_mut()
-                .append_pair("v", SCREENER_OVERVIEW_VIEW)
-                .append_pair("f", &format!("sec_{}", sector.key));
-            let industries = parse_select_options(&self.get(url).await?, "#fs_ind")?;
-            anyhow::ensure!(
-                !industries.is_empty(),
-                "Finviz returned no industries for sector {}",
-                sector.name
-            );
-            classifications.extend(
-                industries
-                    .into_iter()
-                    .map(|industry| IndustryClassification {
-                        industry,
-                        sector: sector.clone(),
-                    }),
-            );
+        for option in industry_options
+            .iter()
+            .filter(|option| option.is_identity())
+        {
+            let industry = option.identity()?;
+            let sector = if let Some(group) = &option.group {
+                sectors_by_key
+                    .get(group.as_str())
+                    .copied()
+                    .with_context(|| {
+                        format!("unknown Finviz sector {group} for {}", industry.key)
+                    })?
+            } else {
+                // Shell Companies currently has no group in the filter metadata.
+                // Resolve ungrouped industries from actual rows instead of hardcoding a sector.
+                let mut url = self.screener_url.clone();
+                url.query_pairs_mut()
+                    .append_pair("v", SCREENER_OVERVIEW_VIEW)
+                    .append_pair("f", &format!("industry_{}", industry.key));
+                let data = parse_screener_props(&self.get(url).await?)?.data;
+                let Some(first) = data.rows.first() else {
+                    continue;
+                };
+                let name = first
+                    .text
+                    .sector
+                    .as_deref()
+                    .context("Finviz industry row is missing its sector")?;
+                anyhow::ensure!(
+                    data.rows
+                        .iter()
+                        .all(|row| row.text.sector.as_deref() == Some(name)),
+                    "Finviz industry {} belongs to multiple sectors",
+                    industry.key
+                );
+                sectors
+                    .iter()
+                    .find(|sector| sector.name == name)
+                    .with_context(|| format!("unknown Finviz sector {name} for {}", industry.key))?
+            };
+            classifications.push(IndustryClassification {
+                industry,
+                sector: sector.clone(),
+            });
         }
 
         classifications.sort_by(|left, right| left.industry.key.cmp(&right.industry.key));
@@ -174,7 +281,7 @@ impl FinvizClient {
     pub async fn industry_tickers(&self, industry_key: &str) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(!industry_key.trim().is_empty(), "industry key is required");
 
-        let filters = std::iter::once(format!("ind_{industry_key}"))
+        let filters = std::iter::once(format!("industry_{industry_key}"))
             .chain(self.industry_membership_filters.iter().cloned())
             .collect::<Vec<_>>()
             .join(",");
@@ -234,7 +341,7 @@ impl FinvizClient {
     }
 
     pub async fn ticker_industry(&self, ticker: &TickerSymbol) -> anyhow::Result<IndustryIdentity> {
-        let mut url = self.quote_url.clone();
+        let mut url = self.stock_url.clone();
         url.query_pairs_mut()
             .clear()
             .append_pair("t", ticker.as_str())
@@ -305,28 +412,55 @@ impl FinvizClient {
         count: usize,
     ) -> anyhow::Result<Vec<TickerSymbol>> {
         let mut tickers = Vec::new();
+        let mut seen = HashSet::new();
+        let mut next_row = 0;
         loop {
             let mut url = self.screener_url.clone();
             {
                 let mut query = url.query_pairs_mut();
                 query.clear().append_pair("v", SCREENER_OVERVIEW_VIEW);
                 for (key, value) in pairs {
-                    query.append_pair(key, value);
+                    if key == "f" {
+                        let filters = value
+                            .split(',')
+                            .map(|filter| {
+                                filter.strip_prefix("ind_").map_or_else(
+                                    || filter.to_owned(),
+                                    |industry| format!("industry_{industry}"),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        query.append_pair(key, &filters);
+                    } else {
+                        query.append_pair(key, value);
+                    }
                 }
-                if !tickers.is_empty() {
-                    query.append_pair("r", &(tickers.len() + 1).to_string());
+                if next_row > 0 {
+                    query.append_pair("r", &(next_row + 1).to_string());
                 }
             }
 
             let page = parse_screener_page(&self.get(url).await?)?;
-            tickers.extend(
-                page.tickers
-                    .into_iter()
-                    .map(TickerSymbol::try_from)
-                    .collect::<Result<Vec<_>, _>>()?,
+            if page.tickers.is_empty() {
+                return Ok(tickers);
+            }
+            anyhow::ensure!(
+                page.first_row == next_row,
+                "Finviz screener returned offset {} instead of {next_row}",
+                page.first_row
             );
-            if tickers.len() >= count || tickers.len() >= page.total {
-                tickers.truncate(count.min(page.total));
+            next_row += page.tickers.len();
+            for ticker in page.tickers {
+                let ticker = TickerSymbol::try_from(ticker)?;
+                anyhow::ensure!(
+                    seen.insert(ticker.clone()),
+                    "Finviz screener repeated ticker {ticker} across rows or pages"
+                );
+                tickers.push(ticker);
+            }
+            if tickers.len() >= count || next_row >= page.total {
+                tickers.truncate(count);
                 return Ok(tickers);
             }
         }
@@ -335,12 +469,16 @@ impl FinvizClient {
 
 fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
     let document = Html::parse_document(html);
-    let row_selector = selector("table.groups_table tr.styled-row")?;
+    let table = document
+        .select(&selector("table.groups_table")?)
+        .next()
+        .context("Finviz industry table was not found")?;
+    let row_selector = selector("tr.styled-row")?;
     let cell_selector = selector("td")?;
-    let link_selector = selector("a[href*=\"f=ind_\"]")?;
+    let link_selector = selector(r#"a[href*="f=ind_"], a[href*="f=industry_"]"#)?;
     let mut industries = Vec::new();
 
-    for row in document.select(&row_selector) {
+    for row in table.select(&row_selector) {
         let cells = row.select(&cell_selector).collect::<Vec<_>>();
         anyhow::ensure!(cells.len() >= 11, "Finviz industry row has too few columns");
         let link = cells[1]
@@ -363,69 +501,61 @@ fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
         });
     }
 
-    anyhow::ensure!(
-        !industries.is_empty(),
-        "Finviz industry table was not found"
-    );
     Ok(industries)
 }
 
-fn parse_select_options(html: &str, select: &str) -> anyhow::Result<Vec<IndustryIdentity>> {
+fn parse_screener_props(html: &str) -> anyhow::Result<ScreenerProps> {
     let document = Html::parse_document(html);
-    let option_selector = selector(&format!("{select} option[value]"))?;
-    Ok(document
-        .select(&option_selector)
-        .filter_map(|option| {
-            let key = option.value().attr("value")?.trim();
-            let name = text(option);
-            (!key.is_empty() && !name.is_empty()).then(|| IndustryIdentity {
-                key: key.to_owned(),
-                name,
-            })
-        })
-        .collect())
+    for script in document.select(&selector(
+        r#"script[type="application/json"][data-ssr-props]"#,
+    )?) {
+        let value: serde_json::Value =
+            serde_json::from_str(&text(script)).context("Finviz screener JSON is invalid")?;
+        if value
+            .get("screenerType")
+            .and_then(serde_json::Value::as_str)
+            == Some("stocks")
+        {
+            return serde_json::from_value(value).context("Finviz screener data is invalid");
+        }
+    }
+    anyhow::bail!("Finviz screener data was not found")
+}
+
+fn screener_options<'a>(
+    filters: &'a ScreenerFilters,
+    key: &str,
+) -> anyhow::Result<&'a [ScreenerOption]> {
+    filters
+        .filters
+        .iter()
+        .find(|filter| filter.key == key)
+        .map(|filter| filter.options.as_slice())
+        .with_context(|| format!("Finviz {key} filter was not found"))
 }
 
 fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
-    let document = Html::parse_document(html);
-
-    let total_selector = selector("#screener-total")?;
-    let Some(total_text) = document.select(&total_selector).next().map(text) else {
-        warn!("Finviz screener total was not found");
-        return Ok(ScreenerPage {
-            tickers: Vec::new(),
-            total: 0,
-        });
-    };
-    let total = total_text
-        .split(|character: char| !character.is_ascii_digit())
-        .rfind(|part| !part.is_empty())
-        .context("Finviz screener total is invalid")?
-        .parse()
-        .context("Finviz screener total is invalid")?;
-    let mut tickers = Vec::new();
-
-    let ticker_selector = selector("table.screener_table td[data-boxover-ticker]")?;
-    for cell in document.select(&ticker_selector) {
-        let ticker = cell
-            .value()
-            .attr("data-boxover-ticker")
-            .context("Finviz screener ticker cell is missing its ticker")?;
-        if tickers.last().is_none_or(|previous| previous != ticker) {
-            tickers.push(ticker.to_owned());
-        }
-    }
-
+    let data = parse_screener_props(html)?.data;
     anyhow::ensure!(
-        tickers.len() <= SCREENER_PAGE_SIZE,
-        "Finviz screener returned more rows than expected"
+        data.page_size > 0 && data.rows.len() <= data.page_size,
+        "Finviz screener page size is invalid"
     );
-    Ok(ScreenerPage { tickers, total })
+    anyhow::ensure!(
+        data.rows.len() <= data.total_count.saturating_sub(data.first_row),
+        "Finviz screener rows exceed its total"
+    );
+    Ok(ScreenerPage {
+        tickers: data.rows.into_iter().map(|row| row.text.ticker).collect(),
+        total: data.total_count,
+        first_row: data.first_row,
+    })
 }
 
 fn parse_ticker_industry(html: &str) -> anyhow::Result<IndustryIdentity> {
     let document = Html::parse_document(html);
-    let industry_selector = selector(r#".quote-header_meta a[href*="f=ind_"]"#)?;
+    let industry_selector = selector(
+        r#".quote-header_meta a[href*="f=ind_"], .quote-header_meta a[href*="f=industry_"]"#,
+    )?;
     let link = document
         .select(&industry_selector)
         .next()
@@ -596,7 +726,13 @@ fn industry_key(link: ElementRef<'_>) -> anyhow::Result<String> {
         .context("Finviz industry link is missing its filter")?;
 
     filter
-        .strip_prefix("ind_")
+        .split(',')
+        .find_map(|filter| {
+            filter
+                .strip_prefix("industry_")
+                .or_else(|| filter.strip_prefix("ind_"))
+        })
+        .filter(|key| !key.is_empty())
         .map(str::to_owned)
         .context("Finviz industry filter has an unexpected format")
 }
@@ -626,405 +762,4 @@ impl FinvizClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::Config;
-
-    #[tokio::test]
-    async fn news_404_and_empty_quote_pages_complete_without_ai_or_retries() {
-        use axum::{Router, http::StatusCode, routing::get};
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        };
-
-        let empty_quote = r#"<h1 class="js-recent-quote-ticker" data-ticker="TEST">TEST</h1><table class="snapshot-table2"></table>"#;
-        for (status, html, expected) in [
-            (
-                StatusCode::NOT_FOUND,
-                "",
-                Some(NewsStopReason::SourceNotFound),
-            ),
-            (
-                StatusCode::OK,
-                empty_quote,
-                Some(NewsStopReason::SourceLimited),
-            ),
-            (
-                StatusCode::OK,
-                "<table id='news-table'></table>",
-                Some(NewsStopReason::SourceLimited),
-            ),
-            (StatusCode::OK, "<html>Access denied</html>", None),
-            (StatusCode::SERVICE_UNAVAILABLE, "", None),
-        ] {
-            let calls = Arc::new(AtomicUsize::new(0));
-            let requests = calls.clone();
-            let app = Router::new().route(
-                "/",
-                get(move || {
-                    requests.fetch_add(1, Ordering::SeqCst);
-                    async move { (status, html) }
-                }),
-            );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
-            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-            let mut client = FinvizClient::new(
-                &FinvizConfig {
-                    industry_membership_filters: vec![],
-                    top_stocks_additional_filters: vec![],
-                    membership_fresh_days: 1,
-                },
-                &ProviderConfig {
-                    connect_timeout_secs: 1,
-                    request_timeout_secs: 2,
-                    min_delay_ms: 25,
-                    max_delay_ms: 25,
-                },
-            )
-            .unwrap();
-            client.stock_url = url;
-            let result = client.news(&TickerSymbol::parse("TEST").unwrap()).await;
-            if let Some(reason) = expected {
-                let batch = result.unwrap();
-                assert!(batch.items.is_empty());
-                assert_eq!(batch.coverage.stop_reason, reason);
-                assert_eq!(
-                    batch.coverage.pages_fetched,
-                    usize::from(status != StatusCode::NOT_FOUND)
-                );
-            } else {
-                assert!(result.is_err());
-            }
-            assert_eq!(calls.load(Ordering::SeqCst), 1);
-            server.abort();
-        }
-    }
-
-    #[test]
-    fn parses_annual_actuals_and_estimates_in_dollars() {
-        let html = r#"<script id="route-init-data">{
-            "earningsData": [],
-            "earningsAnnualData": [
-                {"fiscalPeriod":"2025FY","epsActual":7.8,"epsEstimate":7.7,"epsReportedActual":7.46,"epsReportedEstimate":7.38,"salesActual":416161,"salesEstimate":415407},
-                {"fiscalPeriod":"2026FY","epsEstimate":9.1,"epsReportedEstimate":8.83,"salesEstimate":477421}
-            ]
-        }</script>"#;
-        let data = parse_fundamentals(&TickerSymbol::parse("AAPL").unwrap(), html).unwrap();
-        let annual = data.annual.unwrap();
-        assert_eq!(annual.len(), 2);
-        assert_eq!(annual[0].fiscal_period, "2025FY");
-        assert_eq!(annual[0].earnings_per_share, Some(7.8));
-        assert_eq!(annual[0].earnings_per_share_estimate, Some(7.7));
-        assert_eq!(annual[0].gaap_earnings_per_share, Some(7.46));
-        assert_eq!(annual[0].gaap_earnings_per_share_estimate, Some(7.38));
-        assert_eq!(annual[0].revenue, Some(416_161_000_000.0));
-        assert_eq!(annual[1].earnings_per_share, None);
-        assert_eq!(annual[1].earnings_per_share_estimate, Some(9.1));
-        assert_eq!(annual[1].gaap_earnings_per_share_estimate, Some(8.83));
-        assert_eq!(annual[1].revenue_estimate, Some(477_421_000_000.0));
-    }
-
-    #[test]
-    fn missing_annual_provider_data_is_an_empty_completed_fetch() {
-        let data = parse_fundamentals(
-            &TickerSymbol::parse("TEST").unwrap(),
-            r#"<script id="route-init-data">{"earningsData":[]}</script>"#,
-        )
-        .unwrap();
-        assert!(data.annual.unwrap().is_empty());
-    }
-
-    #[test]
-    fn parses_both_eps_series_without_substituting_missing_values() {
-        let html = r#"<script id="route-init-data">{
-            "earningsData": [
-                {"fiscalPeriod":"2025Q1","epsActual":0.81,"epsEstimate":0.74,"epsReportedActual":0.76,"epsReportedEstimate":0.71},
-                {"fiscalPeriod":"2025Q2","epsActual":1.05,"epsReportedEstimate":0.95},
-                {"fiscalPeriod":"2025Q3","epsReportedActual":1.3},
-                {"fiscalPeriod":"2026Q2","epsEstimate":2.0,"epsReportedEstimate":1.9},
-                {"fiscalPeriod":"2026Q1","epsEstimate":1.8,"salesEstimate":50000},
-                {"fiscalPeriod":"2025Q4","epsEstimate":1.6,"epsReportedEstimate":1.5}
-            ]
-        }</script>"#;
-        let data = parse_fundamentals(&TickerSymbol::parse("NVDA").unwrap(), html).unwrap();
-        assert_eq!(data.quarters.len(), 3);
-        let both = &data.quarters[2];
-        assert_eq!(both.earnings_per_share, Some(0.81));
-        assert_eq!(both.earnings_per_share_estimate, Some(0.74));
-        assert_eq!(both.gaap_earnings_per_share, Some(0.76));
-        assert_eq!(both.gaap_earnings_per_share_estimate, Some(0.71));
-        assert_eq!(data.quarters[1].gaap_earnings_per_share, None);
-        assert_eq!(data.quarters[0].earnings_per_share, None);
-        assert_eq!(data.next_quarter.fiscal_period.as_deref(), Some("2025Q4"));
-        assert_eq!(data.next_quarter.earnings_per_share, Some(1.6));
-        assert_eq!(data.next_quarter.gaap_earnings_per_share, Some(1.5));
-        assert_eq!(data.quarter_forecasts.len(), 2);
-        assert_eq!(
-            data.quarter_forecasts[1].fiscal_period.as_deref(),
-            Some("2026Q1")
-        );
-        assert_eq!(data.quarter_forecasts[1].earnings_per_share, Some(1.8));
-        assert_eq!(data.quarter_forecasts[1].gaap_earnings_per_share, None);
-        assert_eq!(data.quarter_forecasts[1].revenue, Some(50_000_000_000.0));
-    }
-
-    #[test]
-    fn recognizes_forecasts_with_only_standard_eps_estimates() {
-        let html = r#"<script id="route-init-data">{
-            "earningsData": [{"fiscalPeriod":"2025Q4","epsEstimate":1.6}]
-        }</script>"#;
-        let data = parse_fundamentals(&TickerSymbol::parse("TEST").unwrap(), html).unwrap();
-        assert_eq!(data.next_quarter.fiscal_period.as_deref(), Some("2025Q4"));
-        assert_eq!(data.next_quarter.earnings_per_share, Some(1.6));
-        assert_eq!(data.next_quarter.gaap_earnings_per_share, None);
-        assert_eq!(data.quarter_forecasts.len(), 1);
-    }
-
-    #[test]
-    fn forecasts_are_the_first_two_unreported_periods_after_the_latest_report() {
-        let periods = [
-            earnings_period("2025Q4", None, Some(0.4)),
-            earnings_period("2026Q2", Some(0.5), Some(0.45)),
-            earnings_period("2026Q4", None, Some(0.7)),
-            earnings_period("2027Q1", None, Some(0.8)),
-            earnings_period("2026Q3", None, Some(0.6)),
-        ];
-
-        let forecasts = next_forecast_periods(&periods, Some("2026Q2"));
-        assert_eq!(
-            forecasts
-                .iter()
-                .map(|period| period.fiscal_period.as_str())
-                .collect::<Vec<_>>(),
-            ["2026Q3", "2026Q4"]
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "calls live Finviz endpoints"]
-    async fn live_fetches_industries_membership_and_ticker_industry() -> anyhow::Result<()> {
-        let config = Config::load("config.toml")?;
-        let client = FinvizClient::new(&config.finviz, &config.providers)?;
-
-        let industries = client.industries().await?;
-        println!("Fetched {} industries", industries.len());
-        let semiconductors = industries
-            .iter()
-            .find(|industry| industry.industry.key == "semiconductors")
-            .context("live Finviz industries did not include semiconductors")?;
-        println!("Semiconductors performance: {semiconductors:?}");
-        assert_eq!(semiconductors.industry.name, "Semiconductors");
-
-        let tickers = client
-            .industry_tickers(&semiconductors.industry.key)
-            .await?;
-        println!(
-            "Fetched {} filtered semiconductor tickers: {:?}",
-            tickers.len(),
-            tickers.iter().take(10).collect::<Vec<_>>()
-        );
-        let ticker = tickers
-            .first()
-            .context("live Finviz semiconductor membership was empty")?;
-
-        let ticker_industry = client.ticker_industry(ticker).await?;
-        println!("{ticker} maps to industry: {ticker_industry:?}");
-        assert_eq!(ticker_industry, semiconductors.industry);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "calls live Finviz endpoints"]
-    async fn live_inspects_annual_fundamentals() -> anyhow::Result<()> {
-        let config = Config::load("config.toml")?;
-        let client = FinvizClient::new(&config.finviz, &config.providers)?;
-        let mut url = client.stock_url.clone();
-        url.query_pairs_mut()
-            .append_pair("t", "AAPL")
-            .append_pair("ty", "ea")
-            .append_pair("p", "d")
-            .append_pair("b", "1");
-        let html = client.get(url).await?;
-        let document = Html::parse_document(&html);
-        let route = document
-            .select(&selector("script#route-init-data")?)
-            .next()
-            .map(text)
-            .context("Finviz earnings route data was not found")?;
-        let data: serde_json::Value = serde_json::from_str(&route)?;
-        let annual = data["earningsAnnualData"]
-            .as_array()
-            .context("missing annual earnings data")?;
-        anyhow::ensure!(!annual.is_empty(), "annual earnings data is empty");
-        let periods: Vec<EarningsPeriod> =
-            serde_json::from_value(data["earningsAnnualData"].clone())?;
-        for period in &periods {
-            anyhow::ensure!(
-                period.fiscal_period.ends_with("FY"),
-                "unexpected annual period"
-            );
-            println!(
-                "{} eps={:?} eps_est={:?} revenue={:?} revenue_est={:?}",
-                period.fiscal_period,
-                period.eps_reported_actual,
-                period.eps_reported_estimate,
-                period.sales_actual.map(millions),
-                period.sales_estimate.map(millions),
-            );
-        }
-        assert!(periods.iter().any(|period| {
-            period.eps_reported_actual.is_some() && period.sales_actual.is_some()
-        }));
-        assert!(periods.iter().any(|period| {
-            period.eps_reported_estimate.is_some() && period.sales_estimate.is_some()
-        }));
-        // Annual data arrives alongside the quarterly data used by production.
-        let quarterly = parse_fundamentals(&TickerSymbol::parse("AAPL")?, &html)?;
-        assert!(!quarterly.quarters.is_empty());
-        assert_eq!(quarterly.annual.as_ref().map(Vec::len), Some(periods.len()));
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "calls live Finviz endpoints"]
-    async fn live_validates_two_quarter_forecasts() -> anyhow::Result<()> {
-        let config = Config::load("config.toml")?;
-        let client = FinvizClient::new(&config.finviz, &config.providers)?;
-        for symbol in ["NVDA", "TSLA", "APPN"] {
-            let mut url = client.stock_url.clone();
-            url.query_pairs_mut()
-                .append_pair("t", symbol)
-                .append_pair("ty", "ea")
-                .append_pair("p", "d")
-                .append_pair("b", "1");
-            let html = client.get(url).await?;
-            let parsed = parse_fundamentals(&TickerSymbol::parse(symbol)?, &html)?;
-            let document = Html::parse_document(&html);
-            let raw: serde_json::Value = serde_json::from_str(&text(
-                document
-                    .select(&selector("script#route-init-data")?)
-                    .next()
-                    .context("missing route data")?,
-            ))?;
-            let raw_quarters = raw["earningsData"].as_array().context("missing quarters")?;
-            let latest = parsed.quarters.first().context("missing actuals")?;
-            let mut expected = raw_quarters
-                .iter()
-                .filter(|period| {
-                    period["fiscalPeriod"]
-                        .as_str()
-                        .is_some_and(|fiscal| fiscal > latest.fiscal_period.as_str())
-                        && ["epsActual", "epsReportedActual", "salesActual"]
-                            .iter()
-                            .all(|field| period[field].is_null())
-                        && ["epsEstimate", "epsReportedEstimate", "salesEstimate"]
-                            .iter()
-                            .any(|field| period[field].is_number())
-                })
-                .collect::<Vec<_>>();
-            expected.sort_by_key(|period| period["fiscalPeriod"].as_str().unwrap());
-            assert_eq!(parsed.quarter_forecasts.len(), expected.len().min(2));
-            assert_eq!(
-                parsed.quarter_forecasts.len(),
-                2,
-                "{symbol} live forecast coverage"
-            );
-            for (forecast, raw) in parsed.quarter_forecasts.iter().zip(expected.iter()) {
-                assert_eq!(
-                    forecast.fiscal_period.as_deref(),
-                    raw["fiscalPeriod"].as_str()
-                );
-                assert_eq!(forecast.earnings_per_share, raw["epsEstimate"].as_f64());
-                assert_eq!(
-                    forecast.gaap_earnings_per_share,
-                    raw["epsReportedEstimate"].as_f64()
-                );
-                assert_eq!(
-                    forecast.revenue,
-                    raw["salesEstimate"]
-                        .as_f64()
-                        .map(|value| value * 1_000_000.0)
-                );
-                println!(
-                    "{symbol} {:?}: EPS={:?} GAAP={:?}; matches raw Finviz data",
-                    forecast.fiscal_period,
-                    forecast.earnings_per_share,
-                    forecast.gaap_earnings_per_share
-                );
-            }
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "calls live Finviz endpoints"]
-    async fn live_fetches_fundamentals() -> anyhow::Result<()> {
-        let config = Config::load("config.toml")?;
-        let client = FinvizClient::new(&config.finviz, &config.providers)?;
-
-        let fundamentals = client
-            .fundamentals(&TickerSymbol::parse("TSLA").unwrap())
-            .await?;
-
-        assert_eq!(fundamentals.symbol, "TSLA");
-        println!("symbol: {}", fundamentals.symbol);
-        for quarter in &fundamentals.quarters {
-            println!(
-                "{} eps={:?} eps_est={:?} revenue={:?} revenue_est={:?}",
-                quarter.fiscal_period,
-                quarter.earnings_per_share,
-                quarter.earnings_per_share_estimate,
-                quarter.revenue,
-                quarter.revenue_estimate
-            );
-        }
-        println!(
-            "forecast period={:?} release_date={:?} eps={:?} revenue={:?}",
-            fundamentals.next_quarter.fiscal_period,
-            fundamentals.next_quarter.earnings_release_date,
-            fundamentals.next_quarter.earnings_per_share,
-            fundamentals.next_quarter.revenue
-        );
-        assert_eq!(fundamentals.quarters.len(), FUNDAMENTAL_QUARTERS);
-        assert!(
-            fundamentals
-                .quarters
-                .iter()
-                .all(|quarter| quarter.earnings_per_share.is_some()
-                    && quarter.earnings_per_share_estimate.is_some()
-                    && quarter.revenue.is_some()
-                    && quarter.revenue_estimate.is_some())
-        );
-        assert!(fundamentals.next_quarter.earnings_per_share.is_some());
-        assert!(fundamentals.next_quarter.revenue.is_some());
-        assert!(
-            fundamentals.next_quarter.fiscal_period.as_deref()
-                > fundamentals
-                    .quarters
-                    .first()
-                    .map(|quarter| quarter.fiscal_period.as_str())
-        );
-
-        Ok(())
-    }
-
-    fn earnings_period(
-        fiscal_period: &str,
-        actual_eps: Option<f64>,
-        estimated_eps: Option<f64>,
-    ) -> EarningsPeriod {
-        EarningsPeriod {
-            fiscal_period: fiscal_period.to_owned(),
-            earnings_date: None,
-            eps_actual: actual_eps,
-            eps_estimate: estimated_eps,
-            eps_reported_actual: actual_eps,
-            eps_reported_estimate: estimated_eps,
-            sales_actual: None,
-            sales_estimate: None,
-        }
-    }
-}
+mod tests;

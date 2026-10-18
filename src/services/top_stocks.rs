@@ -445,7 +445,10 @@ fn normalize_screen_url(value: &str) -> Result<String, TopStocksError> {
             "screen URL must use https://finviz.com".into(),
         ));
     }
-    if !matches!(parsed.path(), "/screener" | "/screener.ashx") {
+    if !matches!(
+        parsed.path(),
+        "/screener" | "/screener.ashx" | "/screener/stocks"
+    ) {
         return Err(TopStocksError::Validation(
             "Finviz screen URL must use the screener path".into(),
         ));
@@ -490,6 +493,14 @@ mod tests {
         assert_eq!(
             normalized,
             "https://finviz.com/screener?v=111&f=sh_price_o5&ft=4"
+        );
+        let normalized = normalize_screen_url(
+            "https://finviz.com/screener/stocks?v=141&f=industry_semiconductors&r=21",
+        )
+        .unwrap();
+        assert_eq!(
+            normalized,
+            "https://finviz.com/screener?v=141&f=industry_semiconductors"
         );
     }
 

@@ -1,0 +1,935 @@
+{
+  "screenerType": "stocks",
+  "filters": {
+    "filters": [
+      {
+        "key": "sec",
+        "options": [
+          {
+            "value": "",
+            "label": "Any"
+          },
+          {
+            "value": "basicmaterials",
+            "label": "Basic Materials"
+          },
+          {
+            "value": "communicationservices",
+            "label": "Communication Services"
+          },
+          {
+            "value": "consumercyclical",
+            "label": "Consumer Cyclical"
+          },
+          {
+            "value": "consumerdefensive",
+            "label": "Consumer Defensive"
+          },
+          {
+            "value": "energy",
+            "label": "Energy"
+          },
+          {
+            "value": "financial",
+            "label": "Financial"
+          },
+          {
+            "value": "healthcare",
+            "label": "Healthcare"
+          },
+          {
+            "value": "industrials",
+            "label": "Industrials"
+          },
+          {
+            "value": "realestate",
+            "label": "Real Estate"
+          },
+          {
+            "value": "technology",
+            "label": "Technology"
+          },
+          {
+            "value": "utilities",
+            "label": "Utilities"
+          },
+          {
+            "value": "modal",
+            "label": "Custom",
+            "isEliteOnly": true
+          }
+        ]
+      },
+      {
+        "key": "industry",
+        "options": [
+          {
+            "value": "",
+            "label": "Any"
+          },
+          {
+            "value": "stocksexshell",
+            "label": "Stocks Only (ex-Shell Companies)",
+            "isExcludedFromSelectAll": true
+          },
+          {
+            "value": "shellcompanies",
+            "label": "Shell Companies"
+          },
+          {
+            "value": "advertisingagencies",
+            "label": "Advertising Agencies",
+            "group": "communicationservices"
+          },
+          {
+            "value": "aerospacedefense",
+            "label": "Aerospace & Defense",
+            "group": "industrials"
+          },
+          {
+            "value": "agriculturalinputs",
+            "label": "Agricultural Inputs",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "airlines",
+            "label": "Airlines",
+            "group": "industrials"
+          },
+          {
+            "value": "airportsairservices",
+            "label": "Airports & Air Services",
+            "group": "industrials"
+          },
+          {
+            "value": "aluminum",
+            "label": "Aluminum",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "apparelmanufacturing",
+            "label": "Apparel Manufacturing",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "apparelretail",
+            "label": "Apparel Retail",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "assetmanagement",
+            "label": "Asset Management",
+            "group": "financial"
+          },
+          {
+            "value": "automanufacturers",
+            "label": "Auto Manufacturers",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "autoparts",
+            "label": "Auto Parts",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "autotruckdealerships",
+            "label": "Auto & Truck Dealerships",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "banksdiversified",
+            "label": "Banks - Diversified",
+            "group": "financial"
+          },
+          {
+            "value": "banksregional",
+            "label": "Banks - Regional",
+            "group": "financial"
+          },
+          {
+            "value": "beveragesbrewers",
+            "label": "Beverages - Brewers",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "beveragesnonalcoholic",
+            "label": "Beverages - Non-Alcoholic",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "beverageswineriesdistilleries",
+            "label": "Beverages - Wineries & Distilleries",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "biotechnology",
+            "label": "Biotechnology",
+            "group": "healthcare"
+          },
+          {
+            "value": "broadcasting",
+            "label": "Broadcasting",
+            "group": "communicationservices"
+          },
+          {
+            "value": "buildingmaterials",
+            "label": "Building Materials",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "buildingproductsequipment",
+            "label": "Building Products & Equipment",
+            "group": "industrials"
+          },
+          {
+            "value": "businessequipmentsupplies",
+            "label": "Business Equipment & Supplies",
+            "group": "industrials"
+          },
+          {
+            "value": "capitalmarkets",
+            "label": "Capital Markets",
+            "group": "financial"
+          },
+          {
+            "value": "chemicals",
+            "label": "Chemicals",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "cokingcoal",
+            "label": "Coking Coal",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "communicationequipment",
+            "label": "Communication Equipment",
+            "group": "technology"
+          },
+          {
+            "value": "computerhardware",
+            "label": "Computer Hardware",
+            "group": "technology"
+          },
+          {
+            "value": "confectioners",
+            "label": "Confectioners",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "conglomerates",
+            "label": "Conglomerates",
+            "group": "industrials"
+          },
+          {
+            "value": "consultingservices",
+            "label": "Consulting Services",
+            "group": "industrials"
+          },
+          {
+            "value": "consumerelectronics",
+            "label": "Consumer Electronics",
+            "group": "technology"
+          },
+          {
+            "value": "copper",
+            "label": "Copper",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "creditservices",
+            "label": "Credit Services",
+            "group": "financial"
+          },
+          {
+            "value": "departmentstores",
+            "label": "Department Stores",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "diagnosticsresearch",
+            "label": "Diagnostics & Research",
+            "group": "healthcare"
+          },
+          {
+            "value": "discountstores",
+            "label": "Discount Stores",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "drugmanufacturersgeneral",
+            "label": "Drug Manufacturers - General",
+            "group": "healthcare"
+          },
+          {
+            "value": "drugmanufacturersspecialtygeneric",
+            "label": "Drug Manufacturers - Specialty & Generic",
+            "group": "healthcare"
+          },
+          {
+            "value": "educationtrainingservices",
+            "label": "Education & Training Services",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "electricalequipmentparts",
+            "label": "Electrical Equipment & Parts",
+            "group": "industrials"
+          },
+          {
+            "value": "electroniccomponents",
+            "label": "Electronic Components",
+            "group": "technology"
+          },
+          {
+            "value": "electronicgamingmultimedia",
+            "label": "Electronic Gaming & Multimedia",
+            "group": "communicationservices"
+          },
+          {
+            "value": "electronicscomputerdistribution",
+            "label": "Electronics & Computer Distribution",
+            "group": "technology"
+          },
+          {
+            "value": "engineeringconstruction",
+            "label": "Engineering & Construction",
+            "group": "industrials"
+          },
+          {
+            "value": "entertainment",
+            "label": "Entertainment",
+            "group": "communicationservices"
+          },
+          {
+            "value": "farmheavyconstructionmachinery",
+            "label": "Farm & Heavy Construction Machinery",
+            "group": "industrials"
+          },
+          {
+            "value": "farmproducts",
+            "label": "Farm Products",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "financialconglomerates",
+            "label": "Financial Conglomerates",
+            "group": "financial"
+          },
+          {
+            "value": "financialdatastockexchanges",
+            "label": "Financial Data & Stock Exchanges",
+            "group": "financial"
+          },
+          {
+            "value": "fooddistribution",
+            "label": "Food Distribution",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "footwearaccessories",
+            "label": "Footwear & Accessories",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "furnishingsfixturesappliances",
+            "label": "Furnishings, Fixtures & Appliances",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "gambling",
+            "label": "Gambling",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "gold",
+            "label": "Gold",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "grocerystores",
+            "label": "Grocery Stores",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "healthcareplans",
+            "label": "Healthcare Plans",
+            "group": "healthcare"
+          },
+          {
+            "value": "healthinformationservices",
+            "label": "Health Information Services",
+            "group": "healthcare"
+          },
+          {
+            "value": "homeimprovementretail",
+            "label": "Home Improvement Retail",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "householdpersonalproducts",
+            "label": "Household & Personal Products",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "industrialdistribution",
+            "label": "Industrial Distribution",
+            "group": "industrials"
+          },
+          {
+            "value": "informationtechnologyservices",
+            "label": "Information Technology Services",
+            "group": "technology"
+          },
+          {
+            "value": "infrastructureoperations",
+            "label": "Infrastructure Operations",
+            "group": "industrials"
+          },
+          {
+            "value": "insurancebrokers",
+            "label": "Insurance Brokers",
+            "group": "financial"
+          },
+          {
+            "value": "insurancediversified",
+            "label": "Insurance - Diversified",
+            "group": "financial"
+          },
+          {
+            "value": "insurancelife",
+            "label": "Insurance - Life",
+            "group": "financial"
+          },
+          {
+            "value": "insurancepropertycasualty",
+            "label": "Insurance - Property & Casualty",
+            "group": "financial"
+          },
+          {
+            "value": "insurancereinsurance",
+            "label": "Insurance - Reinsurance",
+            "group": "financial"
+          },
+          {
+            "value": "insurancespecialty",
+            "label": "Insurance - Specialty",
+            "group": "financial"
+          },
+          {
+            "value": "integratedfreightlogistics",
+            "label": "Integrated Freight & Logistics",
+            "group": "industrials"
+          },
+          {
+            "value": "internetcontentinformation",
+            "label": "Internet Content & Information",
+            "group": "communicationservices"
+          },
+          {
+            "value": "internetretail",
+            "label": "Internet Retail",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "leisure",
+            "label": "Leisure",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "lodging",
+            "label": "Lodging",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "lumberwoodproduction",
+            "label": "Lumber & Wood Production",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "luxurygoods",
+            "label": "Luxury Goods",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "marineshipping",
+            "label": "Marine Shipping",
+            "group": "industrials"
+          },
+          {
+            "value": "medicalcarefacilities",
+            "label": "Medical Care Facilities",
+            "group": "healthcare"
+          },
+          {
+            "value": "medicaldevices",
+            "label": "Medical Devices",
+            "group": "healthcare"
+          },
+          {
+            "value": "medicaldistribution",
+            "label": "Medical Distribution",
+            "group": "healthcare"
+          },
+          {
+            "value": "medicalinstrumentssupplies",
+            "label": "Medical Instruments & Supplies",
+            "group": "healthcare"
+          },
+          {
+            "value": "metalfabrication",
+            "label": "Metal Fabrication",
+            "group": "industrials"
+          },
+          {
+            "value": "mortgagefinance",
+            "label": "Mortgage Finance",
+            "group": "financial"
+          },
+          {
+            "value": "oilgasdrilling",
+            "label": "Oil & Gas Drilling",
+            "group": "energy"
+          },
+          {
+            "value": "oilgasep",
+            "label": "Oil & Gas E&P",
+            "group": "energy"
+          },
+          {
+            "value": "oilgasequipmentservices",
+            "label": "Oil & Gas Equipment & Services",
+            "group": "energy"
+          },
+          {
+            "value": "oilgasintegrated",
+            "label": "Oil & Gas Integrated",
+            "group": "energy"
+          },
+          {
+            "value": "oilgasmidstream",
+            "label": "Oil & Gas Midstream",
+            "group": "energy"
+          },
+          {
+            "value": "oilgasrefiningmarketing",
+            "label": "Oil & Gas Refining & Marketing",
+            "group": "energy"
+          },
+          {
+            "value": "otherindustrialmetalsmining",
+            "label": "Other Industrial Metals & Mining",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "otherpreciousmetalsmining",
+            "label": "Other Precious Metals & Mining",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "packagedfoods",
+            "label": "Packaged Foods",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "packagingcontainers",
+            "label": "Packaging & Containers",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "paperpaperproducts",
+            "label": "Paper & Paper Products",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "personalservices",
+            "label": "Personal Services",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "pharmaceuticalretailers",
+            "label": "Pharmaceutical Retailers",
+            "group": "healthcare"
+          },
+          {
+            "value": "pollutiontreatmentcontrols",
+            "label": "Pollution & Treatment Controls",
+            "group": "industrials"
+          },
+          {
+            "value": "publishing",
+            "label": "Publishing",
+            "group": "communicationservices"
+          },
+          {
+            "value": "railroads",
+            "label": "Railroads",
+            "group": "industrials"
+          },
+          {
+            "value": "realestatedevelopment",
+            "label": "Real Estate - Development",
+            "group": "realestate"
+          },
+          {
+            "value": "realestatediversified",
+            "label": "Real Estate - Diversified",
+            "group": "realestate"
+          },
+          {
+            "value": "realestateservices",
+            "label": "Real Estate Services",
+            "group": "realestate"
+          },
+          {
+            "value": "recreationalvehicles",
+            "label": "Recreational Vehicles",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "reitdiversified",
+            "label": "REIT - Diversified",
+            "group": "realestate"
+          },
+          {
+            "value": "reithealthcarefacilities",
+            "label": "REIT - Healthcare Facilities",
+            "group": "realestate"
+          },
+          {
+            "value": "reithotelmotel",
+            "label": "REIT - Hotel & Motel",
+            "group": "realestate"
+          },
+          {
+            "value": "reitindustrial",
+            "label": "REIT - Industrial",
+            "group": "realestate"
+          },
+          {
+            "value": "reitmortgage",
+            "label": "REIT - Mortgage",
+            "group": "realestate"
+          },
+          {
+            "value": "reitoffice",
+            "label": "REIT - Office",
+            "group": "realestate"
+          },
+          {
+            "value": "reitresidential",
+            "label": "REIT - Residential",
+            "group": "realestate"
+          },
+          {
+            "value": "reitretail",
+            "label": "REIT - Retail",
+            "group": "realestate"
+          },
+          {
+            "value": "reitspecialty",
+            "label": "REIT - Specialty",
+            "group": "realestate"
+          },
+          {
+            "value": "rentalleasingservices",
+            "label": "Rental & Leasing Services",
+            "group": "industrials"
+          },
+          {
+            "value": "residentialconstruction",
+            "label": "Residential Construction",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "resortscasinos",
+            "label": "Resorts & Casinos",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "restaurants",
+            "label": "Restaurants",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "scientifictechnicalinstruments",
+            "label": "Scientific & Technical Instruments",
+            "group": "technology"
+          },
+          {
+            "value": "securityprotectionservices",
+            "label": "Security & Protection Services",
+            "group": "industrials"
+          },
+          {
+            "value": "semiconductorequipmentmaterials",
+            "label": "Semiconductor Equipment & Materials",
+            "group": "technology"
+          },
+          {
+            "value": "semiconductors",
+            "label": "Semiconductors",
+            "group": "technology"
+          },
+          {
+            "value": "silver",
+            "label": "Silver",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "softwareapplication",
+            "label": "Software - Application",
+            "group": "technology"
+          },
+          {
+            "value": "softwareinfrastructure",
+            "label": "Software - Infrastructure",
+            "group": "technology"
+          },
+          {
+            "value": "solar",
+            "label": "Solar",
+            "group": "technology"
+          },
+          {
+            "value": "specialtybusinessservices",
+            "label": "Specialty Business Services",
+            "group": "industrials"
+          },
+          {
+            "value": "specialtychemicals",
+            "label": "Specialty Chemicals",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "specialtyindustrialmachinery",
+            "label": "Specialty Industrial Machinery",
+            "group": "industrials"
+          },
+          {
+            "value": "specialtyretail",
+            "label": "Specialty Retail",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "staffingemploymentservices",
+            "label": "Staffing & Employment Services",
+            "group": "industrials"
+          },
+          {
+            "value": "steel",
+            "label": "Steel",
+            "group": "basicmaterials"
+          },
+          {
+            "value": "telecomservices",
+            "label": "Telecom Services",
+            "group": "communicationservices"
+          },
+          {
+            "value": "textilemanufacturing",
+            "label": "Textile Manufacturing",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "thermalcoal",
+            "label": "Thermal Coal",
+            "group": "energy"
+          },
+          {
+            "value": "tobacco",
+            "label": "Tobacco",
+            "group": "consumerdefensive"
+          },
+          {
+            "value": "toolsaccessories",
+            "label": "Tools & Accessories",
+            "group": "industrials"
+          },
+          {
+            "value": "travelservices",
+            "label": "Travel Services",
+            "group": "consumercyclical"
+          },
+          {
+            "value": "trucking",
+            "label": "Trucking",
+            "group": "industrials"
+          },
+          {
+            "value": "uranium",
+            "label": "Uranium",
+            "group": "energy"
+          },
+          {
+            "value": "utilitiesdiversified",
+            "label": "Utilities - Diversified",
+            "group": "utilities"
+          },
+          {
+            "value": "utilitiesindependentpowerproducers",
+            "label": "Utilities - Independent Power Producers",
+            "group": "utilities"
+          },
+          {
+            "value": "utilitiesregulatedelectric",
+            "label": "Utilities - Regulated Electric",
+            "group": "utilities"
+          },
+          {
+            "value": "utilitiesregulatedgas",
+            "label": "Utilities - Regulated Gas",
+            "group": "utilities"
+          },
+          {
+            "value": "utilitiesregulatedwater",
+            "label": "Utilities - Regulated Water",
+            "group": "utilities"
+          },
+          {
+            "value": "utilitiesrenewable",
+            "label": "Utilities - Renewable",
+            "group": "utilities"
+          },
+          {
+            "value": "wastemanagement",
+            "label": "Waste Management",
+            "group": "industrials"
+          },
+          {
+            "value": "modal",
+            "label": "Custom",
+            "isEliteOnly": true
+          }
+        ]
+      }
+    ]
+  },
+  "data": {
+    "rows": [
+      {
+        "text": {
+          "ticker": "ADI",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "AIP",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "ALAB",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "ALGM",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "ALMU",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "AMBQ",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "AMD",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "AOSL",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "ARM",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "ASX",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "AVGO",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "CBRS",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "CEVA",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "CRDO",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "CRUS",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "DIOD",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "FABC",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "GCTS",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "GFS",
+          "sector": "Technology"
+        }
+      },
+      {
+        "text": {
+          "ticker": "GSIT",
+          "sector": "Technology"
+        }
+      }
+    ],
+    "totalCount": 69,
+    "firstRow": 0,
+    "pageSize": 20
+  }
+}
