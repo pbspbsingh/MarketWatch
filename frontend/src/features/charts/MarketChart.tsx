@@ -76,7 +76,6 @@ import {
   rsSwingColor,
 } from "./relativeStrengthSeries";
 import { chartCompanyNameLabel } from "./chartLabels";
-import { LeftPriceLineLabels } from "./priceLineLabels";
 import { ChartCandleReadout } from "./ChartCandleReadout";
 import { RelativeStrengthSlider } from "./RelativeStrengthSlider";
 import { VolumeRunRateBadge } from "./VolumeRunRateBadge";
@@ -104,21 +103,12 @@ interface MarketChartProps {
   hideMovingAverages?: boolean;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
-  markers?: MarketChartMarker[];
-  priceLines?: MarketChartPriceLine[];
+  dateMarkers?: MarketChartDateMarker[];
 }
 
-export interface MarketChartMarker {
+interface MarketChartDateMarker {
   date: string;
-  kind: "entry" | "exit" | "stop";
   text: string;
-}
-
-export interface MarketChartPriceLine {
-  price: number;
-  title: string;
-  color: string;
-  labelPosition?: "left" | "right";
 }
 
 function watermarkLines(symbol: string, color: string) {
@@ -152,8 +142,7 @@ export function MarketChart({
   hideMovingAverages = false,
   liveDelta,
   sessionDelta,
-  markers = [],
-  priceLines = [],
+  dateMarkers = [],
 }: MarketChartProps) {
   const {
     candlePalette,
@@ -176,9 +165,7 @@ export function MarketChart({
   const relativeStrengthProvisionalOuterRef = useRef<ISeriesApi<"Line">>(null);
   const relativeStrengthProvisionalInnerRef = useRef<ISeriesApi<"Line">>(null);
   const postMarketLineRef = useRef<IPriceLine>(null);
-  const customPriceLinesRef = useRef<IPriceLine[]>([]);
-  const leftPriceLineLabelsRef = useRef<LeftPriceLineLabels>(null);
-  const tradeMarkersRef = useRef<ISeriesMarkersPluginApi<Time>>(null);
+  const dateMarkersRef = useRef<ISeriesMarkersPluginApi<Time>>(null);
   const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
   const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
@@ -284,10 +271,7 @@ export function MarketChart({
       candleSeriesOptions(candlePalette, theme),
     );
     candleSeriesRef.current = candleSeries;
-    const leftPriceLineLabels = new LeftPriceLineLabels();
-    candleSeries.attachPrimitive(leftPriceLineLabels);
-    leftPriceLineLabelsRef.current = leftPriceLineLabels;
-    tradeMarkersRef.current = createSeriesMarkers(candleSeries, []);
+    dateMarkersRef.current = createSeriesMarkers(candleSeries, []);
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
     volumeSeriesRef.current = volumeSeries;
@@ -379,10 +363,8 @@ export function MarketChart({
     relativeStrengthProvisionalInnerRef.current = null;
     relativeStrengthSeriesRef.current = null;
     postMarketLineRef.current = null;
-    customPriceLinesRef.current = [];
-    leftPriceLineLabelsRef.current = null;
-    tradeMarkersRef.current?.detach();
-    tradeMarkersRef.current = null;
+    dateMarkersRef.current?.detach();
+    dateMarkersRef.current = null;
     chartDisposedRef.current = true;
     if (contextReportedRef.current) onChartContextRef.current?.(null);
     contextReportedRef.current = false;
@@ -507,44 +489,18 @@ export function MarketChart({
 
   useEffect(() => {
     const dates = data.candles.map(({ date }) => date);
-    tradeMarkersRef.current?.setMarkers(markers.flatMap((marker) => {
+    dateMarkersRef.current?.setMarkers(dateMarkers.flatMap((marker) => {
       const date = dates.find((candidate) => candidate >= marker.date) ?? dates.at(-1);
       if (date === undefined) return [];
-      const entry = marker.kind === "entry";
-      const exit = marker.kind === "exit";
       return [{
         time: marketDateToChartTime(date),
-        position: entry ? "belowBar" as const : "aboveBar" as const,
-        shape: entry ? "arrowUp" as const : exit ? "arrowDown" as const : "circle" as const,
-        color: entry ? palette.positive : exit ? palette.negative : palette.accent,
+        position: "aboveBar" as const,
+        shape: "arrowDown" as const,
+        color: palette.negative,
         text: marker.text,
       }];
     }));
-  }, [data.candles, markers, palette.accent, palette.negative, palette.positive]);
-
-  useEffect(() => {
-    const candleSeries = candleSeriesRef.current;
-    if (candleSeries === null) return;
-    for (const line of customPriceLinesRef.current) candleSeries.removePriceLine(line);
-    customPriceLinesRef.current = priceLines.map((line) => candleSeries.createPriceLine({
-      price: line.price,
-      title: line.labelPosition === "left" ? "" : line.title,
-      color: line.color,
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: line.labelPosition !== "left",
-      axisLabelColor: line.color,
-      axisLabelTextColor: visualizationColors.axisText,
-    }));
-    leftPriceLineLabelsRef.current?.setLabels(priceLines
-      .filter((line) => line.labelPosition === "left")
-      .map((line) => ({
-        price: line.price,
-        text: `${line.title} $${line.price.toFixed(2)}`,
-        color: line.color,
-        textColor: visualizationColors.axisText,
-      })));
-  }, [priceLines]);
+  }, [data.candles, dateMarkers, palette.negative]);
 
   useEffect(() => {
     const specs = movingAverageSpecs(data.interval);

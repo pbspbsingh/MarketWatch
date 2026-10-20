@@ -23,8 +23,6 @@ import type {
 } from "../../api/marketChartLive";
 import { useRelativeStrengthPeriod } from "../../app/AppSettings";
 import { MarketChart } from "./MarketChart";
-import type { MarketChartMarker } from "./MarketChart";
-import type { MarketChartPriceLine } from "./MarketChart";
 import type {
   ChartSyncTarget,
   ChartViewport,
@@ -81,8 +79,6 @@ interface MarketChartContainerProps {
   onRefreshSettled?: (version: number, succeeded: boolean) => void;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
-  markers?: MarketChartMarker[];
-  priceLines?: MarketChartPriceLine[];
 }
 
 const historyLoadThresholdBars = 25;
@@ -120,8 +116,6 @@ export function MarketChartContainer({
   onRefreshSettled,
   liveDelta,
   sessionDelta,
-  markers,
-  priceLines,
 }: MarketChartContainerProps) {
   const selectedRsPeriod = useRelativeStrengthPeriod(interval);
   const rsPeriod = relativeStrengthComparisonSymbol === undefined ? undefined : selectedRsPeriod;
@@ -431,8 +425,6 @@ export function MarketChartContainer({
           hideMovingAverages={hideMovingAverages}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
-          markers={markers}
-          priceLines={priceLines}
         />
       )}
       {state?.status === "error" ? (

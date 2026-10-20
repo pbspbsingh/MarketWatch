@@ -58,7 +58,7 @@ export function StudyWeeklyChart({
       rightOffsetPixels={10}
       attributionLogo={false}
       onChartContext={onChartContext}
-      markers={markerDate === undefined ? [] : [{ date: markerDate, kind: "exit", text: result.date }]}
+      dateMarkers={markerDate === undefined ? [] : [{ date: markerDate, text: result.date }]}
     />
   );
 }

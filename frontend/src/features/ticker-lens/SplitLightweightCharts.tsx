@@ -12,8 +12,6 @@ import {
   type ChartHistoryInteractionTracker,
   type MarketChartLoadStatus,
 } from "../charts/MarketChartContainer";
-import type { MarketChartMarker } from "../charts/MarketChart";
-import type { MarketChartPriceLine } from "../charts/MarketChart";
 import { SplitPane } from "../../components/SplitPane";
 import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
 import {
@@ -60,8 +58,6 @@ interface SplitLightweightChartsProps {
   bottomLiveDelta?: MarketChartLiveDelta;
   topSessionDelta?: MarketChartSessionDelta;
   bottomSessionDelta?: MarketChartSessionDelta;
-  topMarkers?: MarketChartMarker[];
-  topPriceLines?: MarketChartPriceLine[];
 }
 
 const viewportPersistenceDebounceMs = 200;
@@ -94,8 +90,6 @@ export default function SplitLightweightCharts({
   bottomLiveDelta,
   topSessionDelta,
   bottomSessionDelta,
-  topMarkers,
-  topPriceLines,
 }: SplitLightweightChartsProps) {
   const { syncWeeklyOverlayCrosshair, relativeStrengthDisplay } = useAppSettings();
   const rsPeriod = useRelativeStrengthPeriod(interval === "D" ? "daily" : "weekly");
@@ -318,8 +312,6 @@ export default function SplitLightweightCharts({
               onError={(message) => onError("top", message)}
               liveDelta={topLiveDelta}
               sessionDelta={topSessionDelta}
-              markers={topMarkers}
-              priceLines={topPriceLines}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>

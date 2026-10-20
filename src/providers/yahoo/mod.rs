@@ -33,11 +33,7 @@ pub struct YahooClient {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChartInterval {
-    OneMinute,
     FiveMinutes,
-    FifteenMinutes,
-    ThirtyMinutes,
-    OneHour,
     OneDay,
     OneWeek,
 }
@@ -294,11 +290,7 @@ impl YahooClient {
 impl ChartInterval {
     fn as_str(self) -> &'static str {
         match self {
-            Self::OneMinute => "1m",
             Self::FiveMinutes => "5m",
-            Self::FifteenMinutes => "15m",
-            Self::ThirtyMinutes => "30m",
-            Self::OneHour => "1h",
             Self::OneDay => "1d",
             Self::OneWeek => "1wk",
         }
