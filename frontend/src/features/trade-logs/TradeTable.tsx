@@ -1,10 +1,9 @@
 import { Fragment, useState } from "react";
 import { Button, Chip, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel, Tooltip } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import type { TradeLog, TradeLogTag, TradeLogValuation } from "../../api/tradeLogs";
 import { localDate, money, pnlClass, shares } from "./format";
+import { TradeMonthRow } from "./TradeMonthRow";
 
 type SortColumn = "opened" | "symbol" | "side" | "status" | "return" | "net" | "realized" | "unrealized" | "quantity" | "tags";
 const columns: { key: SortColumn | "entry"; label: string; numeric?: boolean }[] = [
@@ -19,7 +18,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
   selectedId: number | null; loading: boolean; onSelect: (trade: TradeLog) => void; onEdit: (trade: TradeLog) => void;
 }) {
   const [sort, setSort] = useState<{ column: SortColumn; direction: "asc" | "desc" }>({ column: "opened", direction: "desc" });
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
   const rows = trades.map(trade => {
     const open = trade.summary.status === "open";
     const cached = marks.get(trade.id);
@@ -61,11 +60,11 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(row);
   }
-  const toggleMonth = (month: string) => setCollapsed(current => {
-    const next = new Set(current);
-    if (next.has(month)) next.delete(month); else next.add(month);
-    return next;
-  });
+  const latestMonth = [...groups.keys()].reduce((latest, month) => month > latest ? month : latest, "");
+  const isMonthExpanded = (month: string) => expandedMonths[month] ?? month === latestMonth;
+  const toggleMonth = (month: string) => setExpandedMonths(current => ({
+    ...current, [month]: !(current[month] ?? month === latestMonth),
+  }));
   return <TableContainer className="tl-table-container">
     <Table stickyHeader size="small" className="tl-trades-table" aria-label="Trade journal">
       <TableHead><TableRow>
@@ -75,11 +74,8 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
       </TableRow></TableHead>
       <TableBody>
         {[...groups].map(([month, monthRows]) => <Fragment key={month}>
-          {month && <TableRow className="tl-month-row"><TableCell colSpan={columns.length + 1}><button type="button" className="tl-month-toggle" aria-expanded={!collapsed.has(month)} onClick={() => toggleMonth(month)}>
-            {collapsed.has(month) ? <KeyboardArrowRightIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
-            {new Date(`${month}-15T12:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}<span>{monthRows.length} {monthRows.length === 1 ? "trade" : "trades"}</span>
-          </button></TableCell></TableRow>}
-          {(!month || !collapsed.has(month)) && monthRows.map(({ trade, open, mark, net, roi, quantity, tags: names, status }) => {
+          {month && <TradeMonthRow month={month} trades={monthRows.map(row => row.trade)} marks={marks} expanded={isMonthExpanded(month)} onToggle={() => toggleMonth(month)} />}
+          {(!month || isMonthExpanded(month)) && monthRows.map(({ trade, open, mark, net, roi, quantity, tags: names, status }) => {
             const priceInfo = open ? mark?.mark_date ? `Valued at $${mark.mark_price}, daily close on ${mark.mark_date}. Includes recorded fees; future exit fees excluded.` : "Daily valuation unavailable or awaiting a completed close after the last execution." : "Final result after recorded fees.";
             return <TableRow key={trade.id} hover selected={selectedId === trade.id} className="tl-trade-row" onClick={() => onSelect(trade)}>
               <TableCell><Button className="tl-date-link" size="small" aria-label={`View charts for ${trade.symbol} trade ${trade.id}`} aria-expanded={selectedId === trade.id} onClick={event => { event.stopPropagation(); onSelect(trade); }}>{localDate(trade.summary.opened_at)}</Button></TableCell>
