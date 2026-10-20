@@ -68,6 +68,8 @@ struct SwingCandidate {
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 pub enum RelativeStrengthCalculationError {
+    #[error("invalid relative-strength average period")]
+    InvalidPeriod,
     #[error("relative-strength range must be increasing")]
     InvalidRange,
     #[error("ticker and comparison have no overlapping prices")]
@@ -84,6 +86,39 @@ pub fn calculate_relative_strength_line(
     interval: MarketChartInterval,
     range: ChartDateRange,
 ) -> Result<RelativeStrengthCalculation, RelativeStrengthCalculationError> {
+    let period = match interval {
+        MarketChartInterval::Daily => DAILY_LINE_SMOOTHING_PERIOD,
+        MarketChartInterval::Weekly => WEEKLY_LINE_SMOOTHING_PERIOD,
+    };
+    calculate_relative_strength_line_with_period(ticker, comparison, interval, range, period)
+}
+
+/// Chart preferences are request-scoped; screening retains its original defaults.
+pub fn chart_relative_strength_period(
+    interval: MarketChartInterval,
+    requested: Option<usize>,
+) -> Result<usize, RelativeStrengthCalculationError> {
+    let (default, allowed): (usize, &[usize]) = match interval {
+        MarketChartInterval::Daily => (5, &[5, 10, 20, 50, 100]),
+        MarketChartInterval::Weekly => (2, &[1, 2, 4, 10, 20]),
+    };
+    let period = requested.unwrap_or(default);
+    allowed
+        .contains(&period)
+        .then_some(period)
+        .ok_or(RelativeStrengthCalculationError::InvalidPeriod)
+}
+
+pub fn calculate_relative_strength_line_with_period(
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: MarketChartInterval,
+    range: ChartDateRange,
+    moving_average_period: usize,
+) -> Result<RelativeStrengthCalculation, RelativeStrengthCalculationError> {
+    if moving_average_period == 0 || moving_average_period > 100 {
+        return Err(RelativeStrengthCalculationError::InvalidPeriod);
+    }
     validate_range(range)?;
     let complete_ticker = closes_by_period(ticker, interval, None);
     let complete_comparison = closes_by_period(comparison, interval, None);
@@ -118,10 +153,6 @@ pub fn calculate_relative_strength_line(
             )
         })
         .collect::<Vec<_>>();
-    let moving_average_period = match interval {
-        MarketChartInterval::Daily => DAILY_LINE_SMOOTHING_PERIOD,
-        MarketChartInterval::Weekly => WEEKLY_LINE_SMOOTHING_PERIOD,
-    };
     let points = relative_strength_points(&aligned, &normalized, moving_average_period)
         .into_iter()
         .filter(|point| range.contains(point.date))
@@ -368,6 +399,92 @@ fn relative_strength_points(
 mod tests {
     use super::*;
     use chrono::Days;
+
+    #[test]
+    fn chart_period_defaults_and_presets_are_validated() {
+        for (interval, default, presets) in [
+            (MarketChartInterval::Daily, 5, vec![5, 10, 20, 50, 100]),
+            (MarketChartInterval::Weekly, 2, vec![1, 2, 4, 10, 20]),
+        ] {
+            assert_eq!(chart_relative_strength_period(interval, None), Ok(default));
+            for period in presets {
+                assert_eq!(
+                    chart_relative_strength_period(interval, Some(period)),
+                    Ok(period)
+                );
+            }
+            for invalid in [0, 3, 101, usize::MAX] {
+                assert_eq!(
+                    chart_relative_strength_period(interval, Some(invalid)),
+                    Err(RelativeStrengthCalculationError::InvalidPeriod)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_chart_preset_uses_the_selected_sma_and_return_lookback() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let ticker = candles(start, 900, 2.0);
+        let comparison = candles(start, 900, 0.5);
+        for (interval, presets) in [
+            (MarketChartInterval::Daily, vec![5, 10, 20, 50, 100]),
+            (MarketChartInterval::Weekly, vec![1, 2, 4, 10, 20]),
+        ] {
+            let range = range(start, 900);
+            let raw = calculate_relative_strength_line_with_period(
+                &ticker,
+                &comparison,
+                interval,
+                range,
+                1,
+            )
+            .unwrap();
+            let aligned = align_closes(
+                &closes_by_period(&ticker, interval, None),
+                &closes_by_period(&comparison, interval, None),
+            );
+            for period in presets {
+                let line = calculate_relative_strength_line_with_period(
+                    &ticker,
+                    &comparison,
+                    interval,
+                    range,
+                    period,
+                )
+                .unwrap();
+                assert_eq!(line.moving_average_period, period);
+                assert_eq!(line.points.len(), aligned.len() - period);
+                let latest = line.points.last().unwrap();
+                let expected = raw
+                    .points
+                    .iter()
+                    .rev()
+                    .take(period)
+                    .map(|point| point.value)
+                    .sum::<f64>()
+                    / period as f64;
+                assert!((latest.value - expected).abs() < 1e-10);
+                let (_, close, benchmark) = aligned[aligned.len() - 1];
+                let (_, previous, previous_benchmark) = aligned[aligned.len() - 1 - period];
+                let expected_return =
+                    ((close / previous) / (benchmark / previous_benchmark) - 1.0) * 100.0;
+                assert!((latest.relative_return_percent.unwrap() - expected_return).abs() < 1e-10);
+            }
+        }
+        for invalid in [0, 101] {
+            assert_eq!(
+                calculate_relative_strength_line_with_period(
+                    &ticker,
+                    &comparison,
+                    MarketChartInterval::Daily,
+                    range(start, 900),
+                    invalid
+                ),
+                Err(RelativeStrengthCalculationError::InvalidPeriod)
+            );
+        }
+    }
 
     fn candles(start: NaiveDate, count: u64, ratio_step: f64) -> Vec<DailyCandle> {
         (0..count)

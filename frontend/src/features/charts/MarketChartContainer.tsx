@@ -9,6 +9,7 @@ import {
 import { Button, CircularProgress, Typography } from "@mui/material";
 import type { LogicalRange } from "lightweight-charts";
 import {
+  marketDataSymbol,
   fetchMarketChartHistorySnapshot,
   fetchMarketChartSnapshot,
   refreshMarketChartSnapshot,
@@ -20,6 +21,7 @@ import type {
   MarketChartLiveDelta,
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
+import { useRelativeStrengthPeriod } from "../../app/AppSettings";
 import { MarketChart } from "./MarketChart";
 import type { MarketChartMarker } from "./MarketChart";
 import type { MarketChartPriceLine } from "./MarketChart";
@@ -29,6 +31,7 @@ import type {
 } from "../../components/lightweight-chart/chartSync";
 import {
   applyHistoryExpansion,
+  loadedHistoryRange,
   previousHistoryRange,
 } from "./chartHistory";
 import "./market-chart.css";
@@ -120,9 +123,10 @@ export function MarketChartContainer({
   markers,
   priceLines,
 }: MarketChartContainerProps) {
+  const selectedRsPeriod = useRelativeStrengthPeriod(interval);
+  const rsPeriod = relativeStrengthComparisonSymbol === undefined ? undefined : selectedRsPeriod;
   const datasetKey = `${symbol}\0${interval}`;
-  const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}`;
-  const snapshotRequestKeyRef = useRef<string | undefined>(undefined);
+  const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}\0${rsPeriod ?? "plain"}`;
   const generationRef = useRef(0);
   const snapshotRef = useRef<MarketChartSnapshot | undefined>(undefined);
   const snapshotDatasetKeyRef = useRef<string | undefined>(undefined);
@@ -149,9 +153,12 @@ export function MarketChartContainer({
   }, [snapshot]);
 
   useEffect(() => {
-    onRelativeStrengthChange?.(snapshotRequestKeyRef.current === requestKey
+    const comparison = relativeStrengthComparisonSymbol === undefined
+      ? undefined : marketDataSymbol(relativeStrengthComparisonSymbol);
+    onRelativeStrengthChange?.(snapshotDatasetKeyRef.current === datasetKey
+      && snapshot?.relative_strength?.comparison_symbol === comparison
       ? snapshot?.relative_strength ?? null : null);
-  }, [onRelativeStrengthChange, requestKey, snapshot]);
+  }, [datasetKey, onRelativeStrengthChange, relativeStrengthComparisonSymbol, snapshot]);
 
   useEffect(() => {
     onErrorRef.current = onError;
@@ -196,9 +203,12 @@ export function MarketChartContainer({
         status: "ready",
         snapshot: currentSnapshot,
       });
-      setSnapshot((current) => current === undefined
-        ? current
-        : { ...current, relative_strength: null });
+      const comparison = relativeStrengthComparisonSymbol === undefined
+        ? undefined : marketDataSymbol(relativeStrengthComparisonSymbol);
+      if (currentSnapshot.relative_strength?.comparison_symbol !== comparison) {
+        setSnapshot((current) => current === undefined
+          ? current : { ...current, relative_strength: null });
+      }
     } else {
       onLoadStatusChangeRef.current?.("loading");
       setLoadState({ key: datasetKey, status: "loading" });
@@ -208,13 +218,19 @@ export function MarketChartContainer({
     const request = refreshCandles
       ? refreshMarketChartSnapshot
       : fetchMarketChartSnapshot;
-    void request(symbol, interval, {
+    const options = {
       comparisonSymbol: relativeStrengthComparisonSymbol,
+      relativeStrengthPeriod: rsPeriod,
       signal: controller.signal,
-    })
+    };
+    // Recalculate RS across all loaded candles without replacing the price dataset.
+    const range = backgroundReload ? loadedHistoryRange(currentSnapshot) : undefined;
+    const pending = range !== undefined
+      ? fetchMarketChartHistorySnapshot(symbol, interval, range.start, range.end, options)
+      : request(symbol, interval, options);
+    void pending
       .then((snapshot) => {
         if (generationRef.current !== generation) return;
-        snapshotRequestKeyRef.current = requestKey;
         if (backgroundReload) {
           setSnapshot((current) => (
             current === undefined || snapshotDatasetKeyRef.current !== datasetKey
@@ -261,6 +277,7 @@ export function MarketChartContainer({
     interval,
     refreshCandlesVersion,
     relativeStrengthComparisonSymbol,
+    rsPeriod,
     reloadVersion,
     requestKey,
     retryVersion,
@@ -343,6 +360,7 @@ export function MarketChartContainer({
       range.end,
       {
         comparisonSymbol: relativeStrengthComparisonSymbol,
+        relativeStrengthPeriod: rsPeriod,
         signal: controller.signal,
       },
     )
@@ -377,6 +395,7 @@ export function MarketChartContainer({
     historyTrigger,
     interval,
     relativeStrengthComparisonSymbol,
+    rsPeriod,
     requestKey,
     snapshot,
     state?.status,

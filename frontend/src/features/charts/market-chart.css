@@ -43,7 +43,8 @@
   left: 0.5rem;
   display: flex;
   max-width: calc(100% - 5rem);
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.25rem;
   pointer-events: none;
 }
@@ -141,4 +142,11 @@
 
 .market-chart-vrr-high {
   color: color-mix(in srgb, var(--color-positive) 75%, black);
+}
+
+.market-chart-label-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
 }

@@ -40,6 +40,7 @@ export interface StudyRange {
 
 interface FetchStudyOptions {
   refresh?: boolean;
+  relativeStrengthPeriod?: number;
   range?: StudyRange;
   fetchRange?: StudyRange;
   signal?: AbortSignal;
@@ -48,8 +49,10 @@ interface FetchStudyOptions {
 export async function fetchLastStudy(
   interval: MarketChartInterval,
   signal?: AbortSignal,
+  relativeStrengthPeriod?: number,
 ): Promise<StudyResult | null> {
   const query = new URLSearchParams({ interval });
+  if (relativeStrengthPeriod !== undefined) query.set("relative_strength_period", String(relativeStrengthPeriod));
   const response = await fetch(`/api/study/last?${query}`, { signal });
   if (response.status === 204 || response.status === 404) return null;
   if (!response.ok) throw new Error(`Failed to restore Study: HTTP ${response.status}`);
@@ -67,6 +70,7 @@ export async function fetchStudy(
     date,
     interval,
     refresh: options.refresh ?? false,
+    relative_strength_period: options.relativeStrengthPeriod,
     range_start: options.range?.start,
     range_end: options.range?.end,
     fetch_start: options.fetchRange?.start,

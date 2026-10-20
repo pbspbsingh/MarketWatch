@@ -78,6 +78,7 @@ import {
 import { chartCompanyNameLabel } from "./chartLabels";
 import { LeftPriceLineLabels } from "./priceLineLabels";
 import { ChartCandleReadout } from "./ChartCandleReadout";
+import { RelativeStrengthSlider } from "./RelativeStrengthSlider";
 import { VolumeRunRateBadge } from "./VolumeRunRateBadge";
 import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
@@ -202,10 +203,13 @@ export function MarketChart({
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
   const seriesDatasetKeyRef = useRef<string | undefined>(undefined);
-  const liveRelativeStrength = relativeStrengthLive ?? (liveDelta?.symbol === data.symbol
+  const liveRelativeStrengthCandidate = relativeStrengthLive ?? (liveDelta?.symbol === data.symbol
     && liveDelta.interval === data.interval
     ? liveDelta.relative_strength
     : undefined);
+  const liveRelativeStrength = liveRelativeStrengthCandidate?.line.moving_average_period === relativeStrength?.line.moving_average_period
+    && liveRelativeStrengthCandidate?.comparison_symbol === relativeStrength?.comparison_symbol
+    ? liveRelativeStrengthCandidate : undefined;
   const relativeStrengthTrend = liveRelativeStrength?.structure.trend
     ?? relativeStrength?.structure.trend
     ?? "unclear";
@@ -582,7 +586,9 @@ export function MarketChart({
   }, [relativeStrength, relativeStrengthPlacement, updateRelativeStrengthStructure]);
 
   useEffect(() => {
-    if (relativeStrengthPlacement === "hidden") return;
+    if (relativeStrengthPlacement === "hidden"
+      || relativeStrengthLive?.line.moving_average_period !== relativeStrength?.line.moving_average_period
+      || relativeStrengthLive?.comparison_symbol !== relativeStrength?.comparison_symbol) return;
     const point = relativeStrengthLineData(relativeStrengthLive, candlePalette, theme)[0];
     if (point !== undefined && updateLineSeries(relativeStrengthSeriesRef.current, point, data.interval)) {
       updateRelativeStrengthStructure(relativeStrengthLive?.structure);
@@ -644,7 +650,10 @@ export function MarketChart({
     }
 
     const relativePoint = relativeStrengthLineData(
-      relativeStrengthPlacement === "hidden" ? null : liveDelta.relative_strength,
+      relativeStrengthPlacement === "hidden"
+        || liveDelta.relative_strength?.line.moving_average_period !== relativeStrength?.line.moving_average_period
+        || liveDelta.relative_strength?.comparison_symbol !== relativeStrength?.comparison_symbol
+        ? null : liveDelta.relative_strength,
       candlePalette,
       theme,
     )[0];
@@ -654,7 +663,7 @@ export function MarketChart({
         updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
       }
     }
-  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, relativeStrengthPlacement, theme, updateRelativeStrengthStructure]);
+  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, relativeStrength, relativeStrengthPlacement, theme, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -793,41 +802,44 @@ export function MarketChart({
       <div className={showCandleReadout ? "market-chart-header" : undefined}>
         {(companyLabel !== undefined || hasRelativeStrength || volumeRunRate?.state.visible) && (
           <div className="market-chart-labels">
-            {companyLabel !== undefined && (
-              companyNameHref === undefined ? (
-                <div className="market-chart-company-name" title={companyName}>
-                  {companyLabel}
-                </div>
-              ) : (
-                <a
-                  className="market-chart-company-name market-chart-company-link"
-                  href={companyNameHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={companyName}
+            <div className="market-chart-label-row">
+              {companyLabel !== undefined && (
+                companyNameHref === undefined ? (
+                  <div className="market-chart-company-name" title={companyName}>
+                    {companyLabel}
+                  </div>
+                ) : (
+                  <a
+                    className="market-chart-company-name market-chart-company-link"
+                    href={companyNameHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={companyName}
+                  >
+                    <span className="market-chart-company-link-label">{companyLabel}</span>
+                    <OpenInNewIcon fontSize="inherit" />
+                  </a>
+                )
+              )}
+              {hasRelativeStrength && (
+                <button
+                  type="button"
+                  className={showRelativeStrength
+                    ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
+                    : "market-chart-metric-toggle market-chart-metric-hidden"}
+                  aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
+                  aria-pressed={showRelativeStrength}
+                  title={`Relative Strength ${trendLabel}`}
+                  onClick={() => setShowRelativeStrength((visible) => !visible)}
                 >
-                  <span className="market-chart-company-link-label">{companyLabel}</span>
-                  <OpenInNewIcon fontSize="inherit" />
-                </a>
-              )
-            )}
-            {hasRelativeStrength && (
-              <button
-                type="button"
-                className={showRelativeStrength
-                  ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
-                  : "market-chart-metric-toggle market-chart-metric-hidden"}
-                aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
-                aria-pressed={showRelativeStrength}
-                title={`Relative Strength ${trendLabel}`}
-                onClick={() => setShowRelativeStrength((visible) => !visible)}
-              >
-                RS
-              </button>
-            )}
-            {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
-              <VolumeRunRateBadge control={volumeRunRate} />
-            )}
+                  RS
+                </button>
+              )}
+              {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
+                <VolumeRunRateBadge control={volumeRunRate} />
+              )}
+            </div>
+            {hasRelativeStrength && <RelativeStrengthSlider interval={data.interval} />}
           </div>
         )}
         {showCandleReadout && <ChartCandleReadout {...readout} />}

@@ -22,6 +22,7 @@ pub use chart_relative_strength::RelativeStrengthTrend;
 pub(crate) use chart_relative_strength::{
     ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationError,
     analyze_relative_strength_structure, calculate_relative_strength_line,
+    calculate_relative_strength_line_with_period, chart_relative_strength_period,
 };
 pub use daily_notes::DailyNote;
 pub use exchange::Exchange;

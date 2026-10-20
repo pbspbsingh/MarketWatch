@@ -14,6 +14,7 @@ export interface MarketChartLiveRequest {
   symbol: string;
   interval: MarketChartInterval;
   comparison_symbol?: string;
+  relative_strength_period?: number;
 }
 
 export interface MarketChartLiveDelta {

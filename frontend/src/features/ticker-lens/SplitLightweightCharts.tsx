@@ -15,7 +15,7 @@ import {
 import type { MarketChartMarker } from "../charts/MarketChart";
 import type { MarketChartPriceLine } from "../charts/MarketChart";
 import { SplitPane } from "../../components/SplitPane";
-import { useAppSettings } from "../../app/AppSettings";
+import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
 import {
   ChartContextMenu,
   type ChartMenuPosition,
@@ -98,6 +98,7 @@ export default function SplitLightweightCharts({
   topPriceLines,
 }: SplitLightweightChartsProps) {
   const { syncWeeklyOverlayCrosshair, relativeStrengthDisplay } = useAppSettings();
+  const rsPeriod = useRelativeStrengthPeriod(interval === "D" ? "daily" : "weekly");
   const bottomRs = relativeStrengthDisplay === "bottom-line";
   const rsKey = `${marketDataSymbol(topSymbol)}\0${marketDataSymbol(bottomSymbol)}\0${interval}`;
   const [rsState, setRsState] = useState<{ key: string; data: MarketChartRelativeStrength | null }>();
@@ -107,6 +108,7 @@ export default function SplitLightweightCharts({
   const rsData = rsState?.key === rsKey ? rsState.data : null;
   const rsLive = topLiveDelta?.symbol === marketDataSymbol(topSymbol)
     && topLiveDelta.interval === (interval === "D" ? "daily" : "weekly")
+    && topLiveDelta.relative_strength?.line.moving_average_period === rsPeriod
     && topLiveDelta.relative_strength?.comparison_symbol === marketDataSymbol(bottomSymbol) ? topLiveDelta.relative_strength : null;
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);

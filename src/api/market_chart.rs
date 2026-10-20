@@ -3,7 +3,9 @@ use crate::models::chart::{
     MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartRelativeStrength,
     MarketChartSeries, MarketChartSnapshot,
 };
-use crate::models::{TickerSymbol, YahooSymbol};
+use crate::models::{
+    RelativeStrengthCalculationError, TickerSymbol, YahooSymbol, chart_relative_strength_period,
+};
 use crate::providers::YahooError;
 use crate::services::market_chart::MarketChartError;
 use crate::services::market_chart::MarketChartService;
@@ -36,6 +38,7 @@ const LIVE_DELTA_DEBOUNCE: Duration = Duration::from_millis(250);
 struct SnapshotQuery {
     interval: MarketChartInterval,
     comparison_symbol: Option<TickerSymbol>,
+    relative_strength_period: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -44,6 +47,7 @@ struct HistoryQuery {
     start: chrono::NaiveDate,
     end: chrono::NaiveDate,
     comparison_symbol: Option<TickerSymbol>,
+    relative_strength_period: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -63,6 +67,7 @@ struct RawLiveChartRequest {
     symbol: String,
     interval: MarketChartInterval,
     comparison_symbol: Option<String>,
+    relative_strength_period: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -72,6 +77,7 @@ struct LiveChartRequest {
     symbol: TickerSymbol,
     interval: MarketChartInterval,
     comparison_symbol: Option<TickerSymbol>,
+    relative_strength_period: usize,
 }
 
 #[derive(Serialize)]
@@ -244,6 +250,7 @@ async fn handle_live_chart_socket(
                         &chart.symbol,
                         chart.interval,
                         chart.comparison_symbol.as_ref(),
+                        chart.relative_strength_period,
                     ).await {
                         Ok(snapshot) => {
                             let Some(delta) = snapshot_delta(chart, snapshot) else { continue };
@@ -404,12 +411,15 @@ fn normalize_live_charts(
             .map_err(|error| error.to_string())?;
         symbols.push(YahooSymbol::from(&symbol));
         symbols.extend(comparison_symbol.iter().map(YahooSymbol::from));
+        let period = chart_relative_strength_period(chart.interval, chart.relative_strength_period)
+            .map_err(|error| error.to_string())?;
         normalized_charts.push(LiveChartRequest {
             volume_run_rate: chart.volume_run_rate,
             chart_id: chart.chart_id,
             symbol,
             interval: chart.interval,
             comparison_symbol,
+            relative_strength_period: period,
         });
     }
     symbols.sort_unstable();
@@ -559,10 +569,12 @@ async fn snapshot(
     Path(symbol): Path<TickerSymbol>,
     Query(query): Query<SnapshotQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
+    let period = chart_relative_strength_period(query.interval, query.relative_strength_period)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .snapshot(&symbol, query.interval, comparison_symbol.as_ref())
+        .snapshot(&symbol, query.interval, comparison_symbol.as_ref(), period)
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -573,10 +585,12 @@ async fn refresh_snapshot(
     Path(symbol): Path<TickerSymbol>,
     Query(query): Query<SnapshotQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
+    let period = chart_relative_strength_period(query.interval, query.relative_strength_period)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
-        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_ref())
+        .refresh_snapshot(&symbol, query.interval, comparison_symbol.as_ref(), period)
         .await
         .map(Json)
         .map_err(|error| map_error(&symbol, error))
@@ -587,6 +601,8 @@ async fn history_snapshot(
     Path(symbol): Path<TickerSymbol>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<MarketChartSnapshot>, (StatusCode, String)> {
+    let period = chart_relative_strength_period(query.interval, query.relative_strength_period)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let comparison_symbol = query.comparison_symbol;
     state
         .market_chart
@@ -596,6 +612,7 @@ async fn history_snapshot(
             query.start,
             query.end,
             comparison_symbol.as_ref(),
+            period,
         )
         .await
         .map(Json)
@@ -604,6 +621,9 @@ async fn history_snapshot(
 
 fn map_error(symbol: &TickerSymbol, error: MarketChartError) -> (StatusCode, String) {
     let status = match &error {
+        MarketChartError::RelativeStrength(RelativeStrengthCalculationError::InvalidPeriod) => {
+            StatusCode::BAD_REQUEST
+        }
         MarketChartError::InvalidRange => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::InvalidRange) => StatusCode::BAD_REQUEST,
         MarketChartError::Data(YahooServiceError::Provider(YahooError::NotFound { .. })) => {
@@ -628,6 +648,28 @@ mod tests {
     use chrono::Utc;
 
     #[test]
+    fn live_chart_period_matches_the_interval_and_defaults() {
+        for (interval, default, valid, invalid) in [("daily", 5, 100, 1), ("weekly", 2, 20, 5)] {
+            for requested in [None, Some(valid), Some(invalid)] {
+                let request = serde_json::from_value(serde_json::json!({
+                    "chart_id": "top", "symbol": "AAPL", "comparison_symbol": "SPY",
+                    "interval": interval, "relative_strength_period": requested,
+                }))
+                .unwrap();
+                let result = normalize_live_charts(vec![request]);
+                if requested == Some(invalid) {
+                    assert!(result.is_err());
+                } else {
+                    assert_eq!(
+                        result.unwrap().0[0].relative_strength_period,
+                        requested.unwrap_or(default)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn normalizes_and_bounds_live_chart_configuration() {
         let request =
             |chart_id: &str, symbol: &str, comparison_symbol: Option<&str>| RawLiveChartRequest {
@@ -636,6 +678,7 @@ mod tests {
                 symbol: symbol.to_owned(),
                 interval: MarketChartInterval::Daily,
                 comparison_symbol: comparison_symbol.map(str::to_owned),
+                relative_strength_period: None,
             };
         let (charts, symbols) = normalize_live_charts(vec![
             request("top", " aapl ", Some("qqq")),
@@ -710,6 +753,7 @@ mod tests {
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
+            relative_strength_period: 5,
         };
 
         let delta = snapshot_delta(&chart, snapshot).unwrap();
@@ -734,6 +778,7 @@ mod tests {
             symbol: TickerSymbol::parse("AAPL").unwrap(),
             interval: MarketChartInterval::Daily,
             comparison_symbol: None,
+            relative_strength_period: 5,
         };
         let update = YahooLiveUpdate::PreMarket(YahooLiveCandle {
             symbol: YahooSymbol::parse("AAPL").unwrap(),

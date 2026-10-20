@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useRelativeStrengthPeriod } from "../app/AppSettings";
 import { marketDataSymbol } from "../api/marketChart";
 import {
   MarketChartLiveClient,
@@ -52,6 +53,7 @@ export function useSplitChartLive(
   const topSymbol = selection?.topSymbol;
   const bottomSymbol = selection?.bottomSymbol;
   const interval = selection?.interval;
+  const rsPeriod = useRelativeStrengthPeriod(interval === "W" ? "weekly" : "daily");
   const { control: volumeRunRate, receive: receiveVolumeRunRate } = useVolumeRunRate(topSymbol);
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export function useSplitChartLive(
         },
         onDelta: (delta) => {
           const comparison = delta.relative_strength?.comparison_symbol ?? "plain";
-          const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}`, delta };
+          const state = { key: `${delta.symbol}\0${delta.interval}\0${comparison}\0${delta.relative_strength?.line.moving_average_period ?? "plain"}`, delta };
           if (delta.chart_id === "top") {
             setTopLive(state);
             setTopSession((current) => sessionAfterRegularUpdate(current, delta));
@@ -103,6 +105,7 @@ export function useSplitChartLive(
         symbol: topSymbol,
         interval: chartInterval,
         comparison_symbol: bottomSymbol,
+        relative_strength_period: rsPeriod,
       },
       {
         chart_id: "bottom",
@@ -110,7 +113,7 @@ export function useSplitChartLive(
         interval: chartInterval,
       },
     ]);
-  }, [bottomSymbol, interval, topSymbol, receiveVolumeRunRate]);
+  }, [bottomSymbol, interval, topSymbol, receiveVolumeRunRate, rsPeriod]);
 
   useEffect(() => () => {
     window.clearTimeout(idleTimerRef.current);
@@ -127,8 +130,8 @@ export function useSplitChartLive(
     };
   }
   const chartInterval = interval === "D" ? "daily" : "weekly";
-  const liveTopKey = `${marketDataSymbol(topSymbol)}\0${chartInterval}\0${marketDataSymbol(bottomSymbol)}`;
-  const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain`;
+  const liveTopKey = `${marketDataSymbol(topSymbol)}\0${chartInterval}\0${marketDataSymbol(bottomSymbol)}\0${rsPeriod}`;
+  const liveBottomKey = `${marketDataSymbol(bottomSymbol)}\0${chartInterval}\0plain\0plain`;
   return {
     volumeRunRate,
     topLiveDelta: topLive?.key === liveTopKey ? topLive.delta : undefined,

@@ -1,3 +1,4 @@
+import { RelativeStrengthSlider } from "../charts/RelativeStrengthSlider";
 import {
   useCallback,
   useEffect,
@@ -736,6 +737,7 @@ export function StudyCharts({
         first={(
           <ChartContainer
             containerRef={topRef}
+            interval={result.interval}
             companyName={result.series[0].company_name ?? undefined}
             readout={(
               <ChartCandleReadoutForDate
@@ -755,6 +757,7 @@ export function StudyCharts({
         second={(
           <ChartContainer
             containerRef={bottomRef}
+            interval={result.interval}
             companyName={result.series[1]?.company_name ?? undefined}
             readout={result.series[1] !== undefined && (
               <ChartCandleReadoutForDate series={result.series[1]} date={hoveredDate} />
@@ -858,6 +861,7 @@ function addRelativeStrength(
 }
 
 function ChartContainer({
+  interval,
   containerRef,
   companyName,
   readout,
@@ -869,6 +873,7 @@ function ChartContainer({
   onWheel,
   onContextMenu,
 }: {
+  interval: StudyResult["interval"];
   containerRef: React.RefObject<HTMLDivElement | null>;
   companyName?: string;
   readout?: ReactNode;
@@ -896,23 +901,26 @@ function ChartContainer({
       <div className="study-chart-header">
         {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
           <div className="study-chart-labels">
-            {companyLabel !== undefined && (
-              <div className="study-chart-company-name" title={companyName}>
-                {companyLabel}
-              </div>
-            )}
-            {showRelativeStrength !== undefined && (
-              <button
-                type="button"
-                className="study-chart-rs-toggle"
-                aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
-                aria-pressed={showRelativeStrength}
-                title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
-                onClick={onToggleRelativeStrength}
-              >
-                RS
-              </button>
-            )}
+            <div className="study-chart-label-row">
+              {companyLabel !== undefined && (
+                <div className="study-chart-company-name" title={companyName}>
+                  {companyLabel}
+                </div>
+              )}
+              {showRelativeStrength !== undefined && (
+                <button
+                  type="button"
+                  className="study-chart-rs-toggle"
+                  aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
+                  aria-pressed={showRelativeStrength}
+                  title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
+                  onClick={onToggleRelativeStrength}
+                >
+                  RS
+                </button>
+              )}
+            </div>
+            {showRelativeStrength !== undefined && <RelativeStrengthSlider interval={interval} />}
           </div>
         )}
         {readout}

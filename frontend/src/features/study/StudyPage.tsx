@@ -42,7 +42,7 @@ import { StudyCharts } from "./StudyCharts";
 import { StudyWeeklyChart } from "./StudyWeeklyChart";
 import { WeeklyChartOverlayFrame } from "../ticker-lens/WeeklyChartOverlay";
 import { isArrowKeyControl } from "../ticker-lens/utils";
-import { useAppSettings } from "../../app/AppSettings";
+import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
 import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import { shiftYears } from "./studyDates";
 import "./study.css";
@@ -56,6 +56,7 @@ const studyIntervalKey = "market-watch.study-interval";
 export function StudyPage() {
   const {
     logarithmicScale,
+    relativeStrengthPeriods,
     setLogarithmicScale,
     showWeeklyChartOverlay,
     showWeeklyOverlayAxes,
@@ -72,6 +73,8 @@ export function StudyPage() {
     () => localStorage.getItem(studyIntervalKey) === "weekly" ? "weekly" : "daily",
   );
   const initialIntervalRef = useRef(interval);
+  const rsPeriod = useRelativeStrengthPeriod(interval);
+  const initialRsPeriodRef = useRef(rsPeriod);
   const [result, setResult] = useState<StudyResult>();
   const [datasetVersion, setDatasetVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -116,9 +119,10 @@ export function StudyPage() {
     fetchLastStudy(
       initialIntervalRef.current,
       controller.signal,
+      initialRsPeriodRef.current,
     )
       .then((last) => {
-        if (last === null) return;
+        if (last === null || controller.signal.aborted) return;
         resultRef.current = last;
         setResult(last);
         setDate(last.date);
@@ -143,6 +147,41 @@ export function StudyPage() {
     historyRequestRef.current?.abort();
   }, []);
 
+  useEffect(() => {
+    const current = result;
+    if (current === undefined || current.interval !== interval
+      || current.relative_strength === null
+      || current.relative_strength.line.moving_average_period === rsPeriod) return;
+    requestRef.current?.abort();
+    historyRequestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    void fetchStudy(
+      [current.series[0].symbol, current.series[1].symbol], current.date, current.interval,
+      {
+        range: { start: current.range_start, end: current.range_end },
+        relativeStrengthPeriod: rsPeriod,
+        signal: controller.signal,
+      },
+    ).then((next) => {
+      if (controller.signal.aborted || resultRef.current !== current) return;
+      const updated = { ...current, relative_strength: next.relative_strength };
+      resultRef.current = updated;
+      setResult(updated);
+    }).catch((loadError: unknown) => {
+      if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : "Unable to update RS average");
+    }).finally(() => {
+      if (!controller.signal.aborted && requestRef.current === controller) {
+        setLoading(false);
+        setHistoryLoading(false);
+      }
+    });
+    return () => {
+      controller.abort();
+      if (requestRef.current === controller) requestRef.current = undefined;
+    };
+  }, [interval, result, rsPeriod]);
+
   const load = async (refresh: boolean) => {
     const validationError = validateInputs(symbolA, symbolB, date);
     if (validationError !== undefined) {
@@ -162,8 +201,9 @@ export function StudyPage() {
         [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
         date,
         interval,
-        { refresh, signal: controller.signal },
+        { refresh, relativeStrengthPeriod: relativeStrengthPeriods[interval], signal: controller.signal },
       );
+      if (controller.signal.aborted) return;
       resultRef.current = next;
       setResult(next);
       setDatasetVersion((version) => version + 1);
@@ -202,6 +242,7 @@ export function StudyPage() {
         current.interval,
         {
           range,
+          relativeStrengthPeriod: relativeStrengthPeriods[current.interval],
           fetchRange,
           signal: controller.signal,
         },
@@ -253,6 +294,7 @@ export function StudyPage() {
         current.date,
         nextInterval,
         {
+          relativeStrengthPeriod: relativeStrengthPeriods[nextInterval],
           range: { start: current.range_start, end: current.range_end },
           signal: controller.signal,
         },

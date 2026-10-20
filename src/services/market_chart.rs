@@ -8,7 +8,7 @@ use crate::models::chart::{
 };
 use crate::models::{
     ChartDateRange, RelativeStrengthCalculationError, analyze_relative_strength_structure,
-    calculate_relative_strength_line,
+    calculate_relative_strength_line_with_period,
 };
 use crate::models::{DailyCandle, TickerSymbol, YahooSymbol};
 use crate::services::volume_run_rate::{VolumeRunRate, VolumeRunRateService};
@@ -30,6 +30,7 @@ pub struct MarketChartService {
 
 struct RelativeStrengthSource {
     comparison_symbol: TickerSymbol,
+    period: usize,
     persisted: Vec<DailyCandle>,
     ephemeral: Vec<DailyCandle>,
 }
@@ -93,13 +94,20 @@ impl MarketChartService {
         symbol: &TickerSymbol,
         interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
+        relative_strength_period: usize,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
             self.candles_for_interval(symbol, interval).await?,
             self.live_candles(symbol).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, interval, comparison_symbol)
+            .relative_strength_source(
+                symbol,
+                &candles,
+                interval,
+                comparison_symbol,
+                relative_strength_period,
+            )
             .await?;
         build_expanded_snapshot(
             symbol.clone(),
@@ -117,13 +125,20 @@ impl MarketChartService {
         symbol: &TickerSymbol,
         interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
+        relative_strength_period: usize,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         let candles = merge_live_candles(
             self.refresh_candles_for_interval(symbol, interval).await?,
             self.live_candles(symbol).await,
         )?;
         let relative_strength = self
-            .relative_strength_source(symbol, &candles, interval, comparison_symbol)
+            .relative_strength_source(
+                symbol,
+                &candles,
+                interval,
+                comparison_symbol,
+                relative_strength_period,
+            )
             .await?;
         build_expanded_snapshot(
             symbol.clone(),
@@ -142,6 +157,7 @@ impl MarketChartService {
         candles: &[DailyCandle],
         interval: MarketChartInterval,
         comparison_symbol: Option<&TickerSymbol>,
+        relative_strength_period: usize,
     ) -> Result<Option<RelativeStrengthSource>, MarketChartError> {
         let Some(comparison_symbol) = comparison_symbol else {
             return Ok(None);
@@ -157,6 +173,7 @@ impl MarketChartService {
         };
         Ok(Some(RelativeStrengthSource {
             comparison_symbol: comparison_symbol.clone(),
+            period: relative_strength_period,
             persisted: comparison,
             ephemeral: Vec::new(),
         }))
@@ -223,6 +240,7 @@ impl MarketChartService {
         start: chrono::NaiveDate,
         end: chrono::NaiveDate,
         comparison_symbol: Option<&TickerSymbol>,
+        relative_strength_period: usize,
     ) -> Result<MarketChartSnapshot, MarketChartError> {
         validate_history_range(start, end)?;
         self.yahoo.daily_candles_for_year(symbol).await?;
@@ -244,6 +262,7 @@ impl MarketChartService {
             };
             Some(RelativeStrengthSource {
                 comparison_symbol: comparison_symbol.clone(),
+                period: relative_strength_period,
                 persisted: comparison,
                 ephemeral: Vec::new(),
             })
@@ -321,7 +340,13 @@ fn build_expanded_snapshot(
     let daily = merge_daily_candles(persisted, ephemeral)?;
     let relative_strength = if let Some(source) = relative_strength {
         let comparison = merge_daily_candles(source.persisted, source.ephemeral)?;
-        build_relative_strength(&daily, &comparison, interval, source.comparison_symbol)?
+        build_relative_strength(
+            &daily,
+            &comparison,
+            interval,
+            source.comparison_symbol,
+            source.period,
+        )?
     } else {
         None
     };
@@ -341,6 +366,7 @@ fn build_relative_strength(
     comparison: &[DailyCandle],
     interval: MarketChartInterval,
     comparison_symbol: TickerSymbol,
+    period: usize,
 ) -> Result<Option<MarketChartRelativeStrength>, RelativeStrengthCalculationError> {
     let Some((start, end)) = ticker.first().zip(ticker.last()).and_then(|(first, last)| {
         last.market_date
@@ -350,7 +376,8 @@ fn build_relative_strength(
         return Ok(None);
     };
     let range = ChartDateRange { start, end };
-    let line = calculate_relative_strength_line(ticker, comparison, interval, range)?;
+    let line =
+        calculate_relative_strength_line_with_period(ticker, comparison, interval, range, period)?;
     let structure = analyze_relative_strength_structure(&line.points);
     Ok(Some(MarketChartRelativeStrength {
         comparison_symbol,
@@ -435,6 +462,7 @@ mod tests {
     fn relative_strength_source(candles: Vec<DailyCandle>) -> RelativeStrengthSource {
         RelativeStrengthSource {
             comparison_symbol: symbol("SPY"),
+            period: 5,
             persisted: candles,
             ephemeral: Vec::new(),
         }
@@ -723,6 +751,7 @@ mod tests {
                 all.clone(),
                 Some(RelativeStrengthSource {
                     comparison_symbol: symbol("SPY"),
+                    period: 5,
                     persisted: recent_comparison.clone(),
                     ephemeral: comparison.clone(),
                 }),

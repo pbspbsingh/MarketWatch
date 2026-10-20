@@ -7,7 +7,7 @@ use crate::models::chart::{
 };
 use crate::models::{
     ChartDateRange, DailyCandle, RelativeStrengthCalculationError, TickerSymbol, YahooSymbol,
-    analyze_relative_strength_structure, calculate_relative_strength_line,
+    analyze_relative_strength_structure, calculate_relative_strength_line_with_period,
 };
 use crate::providers::{ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::services::yahoo::YahooService;
@@ -68,6 +68,7 @@ pub struct StudyResult {
 
 #[derive(Clone, Copy, Debug)]
 pub struct StudyLoadOptions {
+    pub relative_strength_period: usize,
     pub interval: MarketChartInterval,
     pub range_start: Option<NaiveDate>,
     pub range_end: Option<NaiveDate>,
@@ -140,6 +141,7 @@ impl StudyService {
     pub async fn last(
         &self,
         interval: MarketChartInterval,
+        relative_strength_period: usize,
     ) -> Result<Option<StudyResult>, StudyError> {
         let _load_guard = self.load_lock.lock().await;
         let dataset = self
@@ -153,6 +155,7 @@ impl StudyService {
         build_study_result(
             &dataset,
             interval,
+            relative_strength_period,
             &self.market_repositioning_dates,
             self.indicator_periods,
         )
@@ -166,6 +169,7 @@ impl StudyService {
         options: StudyLoadOptions,
     ) -> Result<StudyResult, StudyError> {
         let StudyLoadOptions {
+            relative_strength_period,
             interval,
             range_start,
             range_end,
@@ -202,6 +206,7 @@ impl StudyService {
             let result = build_study_result(
                 &previous.expect("checked cached Study dataset"),
                 interval,
+                relative_strength_period,
                 &self.market_repositioning_dates,
                 self.indicator_periods,
             )?;
@@ -226,6 +231,7 @@ impl StudyService {
             let result = build_study_result(
                 dataset,
                 interval,
+                relative_strength_period,
                 &self.market_repositioning_dates,
                 self.indicator_periods,
             )?;
@@ -323,6 +329,7 @@ impl StudyService {
         let result = build_study_result(
             &dataset,
             interval,
+            relative_strength_period,
             &self.market_repositioning_dates,
             self.indicator_periods,
         )?;
@@ -337,6 +344,7 @@ impl StudyService {
 fn build_study_result(
     dataset: &StudyDataset,
     interval: MarketChartInterval,
+    relative_strength_period: usize,
     market_repositioning_dates: &HashSet<NaiveDate>,
     indicator_periods: ChartIndicatorPeriods,
 ) -> Result<StudyResult, StudyError> {
@@ -393,7 +401,8 @@ fn build_study_result(
             })
         })
         .collect::<Result<Vec<_>, StudyError>>()?;
-    let relative_strength = study_relative_strength(&series[0], &series[1], interval)?;
+    let relative_strength =
+        study_relative_strength(&series[0], &series[1], interval, relative_strength_period)?;
     Ok(StudyResult {
         date: dataset.date,
         interval,
@@ -567,6 +576,7 @@ fn study_relative_strength(
     ticker: &StudySeries,
     comparison: &StudySeries,
     interval: MarketChartInterval,
+    period: usize,
 ) -> Result<Option<MarketChartRelativeStrength>, RelativeStrengthCalculationError> {
     let Some((first, last)) = ticker.candles.first().zip(ticker.candles.last()) else {
         return Ok(None);
@@ -576,7 +586,7 @@ fn study_relative_strength(
     };
     let ticker_candles = daily_candles(&ticker.candles);
     let comparison_candles = daily_candles(&comparison.candles);
-    let line = calculate_relative_strength_line(
+    let line = calculate_relative_strength_line_with_period(
         &ticker_candles,
         &comparison_candles,
         interval,
@@ -584,6 +594,7 @@ fn study_relative_strength(
             start: first.date,
             end,
         },
+        period,
     )?;
     let structure = analyze_relative_strength_structure(&line.points);
     Ok(Some(MarketChartRelativeStrength {
@@ -813,6 +824,7 @@ mod tests {
         let daily = build_study_result(
             &dataset,
             MarketChartInterval::Daily,
+            5,
             &repositioning_dates,
             ChartIndicatorPeriods {
                 adr_sessions: 20,
@@ -823,6 +835,7 @@ mod tests {
         let weekly = build_study_result(
             &dataset,
             MarketChartInterval::Weekly,
+            2,
             &repositioning_dates,
             ChartIndicatorPeriods {
                 adr_sessions: 20,
@@ -889,7 +902,7 @@ mod tests {
         let comparison = series("QQQ", 1.0);
 
         let relative_strength =
-            study_relative_strength(&ticker, &comparison, MarketChartInterval::Daily)
+            study_relative_strength(&ticker, &comparison, MarketChartInterval::Daily, 5)
                 .unwrap()
                 .unwrap();
 

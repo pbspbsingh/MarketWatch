@@ -1,12 +1,15 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 import { CssBaseline, ThemeProvider } from "@mui/material";
+import type { MarketChartInterval } from "../api/marketChart";
+import { defaultRelativeStrengthPeriods, validRelativeStrengthPeriod } from "./relativeStrengthSettings";
 import {
   applyThemeToDocument,
   createAppTheme,
@@ -39,6 +42,7 @@ type StoredSettings = {
   gridOpacity: number;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
   relativeStrengthDisplay: RelativeStrengthDisplay;
+  relativeStrengthPeriods: Record<MarketChartInterval, number>;
 };
 
 type AppSettingsValue = StoredSettings & {
@@ -54,6 +58,7 @@ type AppSettingsValue = StoredSettings & {
   setGridOpacity: (opacity: number) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
   setRelativeStrengthDisplay: (display: RelativeStrengthDisplay) => void;
+  setRelativeStrengthPeriod: (interval: MarketChartInterval, period: number) => void;
 };
 
 const AppSettingsContext = createContext<AppSettingsValue | undefined>(undefined);
@@ -62,6 +67,8 @@ function readSettings(): StoredSettings {
   try {
     const value = JSON.parse(localStorage.getItem(settingsKey) ?? "{}") as Partial<Omit<StoredSettings, "relativeStrengthDisplay">> & { relativeStrengthDisplay?: unknown };
     const legacyChartEngine = localStorage.getItem(legacyChartEngineKey);
+    const dailyRsPeriod = value.relativeStrengthPeriods?.daily;
+    const weeklyRsPeriod = value.relativeStrengthPeriods?.weekly;
     return {
       theme: value.theme === "light" ? "light" : "dark",
       chartEngine: validChartEngine(value.chartEngine)
@@ -84,6 +91,12 @@ function readSettings(): StoredSettings {
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
+      relativeStrengthPeriods: {
+        daily: validRelativeStrengthPeriod("daily", dailyRsPeriod)
+          ? dailyRsPeriod : defaultRelativeStrengthPeriods.daily,
+        weekly: validRelativeStrengthPeriod("weekly", weeklyRsPeriod)
+          ? weeklyRsPeriod : defaultRelativeStrengthPeriods.weekly,
+      },
     };
   } catch {
     return {
@@ -101,6 +114,7 @@ function readSettings(): StoredSettings {
       gridOpacity: 1,
       relativeStrengthLineStyle: "large-dashed",
       relativeStrengthDisplay: "top-line",
+      relativeStrengthPeriods: defaultRelativeStrengthPeriods,
     };
   }
 }
@@ -162,6 +176,13 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       setSettings((current) => ({ ...current, gridOpacity })),
     setRelativeStrengthDisplay: (relativeStrengthDisplay) =>
       setSettings((current) => ({ ...current, relativeStrengthDisplay })),
+    setRelativeStrengthPeriod: (interval, period) => {
+      if (!validRelativeStrengthPeriod(interval, period)) return;
+      setSettings((current) => current.relativeStrengthPeriods[interval] === period ? current : ({
+        ...current,
+        relativeStrengthPeriods: { ...current.relativeStrengthPeriods, [interval]: period },
+      }));
+    },
     setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
       setSettings((current) => ({ ...current, relativeStrengthLineStyle })),
   }), [settings]);
@@ -182,4 +203,16 @@ export function useAppSettings() {
     throw new Error("useAppSettings must be used within AppSettingsProvider");
   }
   return settings;
+}
+
+/** Keep rapid slider changes from repeatedly fetching chart data. */
+export function useRelativeStrengthPeriod(interval: MarketChartInterval) {
+  const { relativeStrengthPeriods } = useAppSettings();
+  const selected = relativeStrengthPeriods[interval];
+  const [settled, setSettled] = useState({ interval, period: selected });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled({ interval, period: selected }), 150);
+    return () => window.clearTimeout(timer);
+  }, [interval, selected]);
+  return settled.interval === interval ? settled.period : selected;
 }

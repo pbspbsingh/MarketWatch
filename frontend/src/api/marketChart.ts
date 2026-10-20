@@ -79,6 +79,7 @@ export interface MarketChartSnapshot extends MarketChartData {
 
 interface MarketChartRequestOptions {
   comparisonSymbol?: string;
+  relativeStrengthPeriod?: number;
   signal?: AbortSignal;
 }
 
@@ -93,6 +94,7 @@ export async function fetchMarketChartSnapshot(
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval });
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
+  if (options.relativeStrengthPeriod !== undefined) query.set("relative_strength_period", String(options.relativeStrengthPeriod));
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}?${query}`,
     { signal: options.signal, cache: "no-store" },
@@ -101,7 +103,7 @@ export async function fetchMarketChartSnapshot(
     const reason = await response.text();
     throw new Error(reason || `Failed to load market chart: HTTP ${response.status}`);
   }
-  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol, options.relativeStrengthPeriod);
 }
 
 export async function refreshMarketChartSnapshot(
@@ -115,6 +117,7 @@ export async function refreshMarketChartSnapshot(
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval });
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
+  if (options.relativeStrengthPeriod !== undefined) query.set("relative_strength_period", String(options.relativeStrengthPeriod));
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/refresh?${query}`,
     { method: "POST", signal: options.signal, cache: "no-store" },
@@ -123,7 +126,7 @@ export async function refreshMarketChartSnapshot(
     const reason = await response.text();
     throw new Error(reason || `Failed to refresh Yahoo candles: HTTP ${response.status}`);
   }
-  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol, options.relativeStrengthPeriod);
 }
 
 export async function fetchMarketChartHistorySnapshot(
@@ -139,6 +142,7 @@ export async function fetchMarketChartHistorySnapshot(
     : marketDataSymbol(options.comparisonSymbol);
   const query = new URLSearchParams({ interval, start, end });
   if (comparisonSymbol !== undefined) query.set("comparison_symbol", comparisonSymbol);
+  if (options.relativeStrengthPeriod !== undefined) query.set("relative_strength_period", String(options.relativeStrengthPeriod));
   const response = await fetch(
     `/api/market-chart/${encodeURIComponent(requestedSymbol)}/history?${query}`,
     { signal: options.signal, cache: "no-store" },
@@ -147,7 +151,7 @@ export async function fetchMarketChartHistorySnapshot(
     const reason = await response.text();
     throw new Error(reason || `Failed to load market chart history: HTTP ${response.status}`);
   }
-  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol);
+  return readMarketChartSnapshot(response, requestedSymbol, interval, comparisonSymbol, options.relativeStrengthPeriod);
 }
 
 async function readMarketChartSnapshot(
@@ -155,6 +159,7 @@ async function readMarketChartSnapshot(
   requestedSymbol: string,
   interval: MarketChartInterval,
   comparisonSymbol?: string,
+  relativeStrengthPeriod?: number,
 ): Promise<MarketChartSnapshot> {
   const snapshot = await response.json() as MarketChartSnapshot;
   const returnedComparison = snapshot.relative_strength?.comparison_symbol;
@@ -162,6 +167,8 @@ async function readMarketChartSnapshot(
     snapshot.symbol !== requestedSymbol
     || snapshot.interval !== interval
     || returnedComparison !== comparisonSymbol
+    || (snapshot.relative_strength != null && relativeStrengthPeriod !== undefined
+      && snapshot.relative_strength.line.moving_average_period !== relativeStrengthPeriod)
   ) {
     throw new Error("Market chart response did not match its request");
   }

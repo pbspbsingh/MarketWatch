@@ -11,6 +11,16 @@ export interface MarketChartHistoryRange {
   end: string;
 }
 
+export function loadedHistoryRange(snapshot: MarketChartSnapshot): MarketChartHistoryRange | undefined {
+  if (snapshot.earliest_date === null || snapshot.latest_date === null) return undefined;
+  const earliest = marketDateTimestamp(snapshot.earliest_date);
+  const latest = marketDateTimestamp(snapshot.latest_date);
+  if (earliest === undefined || latest === undefined) return undefined;
+  const end = latest + millisecondsPerDay * (snapshot.interval === "weekly" ? 7 : 1);
+  const start = Math.max(earliest, end - maximumMarketChartHistoryDays * millisecondsPerDay);
+  return { start: timestampToMarketDate(start), end: timestampToMarketDate(end) };
+}
+
 export function previousHistoryRange(
   earliestDate: string,
   latestDate: string,
