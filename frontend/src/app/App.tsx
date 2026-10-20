@@ -55,6 +55,9 @@ const StudyPage = lazy(() =>
 const DailyNotesPage = lazy(() =>
   import("../features/daily-notes/DailyNotesPage").then(({ DailyNotesPage }) => ({ default: DailyNotesPage })),
 );
+const TradeLogsPage = lazy(() =>
+  import("../features/trade-logs/TradeLogsPage").then(({ TradeLogsPage }) => ({ default: TradeLogsPage })),
+);
 
 export function App() {
   return (
@@ -74,6 +77,7 @@ export function App() {
         <Route path="/theme-rank" element={<Page title="Theme Rank"><ThemeRankPage /></Page>} />
         <Route path="/study" element={<Page title="Study"><StudyPage /></Page>} />
         <Route path="/daily-notes" element={<Page title="Daily Notes"><DailyNotesPage /></Page>} />
+        <Route path="/trade-logs" element={<Page title="Trade Logs"><TradeLogsPage /></Page>} />
       </Route>
     </Routes>
   );

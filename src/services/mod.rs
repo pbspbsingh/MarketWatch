@@ -21,6 +21,7 @@ pub mod ticker_collections;
 pub mod ticker_strength;
 pub mod tickers;
 pub mod top_stocks;
+pub mod trade_logs;
 pub mod volume_run_rate;
 pub mod watchlists;
 pub mod yahoo;

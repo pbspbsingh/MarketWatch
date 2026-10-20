@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE trade_logs SET revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (SELECT trade_id FROM trade_log_tag_links WHERE tag_id = ? UNION SELECT e.trade_id FROM trade_log_execution_tags t JOIN trade_log_executions e ON e.id = t.execution_id WHERE t.tag_id = ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "713adb21b5df88475eaa69d5265ab4083157a30350e84c1e42bf71ce4fe7bbdc"
+}

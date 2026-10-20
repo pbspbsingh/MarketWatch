@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT trade_id, tag_id FROM trade_log_tag_links ORDER BY tag_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "trade_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_tag_links",
+            "name": "trade_id"
+          }
+        }
+      },
+      {
+        "name": "tag_id",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_tag_links",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ba784b04abe983e2cb10bd32634eaa0173260c390d7b3f3f7b6fa676d22db1ad"
+}

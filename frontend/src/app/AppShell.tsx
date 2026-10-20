@@ -8,6 +8,7 @@ import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import NoteAltOutlinedIcon from "@mui/icons-material/NoteAltOutlined";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -41,6 +42,7 @@ const destinations = [
   ["Theme Management", "/theme-management", TuneIcon, "magenta"],
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
   ["Daily Notes", "/daily-notes", NoteAltOutlinedIcon, "amber"],
+  ["Trade Logs", "/trade-logs", MenuBookOutlinedIcon, "green"],
   ["About", "/about", InfoOutlinedIcon, "blue"],
 ] as const;
 

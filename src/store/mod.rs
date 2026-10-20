@@ -26,6 +26,7 @@ mod n_factor;
 mod theme_audits;
 mod themes;
 mod top_stock_screens;
+pub(crate) mod trade_logs;
 mod watchlists;
 
 pub use industries::{IndustryClassification, IndustryRankingRow, IndustryRankings};

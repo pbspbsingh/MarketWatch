@@ -18,6 +18,7 @@ mod ticker_collections;
 mod ticker_strength;
 mod tickers;
 mod top_stocks;
+mod trade_logs;
 mod watchlists;
 
 use crate::app::AppState;
@@ -48,6 +49,7 @@ pub fn router() -> Router<AppState> {
         .merge(theme_audits::router())
         .merge(top_stocks::router())
         .merge(watchlists::router())
+        .merge(trade_logs::router())
 }
 
 fn deserialize_valid_ticker_symbols<'de, D>(deserializer: D) -> Result<Vec<TickerSymbol>, D::Error>

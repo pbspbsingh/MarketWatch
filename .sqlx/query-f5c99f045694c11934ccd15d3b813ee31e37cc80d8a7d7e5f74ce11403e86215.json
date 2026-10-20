@@ -1,0 +1,110 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, trade_id, executed_at, side, quantity, price, fee, notes FROM trade_log_executions ORDER BY trade_id, sequence",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "trade_id",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "trade_id"
+          }
+        }
+      },
+      {
+        "name": "executed_at",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "executed_at"
+          }
+        }
+      },
+      {
+        "name": "side",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "side"
+          }
+        }
+      },
+      {
+        "name": "quantity",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "quantity"
+          }
+        }
+      },
+      {
+        "name": "price",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "price"
+          }
+        }
+      },
+      {
+        "name": "fee",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "fee"
+          }
+        }
+      },
+      {
+        "name": "notes",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_log_executions",
+            "name": "notes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f5c99f045694c11934ccd15d3b813ee31e37cc80d8a7d7e5f74ce11403e86215"
+}

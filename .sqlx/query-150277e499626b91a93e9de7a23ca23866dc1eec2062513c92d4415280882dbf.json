@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_logs (symbol, direction, notes) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "150277e499626b91a93e9de7a23ca23866dc1eec2062513c92d4415280882dbf"
+}

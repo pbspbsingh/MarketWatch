@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT revision FROM trade_log_tags WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "revision",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_tags",
+            "name": "revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "683d3cfa6b7397cb710ae086465b75b4c1526eedc88abca402a51da1b078240b"
+}

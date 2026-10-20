@@ -113,6 +113,7 @@ Run the frontend checks:
 ```bash
 npm --prefix frontend run check
 npm --prefix frontend run build
+node --test frontend/scripts/trade-logs.test.mjs
 ```
 
 Check patches for whitespace errors:

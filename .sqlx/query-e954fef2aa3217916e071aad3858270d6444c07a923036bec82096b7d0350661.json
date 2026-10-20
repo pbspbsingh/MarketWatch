@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO trade_log_executions (id, trade_id, sequence, executed_at, side, quantity, price, fee, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "e954fef2aa3217916e071aad3858270d6444c07a923036bec82096b7d0350661"
+}

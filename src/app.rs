@@ -1,12 +1,14 @@
 use crate::api;
 use crate::auth;
 use crate::config::{AuthConfig, Config};
+use crate::models::TickerSymbol;
 use crate::providers::news::StockTitanClient;
 use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
 use crate::services::fundamental_assessment::FundamentalAssessmentService;
+use crate::services::fundamentals_background::FundamentalsBackgroundService;
 use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
@@ -24,6 +26,7 @@ use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::ticker_strength::TickerStrengthService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
+use crate::services::trade_logs::{TradeLogsService, market::TradeLogMarketService};
 use crate::services::volume_run_rate::VolumeRunRateService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
@@ -90,7 +93,7 @@ pub struct AppState {
     pub daily_notes: Arc<DailyNotesService>,
     pub details: Arc<TickerDetailsService>,
     pub global_search: Arc<GlobalSearchService>,
-    pub home_tickers: [crate::models::TickerSymbol; 4],
+    pub home_tickers: [TickerSymbol; 4],
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub study: Arc<StudyService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
@@ -107,6 +110,8 @@ pub struct AppState {
     pub ticker_collections: Arc<TickerCollectionService>,
     pub top_stocks: Arc<TopStocksService>,
     pub watchlists: Arc<WatchlistService>,
+    pub trade_logs: Arc<TradeLogsService>,
+    pub trade_log_market: Arc<TradeLogMarketService>,
     pub yahoo_live: YahooLiveHandle,
 }
 
@@ -114,6 +119,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let auth = config.server.auth.clone().into_basic();
     let store = Store::connect(&config.database.url).await?;
     let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
+    let trade_logs = Arc::new(TradeLogsService::new(store.clone()));
     store.fail_interrupted_theme_ai_jobs().await?;
     let nyse_holidays = nyse_calendar::load_holidays(&store, &config.providers).await?;
     let market_schedule =
@@ -139,6 +145,11 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         nyse_holidays,
     )?);
     let yahoo_live = YahooLiveHandle::spawn(yahoo.clone(), market_schedule.clone());
+    let trade_log_market = Arc::new(TradeLogMarketService::new(
+        trade_logs.clone(),
+        yahoo.clone(),
+        yahoo_client.clone(),
+    ));
     let market_repositioning_dates = Arc::new(config.market.market_repositioning_dates.clone());
     let details = Arc::new(TickerDetailsService::new(
         store.clone(),
@@ -212,7 +223,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         .as_ref()
         .and_then(|config| config.background)
     {
-        crate::services::fundamentals_background::FundamentalsBackgroundService::spawn(
+        FundamentalsBackgroundService::spawn(
             store.clone(),
             ai,
             fundamental_assessment.clone(),
@@ -263,6 +274,8 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         ticker_collections,
         top_stocks,
         watchlists,
+        trade_logs,
+        trade_log_market,
         yahoo_live,
     };
 

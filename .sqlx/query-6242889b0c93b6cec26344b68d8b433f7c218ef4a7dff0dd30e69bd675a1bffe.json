@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, symbol, direction, notes, revision FROM trade_logs ORDER BY id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_logs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "symbol",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_logs",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "direction",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_logs",
+            "name": "direction"
+          }
+        }
+      },
+      {
+        "name": "notes",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "trade_logs",
+            "name": "notes"
+          }
+        }
+      },
+      {
+        "name": "revision",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_logs",
+            "name": "revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6242889b0c93b6cec26344b68d8b433f7c218ef4a7dff0dd30e69bd675a1bffe"
+}

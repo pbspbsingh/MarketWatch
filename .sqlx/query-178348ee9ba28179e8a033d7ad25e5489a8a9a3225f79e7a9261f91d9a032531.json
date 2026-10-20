@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT execution_id, tag_id FROM trade_log_execution_tags ORDER BY tag_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "execution_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_execution_tags",
+            "name": "execution_id"
+          }
+        }
+      },
+      {
+        "name": "tag_id",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "trade_log_execution_tags",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "178348ee9ba28179e8a033d7ad25e5489a8a9a3225f79e7a9261f91d9a032531"
+}

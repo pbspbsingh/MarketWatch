@@ -14,6 +14,7 @@ mod ticker_collection;
 mod ticker_strength;
 pub mod ticker_symbol;
 mod top_stock_screens;
+pub(crate) mod trade_logs;
 mod tradingview_symbol;
 mod watchlists;
 mod yahoo_symbol;

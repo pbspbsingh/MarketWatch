@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE trade_log_tags SET name = ?, description = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "4b757082a9bf5fb855739640b3b3b8b4d533ed1fef639d2b7965ac283b1bf0d5"
+}

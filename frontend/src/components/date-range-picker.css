@@ -1,0 +1,48 @@
+.date-range-picker { width: 17.5rem; max-width: 100%; }
+.date-range-picker input { cursor: pointer; text-overflow: ellipsis; }
+.date-range-picker .MuiInputAdornment-root { color: var(--color-muted); }
+.date-range-picker .MuiSvgIcon-root { font-size: 0.9rem; }
+.date-range-popover.MuiPaper-root {
+  padding: 0.625rem;
+  margin-top: 0.25rem;
+  border: 0.0625rem solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.date-range-selection {
+  min-height: 1.25rem;
+  padding-bottom: 0.375rem;
+  margin: 0 0 0.375rem;
+  border-bottom: 0.0625rem solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+.date-range-popover .rdp-root {
+  --rdp-accent-color: var(--color-accent);
+  --rdp-accent-background-color: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface));
+  --rdp-day-height: 2rem;
+  --rdp-day-width: 2rem;
+  --rdp-day_button-height: 1.875rem;
+  --rdp-day_button-width: 1.875rem;
+  --rdp-day_button-border-radius: 0.25rem;
+  --rdp-selected-border: 0.0625rem solid var(--color-accent);
+  --rdp-range_start-color: var(--color-canvas);
+  --rdp-range_end-color: var(--color-canvas);
+  --rdp-nav_button-height: 1.75rem;
+  --rdp-nav_button-width: 1.75rem;
+  --rdp-nav-height: 2rem;
+  --rdp-months-gap: 1rem;
+  --rdp-dropdown-gap: 0.25rem;
+  --rdp-weekday-padding: 0.375rem 0;
+  font-size: 0.75rem;
+}
+.date-range-popover .rdp-month_caption { height: 2rem; font-size: 0.75rem; }
+.date-range-popover .rdp-weekday { color: var(--color-muted); font-size: 0.625rem; font-weight: 500; }
+.date-range-popover .rdp-selected { font-size: inherit; font-weight: 650; }
+.date-range-popover .rdp-day:not(.rdp-selected) .rdp-day_button:hover { background: var(--color-hover); }
+.date-range-popover .rdp-day_button:focus-visible { outline: 0.125rem solid var(--color-accent); outline-offset: -0.125rem; }
+.date-range-popover .rdp-dropdown { background: var(--color-surface); color: var(--color-text); }
+.date-range-actions { display: flex; align-items: center; gap: 0.25rem; padding-top: 0.375rem; margin-top: 0.375rem; border-top: 0.0625rem solid var(--color-border); }
+.date-range-actions > :first-child { margin-right: auto; }
+.date-range-actions .MuiButton-root { font-size: 0.7rem; text-transform: none; box-shadow: none; }

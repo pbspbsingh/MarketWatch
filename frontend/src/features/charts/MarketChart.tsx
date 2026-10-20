@@ -104,11 +104,15 @@ interface MarketChartProps {
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
   dateMarkers?: MarketChartDateMarker[];
+  onMarkerClick?: (id: string) => void;
 }
 
-interface MarketChartDateMarker {
+export interface MarketChartDateMarker {
   date: string;
   text: string;
+  id?: string;
+  side?: "buy" | "sell";
+  exactDate?: boolean;
 }
 
 function watermarkLines(symbol: string, color: string) {
@@ -143,7 +147,11 @@ export function MarketChart({
   liveDelta,
   sessionDelta,
   dateMarkers = [],
+  onMarkerClick,
 }: MarketChartProps) {
+  const markerClickRef = useRef(onMarkerClick);
+  useEffect(() => { markerClickRef.current = onMarkerClick; }, [onMarkerClick]);
+  const markerClickHandlerRef = useRef<((event: MouseEventParams<Time>) => void) | null>(null);
   const {
     candlePalette,
     fiveEmaOpacity,
@@ -272,6 +280,11 @@ export function MarketChart({
     );
     candleSeriesRef.current = candleSeries;
     dateMarkersRef.current = createSeriesMarkers(candleSeries, []);
+    const markerClick = (event: MouseEventParams<Time>) => {
+      if (typeof event.hoveredObjectId === "string") markerClickRef.current?.(event.hoveredObjectId);
+    };
+    markerClickHandlerRef.current = markerClick;
+    chart.subscribeClick(markerClick);
     const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
     volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
     volumeSeriesRef.current = volumeSeries;
@@ -351,6 +364,8 @@ export function MarketChart({
   }, [candlePalette, palette, refreshReadout, rsLineStyle, showCandleReadout, theme]);
 
   const destroyChart = useCallback((chart: IChartApi) => {
+    if (markerClickHandlerRef.current) chart.unsubscribeClick(markerClickHandlerRef.current);
+    markerClickHandlerRef.current = null;
     if (readoutCrosshairHandlerRef.current !== null) {
       chart.unsubscribeCrosshairMove(readoutCrosshairHandlerRef.current);
       readoutCrosshairHandlerRef.current = null;
@@ -490,17 +505,19 @@ export function MarketChart({
   useEffect(() => {
     const dates = data.candles.map(({ date }) => date);
     dateMarkersRef.current?.setMarkers(dateMarkers.flatMap((marker) => {
-      const date = dates.find((candidate) => candidate >= marker.date) ?? dates.at(-1);
+      const date = marker.exactDate ? dates.find(candidate => candidate === marker.date)
+        : dates.find((candidate) => candidate >= marker.date) ?? dates.at(-1);
       if (date === undefined) return [];
       return [{
         time: marketDateToChartTime(date),
-        position: "aboveBar" as const,
-        shape: "arrowDown" as const,
-        color: palette.negative,
+        id: marker.id,
+        position: marker.side === "buy" ? "belowBar" as const : "aboveBar" as const,
+        shape: marker.side === "buy" ? "arrowUp" as const : "arrowDown" as const,
+        color: marker.side === "buy" ? palette.positive : palette.negative,
         text: marker.text,
       }];
     }));
-  }, [data.candles, dateMarkers, palette.negative]);
+  }, [data.candles, dateMarkers, palette.negative, palette.positive]);
 
   useEffect(() => {
     const specs = movingAverageSpecs(data.interval);

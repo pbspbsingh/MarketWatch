@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM trade_log_tag_links WHERE trade_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c023e81084d71e1970009d2ceb103fc2fa76f0648094de15faf371e449b9df5b"
+}
