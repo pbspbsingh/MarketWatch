@@ -17,6 +17,7 @@ test("monthly totals include partial exits; averages count each closed winner or
   assert.deepEqual(summarizeMonth(trades, marks), {
     realized: "140", unrealized: "-10", net: "130", averageWin: 15, averageLoss: -6,
     largestWin: "100", largestLoss: "-30",
+    largestWinReturnPercent: 10, largestLossReturnPercent: -6,
   });
 });
 
@@ -35,10 +36,12 @@ test("closed-only months need no marks and absent outcomes have no average", () 
   assert.deepEqual(summarizeMonth([trade(1, "closed", 100, 10)], new Map()), {
     realized: "100", unrealized: "0", net: "100", averageWin: 10, averageLoss: null,
     largestWin: "100", largestLoss: null,
+    largestWinReturnPercent: 10, largestLossReturnPercent: null,
   });
   assert.deepEqual(summarizeMonth([trade(1, "closed", -30, -6)], new Map()), {
     realized: "-30", unrealized: "0", net: "-30", averageWin: null, averageLoss: -6,
     largestWin: null, largestLoss: "-30",
+    largestWinReturnPercent: null, largestLossReturnPercent: -6,
   });
 });
 
@@ -49,7 +52,27 @@ test("largest outcomes rank closed net P&L, excluding open partials and breakeve
   ], new Map());
   assert.equal(summary.largestWin, "100");
   assert.equal(summary.largestLoss, "-50");
+  assert.equal(summary.largestWinReturnPercent, 10);
+  assert.equal(summary.largestLossReturnPercent, -2);
   const breakeven = summarizeMonth([trade(1, "closed", 0, 0)], new Map());
   assert.equal(breakeven.largestWin, null);
   assert.equal(breakeven.largestLoss, null);
+  assert.equal(breakeven.largestWinReturnPercent, null);
+  assert.equal(breakeven.largestLossReturnPercent, null);
+});
+
+test("largest-outcome percentages stay with the selected trade for ties and missing returns", () => {
+  const tied = summarizeMonth([
+    trade(1, "closed", 100, 10), trade(2, "closed", 100, 25),
+    trade(3, "closed", -50, -5), trade(4, "closed", -50, -20),
+  ], new Map());
+  assert.equal(tied.largestWinReturnPercent, 10);
+  assert.equal(tied.largestLossReturnPercent, -5);
+  const missing = summarizeMonth([
+    ...trades, trade(6, "closed", 500, null), trade(7, "closed", -500, null),
+  ], new Map());
+  assert.equal(missing.largestWin, "500");
+  assert.equal(missing.largestLoss, "-500");
+  assert.equal(missing.largestWinReturnPercent, null);
+  assert.equal(missing.largestLossReturnPercent, null);
 });

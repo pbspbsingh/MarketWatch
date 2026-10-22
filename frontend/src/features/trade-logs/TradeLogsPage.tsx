@@ -14,26 +14,13 @@ import { TradeEditor } from "./TradeEditor";
 import { TradeStatistics } from "./TradeStatistics";
 import { TradeTags } from "./TradeTags";
 import { TradeFilterSelect } from "./TradeFilterSelect";
+import { restoreChartWidth, saveChartWidth } from "./chartLayout";
 import { draftFromTrade, errorMessage, newDraft, payload } from "./format";
 import "./trade-logs.css";
 
 const draftKey = "trade-logs-draft-v1";
 const chartWidthKey = "market-watch.trade-logs-chart-width-percent";
 const initialFilters: TradeLogFilters = { symbol: "", direction: [], status: [], tag_id: [], tag_scope: [], start: "", end: "" };
-function restoreChartWidth(): number {
-  try {
-    const raw = localStorage.getItem(chartWidthKey);
-    if (raw !== null && raw.trim() !== "") {
-      const width = Number(raw);
-      if (Number.isFinite(width) && width >= 0 && width <= 100) return width;
-    }
-  } catch { /* Keep resizing available when browser storage is unavailable. */ }
-  return 48;
-}
-function saveChartWidth(width: number) {
-  try { localStorage.setItem(chartWidthKey, String(width)); }
-  catch { /* The splitter still retains its position until this page is reloaded. */ }
-}
 interface EditorState { saved: TradeLog | null; draft: TradeLogInput; baseline: string }
 function restoreDraft(): EditorState | null {
   try {
@@ -51,7 +38,7 @@ function editorFor(trade: TradeLog): EditorState {
 
 export function TradeLogsPage() {
   const [tab, setTab] = useState(0);
-  const [initialChartWidth] = useState(restoreChartWidth);
+  const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
   const focusRefresh = useFocusRefresh();
   const [selectedTrade, setSelectedTrade] = useState<TradeLog | null>(null);
   const [filters, setFilters] = useState(initialFilters);
@@ -99,6 +86,16 @@ export function TradeLogsPage() {
     document.addEventListener("click", navigate, true);
     return () => { window.removeEventListener("beforeunload", unload); document.removeEventListener("click", navigate, true); };
   }, [dirty, busy]);
+  useEffect(() => {
+    if (tab !== 0 || !selectedTrade) return;
+    const dismissChart = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      setSelectedTrade(null);
+    };
+    window.addEventListener("keydown", dismissChart);
+    return () => window.removeEventListener("keydown", dismissChart);
+  }, [tab, selectedTrade]);
   const guarded = (action: () => void) => {
     if (busy) return;
     if (dirty) setConfirm({ title: "Discard unsaved changes?", text: "Your changes to this trade have not been saved.", action });
@@ -157,9 +154,9 @@ export function TradeLogsPage() {
     <div role="tabpanel" hidden={tab !== 0} id="tl-panel-0" aria-labelledby="tl-tab-0">
       {marketError && <Alert severity="warning">Open-position prices could not refresh. Check the valuation dates before using the displayed returns.</Alert>}
       <div className="tl-trade-layout">
-        <SplitPane orientation="horizontal" initialSplit={100 - initialChartWidth} secondVisible={selected !== null} onSplitChange={split => saveChartWidth(100 - split)}
+        <SplitPane orientation="horizontal" initialSplit={100 - initialChartWidth} secondVisible={selected !== null} onSplitChange={split => saveChartWidth(chartWidthKey, 100 - split)}
           first={<TradeTable trades={snapshot?.trades ?? []} tags={snapshot?.tags ?? []} marks={marks} selectedId={selected?.id ?? null} loading={loading} onSelect={trade => setSelectedTrade(current => current?.id === trade.id ? null : trade)} onEdit={trade => guarded(() => void select(trade.id))} />}
-          second={<TradeChartDrawer trade={selected} onClose={() => setSelectedTrade(null)} onEdit={trade => guarded(() => void select(trade.id))} />} />
+          second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={() => setSelectedTrade(null)} onEdit={trade => guarded(() => void select(trade.id))} />} />
       </div>
     </div>
     <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} onTag={id => { changeFilter({ tag_id: [id] }); setTab(0); }} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>

@@ -24,6 +24,7 @@ export interface TradeLogExecution extends TradeLogExecutionInput {
   action: TradeLogAction;
   remaining_quantity: string;
   realized_pnl: string;
+  net_return_percent: number | null;
 }
 export interface TradeLog {
   id: number;
@@ -39,6 +40,7 @@ export interface TradeLog {
     average_cost: string | null;
     average_entry_price: string;
     realized_pnl: string;
+    realized_return_percent: number | null;
     fees: string;
     entry_notional: string;
     net_return_percent: number | null;
@@ -67,6 +69,7 @@ export interface TradeLogStatistics {
   profit_factor: number | null;
 }
 export interface TradeLogSnapshot {
+  time_zone: string;
   trades: TradeLog[];
   tags: TradeLogTag[];
   statistics: TradeLogStatistics;

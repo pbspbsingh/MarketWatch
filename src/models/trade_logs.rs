@@ -106,6 +106,7 @@ pub struct Execution {
     pub action: &'static str,
     pub remaining_quantity: String,
     pub realized_pnl: String,
+    pub net_return_percent: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct TradeSummary {
@@ -114,6 +115,7 @@ pub struct TradeSummary {
     pub average_cost: Option<String>,
     pub average_entry_price: String,
     pub realized_pnl: String,
+    pub realized_return_percent: Option<f64>,
     pub fees: String,
     pub entry_notional: String,
     pub net_return_percent: Option<f64>,
@@ -323,6 +325,14 @@ pub fn validate(mut input: TradeInput) -> Result<ValidatedTrade, String> {
     Ok(validated)
 }
 
+/// Allocate with sub-micro-dollar precision while avoiding intermediate overflow.
+/// The final exit consumes the entire remaining basis.
+fn allocate_basis(basis: i128, quantity: i64, exiting: i64) -> i128 {
+    let quantity = quantity as i128;
+    let exiting = exiting as i128;
+    basis / quantity * exiting + basis % quantity * exiting / quantity
+}
+
 pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade, String> {
     let direction = trade.input.direction;
     let mut quantity = 0_i64;
@@ -330,14 +340,16 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
     let mut realized = 0_i128;
     let mut fees = 0_i128;
     let mut entry_notional = 0_i128;
+    let mut remaining_entry_notional = 0_i128;
     let mut entry_quantity = 0_i128;
     let mut executions = Vec::with_capacity(trade.executions.len());
     for (index, leg) in trade.executions.iter().enumerate() {
         let cost = leg.quantity as i128 * leg.price as i128;
         let fee = leg.fee as i128 * SCALE as i128;
         fees += fee;
-        let (action, pnl) = if leg.input.side == direction.entry_side() {
+        let (action, pnl, net_return_percent) = if leg.input.side == direction.entry_side() {
             entry_notional += cost;
+            remaining_entry_notional += cost;
             entry_quantity += leg.quantity as i128;
             if quantity == 0 && index > 0 {
                 return Err(
@@ -352,7 +364,7 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
                 Direction::Long => cost + fee,
                 Direction::Short => cost - fee,
             };
-            (action, 0)
+            (action, 0, None)
         } else {
             if leg.quantity > quantity {
                 let operation = match direction {
@@ -361,18 +373,23 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
                 };
                 return Err(format!("Execution {} {operation} at that time", index + 1));
             }
-            // Divide before multiplying to retain sub-micro-dollar precision without
-            // overflowing. The final exit consumes the entire remaining basis.
-            let allocated = basis / quantity as i128 * leg.quantity as i128
-                + basis % quantity as i128 * leg.quantity as i128 / quantity as i128;
+            let allocated = allocate_basis(basis, quantity, leg.quantity);
+            let exited_entry_notional =
+                allocate_basis(remaining_entry_notional, quantity, leg.quantity);
             let pnl = match direction {
                 Direction::Long => cost - allocated - fee,
                 Direction::Short => allocated - cost - fee,
             };
             basis -= allocated;
+            remaining_entry_notional -= exited_entry_notional;
             quantity -= leg.quantity;
             realized += pnl;
-            (if quantity == 0 { "Close" } else { "Reduce" }, pnl)
+            (
+                if quantity == 0 { "Close" } else { "Reduce" },
+                pnl,
+                (exited_entry_notional > 0)
+                    .then(|| pnl as f64 / exited_entry_notional as f64 * 100.0),
+            )
         };
         executions.push(Execution {
             input: leg.input.clone(),
@@ -385,6 +402,7 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
             action,
             remaining_quantity: decimal(quantity),
             realized_pnl: cash(pnl),
+            net_return_percent,
         });
     }
     let first = trade
@@ -395,6 +413,7 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
         .executions
         .last()
         .ok_or("A trade needs an execution")?;
+    let realized_entry_notional = entry_notional - remaining_entry_notional;
     Ok(Trade {
         id,
         revision,
@@ -409,6 +428,8 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
             average_cost: (quantity > 0).then(|| cash(basis * SCALE as i128 / quantity as i128)),
             average_entry_price: cash(entry_notional * SCALE as i128 / entry_quantity),
             realized_pnl: cash(realized),
+            realized_return_percent: (realized_entry_notional > 0)
+                .then(|| realized as f64 / realized_entry_notional as f64 * 100.0),
             fees: cash(fees),
             entry_notional: cash(entry_notional),
             net_return_percent: (quantity == 0)
@@ -508,6 +529,14 @@ pub(crate) mod tests {
         );
         assert_eq!(trade.executions[2].realized_pnl, "497.5");
         assert_eq!(trade.executions[3].realized_pnl, "2245.5");
+        assert!(
+            (trade.executions[2].net_return_percent.unwrap() - 497.5 / 750.0 * 100.0).abs() < 1e-9
+        );
+        assert!((trade.executions[3].net_return_percent.unwrap() - 99.8).abs() < 1e-9);
+        assert_eq!(
+            trade.summary.realized_return_percent,
+            trade.summary.net_return_percent
+        );
         assert_eq!(trade.summary.realized_pnl, "2743");
         assert_eq!(trade.summary.fees, "7");
         assert_eq!(trade.summary.status, "closed");
@@ -608,6 +637,12 @@ pub(crate) mod tests {
         );
         assert_eq!(closed.executions[2].realized_pnl, "497.5");
         assert_eq!(closed.executions[3].realized_pnl, "2245.5");
+        assert!((closed.executions[2].net_return_percent.unwrap() - 39.8).abs() < 1e-9);
+        assert!((closed.executions[3].net_return_percent.unwrap() - 59.88).abs() < 1e-9);
+        assert_eq!(
+            closed.summary.realized_return_percent,
+            closed.summary.net_return_percent
+        );
         assert_eq!(closed.summary.realized_pnl, "2743");
         assert_eq!(closed.summary.fees, "7");
         assert_eq!(closed.summary.status, "closed");
@@ -642,6 +677,19 @@ pub(crate) mod tests {
             let trade = result(source);
             let marked = value_open_trade(&trade, Some((price, date)));
             assert_eq!(trade.summary.realized_pnl, "98.5");
+            let expected_realized_return = match direction {
+                Direction::Long => 19.7,
+                Direction::Short => 9.85,
+            };
+            assert!(
+                (trade.summary.realized_return_percent.unwrap() - expected_realized_return).abs()
+                    < 1e-9
+            );
+            assert_eq!(trade.executions[0].net_return_percent, None);
+            assert_eq!(
+                trade.executions[1].net_return_percent,
+                trade.summary.realized_return_percent
+            );
             assert_eq!(marked.unrealized_pnl.as_deref(), Some("49.5"));
             assert_eq!(marked.total_pnl.as_deref(), Some("148"));
             assert!((marked.net_return_percent.unwrap() - expected_return).abs() < 0.000001);
@@ -717,5 +765,85 @@ pub(crate) mod tests {
         );
         json["direction"] = serde_json::json!("invalid");
         assert!(serde_json::from_value::<TradeInput>(json).is_err());
+    }
+
+    #[test]
+    fn realized_returns_follow_entry_basis_when_adding_after_partial_exits() {
+        for (direction, legs, first_return, final_return) in [
+            (
+                Direction::Long,
+                vec![
+                    (Side::Buy, "100", "10", "0"),
+                    (Side::Sell, "50", "12", "0"),
+                    (Side::Buy, "50", "20", "0"),
+                    (Side::Sell, "100", "18", "0"),
+                ],
+                20.0,
+                20.0,
+            ),
+            (
+                Direction::Short,
+                vec![
+                    (Side::Sell, "100", "20", "0"),
+                    (Side::Buy, "50", "18", "0"),
+                    (Side::Sell, "50", "30", "0"),
+                    (Side::Buy, "100", "20", "0"),
+                ],
+                10.0,
+                600.0 / 3500.0 * 100.0,
+            ),
+        ] {
+            let mut source = input(&legs);
+            source.direction = direction;
+            let closed = result(source.clone());
+            assert!((closed.executions[1].net_return_percent.unwrap() - first_return).abs() < 1e-9);
+            assert!((closed.executions[3].net_return_percent.unwrap() - 20.0).abs() < 1e-9);
+            assert!((closed.summary.realized_return_percent.unwrap() - final_return).abs() < 1e-9);
+            assert_eq!(
+                closed.summary.realized_return_percent,
+                closed.summary.net_return_percent
+            );
+            source.executions.pop();
+            let open = result(source.clone());
+            assert!((open.summary.realized_return_percent.unwrap() - first_return).abs() < 1e-9);
+            assert!(open.summary.net_return_percent.is_none());
+            source.executions.truncate(1);
+            let entry_only = result(source);
+            assert!(entry_only.summary.realized_return_percent.is_none());
+            assert!(entry_only.executions[0].net_return_percent.is_none());
+        }
+    }
+
+    #[test]
+    fn realized_returns_preserve_losses_breakeven_and_gross_short_entry_value() {
+        for (direction, legs, expected) in [
+            (
+                Direction::Long,
+                vec![(Side::Buy, "1", "10", "1"), (Side::Sell, "1", "10", "1")],
+                -20.0,
+            ),
+            (
+                Direction::Long,
+                vec![(Side::Buy, "1", "10", "0"), (Side::Sell, "1", "10", "0")],
+                0.0,
+            ),
+            (
+                Direction::Short,
+                vec![
+                    (Side::Sell, "1", "1", "2"),
+                    (Side::Buy, "0.5", "0.5", "0.05"),
+                    (Side::Buy, "0.5", "0.5", "0.05"),
+                ],
+                -160.0,
+            ),
+        ] {
+            let mut source = input(&legs);
+            source.direction = direction;
+            let trade = result(source);
+            assert!((trade.summary.realized_return_percent.unwrap() - expected).abs() < 1e-9);
+            for exit in trade.executions.iter().skip(1) {
+                assert!((exit.net_return_percent.unwrap() - expected).abs() < 1e-9);
+            }
+        }
     }
 }

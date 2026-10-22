@@ -74,6 +74,10 @@ impl MarketSchedule {
         timestamp.with_timezone(&self.timezone).date_naive()
     }
 
+    pub fn timezone(&self) -> Tz {
+        self.timezone
+    }
+
     pub fn market_time(&self, timestamp: DateTime<Utc>) -> NaiveTime {
         timestamp.with_timezone(&self.timezone).time()
     }

@@ -13,9 +13,17 @@ test("daily history includes today's completed close before UTC midnight", () =>
   assert.equal(tradeChartRange(trade, now).end, "2026-10-20");
   trade.summary.status = "closed";
   assert.equal(tradeChartRange(trade, now).end, "2026-10-20");
-  assert.equal(tradeChartRange(trade, Date.parse("2026-12-01T21:00:00Z")).end, "2026-11-19");
+  assert.equal(tradeChartRange(trade, Date.parse("2026-12-01T21:00:00Z")).end, "2026-12-02");
   trade.summary.status = "open";
   assert.equal(tradeChartRange(trade, Date.parse("2026-12-31T21:00:00Z")).end, "2027-01-01");
+});
+
+test("daily history includes 180 days before entry and after exit", () => {
+  const trade = { executions: [{ market_date: "2026-10-19" }, { market_date: "2026-10-20" }], summary: { status: "closed" } };
+  const now = Date.parse("2027-06-01T21:00:00Z");
+  assert.deepEqual(tradeChartRange(trade, now), { start: "2026-04-22", end: "2027-04-19" });
+  trade.summary.status = "open";
+  assert.deepEqual(tradeChartRange(trade, now), { start: "2026-04-22", end: "2027-06-02" });
 });
 
 test("hourly markers follow actual half-hour candle starts and exact boundaries", () => {

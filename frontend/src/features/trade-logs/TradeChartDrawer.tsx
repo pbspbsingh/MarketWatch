@@ -1,22 +1,27 @@
 import { useState } from "react";
-import { Button, Drawer, IconButton } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import type { TradeLog } from "../../api/tradeLogs";
+import { Drawer } from "@mui/material";
+import type { TradeLog, TradeLogTag } from "../../api/tradeLogs";
 import { TradeLogChart } from "./TradeLogChart";
-import { TradeHourlyChart } from "./TradeHourlyChart";
-import { localDateTime, shares } from "./format";
+import { TradeDetails, type TradeExecutionSelection } from "./TradeDetails";
+import { TradeChartsOverlay } from "./TradeChartsOverlay";
 
-export function TradeChartDrawer({ trade, onClose, onEdit }: { trade: TradeLog | null; onClose: () => void; onEdit: (trade: TradeLog) => void }) {
+export function TradeChartDrawer({ trade, tags, timeZone, onClose, onEdit }: { trade: TradeLog | null; tags: TradeLogTag[]; timeZone: string | null; onClose: () => void; onEdit: (trade: TradeLog) => void }) {
   return <Drawer anchor="right" variant="persistent" open={trade !== null} className="tl-chart-drawer" slotProps={{ paper: { className: "trade-logs-ui tl-chart-drawer-paper" } }}>
-    {trade && <DrawerContents key={trade.id} trade={trade} onClose={onClose} onEdit={onEdit} />}
+    {trade && timeZone && <DrawerContents key={trade.id} trade={trade} tags={tags} timeZone={timeZone} onClose={onClose} onEdit={onEdit} />}
   </Drawer>;
 }
-function DrawerContents({ trade, onClose, onEdit }: { trade: TradeLog; onClose: () => void; onEdit: (trade: TradeLog) => void }) {
-  const [selected, setSelected] = useState<number | null>(null);
-  const leg = selected === null ? null : trade.executions[selected];
+function DrawerContents({ trade, tags, timeZone, onClose, onEdit }: { trade: TradeLog; tags: TradeLogTag[]; timeZone: string; onClose: () => void; onEdit: (trade: TradeLog) => void }) {
+  const [selected, setSelected] = useState<TradeExecutionSelection | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const selectExecution = (index: number) => {
+    const id = trade.executions[index]?.id;
+    setSelected(id == null ? null : { id });
+  };
   return <>
-    <header className="tl-drawer-header"><strong>{trade.symbol}</strong><span className="tl-direction">{trade.direction}</span><Button size="small" onClick={() => onEdit(trade)}>Edit trade</Button><IconButton size="small" aria-label="Close trade charts" onClick={onClose}><CloseIcon fontSize="small" /></IconButton></header>
-    <div className="tl-drawer-charts"><TradeLogChart trade={trade} onSelect={setSelected} /><TradeHourlyChart trade={trade} onSelect={setSelected} /></div>
-    {leg && <div className="tl-marker-detail">{leg.action} · {leg.side} {shares(leg.quantity)} @ {leg.price} · {localDateTime(leg.executed_at).replace("T", " ")}{leg.notes && <p>{leg.notes}</p>}</div>}
+    <div className="tl-drawer-charts">
+      <TradeLogChart trade={trade} onSelect={selectExecution} onClose={onClose} onEdit={() => onEdit(trade)} onExpand={() => setExpanded(true)} />
+      <TradeDetails trade={trade} tags={tags} timeZone={timeZone} selectedExecution={selected} />
+    </div>
+    {expanded && <TradeChartsOverlay trade={trade} tags={tags} timeZone={timeZone} selectedExecution={selected} onSelect={selectExecution} onClose={() => setExpanded(false)} onEdit={() => { setExpanded(false); onEdit(trade); }} />}
   </>;
 }

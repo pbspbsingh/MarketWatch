@@ -94,12 +94,12 @@ impl TradeLogMarketService {
         let now = Utc::now();
         // Yahoo limits its retained hourly history. Never move old fills onto newer candles.
         let earliest = now - Duration::days(729);
-        let requested = trade.summary.opened_at - Duration::days(2);
+        let requested = trade.summary.opened_at - Duration::days(3);
         let start = requested.max(earliest);
         let end = trade
             .summary
             .closed_at
-            .map_or(now, |at| (at + Duration::days(2)).min(now));
+            .map_or(now, |at| (at + Duration::days(3)).min(now));
         if start >= end {
             return Ok(HourlyChart {
                 symbol: trade.symbol,

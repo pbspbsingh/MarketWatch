@@ -8,13 +8,20 @@ use axum::{
     http::StatusCode,
     routing::{get, post, put},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 type Result<T> = std::result::Result<Json<T>, (StatusCode, Json<Value>)>;
 #[derive(Deserialize)]
 struct Revision {
     revision: i64,
+}
+
+#[derive(Serialize)]
+struct TradeLogSnapshot {
+    #[serde(flatten)]
+    snapshot: crate::services::trade_logs::Snapshot,
+    time_zone: &'static str,
 }
 
 pub fn router() -> Router<AppState> {
@@ -54,7 +61,12 @@ async fn list(
         .trade_logs
         .snapshot(filter)
         .await
-        .map(Json)
+        .map(|snapshot| {
+            Json(TradeLogSnapshot {
+                snapshot,
+                time_zone: state.market_schedule.timezone().name(),
+            })
+        })
         .map_err(error)
 }
 async fn detail(

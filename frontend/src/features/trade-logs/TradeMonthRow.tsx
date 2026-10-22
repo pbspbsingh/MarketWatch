@@ -2,8 +2,9 @@ import { TableCell, TableRow, Tooltip } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import type { TradeLog, TradeLogValuation } from "../../api/tradeLogs";
-import { money, pnlClass } from "./format";
+import { pnlClass } from "./format";
 import { summarizeMonth } from "./monthlySummary";
+import { PnlValue } from "./PnlValue";
 
 export function TradeMonthRow({ month, trades, marks, expanded, onToggle }: {
   month: string; trades: TradeLog[]; marks: Map<number, TradeLogValuation>;
@@ -30,18 +31,18 @@ export function TradeMonthRow({ month, trades, marks, expanded, onToggle }: {
     <MonthAmount value={summary.net} title="Realized + unrealized P&L for trades opened this month." />
     <MonthAmount value={summary.realized} title="Realized P&L after fees, including partial exits from open trades." />
     <MonthAmount value={summary.unrealized} title="Remaining positions valued at their latest completed daily close." />
-    <MonthAmount value={summary.largestWin} label="Largest win" title="Largest net profit on a closed trade, after fees." emptyTitle="No closed winning trades in this month and current filters." />
-    <MonthAmount value={summary.largestLoss} label="Largest loss" title="Largest net loss on a closed trade, after fees." emptyTitle="No closed losing trades in this month and current filters." />
+    <MonthAmount value={summary.largestWin} returnPercent={summary.largestWinReturnPercent} label="Largest win" title="Largest net profit on a closed trade, after fees, with that trade’s return percentage." emptyTitle="No closed winning trades in this month and current filters." />
+    <MonthAmount value={summary.largestLoss} returnPercent={summary.largestLossReturnPercent} label="Largest loss" title="Largest net loss on a closed trade, after fees, with that trade’s return percentage." emptyTitle="No closed losing trades in this month and current filters." />
     <TableCell colSpan={2} />
   </TableRow>;
 }
 
-function MonthAmount({ value, title, label, emptyTitle = "Unavailable: one or more open trades are missing a current valuation." }: {
-  value: string | null; title: string; label?: string; emptyTitle?: string;
+function MonthAmount({ value, returnPercent, title, label, emptyTitle = "Unavailable: one or more open trades are missing a current valuation." }: {
+  value: string | null; returnPercent?: number | null; title: string; label?: string; emptyTitle?: string;
 }) {
   return <TableCell align="right" className={value == null ? "" : pnlClass(value)}>
     <Tooltip title={value == null ? emptyTitle : title}>
-      <span>{label && <><span className="tl-month-label">{label}</span>{" "}</>}{money(value)}</span>
+      <span>{label && <><span className="tl-month-label">{label}</span>{" "}</>}<PnlValue amount={value} returnPercent={returnPercent} /></span>
     </Tooltip>
   </TableCell>;
 }
