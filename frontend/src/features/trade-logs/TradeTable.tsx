@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Chip, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel, Tooltip } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import type { TradeLog, TradeLogTag, TradeLogValuation } from "../../api/tradeLogs";
@@ -10,7 +10,7 @@ const columns: { key: SortColumn | "entry"; label: string; numeric?: boolean }[]
   { key: "opened", label: "Opened" }, { key: "symbol", label: "Ticker" }, { key: "side", label: "Side" }, { key: "status", label: "Status" },
   { key: "return", label: "Gain / loss %", numeric: true }, { key: "net", label: "Net P&L", numeric: true },
   { key: "realized", label: "Realized", numeric: true }, { key: "unrealized", label: "Unrealized", numeric: true },
-  { key: "entry", label: "Avg. entry", numeric: true }, { key: "quantity", label: "Open shares", numeric: true }, { key: "tags", label: "Tags" },
+  { key: "entry", label: "Avg. entry", numeric: true }, { key: "quantity", label: "Open shares", numeric: true }, { key: "tags", label: "Tags", numeric: true },
 ];
 
 export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect, onEdit }: {
@@ -19,6 +19,10 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
 }) {
   const [sort, setSort] = useState<{ column: SortColumn; direction: "asc" | "desc" }>({ column: "opened", direction: "desc" });
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedId]);
   const rows = trades.map(trade => {
     const open = trade.summary.status === "open";
     const cached = marks.get(trade.id);
@@ -28,7 +32,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
       quantity: trade.direction === "short" && trade.summary.remaining_quantity !== "0" ? `-${trade.summary.remaining_quantity}` : trade.summary.remaining_quantity,
       net: open ? mark?.total_pnl ?? null : trade.summary.realized_pnl,
       roi: open ? mark?.net_return_percent ?? null : trade.summary.net_return_percent,
-      tags: tags.filter(tag => trade.tag_ids.includes(tag.id)).map(tag => tag.name).join(", "),
+      tags: tags.filter(tag => trade.tag_ids.includes(tag.id)).map(tag => tag.name),
       status: open ? "Open" : Number(trade.summary.realized_pnl) > 0 ? "Win" : Number(trade.summary.realized_pnl) < 0 ? "Loss" : "BE",
     };
   });
@@ -44,7 +48,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
       case "realized": return Number(row.trade.summary.realized_pnl);
       case "unrealized": return row.open && row.mark?.unrealized_pnl != null ? Number(row.mark.unrealized_pnl) : null;
       case "quantity": return Number(row.quantity);
-      case "tags": return row.tags;
+      case "tags": return row.tags.length;
     }
   };
   rows.sort((a, b) => {
@@ -65,7 +69,19 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
   const toggleMonth = (month: string) => setExpandedMonths(current => ({
     ...current, [month]: !(current[month] ?? month === latestMonth),
   }));
-  return <TableContainer className="tl-table-container">
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.key !== "ArrowUp" && event.key !== "ArrowDown") || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const visibleTrades = [...groups].flatMap(([month, monthRows]) => !month || isMonthExpanded(month) ? monthRows.map(row => row.trade) : []);
+    if (!visibleTrades.length) return;
+    event.preventDefault();
+    event.currentTarget.focus({ preventScroll: true });
+    const index = visibleTrades.findIndex(trade => trade.id === selectedId);
+    const next = index < 0
+      ? event.key === "ArrowDown" ? 0 : visibleTrades.length - 1
+      : Math.max(0, Math.min(visibleTrades.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+    if (visibleTrades[next].id !== selectedId) onSelect(visibleTrades[next]);
+  };
+  return <TableContainer className="tl-table-container" tabIndex={0} onKeyDown={handleKeyDown}>
     <Table stickyHeader size="small" className="tl-trades-table" aria-label="Trade journal">
       <TableHead><TableRow>
         {columns.map(({ key, label, numeric }) => <TableCell key={key} align={numeric ? "right" : "left"} sortDirection={sort.column === key ? sort.direction : false}>
@@ -77,7 +93,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
           {month && <TradeMonthRow month={month} trades={monthRows.map(row => row.trade)} marks={marks} expanded={isMonthExpanded(month)} onToggle={() => toggleMonth(month)} />}
           {(!month || isMonthExpanded(month)) && monthRows.map(({ trade, open, mark, net, roi, quantity, tags: names, status }) => {
             const priceInfo = open ? mark?.mark_date ? `Valued at $${mark.mark_price}, daily close on ${mark.mark_date}. Includes recorded fees; future exit fees excluded.` : "Daily valuation unavailable or awaiting a completed close after the last execution." : "Final result after recorded fees.";
-            return <TableRow key={trade.id} hover selected={selectedId === trade.id} className="tl-trade-row" onClick={() => onSelect(trade)}>
+            return <TableRow key={trade.id} ref={selectedId === trade.id ? selectedRowRef : null} hover selected={selectedId === trade.id} className="tl-trade-row" onClick={() => onSelect(trade)}>
               <TableCell><Button className="tl-date-link" size="small" aria-label={`View charts for ${trade.symbol} trade ${trade.id}`} aria-expanded={selectedId === trade.id} onClick={event => { event.stopPropagation(); onSelect(trade); }}>{localDate(trade.summary.opened_at)}</Button></TableCell>
               <TableCell><strong>{trade.symbol}</strong></TableCell><TableCell className="tl-direction">{trade.direction}</TableCell><TableCell><Chip size="small" variant="outlined" label={status} className={open ? "" : pnlClass(trade.summary.realized_pnl)} /></TableCell>
               <TableCell align="right" className={`tl-return ${roi == null ? "" : pnlClass(String(roi))}`}><Tooltip title={`${priceInfo} Net P&L / total entry value × 100; shorts use sell-entry value, without margin assumptions.`}><span>{roi == null ? "—" : `${roi > 0 ? "+" : ""}${roi.toFixed(2)}%`}</span></Tooltip></TableCell>
@@ -85,7 +101,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
               <TableCell align="right" className={pnlClass(trade.summary.realized_pnl)}>{money(trade.summary.realized_pnl)}</TableCell>
               <TableCell align="right" className={mark?.unrealized_pnl ? pnlClass(mark.unrealized_pnl) : ""}><Tooltip title={priceInfo}><span>{open ? money(mark?.unrealized_pnl) : "—"}</span></Tooltip></TableCell>
               <TableCell align="right">{money(trade.summary.average_entry_price)}</TableCell><TableCell align="right">{shares(quantity)}</TableCell>
-              <TableCell><span className="tl-table-tags" title={names}>{names || "—"}</span></TableCell>
+              <TableCell align="right"><Tooltip title={names.join(", ") || "No tags"}><span className="tl-table-tags" tabIndex={0}>{names.length}</span></Tooltip></TableCell>
               <TableCell><IconButton size="small" aria-label={`Edit ${trade.symbol} trade ${trade.id}`} onClick={event => { event.stopPropagation(); onEdit(trade); }}><EditOutlinedIcon fontSize="small" /></IconButton></TableCell>
             </TableRow>;
           })}

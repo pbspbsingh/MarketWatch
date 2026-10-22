@@ -7,7 +7,7 @@ import { TradeHourlyChart } from "./TradeHourlyChart";
 import { localDateTime, shares } from "./format";
 
 export function TradeChartDrawer({ trade, onClose, onEdit }: { trade: TradeLog | null; onClose: () => void; onEdit: (trade: TradeLog) => void }) {
-  return <Drawer anchor="right" variant="persistent" open={trade !== null} className={`tl-chart-drawer${trade ? " tl-chart-drawer-open" : ""}`} slotProps={{ paper: { className: "trade-logs-ui tl-chart-drawer-paper" } }}>
+  return <Drawer anchor="right" variant="persistent" open={trade !== null} className="tl-chart-drawer" slotProps={{ paper: { className: "trade-logs-ui tl-chart-drawer-paper" } }}>
     {trade && <DrawerContents key={trade.id} trade={trade} onClose={onClose} onEdit={onEdit} />}
   </Drawer>;
 }
