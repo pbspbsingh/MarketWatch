@@ -113,8 +113,25 @@ Run the frontend checks:
 ```bash
 npm --prefix frontend run check
 npm --prefix frontend run build
-node --test frontend/scripts/trade-logs.test.mjs
+node --test frontend/scripts/*.test.mjs
 ```
+
+Run the complete Trade Logs checks, including isolated Chrome interaction and
+viewport tests (Chrome/Chromium and installed frontend dependencies required):
+
+```bash
+./scripts/check-trade-logs.sh
+```
+
+Statistics has separate Overview, Distribution, Tags, Timing, Duration, and Symbols
+views. Global filters define the baseline; the Statistics tag selector refines it
+with Any/All matching and respects the tag source filter. Return percentages use
+after-fee profit divided by gross entry notional. Charts default to closed trades.
+Include open trades adds server-calculated total P&L at each ticker's latest completed
+daily close, including realized partial exits and recorded fees. Missing or outdated
+valuations withhold charts until prices are available. The cumulative series books
+closed trades on final exit and open positions once on their current price date;
+it does not reconstruct historical unrealized P&L or account equity.
 
 Check patches for whitespace errors:
 

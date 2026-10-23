@@ -38,6 +38,7 @@ function editorFor(trade: TradeLog): EditorState {
 
 export function TradeLogsPage() {
   const [tab, setTab] = useState(0);
+  const [statisticsIncludeOpen, setStatisticsIncludeOpen] = useState(false);
   const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
   const focusRefresh = useFocusRefresh();
   const [selectedTrade, setSelectedTrade] = useState<TradeLog | null>(null);
@@ -51,7 +52,7 @@ export function TradeLogsPage() {
   const [notice, setNotice] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [confirm, setConfirm] = useState<{ title: string; text: string; action: () => void; destructive?: boolean } | null>(null);
-  const { marks, error: marketError, loading: marksLoading } = useTradeValuations(snapshot?.trades ?? [], refresh + focusRefresh, tab === 0);
+  const { marks, error: marketError, loading: marksLoading } = useTradeValuations(snapshot?.trades ?? [], refresh + focusRefresh, tab === 0 || tab === 1 && statisticsIncludeOpen);
   const dirty = editor !== null && JSON.stringify(editor.draft) !== editor.baseline;
   const refreshData = () => setRefresh(n => n + 1);
   const changeFilter = (patch: Partial<TradeLogFilters>) => setFilters(current => ({ ...current, ...patch }));
@@ -142,12 +143,12 @@ export function TradeLogsPage() {
 
     {tab !== 2 && <div className="tl-filters">
       <TextField size="small" label="Find ticker" value={filters.symbol} onChange={e => changeFilter({ symbol: e.target.value })} />
-      <TradeFilterSelect<TradeLogFilters["status"][number]> label="Status" values={filters.status} options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "win", label: "Win" }, { value: "loss", label: "Loss" }]} onChange={status => changeFilter({ status })} />
-      <TradeFilterSelect<TradeLogFilters["direction"][number]> label="Side" values={filters.direction} options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }]} onChange={direction => changeFilter({ direction })} />
-      <TradeFilterSelect label="Tag" className="tl-filter-tag" values={filters.tag_id}
+      <TradeFilterSelect<TradeLogFilters["status"][number]> label="Status" hint="Match any selected status. Win and Loss refer to closed trades after fees. Statistics includes closed trades by default; use Include open trades to add valued open positions." values={filters.status} options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "win", label: "Win" }, { value: "loss", label: "Loss" }]} onChange={status => changeFilter({ status })} />
+      <TradeFilterSelect<TradeLogFilters["direction"][number]> label="Side" hint="Long: buy first, then sell. Short: sell first, then buy back. Leave empty to include both." values={filters.direction} options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }]} onChange={direction => changeFilter({ direction })} />
+      <TradeFilterSelect label="Tag" className="tl-filter-tag" hint="Include trades with any selected tag. This global filter also defines the comparison population in Statistics." values={filters.tag_id}
         options={[...(snapshot?.tags ?? []).map(tag => ({ value: tag.id, label: tag.name })), ...filters.tag_id.filter(id => !snapshot?.tags.some(tag => tag.id === id)).map(id => ({ value: id, label: `Deleted tag #${id}` }))]}
         onChange={tag_id => changeFilter({ tag_id })} />
-      <TradeFilterSelect<TradeLogFilters["tag_scope"][number]> label="Tag source" className="tl-filter-scope" values={filters.tag_scope} options={[{ value: "trade", label: "Trade tags" }, { value: "leg", label: "Execution tags" }]} onChange={tag_scope => changeFilter({ tag_scope })} />
+      <TradeFilterSelect<TradeLogFilters["tag_scope"][number]> label="Tag source" className="tl-filter-scope" hint="Choose where to look for tags: the whole trade, its executions, or both. Empty means both. A matching execution associates the whole trade with that tag." values={filters.tag_scope} options={[{ value: "trade", label: "Trade tags" }, { value: "leg", label: "Execution tags" }]} onChange={tag_scope => changeFilter({ tag_scope })} />
       <DateRangePicker start={filters.start} end={filters.end} onChange={(start, end) => changeFilter({ start, end })} />
       <Button size="small" onClick={() => setFilters(initialFilters)}>Reset</Button>
     </div>}
@@ -159,7 +160,7 @@ export function TradeLogsPage() {
           second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={() => setSelectedTrade(null)} onEdit={trade => guarded(() => void select(trade.id))} />} />
       </div>
     </div>
-    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} onTag={id => { changeFilter({ tag_id: [id] }); setTab(0); }} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>
+    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} tagScope={filters.tag_scope} marks={marks} marksLoading={marksLoading} marketError={marketError} includeOpen={statisticsIncludeOpen} onIncludeOpen={setStatisticsIncludeOpen} onRetryPrices={refreshData} onOpenTrade={trade => { setSelectedTrade(trade); setTab(0); }} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>
     <div role="tabpanel" hidden={tab !== 2} id="tl-panel-2" aria-labelledby="tl-tab-2"><TradeTags tags={snapshot?.tags ?? []} onRefresh={refreshData} /></div>
     <Dialog open={editor !== null} onClose={() => guarded(() => setEditor(null))} fullWidth maxWidth="lg" aria-label={editor?.saved ? "Edit trade" : "New trade"} slotProps={{ paper: { className: "trade-logs-ui tl-editor-dialog" } }}>
       <DialogContent className="tl-editor-dialog-content">

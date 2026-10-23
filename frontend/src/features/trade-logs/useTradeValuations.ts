@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchTradeLogValuations, type TradeLog, type TradeLogValuation } from "../../api/tradeLogs";
 import { errorMessage } from "./format";
 
@@ -21,5 +21,6 @@ export function useTradeValuations(trades: TradeLog[], refresh: number, enabled:
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 15 * 60_000);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [key, refresh, enabled]);
-  return { marks: new Map(marks.map(mark => [mark.trade_id, mark])), error: enabled && key ? error : "", loading: enabled && !!key && loading };
+  const byId = useMemo(() => new Map(marks.map(mark => [mark.trade_id, mark])), [marks]);
+  return { marks: byId, error: enabled && key ? error : "", loading: enabled && !!key && loading };
 }
