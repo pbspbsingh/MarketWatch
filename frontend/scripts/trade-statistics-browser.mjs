@@ -146,6 +146,9 @@ try {
     }
   }
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  const filterKey = "market-watch.trade-logs-filters-v1";
+  const savedFilters = { symbol: "NVDA", direction: ["short"], status: ["loss"], tag_id: [4], tag_scope: ["leg"], start: "2026-10-01", end: "2026-10-22" };
+  await evaluate(`localStorage.setItem(${JSON.stringify(filterKey)}, ${JSON.stringify(JSON.stringify(savedFilters))})`);
   for (const id of [2, 404]) {
     await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-statistics-test.html?trade_id=${id}` });
     for (let i = 0; i < 200; i++) {
@@ -153,7 +156,39 @@ try {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     record(await evaluate("window.tradeStatisticsTest.verifyLinkedTrade()"));
+    assert.equal(await evaluate("document.querySelector('.tl-filters input').value"), "", "Trade links bypass saved filters");
+    assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(filterKey)}))`), savedFilters, "Trade links preserve saved filters");
   }
+  const reloadJournal = async () => {
+    await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-statistics-test.html` });
+    for (let i = 0; i < 200; i++) {
+      if (await evaluate("Boolean(window.tradeStatisticsTest)")) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error("Journal did not reload");
+  };
+  await reloadJournal();
+  assert.equal(await evaluate("document.querySelector('.tl-filters input').value"), "NVDA", "Ordinary visits restore saved filters");
+  assert.equal(await evaluate("document.querySelector('.tl-filter-scope [role=combobox]').textContent"), "Execution tags", "Saved dropdown selections restore");
+  await evaluate("history.pushState({}, '', '?trade_id=2'); window.dispatchEvent(new PopStateEvent('popstate')); new Promise(resolve => setTimeout(resolve, 100))");
+  record(await evaluate("window.tradeStatisticsTest.verifyLinkedTrade()"));
+  assert.equal(await evaluate("document.querySelector('.tl-filters input').value"), "", "In-page trade links bypass saved filters");
+  assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(filterKey)}))`), savedFilters, "In-page trade links preserve saved filters");
+  await evaluate("history.pushState({}, '', location.pathname); window.dispatchEvent(new PopStateEvent('popstate')); new Promise(resolve => setTimeout(resolve, 100))");
+  for (let i = 0; i < 100 && await evaluate("document.querySelector('.tl-filters input').value") !== "NVDA"; i++) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.equal(await evaluate("document.querySelector('.tl-filters input').value"), "NVDA", "Returning from a trade link restores saved filters");
+  await evaluate(`(() => {
+    const input = document.querySelector('.tl-filters input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'AMZN');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await reloadJournal();
+  assert.equal(await evaluate("document.querySelector('.tl-filters input').value"), "AMZN", "User filter changes survive reload");
+  await evaluate("[...document.querySelectorAll('.tl-filters button')].find(button => button.textContent === 'Reset').click()");
+  assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(filterKey)}))`), { symbol: "", direction: [], status: [], tag_id: [], tag_scope: [], start: "", end: "" }, "Reset persists cleared filters");
+  record({ savedFiltersRestored: true, linkedTradeBypassesFilters: true, savedFiltersPreserved: true, resetPersisted: true });
   await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-marker-test.html?ticker=AAPL` });
   for (let i = 0; i < 200; i++) {
     if (await evaluate("Boolean(window.tradeMarkerTest)")) break;

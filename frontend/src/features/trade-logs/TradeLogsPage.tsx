@@ -17,12 +17,12 @@ import { TradeTags } from "./TradeTags";
 import { TradeFilterSelect } from "./TradeFilterSelect";
 import { restoreChartWidth, saveChartWidth } from "./chartLayout";
 import { tradeIdFromSearch } from "./tradeLinks";
+import { initialFilters, restoreFilters, saveFilters } from "./filterStorage";
 import { draftFromTrade, errorMessage, newDraft, payload } from "./format";
 import "./trade-logs.css";
 
 const draftKey = "trade-logs-draft-v1";
 const chartWidthKey = "market-watch.trade-logs-chart-width-percent";
-const initialFilters: TradeLogFilters = { symbol: "", direction: [], status: [], tag_id: [], tag_scope: [], start: "", end: "" };
 interface EditorState { saved: TradeLog | null; draft: TradeLogInput; baseline: string }
 function restoreDraft(): EditorState | null {
   try {
@@ -46,7 +46,8 @@ export function TradeLogsPage() {
   const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
   const focusRefresh = useFocusRefresh();
   const [selectedTrade, setSelectedTrade] = useState<TradeLog | null>(null);
-  const [filters, setFilters] = useState(initialFilters);
+  const [filters, setFilters] = useState(() => linkedTradeId === undefined ? restoreFilters() : initialFilters);
+  const [filterLinkId, setFilterLinkId] = useState(linkedTradeId);
   const [snapshot, setSnapshot] = useState<TradeLogSnapshot | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(restoreDraft);
   const [loading, setLoading] = useState(true);
@@ -56,10 +57,20 @@ export function TradeLogsPage() {
   const [notice, setNotice] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [confirm, setConfirm] = useState<{ title: string; text: string; action: () => void; destructive?: boolean } | null>(null);
+  // Switch filter context before rendering a new URL; late trade responses cannot reset user edits.
+  if (filterLinkId !== linkedTradeId) {
+    setFilterLinkId(linkedTradeId);
+    setFilters(linkedTradeId === undefined ? restoreFilters() : initialFilters);
+  }
   const { marks, error: marketError, loading: marksLoading } = useTradeValuations(snapshot?.trades ?? [], refresh + focusRefresh, tab === 0 || tab === 1 && statisticsIncludeOpen);
   const dirty = editor !== null && JSON.stringify(editor.draft) !== editor.baseline;
   const refreshData = () => setRefresh(n => n + 1);
-  const changeFilter = (patch: Partial<TradeLogFilters>) => setFilters(current => ({ ...current, ...patch }));
+  // Persist user changes only; opening a trade link temporarily bypasses saved filters.
+  const changeFilter = (patch: Partial<TradeLogFilters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    saveFilters(next);
+  };
   useEffect(() => {
     if (linkedTradeId === undefined) return;
     const controller = new AbortController();
@@ -147,23 +158,23 @@ export function TradeLogsPage() {
       <Tabs value={tab} onChange={(_, value: number) => setTab(value)} aria-label="Trade Logs sections" className="tl-tabs">
         {["Trades", "Statistics", "Tags"].map((label, index) => <Tab key={label} label={label} id={`tl-tab-${index}`} aria-controls={`tl-panel-${index}`} />)}
       </Tabs>
+      {tab !== 2 && <div className="tl-filters" role="group" aria-label="Trade filters">
+        <TextField size="small" label="Find ticker" value={filters.symbol} onChange={e => changeFilter({ symbol: e.target.value })} />
+        <TradeFilterSelect<TradeLogFilters["status"][number]> label="Status" hint="Match any selected status. Win and Loss refer to closed trades after fees. Statistics includes closed trades by default; use Include open trades to add valued open positions." values={filters.status} options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "win", label: "Win" }, { value: "loss", label: "Loss" }]} onChange={status => changeFilter({ status })} />
+        <TradeFilterSelect<TradeLogFilters["direction"][number]> label="Side" hint="Long: buy first, then sell. Short: sell first, then buy back. Leave empty to include both." values={filters.direction} options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }]} onChange={direction => changeFilter({ direction })} />
+        <TradeFilterSelect label="Tag" className="tl-filter-tag" hint="Include trades with any selected tag. This global filter also defines the comparison population in Statistics." values={filters.tag_id}
+          options={[...(snapshot?.tags ?? []).map(tag => ({ value: tag.id, label: tag.name })), ...filters.tag_id.filter(id => !snapshot?.tags.some(tag => tag.id === id)).map(id => ({ value: id, label: `Deleted tag #${id}` }))]}
+          onChange={tag_id => changeFilter({ tag_id })} />
+        <TradeFilterSelect<TradeLogFilters["tag_scope"][number]> label="Tag source" className="tl-filter-scope" hint="Choose where to look for tags: the whole trade, its executions, or both. Empty means both. A matching execution associates the whole trade with that tag." values={filters.tag_scope} options={[{ value: "trade", label: "Trade tags" }, { value: "leg", label: "Execution tags" }]} onChange={tag_scope => changeFilter({ tag_scope })} />
+        <DateRangePicker start={filters.start} end={filters.end} onChange={(start, end) => changeFilter({ start, end })} />
+        <Button size="small" onClick={() => changeFilter(initialFilters)}>Reset</Button>
+      </div>}
       <div className="tl-actions"><Tooltip title="Refresh journal and tag library"><span><IconButton size="small" disabled={loading || busy} aria-label="Refresh trade logs" onClick={refreshData}><RefreshIcon fontSize="small" /></IconButton></span></Tooltip><Button variant="contained" size="small" startIcon={<AddIcon />} disabled={busy} onClick={create}>New trade</Button></div>
     </header>
     {error && !editor && <Alert severity="error" onClose={() => setError("")}>{error}</Alert>}
     <Toast message={notice || undefined} severity="success" onClose={() => setNotice("")} />
     {loadError && <Alert severity="error" action={<Button onClick={refreshData}>Retry</Button>}>{loadError}{snapshot && " Previous results remain visible."}</Alert>}
 
-    {tab !== 2 && <div className="tl-filters">
-      <TextField size="small" label="Find ticker" value={filters.symbol} onChange={e => changeFilter({ symbol: e.target.value })} />
-      <TradeFilterSelect<TradeLogFilters["status"][number]> label="Status" hint="Match any selected status. Win and Loss refer to closed trades after fees. Statistics includes closed trades by default; use Include open trades to add valued open positions." values={filters.status} options={[{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }, { value: "win", label: "Win" }, { value: "loss", label: "Loss" }]} onChange={status => changeFilter({ status })} />
-      <TradeFilterSelect<TradeLogFilters["direction"][number]> label="Side" hint="Long: buy first, then sell. Short: sell first, then buy back. Leave empty to include both." values={filters.direction} options={[{ value: "long", label: "Long" }, { value: "short", label: "Short" }]} onChange={direction => changeFilter({ direction })} />
-      <TradeFilterSelect label="Tag" className="tl-filter-tag" hint="Include trades with any selected tag. This global filter also defines the comparison population in Statistics." values={filters.tag_id}
-        options={[...(snapshot?.tags ?? []).map(tag => ({ value: tag.id, label: tag.name })), ...filters.tag_id.filter(id => !snapshot?.tags.some(tag => tag.id === id)).map(id => ({ value: id, label: `Deleted tag #${id}` }))]}
-        onChange={tag_id => changeFilter({ tag_id })} />
-      <TradeFilterSelect<TradeLogFilters["tag_scope"][number]> label="Tag source" className="tl-filter-scope" hint="Choose where to look for tags: the whole trade, its executions, or both. Empty means both. A matching execution associates the whole trade with that tag." values={filters.tag_scope} options={[{ value: "trade", label: "Trade tags" }, { value: "leg", label: "Execution tags" }]} onChange={tag_scope => changeFilter({ tag_scope })} />
-      <DateRangePicker start={filters.start} end={filters.end} onChange={(start, end) => changeFilter({ start, end })} />
-      <Button size="small" onClick={() => setFilters(initialFilters)}>Reset</Button>
-    </div>}
     <div role="tabpanel" hidden={tab !== 0} id="tl-panel-0" aria-labelledby="tl-tab-0">
       {marketError && <Alert severity="warning">Open-position prices could not refresh. Check the valuation dates before using the displayed returns.</Alert>}
       <div className="tl-trade-layout">
