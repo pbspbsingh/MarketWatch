@@ -8,6 +8,7 @@ import { fetchMarketChartHistorySnapshot, maximumMarketChartHistoryDays, type Ma
 import { MarketChart } from "../charts/MarketChart";
 import { errorMessage, shares } from "./format";
 import { tradeChartRange } from "./chartHistoryRange";
+import { dailyExecutionMarkers } from "./executionMarkers";
 import { TradeTickerLink } from "./TradeTickerLink";
 import "../charts/market-chart.css";
 
@@ -27,10 +28,7 @@ export function TradeLogChart({ trade, onSelect, onClose, onEdit, onExpand }: { 
     return () => controller.abort();
   }, [trade.symbol, start, end, tooLong, key]);
   const data = result?.key === key ? result.data : undefined;
-  const markers = useMemo(() => trade.executions.map((leg, index) => ({
-    id: String(index), date: leg.market_date, exactDate: true, side: leg.side,
-    text: `${leg.action[0]}${index + 1}`,
-  })), [trade.executions]);
+  const markers = useMemo(() => dailyExecutionMarkers(trade.executions), [trade.executions]);
   const missing = data ? markers.filter(marker => !data.candles.some(candle => candle.date === marker.date)).length : 0;
   return <section className="tl-chart-section tl-trade-view-section" aria-label="Execution chart">
     <div className="tl-section-heading"><h3><TradeTickerLink trade={trade} /> - Daily</h3>{onExpand && <Tooltip title="Open hourly chart overlay"><IconButton size="small" aria-label="Expand trade charts" onClick={onExpand}><OpenInFullIcon fontSize="small" /></IconButton></Tooltip>}<IconButton size="small" aria-label={`Edit ${trade.symbol} trade ${trade.id}`} onClick={onEdit}><EditOutlinedIcon fontSize="small" /></IconButton>{onClose && <IconButton size="small" aria-label="Close trade charts" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>}</div>

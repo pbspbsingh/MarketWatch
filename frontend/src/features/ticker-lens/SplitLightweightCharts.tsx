@@ -39,10 +39,12 @@ import {
 } from "../../api/marketChartLive";
 import { isArrowKeyControl, tickerMarketWatchUrl } from "./utils";
 import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
+import type { MarketChartDateMarker } from "../charts/MarketChart";
 
 interface SplitLightweightChartsProps {
   volumeRunRate?: VolumeRunRateControl;
   topSymbol: string;
+  topDateMarkers?: MarketChartDateMarker[];
   bottomSymbol: string;
   topCompanyName?: string;
   bottomCompanyName?: string;
@@ -75,6 +77,7 @@ interface ChartMenuState {
 export default function SplitLightweightCharts({
   volumeRunRate,
   topSymbol,
+  topDateMarkers,
   bottomSymbol,
   topCompanyName,
   bottomCompanyName,
@@ -293,6 +296,7 @@ export default function SplitLightweightCharts({
             <MarketChartContainer
               showCandleReadout
               symbol={topSymbol}
+              dateMarkers={topDateMarkers}
               volumeRunRate={volumeRunRate}
               companyName={topCompanyName}
               tradingViewSymbol={topTradingViewSymbol}

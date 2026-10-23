@@ -1,4 +1,12 @@
 import type { TradeLogExecution } from "../../api/tradeLogs";
+import type { MarketChartDateMarker } from "../charts/MarketChart";
+
+export function dailyExecutionMarkers(executions: TradeLogExecution[]): MarketChartDateMarker[] {
+  return executions.map((leg, index) => ({
+    id: String(index), date: leg.market_date, exactDate: true, side: leg.side,
+    text: `${leg.action[0]}${index + 1}`,
+  }));
+}
 
 // Use the provider's actual candle starts, including half-hour session starts.
 // A fill in a gap must never be attached to a candle from an earlier session.

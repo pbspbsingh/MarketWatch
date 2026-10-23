@@ -17,6 +17,7 @@ import {
 import { TickerDetailsDialog, type TickerDetailsTab } from "../../components/TickerDetailsDialog";
 import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
+import type { MarketChartDateMarker } from "../charts/MarketChart";
 import type { ImageExportAction } from "../../components/ImageExportMenu";
 import {
   copyElementAsPng,
@@ -61,6 +62,7 @@ interface ChartPanelProps {
   groupKeys: Set<string>;
   industryKeys: Set<string>;
   selectedTicker: string | undefined;
+  dateMarkers?: MarketChartDateMarker[];
   symbols?: string[];
   onSelectedTickerContext: (context: SelectedTickerContext | undefined) => void;
   horizontalDetailsNavigation?: boolean | "right";
@@ -79,6 +81,7 @@ export function ChartPanel({
   groupKeys,
   industryKeys,
   selectedTicker,
+  dateMarkers,
   symbols,
   onSelectedTickerContext,
   horizontalDetailsNavigation = true,
@@ -464,6 +467,7 @@ export function ChartPanel({
             >
               <SplitLightweightCharts
                 {...liveCharts}
+                topDateMarkers={interval === "D" ? dateMarkers : undefined}
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 topCompanyName={`${summary.tradingview_symbol.split(":", 1)[0]} \\ ${summary.company_name ?? summary.symbol}`}

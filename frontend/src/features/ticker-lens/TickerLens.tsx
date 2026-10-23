@@ -9,6 +9,7 @@ import { createTickerStreamClient } from "../../api/tickerStream";
 import type { Watchlist } from "../../api/watchlists";
 import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
+import type { MarketChartDateMarker } from "../charts/MarketChart";
 import {
   emptyGroupKeys,
   groupModeKey,
@@ -57,6 +58,7 @@ import "./ticker-lens.css";
 
 interface TickerLensProps {
   universe: TickerUniverse;
+  chartAnnotations?: { symbol: string; markers: MarketChartDateMarker[] };
   watchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onBoundedResolution?: (failedSymbols: string[]) => void;
@@ -119,6 +121,7 @@ const emptyGroupCounts = new Map<string, number>();
 
 export function TickerLens({
   universe,
+  chartAnnotations,
   watchlists,
   onWatchlistsChange,
   onBoundedResolution,
@@ -606,6 +609,7 @@ export function TickerLens({
         groupKeys={selectedGroupKeys}
         industryKeys={industryKeys}
         selectedTicker={selectedTicker}
+        dateMarkers={chartAnnotations?.symbol === selectedTicker ? chartAnnotations?.markers : undefined}
         symbols={bounded ? boundedSymbols : undefined}
         onSelectedTickerContext={handleSelectedTickerContext}
       />

@@ -22,7 +22,7 @@ import type {
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 import { useRelativeStrengthPeriod } from "../../app/AppSettings";
-import { MarketChart } from "./MarketChart";
+import { MarketChart, type MarketChartDateMarker } from "./MarketChart";
 import type {
   ChartSyncTarget,
   ChartViewport,
@@ -51,6 +51,7 @@ interface MarketChartContainerProps {
   volumeRunRate?: VolumeRunRateControl;
   showCandleReadout?: boolean;
   symbol: string;
+  dateMarkers?: MarketChartDateMarker[];
   companyName?: string;
   companyNameHref?: string;
   tradingViewSymbol?: string;
@@ -89,6 +90,7 @@ export function MarketChartContainer({
   volumeRunRate,
   showCandleReadout = false,
   symbol,
+  dateMarkers,
   companyName,
   companyNameHref,
   tradingViewSymbol,
@@ -407,6 +409,7 @@ export function MarketChartContainer({
         <MarketChart
           key={`${snapshot.symbol}\0${snapshot.interval}`}
           data={snapshot}
+          dateMarkers={snapshot.symbol === marketDataSymbol(symbol) ? dateMarkers : undefined}
           volumeRunRate={volumeRunRate}
           showCandleReadout={showCandleReadout}
           companyName={companyName}

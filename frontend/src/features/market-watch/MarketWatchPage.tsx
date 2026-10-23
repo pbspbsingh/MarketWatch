@@ -1,4 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
 import { refreshIndustryMemberships, resolveTickerMembership } from "../../api/tickers";
 import { Toast } from "../../components/Toast";
 import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
@@ -11,6 +13,8 @@ import type {
 } from "../ticker-lens/types";
 import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
 import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
+import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
+import { tradeIdFromSearch } from "../trade-logs/tradeLinks";
 import { IndustryMembershipRefreshDialog } from "./IndustryMembershipRefreshDialog";
 import { MarketWatchToolbar } from "./MarketWatchToolbar";
 import "./market-watch.css";
@@ -36,6 +40,9 @@ export function MarketWatchPage() {
 
 function MarketWatchContent() {
   const tickerStrength = useTickerStrengthFeature();
+  const [searchParams] = useSearchParams();
+  const tradeId = tradeIdFromSearch(searchParams);
+  const [linkedTrade, setLinkedTrade] = useState<TradeLog>();
   const [membershipRevision, setMembershipRevision] = useState(0);
   const [selection, setSelection] = useState<
     Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "groups">
@@ -46,6 +53,25 @@ function MarketWatchContent() {
     text: string;
     severity: "success" | "error";
   }>();
+  useEffect(() => {
+    if (tradeId === undefined) return;
+    const controller = new AbortController();
+    void fetchTradeLog(tradeId, controller.signal)
+      .then((trade) => { if (!controller.signal.aborted) setLinkedTrade(trade); })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setLinkedTrade(undefined);
+          setRefreshMessage({
+            severity: "error",
+            text: `Trade markers unavailable: ${error instanceof Error ? error.message : "Failed to load trade"}`,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [tradeId]);
+  const chartAnnotations = useMemo(() => linkedTrade !== undefined && linkedTrade.id === tradeId
+    ? { symbol: linkedTrade.symbol, markers: dailyExecutionMarkers(linkedTrade.executions) }
+    : undefined, [linkedTrade, tradeId]);
   const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
     return fetchGlobalGroupRankings(mode, signal);
   }, []);
@@ -122,6 +148,7 @@ function MarketWatchContent() {
       />
       <TickerLens
         accent="purple"
+        chartAnnotations={chartAnnotations}
         universe={{
           type: "market-watch",
           resolveGroups,

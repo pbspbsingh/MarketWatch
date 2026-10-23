@@ -16,9 +16,11 @@ const server = await createServer({
   root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "error",
   plugins: [react(), { name: "trade-statistics-fixture", configureServer(server) {
     server.middlewares.use((request, response, next) => {
-      if (request.url?.split("?")[0] !== "/__trade-statistics-test.html") return next();
+      const path = request.url?.split("?")[0];
+      if (!["/__trade-statistics-test.html", "/__trade-marker-test.html"].includes(path)) return next();
+      const fixture = path === "/__trade-marker-test.html" ? "market-watch-trade-markers" : "trade-statistics";
       response.setHeader("Content-Type", "text/html");
-      void server.transformIndexHtml(request.url, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trade Logs test</title></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/trade-statistics.tsx"></script></body></html>')
+      void server.transformIndexHtml(request.url, `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trade Logs test</title></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/${fixture}.tsx"></script></body></html>`)
         .then(html => response.end(html)).catch(next);
     });
   } }],
@@ -152,6 +154,12 @@ try {
     }
     record(await evaluate("window.tradeStatisticsTest.verifyLinkedTrade()"));
   }
+  await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-marker-test.html?ticker=AAPL` });
+  for (let i = 0; i < 200; i++) {
+    if (await evaluate("Boolean(window.tradeMarkerTest)")) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  record({ marketWatchTradeMarkers: await evaluate("window.tradeMarkerTest.runChecks()") });
   await writeFile(join(tmpdir(), "marketwatch-trade-statistics-results.json"), JSON.stringify(results, null, 2));
 } catch (error) {
   if (call && socket?.readyState === WebSocket.OPEN) {
