@@ -123,7 +123,7 @@ export function fetchTradeLogs(filters: TradeLogFilters, signal?: AbortSignal): 
   }
   return request(`?${query}`, { signal });
 }
-export function fetchTradeLog(id: number): Promise<TradeLog> { return request(`/${id}`); }
+export function fetchTradeLog(id: number, signal?: AbortSignal): Promise<TradeLog> { return request(`/${id}`, { signal }); }
 export function fetchTradeLogValuations(signal?: AbortSignal): Promise<TradeLogValuation[]> { return request("/valuations", { signal }); }
 export function fetchTradeLogHourlyChart(id: number, signal?: AbortSignal): Promise<TradeLogHourlyChart> { return request(`/${id}/hourly`, { signal }); }
 export function saveTradeLog(id: number | null, input: TradeLogInput): Promise<TradeLog> {

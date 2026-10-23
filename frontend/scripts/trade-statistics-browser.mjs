@@ -16,9 +16,9 @@ const server = await createServer({
   root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "error",
   plugins: [react(), { name: "trade-statistics-fixture", configureServer(server) {
     server.middlewares.use((request, response, next) => {
-      if (request.url !== "/__trade-statistics-test.html") return next();
+      if (request.url?.split("?")[0] !== "/__trade-statistics-test.html") return next();
       response.setHeader("Content-Type", "text/html");
-      void server.transformIndexHtml(request.url, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trade statistics test</title></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/trade-statistics.tsx"></script></body></html>')
+      void server.transformIndexHtml(request.url, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trade Logs test</title></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/trade-statistics.tsx"></script></body></html>')
         .then(html => response.end(html)).catch(next);
     });
   } }],
@@ -71,6 +71,37 @@ try {
   const results = [];
   const record = value => { results.push(value); console.log(JSON.stringify(value)); };
   record(await evaluate("window.tradeStatisticsTest.runChecks()"));
+  await evaluate("window.tradeStatisticsTest.showTab('Duration')");
+  for (const activation of ["keyboard", "mouse"]) {
+    const point = await evaluate(`(() => {
+      const link = document.querySelector('.tl-stats-chart a');
+      link.focus();
+      const rect = link.getBoundingClientRect();
+      const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+      const target = ${JSON.stringify(activation)} === 'mouse' ? document.elementFromPoint(x, y).closest('a') : link;
+      return { x, y, href: new URL(target.getAttribute('href'), location.origin).href };
+    })()`);
+    const existingTargets = new Set((await call("Target.getTargets")).targetInfos.map(target => target.targetId));
+    if (activation === "keyboard") {
+      await call("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      await call("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    } else {
+      await call("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+      await call("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+    }
+    let opened;
+    for (let i = 0; i < 100; i++) {
+      opened = (await call("Target.getTargets")).targetInfos.find(target => !existingTargets.has(target.targetId) && target.url === point.href);
+      if (opened) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert(opened, `Duration ${activation} activation opens its trade in a new tab`);
+    await call("Target.closeTarget", { targetId: opened.targetId });
+    await call("Page.bringToFront");
+    assert.equal(await evaluate("document.querySelector('.tl-tabs [aria-selected=true]').textContent"), "Statistics");
+    assert.equal(await evaluate("document.querySelector('.tl-stats-tabs [aria-selected=true]').textContent"), "Duration");
+    record({ durationTradeNewTab: activation, chartPreserved: true });
+  }
   for (const [width, height] of [[1440, 900], [1024, 768], [800, 600], [390, 844]]) {
     await call("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     record(await evaluate("window.tradeStatisticsTest.verifyLayout()"));
@@ -111,6 +142,15 @@ try {
         await writeFile(join(tmpdir(), `marketwatch-stats-audit-${theme}-${width}-${tab.toLowerCase()}.png`), Buffer.from(shot.data, "base64"));
       }
     }
+  }
+  await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  for (const id of [2, 404]) {
+    await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-statistics-test.html?trade_id=${id}` });
+    for (let i = 0; i < 200; i++) {
+      if (await evaluate("Boolean(window.tradeStatisticsTest)")) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    record(await evaluate("window.tradeStatisticsTest.verifyLinkedTrade()"));
   }
   await writeFile(join(tmpdir(), "marketwatch-trade-statistics-results.json"), JSON.stringify(results, null, 2));
 } catch (error) {

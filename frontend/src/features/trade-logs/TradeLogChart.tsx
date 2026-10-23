@@ -8,6 +8,7 @@ import { fetchMarketChartHistorySnapshot, maximumMarketChartHistoryDays, type Ma
 import { MarketChart } from "../charts/MarketChart";
 import { errorMessage, shares } from "./format";
 import { tradeChartRange } from "./chartHistoryRange";
+import { TradeTickerLink } from "./TradeTickerLink";
 import "../charts/market-chart.css";
 
 export function TradeLogChart({ trade, onSelect, onClose, onEdit, onExpand }: { trade: TradeLog; onSelect: (index: number) => void; onClose?: () => void; onEdit: () => void; onExpand?: () => void }) {
@@ -32,7 +33,7 @@ export function TradeLogChart({ trade, onSelect, onClose, onEdit, onExpand }: { 
   })), [trade.executions]);
   const missing = data ? markers.filter(marker => !data.candles.some(candle => candle.date === marker.date)).length : 0;
   return <section className="tl-chart-section tl-trade-view-section" aria-label="Execution chart">
-    <div className="tl-section-heading"><h3>Daily</h3>{onExpand && <Tooltip title="Open hourly chart overlay"><IconButton size="small" aria-label="Expand trade charts" onClick={onExpand}><OpenInFullIcon fontSize="small" /></IconButton></Tooltip>}<IconButton size="small" aria-label={`Edit ${trade.symbol} trade ${trade.id}`} onClick={onEdit}><EditOutlinedIcon fontSize="small" /></IconButton>{onClose && <IconButton size="small" aria-label="Close trade charts" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>}</div>
+    <div className="tl-section-heading"><h3><TradeTickerLink trade={trade} /> - Daily</h3>{onExpand && <Tooltip title="Open hourly chart overlay"><IconButton size="small" aria-label="Expand trade charts" onClick={onExpand}><OpenInFullIcon fontSize="small" /></IconButton></Tooltip>}<IconButton size="small" aria-label={`Edit ${trade.symbol} trade ${trade.id}`} onClick={onEdit}><EditOutlinedIcon fontSize="small" /></IconButton>{onClose && <IconButton size="small" aria-label="Close trade charts" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>}</div>
     {tooLong ? <Alert severity="info">This trade exceeds the available chart history. Your executions can still be edited and saved.</Alert>
       : result?.key === key && result.error ? <Alert severity="info" action={<Button onClick={() => setAttempt(n => n + 1)}>Retry</Button>}>Chart unavailable. Your journal can still be saved.</Alert>
       : !data ? <div className="tl-chart-placeholder"><CircularProgress size={20} /> Loading chart</div>

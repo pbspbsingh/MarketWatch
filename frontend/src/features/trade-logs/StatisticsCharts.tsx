@@ -33,10 +33,11 @@ function ChartFrame({ label, children }: { label: string; children: (width: numb
   </div>;
 }
 
-function Mark({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function Mark({ label, onClick, href, children }: { label: string; children: ReactNode } & ({ onClick: () => void; href?: never } | { href: string; onClick?: never })) {
   return <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{label}</span>} arrow>
-    <g className="tl-stats-mark" role="button" tabIndex={0} aria-label={label} onClick={onClick}
-      onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}>{children}</g>
+    {href !== undefined ? <a className="tl-stats-mark" href={href} target="_blank" rel="noopener noreferrer" tabIndex={0} aria-label={label}>{children}</a>
+      : <g className="tl-stats-mark" role="button" tabIndex={0} aria-label={label} onClick={onClick}
+        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}>{children}</g>}
   </Tooltip>;
 }
 
@@ -194,7 +195,7 @@ export function GroupChart({ groups, metric, spread, scrollable = false, onGroup
   </div>;
 }
 
-export function DurationChart({ points, onTrade }: { points: TradePoint[]; onTrade: (point: TradePoint) => void }) {
+export function DurationChart({ points }: { points: TradePoint[] }) {
   const valid = points.filter(point => point.returnPercent !== null);
   const returns = domain(valid.map(point => point.returnPercent));
   const durations: [number, number] = [0, valid.reduce((max, point) => Math.max(max, point.durationDays), 1)];
@@ -206,7 +207,7 @@ export function DurationChart({ points, onTrade }: { points: TradePoint[]; onTra
         const value = durations[0] + (durations[1] - durations[0]) * i / 4;
         return <text key={i} x={scale(value, durations, 70, width - 20)} y={height - 12} textAnchor={i === 4 ? "end" : "middle"}>{chartNumber(value)}d</text>;
       })}
-      {valid.map(point => <Mark key={point.trade.id} label={`${point.trade.symbol} #${point.trade.id}${point.mark ? " · open" : ""}\n${chartNumber(point.durationDays)} days · ${chartNumber(point.returnPercent!, "percent")}\nNet P&L ${chartNumber(point.pnl, "money")}${point.mark ? `\nDaily close $${point.mark.price} on ${point.mark.date}` : ""}`} onClick={() => onTrade(point)}>
+      {valid.map(point => <Mark key={point.trade.id} href={`/trade-logs?trade_id=${point.trade.id}`} label={`${point.trade.symbol} #${point.trade.id}${point.mark ? " · open" : ""}\n${chartNumber(point.durationDays)} days · ${chartNumber(point.returnPercent!, "percent")}\nNet P&L ${chartNumber(point.pnl, "money")}${point.mark ? `\nDaily close $${point.mark.price} on ${point.mark.date}` : ""}\nOpen trade in a new tab`}>
         <circle cx={scale(point.durationDays, durations, 70, width - 20)} cy={scale(point.returnPercent!, returns, height - 35, 22)} r={5} fill={color(point.pnl)} opacity={0.65} />
         <circle cx={scale(point.durationDays, durations, 70, width - 20)} cy={scale(point.returnPercent!, returns, height - 35, 22)} r={9} fill="transparent" />
       </Mark>)}

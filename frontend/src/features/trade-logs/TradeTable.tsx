@@ -4,6 +4,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import type { TradeLog, TradeLogTag, TradeLogValuation } from "../../api/tradeLogs";
 import { localDate, money, pnlClass, shares } from "./format";
 import { TradeMonthRow } from "./TradeMonthRow";
+import { TradeTickerLink } from "./TradeTickerLink";
 
 type SortColumn = "opened" | "symbol" | "side" | "status" | "return" | "net" | "realized" | "unrealized" | "quantity" | "tags";
 const columns: { key: SortColumn | "entry"; label: string; numeric?: boolean }[] = [
@@ -19,10 +20,17 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
 }) {
   const [sort, setSort] = useState<{ column: SortColumn; direction: "asc" | "desc" }>({ column: "opened", direction: "desc" });
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const [revealedTradeId, setRevealedTradeId] = useState<number | null>(null);
+  const selectedMonth = trades.find(trade => trade.id === selectedId)?.executions[0]?.market_date.slice(0, 7);
+  // Reveal each new selection before committing the row and scrolling to it.
+  if (selectedId !== revealedTradeId && (selectedId === null || selectedMonth !== undefined)) {
+    setRevealedTradeId(selectedId);
+    if (selectedMonth) setExpandedMonths(current => ({ ...current, [selectedMonth]: true }));
+  }
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     selectedRowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [selectedId]);
+  }, [selectedId, selectedMonth]);
   const rows = trades.map(trade => {
     const open = trade.summary.status === "open";
     const cached = marks.get(trade.id);
@@ -95,7 +103,7 @@ export function TradeTable({ trades, tags, marks, selectedId, loading, onSelect,
             const priceInfo = open ? mark?.mark_date ? `Valued at $${mark.mark_price}, daily close on ${mark.mark_date}. Includes recorded fees; future exit fees excluded.` : "Daily valuation unavailable or awaiting a completed close after the last execution." : "Final result after recorded fees.";
             return <TableRow key={trade.id} ref={selectedId === trade.id ? selectedRowRef : null} hover selected={selectedId === trade.id} className="tl-trade-row" onClick={() => onSelect(trade)}>
               <TableCell><Button className="tl-date-link" size="small" aria-label={`View charts for ${trade.symbol} trade ${trade.id}`} aria-expanded={selectedId === trade.id} onClick={event => { event.stopPropagation(); onSelect(trade); }}>{localDate(trade.summary.opened_at)}</Button></TableCell>
-              <TableCell><strong>{trade.symbol}</strong></TableCell><TableCell className="tl-direction">{trade.direction}</TableCell><TableCell><Chip size="small" variant="outlined" label={status} className={open ? "" : pnlClass(trade.summary.realized_pnl)} /></TableCell>
+              <TableCell><strong><TradeTickerLink trade={trade} /></strong></TableCell><TableCell className="tl-direction">{trade.direction}</TableCell><TableCell><Chip size="small" variant="outlined" label={status} className={open ? "" : pnlClass(trade.summary.realized_pnl)} /></TableCell>
               <TableCell align="right" className={`tl-return ${roi == null ? "" : pnlClass(String(roi))}`}><Tooltip title={`${priceInfo} Net P&L / total entry value × 100; shorts use sell-entry value, without margin assumptions.`}><span>{roi == null ? "—" : `${roi > 0 ? "+" : ""}${roi.toFixed(2)}%`}</span></Tooltip></TableCell>
               <TableCell align="right" className={`tl-return ${net === null ? "" : pnlClass(net)}`}><Tooltip title={priceInfo}><span>{money(net)}</span></Tooltip></TableCell>
               <TableCell align="right" className={pnlClass(trade.summary.realized_pnl)}>{money(trade.summary.realized_pnl)}</TableCell>

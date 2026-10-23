@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { AppSettingsProvider, useAppSettings } from "../../src/app/AppSettings";
 import { TradeLogsPage } from "../../src/features/trade-logs/TradeLogsPage";
 import "../../src/app/styles.css";
@@ -58,9 +59,14 @@ window.fetch = async (url, init = {}) => {
     return new Response(JSON.stringify(saved), { headers: { "Content-Type": "application/json" } });
   }
   const query = new URL(path, location.origin).searchParams;
+  const tradeId = new URL(path, location.origin).pathname.match(/^\/api\/trade-logs\/(\d+)$/)?.[1];
   const filtered = allTrades.filter(trade => trade.id !== hiddenTradeId && (!query.get("symbol") || trade.symbol.includes(query.get("symbol")!)));
   let body: unknown;
-  if (path.includes("/market-chart/")) body = { candles: [] };
+  if (tradeId) {
+    body = allTrades.find(trade => trade.id === Number(tradeId));
+    if (!body) return new Response(JSON.stringify({ error: "Trade not found" }), { status: 404 });
+  }
+  else if (path.includes("/market-chart/")) body = { candles: [] };
   else if (path.endsWith("/hourly")) body = { symbol: "AAPL", candles: [], history_limited: false };
   else if (path.endsWith("/valuations")) {
     if (valuationMode === "error") return new Response(JSON.stringify({ error: "Fixture price refresh failed" }), { status: 503, headers: { "Content-Type": "application/json" } });
@@ -75,7 +81,7 @@ function Fixture() {
   const { setTheme } = useAppSettings();
   return <><div style={{ height: 48, padding: 12, fontSize: 12 }}>MarketWatch · Statistics verification <button onClick={() => setTheme("light")}>Light theme</button><button onClick={() => setTheme("dark")}>Dark theme</button></div><main style={{ height: "calc(100dvh - 48px)" }}><TradeLogsPage /></main></>;
 }
-createRoot(document.getElementById("root")!).render(<AppSettingsProvider><Fixture /></AppSettingsProvider>);
+createRoot(document.getElementById("root")!).render(<BrowserRouter><AppSettingsProvider><Fixture /></AppSettingsProvider></BrowserRouter>);
 
 const pause = () => new Promise(resolve => setTimeout(resolve, 70));
 async function waitFor(predicate: () => unknown, label: string) {
@@ -201,6 +207,18 @@ async function verifyDrillLayout() {
 }
 async function runChecks() {
   await waitFor(() => document.querySelector(".tl-trade-row"), "Trade Logs snapshot");
+  const tickerLink = document.querySelector<HTMLAnchorElement>(".tl-trade-row a")!;
+  const linkedId = new URL(tickerLink.href).searchParams.get("trade_id");
+  assert(tickerLink.target === "_blank" && linkedId, "Table ticker opens the trade-linked Market Watch page in a new tab");
+  assert(new URL(tickerLink.href).searchParams.get("ticker") === tickerLink.textContent, "Table link carries its ticker");
+  window.addEventListener("click", event => event.preventDefault(), { capture: true, once: true });
+  click(tickerLink);
+  await pause();
+  assert(!document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "Ticker link does not also select its row");
+  click(tickerLink.closest("tr")!.querySelector(".tl-date-link"));
+  await waitFor(() => document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "row selection remains available");
+  assert(document.querySelector<HTMLAnchorElement>(".tl-chart-drawer-paper h3 a")?.href === tickerLink.href, "Chart header uses the same trade link");
+  click(document.querySelector('[aria-label="Close trade charts"]'));
   await section("Statistics");
   assert(document.querySelector('.tl-stats-tabs [aria-selected="true"]')?.textContent === "Overview", "Overview should open first");
   const chartTabs = [...document.querySelectorAll('.tl-stats-tabs [role="tab"]')].map(tab => tab.textContent);
@@ -241,20 +259,29 @@ async function runChecks() {
   assert(document.querySelector(".tl-stats-drill table"), "Bucket drill-down shows trade list");
   assert(!document.querySelector(".tl-stats-drill .MuiPagination-root"), "Matching trades have no pagination");
   const initialRows = document.querySelectorAll(".tl-stats-drill tbody tr").length;
-  const firstTradeLabel = document.querySelector('.tl-stats-drill [aria-label^="View "]')!.getAttribute("aria-label")!;
-  hiddenTradeId = Number(firstTradeLabel.match(/trade (\d+)$/)![1]);
+  const firstTradeLink = document.querySelector<HTMLAnchorElement>(".tl-stats-drill tbody a")!;
+  const firstTradeHref = firstTradeLink.href;
+  hiddenTradeId = Number(new URL(firstTradeHref).searchParams.get("trade_id"));
+  assert(firstTradeLink.target === "_blank" && new URL(firstTradeHref).pathname === "/trade-logs", "Popup symbols open Trade Logs details in a new tab");
+  window.addEventListener("click", event => event.preventDefault(), { capture: true, once: true });
+  click(firstTradeLink); await pause();
+  assert(document.querySelector(".tl-stats-drill"), "Opening a symbol preserves the distribution popup");
+  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Statistics", "Popup symbol link does not switch to Trades");
   await new Promise(resolve => setTimeout(resolve, 300));
   window.dispatchEvent(new Event("focus"));
   await waitFor(() => document.querySelectorAll(".tl-stats-drill tbody tr").length === initialRows - 1, "open drill-down reflects deletion on refresh");
-  assert(![...document.querySelectorAll('.tl-stats-drill [aria-label^="View "]')].some(button => button.getAttribute("aria-label") === firstTradeLabel), "Deleted trade cannot be opened from the overlay");
+  assert(![...document.querySelectorAll<HTMLAnchorElement>(".tl-stats-drill tbody a")].some(link => link.href === firstTradeHref), "Deleted trade cannot be opened from the overlay");
   hiddenTradeId = null;
   await new Promise(resolve => setTimeout(resolve, 300));
   window.dispatchEvent(new Event("focus"));
   await waitFor(() => document.querySelectorAll(".tl-stats-drill tbody tr").length === initialRows, "open drill-down reflects newly matching trades on refresh");
-  click(document.querySelector('.tl-stats-drill [aria-label^="View "]')); await pause();
-  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Trades", "Trade drill-down opens Trades section");
-  assert(document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "Trade drill-down opens read-only details");
-  assert(!document.querySelector(".tl-editor"), "Trade drill-down must not edit");
+  const open = window.open;
+  let rowDestination = "";
+  window.open = url => { rowDestination = String(url); return null; };
+  try { click(document.querySelector(".tl-stats-drill tbody tr")); } finally { window.open = open; }
+  assert(rowDestination.startsWith("/trade-logs?trade_id="), "Clicking a popup row opens Trade Logs details separately");
+  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Statistics", "Popup row preserves the Statistics tab");
+  click(document.querySelector('[aria-label="Close matching trades"]'));
   await section("Statistics");
   await subtab("Overview");
   const gradients = document.querySelectorAll(".tl-stats-chart linearGradient");
@@ -312,17 +339,26 @@ async function runChecks() {
     await waitFor(() => document.querySelector(".tl-stats-title .tl-caption")?.textContent === "122 / 122 trades · 2 open", "price retry recovery");
   }
   await subtab("Duration");
-  click(document.querySelector('.tl-stats-chart [aria-label^="AAPL #1001"]'));
-  await pause();
-  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Trades", "Open trade drill-down");
-  assert(document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "Read-only open trade details");
-  await section("Statistics");
+  await verifyDurationTradeLink(1001);
   await subtab("Distribution");
   assertFits();
   await verifyTagDescriptions();
   await section("Statistics");
   assert(errors.length === 0, `Browser errors: ${errors.join("; ")}`);
   return { passed: ["six chart tabs", "Any/All and control tooltips", "tag keyboard drill-down", "fixed comparison bins", "any/all tags", "dollar distribution", "bucket trade list", "read-only trade details", "drawdown", "average win/loss dollars and percentages", "monthly grouping", "pagination", "minimum sample count", "global filters", "open trade daily-close returns", "open partial-exit totals", "price date disclosure", "missing/stale/error price handling", "price retry recovery", "open trade drill-down"] };
+}
+
+async function verifyDurationTradeLink(id: number) {
+  const link = document.querySelector<SVGAElement>(`.tl-stats-chart a[href="/trade-logs?trade_id=${id}"]`);
+  assert(link, "Duration point is a native link to its trade");
+  assert(link.getAttribute("target") === "_blank" && link.getAttribute("rel")?.includes("noopener"), "Duration trade opens safely in a new tab");
+  assert(link.tabIndex === 0, "Duration trade link is keyboard accessible");
+  window.addEventListener("click", event => event.preventDefault(), { capture: true, once: true });
+  click(link);
+  await pause();
+  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Statistics", "Duration trade link preserves Statistics");
+  assert(document.querySelector('.tl-stats-tabs [aria-selected="true"]')?.textContent === "Duration", "Duration trade link preserves the chart tab");
+  assert(!document.querySelector(".tl-editor"), "Duration link does not open an editor");
 }
 
 async function verifyTagDescriptions() {
@@ -362,4 +398,32 @@ async function verifyTagDescriptions() {
   click(button("Cancel")); await pause();
 }
 
-Object.assign(window, { tradeStatisticsTest: { runChecks, verifyLayout, verifyDrillLayout, showTab: subtab } });
+async function verifyLinkedTrade() {
+  const id = Number(new URLSearchParams(location.search).get("trade_id"));
+  await waitFor(() => !document.querySelector('.trade-logs-page[aria-busy="true"]'), "linked journal loaded");
+  if (id === 404) {
+    await waitFor(() => document.body.textContent?.includes("Trade not found"), "deleted trade error");
+    assert(!document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "Deleted trade cannot display stale details");
+    return { deletedTradeHandled: true };
+  }
+  await waitFor(() => document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "linked trade details");
+  assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Trades", "Deep link opens Trades");
+  assert(document.querySelector(`.tl-trade-row.Mui-selected [aria-label$="trade ${id}"]`), "Linked trade's month expands and row is selected");
+  assert(!document.querySelector(".tl-editor"), "Deep link opens read-only details");
+  const row = document.querySelector(".tl-trade-row.Mui-selected")!.getBoundingClientRect();
+  const container = document.querySelector(".tl-table-container")!.getBoundingClientRect();
+  const header = document.querySelector(".tl-trades-table thead")!.getBoundingClientRect();
+  assert(row.top >= header.bottom - 1 && row.bottom <= container.bottom + 1, `Selected row scrolls fully into view: ${row.top}–${row.bottom}, header ${header.bottom}, bottom ${container.bottom}`);
+  const trade = allTrades.find(trade => trade.id === id)!;
+  const month = new Date(`${trade.executions[0].market_date.slice(0, 7)}-15T12:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  click([...document.querySelectorAll(".tl-month-toggle")].find(toggle => toggle.textContent?.startsWith(month)) ?? null);
+  await pause();
+  assert(!document.querySelector(".tl-trade-row.Mui-selected"), "Selected month can still be collapsed manually");
+  click(document.querySelector('[aria-label="Close trade charts"]'));
+  await pause();
+  assert(!document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "Linked chart can still be dismissed");
+  await section("Statistics"); await subtab("Duration");
+  await verifyDurationTradeLink(id);
+  return { readOnlyTradeDeepLink: true, collapsedMonthRevealed: true, selectedRowVisible: true };
+}
+Object.assign(window, { tradeStatisticsTest: { runChecks, verifyLayout, verifyDrillLayout, verifyLinkedTrade, showTab: subtab } });

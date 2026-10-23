@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Alert, Button, Checkbox, FormControlLabel, MenuItem, Pagination, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import type { TradeLog, TradeLogSnapshot, TradeLogValuation } from "../../api/tradeLogs";
+import type { TradeLogSnapshot, TradeLogValuation } from "../../api/tradeLogs";
 import { TradeFilterSelect } from "./TradeFilterSelect";
 import { ControlTooltip } from "./ControlTooltip";
 import { PnlValue } from "./PnlValue";
@@ -52,9 +52,9 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
   </TextField></ControlTooltip>;
 }
 
-export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marketError, includeOpen, onIncludeOpen, onRetryPrices, onOpenTrade }: {
+export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marketError, includeOpen, onIncludeOpen, onRetryPrices }: {
   snapshot: TradeLogSnapshot; tagScope: TagScope; marks: Map<number, TradeLogValuation>; marksLoading: boolean; marketError: string;
-  includeOpen: boolean; onIncludeOpen: (value: boolean) => void; onRetryPrices: () => void; onOpenTrade: (trade: TradeLog) => void;
+  includeOpen: boolean; onIncludeOpen: (value: boolean) => void; onRetryPrices: () => void;
 }) {
   const [tab, setTab] = useState<StatisticsTab>("Overview");
   const [selectedTags, setSelectedTags] = useState<number[]>([]);
@@ -112,8 +112,8 @@ export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marke
       {tab === "Tags" && <RankedView key="tags" groups={tagGroups(points, snapshot.tags, tagScope)} tags onGroup={selectTag} />}
       {tab === "Timing" && <TimingView points={points} onDrill={setDrill} timeZone={snapshot.time_zone} />}
       {tab === "Duration" && <>
-        <div className="tl-stats-chart-heading"><h3>Holding duration vs. return</h3><span className="tl-caption">One dot per trade · select to view details</span></div>
-        {stats.returnCount ? <DurationChart points={points} onTrade={point => onOpenTrade(point.trade)} /> : <Empty />}
+        <div className="tl-stats-chart-heading"><h3>Holding duration vs. return</h3><span className="tl-caption">One dot per trade · opens details in a new tab</span></div>
+        {stats.returnCount ? <DurationChart points={points} /> : <Empty />}
         <p className="tl-stats-footnote">Elapsed holding time in days. Green = profit; red = loss. Trades with unavailable returns are excluded.{includeOpen && " Open positions use current elapsed duration and daily-close returns."}</p>
       </>}
       {tab === "Symbols" && <RankedView key="symbols" groups={symbolGroups(points)} onGroup={group => setDrill({ label: group.label, kind: "symbol", value: group.key })} />}
@@ -121,7 +121,7 @@ export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marke
     </section>
     <div className="tl-stats-footer"><span>Fees included · {stats.returnCount < points.length ? `${points.length - stats.returnCount} returns unavailable · ` : ""}Tag source: {tagScope.length === 1 ? tagScope[0] === "trade" ? "trade" : "execution" : "trade + execution"}</span>
       <ControlTooltip title={includeOpen ? "Open positions use the latest available completed daily candle for each ticker. Recorded fees and partial exits are included; future exit fees are excluded. Price dates may differ by ticker." : "Open positions and their realized partial exits are excluded. Enable Include open trades to value them at the latest daily close."}><span>{includeOpen ? priceDates.length ? `Open close prices: ${priceDates[0]}${priceDates.length > 1 ? ` – ${priceDates.at(-1)}` : ""} ⓘ` : "No open close prices" : `${snapshot.open_trades} open · ${money(snapshot.open_realized_pnl)} realized on open trades ⓘ`}</span></ControlTooltip></div>
-    {drillGroup && <StatisticsTradeList group={drillGroup} unavailable={incomplete} onClose={() => setDrill(null)} onOpenTrade={trade => { setDrill(null); onOpenTrade(trade); }} />}
+    {drillGroup && <StatisticsTradeList group={drillGroup} unavailable={incomplete} onClose={() => setDrill(null)} />}
   </div>;
 }
 

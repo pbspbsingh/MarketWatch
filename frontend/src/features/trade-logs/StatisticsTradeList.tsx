@@ -1,12 +1,11 @@
 import { useId } from "react";
 import { Button, Dialog, DialogContent, DialogTitle, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import type { TradeLog } from "../../api/tradeLogs";
 import { summarizePoints, type TradeGroup } from "./statisticsData";
 import { chartNumber } from "./StatisticsCharts";
 import { money, pnlClass } from "./format";
 
-export function StatisticsTradeList({ group, unavailable = false, onClose, onOpenTrade }: { group: TradeGroup; unavailable?: boolean; onClose: () => void; onOpenTrade: (trade: TradeLog) => void }) {
+export function StatisticsTradeList({ group, unavailable = false, onClose }: { group: TradeGroup; unavailable?: boolean; onClose: () => void }) {
   const titleId = useId();
   const rows = [...group.points].sort((a, b) => b.endDate.localeCompare(a.endDate) || b.trade.id - a.trade.id);
   const net = String(summarizePoints(group.points).net);
@@ -19,8 +18,8 @@ export function StatisticsTradeList({ group, unavailable = false, onClose, onOpe
     <DialogContent>
       {unavailable ? <div className="tl-empty-small">Open-position prices are unavailable. Close this list to retry prices.</div> : rows.length > 0 ? <div className="tl-stats-drill-table">
         <table aria-label="Matching trades"><thead><tr><th>Trade</th><th>Closed / priced</th><th>Side</th><th>Net P&L</th><th>Return</th></tr></thead><tbody>
-          {rows.map(point => <tr key={point.trade.id} onClick={() => onOpenTrade(point.trade)}>
-            <td><Button size="small" onClick={event => { event.stopPropagation(); onOpenTrade(point.trade); }} aria-label={`View ${point.trade.symbol} trade ${point.trade.id}`}>{point.trade.symbol} <span className="tl-caption">#{point.trade.id}</span></Button>{point.mark && <span className="tl-stats-drill-open">open</span>}</td>
+          {rows.map(point => <tr key={point.trade.id} onClick={() => window.open(`/trade-logs?trade_id=${point.trade.id}`, "_blank", "noopener,noreferrer")}>
+            <td><Button component="a" href={`/trade-logs?trade_id=${point.trade.id}`} target="_blank" rel="noopener noreferrer" size="small" onClick={event => event.stopPropagation()} aria-label={`View ${point.trade.symbol} trade ${point.trade.id} in a new tab`}>{point.trade.symbol} <span className="tl-caption">#{point.trade.id}</span></Button>{point.mark && <span className="tl-stats-drill-open">open</span>}</td>
             <td title={point.mark ? `Open · daily close $${point.mark.price} on ${point.mark.date}` : `Closed ${point.endDate}`}><time dateTime={point.endDate}>{point.endDate}</time></td><td>{point.trade.direction}</td>
             <td className={pnlClass(point.pnlCash)} title={money(point.pnlCash)}>{money(point.pnlCash)}</td>
             <td className={pnlClass(point.pnlCash)}>{point.returnPercent === null ? "—" : chartNumber(point.returnPercent, "percent")}</td>

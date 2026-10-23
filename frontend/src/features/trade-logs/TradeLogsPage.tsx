@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tab, Tabs, TextField, Tooltip } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -15,6 +16,7 @@ import { TradeStatistics } from "./TradeStatistics";
 import { TradeTags } from "./TradeTags";
 import { TradeFilterSelect } from "./TradeFilterSelect";
 import { restoreChartWidth, saveChartWidth } from "./chartLayout";
+import { tradeIdFromSearch } from "./tradeLinks";
 import { draftFromTrade, errorMessage, newDraft, payload } from "./format";
 import "./trade-logs.css";
 
@@ -37,6 +39,8 @@ function editorFor(trade: TradeLog): EditorState {
 }
 
 export function TradeLogsPage() {
+  const [searchParams] = useSearchParams();
+  const linkedTradeId = tradeIdFromSearch(searchParams);
   const [tab, setTab] = useState(0);
   const [statisticsIncludeOpen, setStatisticsIncludeOpen] = useState(false);
   const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
@@ -56,6 +60,14 @@ export function TradeLogsPage() {
   const dirty = editor !== null && JSON.stringify(editor.draft) !== editor.baseline;
   const refreshData = () => setRefresh(n => n + 1);
   const changeFilter = (patch: Partial<TradeLogFilters>) => setFilters(current => ({ ...current, ...patch }));
+  useEffect(() => {
+    if (linkedTradeId === undefined) return;
+    const controller = new AbortController();
+    void fetchTradeLog(linkedTradeId, controller.signal)
+      .then(trade => { if (!controller.signal.aborted) { setSelectedTrade(trade); setTab(0); } })
+      .catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); });
+    return () => controller.abort();
+  }, [linkedTradeId]);
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
@@ -160,7 +172,7 @@ export function TradeLogsPage() {
           second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={() => setSelectedTrade(null)} onEdit={trade => guarded(() => void select(trade.id))} />} />
       </div>
     </div>
-    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} tagScope={filters.tag_scope} marks={marks} marksLoading={marksLoading} marketError={marketError} includeOpen={statisticsIncludeOpen} onIncludeOpen={setStatisticsIncludeOpen} onRetryPrices={refreshData} onOpenTrade={trade => { setSelectedTrade(trade); setTab(0); }} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>
+    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} tagScope={filters.tag_scope} marks={marks} marksLoading={marksLoading} marketError={marketError} includeOpen={statisticsIncludeOpen} onIncludeOpen={setStatisticsIncludeOpen} onRetryPrices={refreshData} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>
     <div role="tabpanel" hidden={tab !== 2} id="tl-panel-2" aria-labelledby="tl-tab-2"><TradeTags tags={snapshot?.tags ?? []} onRefresh={refreshData} /></div>
     <Dialog open={editor !== null} onClose={() => guarded(() => setEditor(null))} fullWidth maxWidth="lg" aria-label={editor?.saved ? "Edit trade" : "New trade"} slotProps={{ paper: { className: "trade-logs-ui tl-editor-dialog" } }}>
       <DialogContent className="tl-editor-dialog-content">
