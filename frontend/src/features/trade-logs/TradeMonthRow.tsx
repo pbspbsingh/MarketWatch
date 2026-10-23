@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { TableCell, TableRow, Tooltip } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
@@ -6,16 +7,18 @@ import { pnlClass } from "./format";
 import { summarizeMonth } from "./monthlySummary";
 import { PnlValue } from "./PnlValue";
 
-export function TradeMonthRow({ month, trades, marks, expanded, onToggle }: {
+const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+
+export const TradeMonthRow = memo(function TradeMonthRow({ month, trades, marks, expanded, onToggle, rowIndex }: {
   month: string; trades: TradeLog[]; marks: Map<number, TradeLogValuation>;
-  expanded: boolean; onToggle: () => void;
+  expanded: boolean; onToggle: (month: string) => void; rowIndex: number;
 }) {
   const summary = summarizeMonth(trades, marks);
-  return <TableRow className="tl-month-row">
+  return <TableRow className="tl-month-row" aria-rowindex={rowIndex}>
     <TableCell colSpan={4}>
-      <button type="button" className="tl-month-toggle" aria-expanded={expanded} onClick={onToggle}>
+      <button type="button" className="tl-month-toggle" aria-expanded={expanded} onClick={() => onToggle(month)}>
         {expanded ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
-        {new Date(`${month}-15T12:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+        {monthLabel.format(new Date(`${month}-15T12:00:00Z`))}
         <span>{trades.length} {trades.length === 1 ? "trade" : "trades"}</span>
       </button>
     </TableCell>
@@ -35,7 +38,7 @@ export function TradeMonthRow({ month, trades, marks, expanded, onToggle }: {
     <MonthAmount value={summary.largestLoss} returnPercent={summary.largestLossReturnPercent} label="Largest loss" title="Largest net loss on a closed trade, after fees, with that trade’s return percentage." emptyTitle="No closed losing trades in this month and current filters." />
     <TableCell colSpan={2} />
   </TableRow>;
-}
+});
 
 function MonthAmount({ value, returnPercent, title, label, emptyTitle = "Unavailable: one or more open trades are missing a current valuation." }: {
   value: string | null; returnPercent?: number | null; title: string; label?: string; emptyTitle?: string;

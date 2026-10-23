@@ -207,6 +207,7 @@ async function verifyDrillLayout() {
 }
 async function runChecks() {
   await waitFor(() => document.querySelector(".tl-trade-row"), "Trade Logs snapshot");
+  assert(!document.querySelector(".tl-statistics-dashboard"), "Statistics does not mount until first opened");
   const tickerLink = document.querySelector<HTMLAnchorElement>(".tl-trade-row a")!;
   const linkedId = new URL(tickerLink.href).searchParams.get("trade_id");
   assert(tickerLink.target === "_blank" && linkedId, "Table ticker opens the trade-linked Market Watch page in a new tab");
@@ -232,6 +233,8 @@ async function runChecks() {
   await dropdownTooltip("Tag source", "Trade tags", "Choose where to look for tags", true);
   await verifyLayout();
   const initialBuckets = [...document.querySelectorAll('.tl-stats-chart [role="button"]')].map(mark => mark.getAttribute("aria-label")?.split("\n")[0]);
+  const firstBucket = document.querySelector('.tl-stats-chart [role="button"]')!;
+  await tooltip(firstBucket, firstBucket.getAttribute("aria-label")!.split("\n")[0]);
   await subtab("Tags");
   const firstTag = document.querySelector('.tl-stats-chart [role="button"]');
   assert(firstTag, "Tag spreads rendered");
@@ -342,10 +345,47 @@ async function runChecks() {
   await verifyDurationTradeLink(1001);
   await subtab("Distribution");
   assertFits();
+  const dashboard = document.querySelector(".tl-statistics-dashboard");
+  await section("Trades");
+  await section("Statistics");
+  assert(document.querySelector(".tl-statistics-dashboard") === dashboard, "Statistics stays mounted after first visit");
+  assert(document.querySelector('.tl-stats-tabs [aria-selected="true"]')?.textContent === "Distribution", "Switching main tabs preserves the selected chart");
+  await verifyVirtualizedTable();
   await verifyTagDescriptions();
   await section("Statistics");
   assert(errors.length === 0, `Browser errors: ${errors.join("; ")}`);
   return { passed: ["six chart tabs", "Any/All and control tooltips", "tag keyboard drill-down", "fixed comparison bins", "any/all tags", "dollar distribution", "bucket trade list", "read-only trade details", "drawdown", "average win/loss dollars and percentages", "monthly grouping", "pagination", "minimum sample count", "global filters", "open trade daily-close returns", "open partial-exit totals", "price date disclosure", "missing/stale/error price handling", "price retry recovery", "open trade drill-down"] };
+}
+
+async function verifyVirtualizedTable() {
+  await section("Trades");
+  const sort = (label: string) => click([...document.querySelectorAll('.tl-trades-table .MuiTableSortLabel-root')].find(element => element.textContent === label) ?? null);
+  sort("Ticker");
+  await pause();
+  const container = document.querySelector<HTMLElement>(".tl-table-container")!;
+  const count = allTrades.length;
+  assert(document.querySelector(".tl-trades-table")?.getAttribute("aria-rowcount") === String(count + 1), "Virtual table exposes its full row count");
+  assert(document.querySelectorAll(".tl-trade-row").length < count, "Only a window of trade rows is mounted");
+  const widths = () => [...document.querySelectorAll(".tl-trades-table th")].map(cell => cell.getBoundingClientRect().width);
+  const before = widths();
+  container.scrollTop = container.scrollHeight;
+  await waitFor(() => document.querySelector(`.tl-trade-row[aria-rowindex="${count + 1}"]`), "last virtual row can be reached");
+  assert(widths().every((width, index) => Math.abs(width - before[index]) < 1), "Columns remain aligned when the window changes");
+  click(document.querySelector(`.tl-trade-row[aria-rowindex="${count + 1}"]`));
+  await pause();
+  for (let index = 0; index < 24; index++) {
+    container.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    await pause();
+  }
+  const selected = document.querySelector(".tl-trade-row.Mui-selected")!;
+  assert(selected.getAttribute("aria-rowindex") === String(count + 1 - 24), "Arrow selection crosses virtual windows");
+  const row = selected.getBoundingClientRect();
+  const header = document.querySelector(".tl-trades-table thead")!.getBoundingClientRect();
+  assert(row.top >= header.bottom - 1 && row.bottom <= container.getBoundingClientRect().bottom + 1, "Keyboard selection scrolls fully into view");
+  click(document.querySelector('[aria-label="Close trade charts"]'));
+  sort("Opened"); await pause(); sort("Opened"); await pause();
+  container.scrollTop = 0;
+  await section("Statistics");
 }
 
 async function verifyDurationTradeLink(id: number) {
@@ -353,6 +393,10 @@ async function verifyDurationTradeLink(id: number) {
   assert(link, "Duration point is a native link to its trade");
   assert(link.getAttribute("target") === "_blank" && link.getAttribute("rel")?.includes("noopener"), "Duration trade opens safely in a new tab");
   assert(link.tabIndex === 0, "Duration trade link is keyboard accessible");
+  link.focus();
+  await waitFor(() => [...document.querySelectorAll('[role="tooltip"]')].some(tip => tip.textContent === link.getAttribute("aria-label")), "chart tooltip is available on keyboard focus");
+  assert(document.querySelectorAll('[role="tooltip"]').length === 1, "Only one chart tooltip opens");
+  link.blur();
   window.addEventListener("click", event => event.preventDefault(), { capture: true, once: true });
   click(link);
   await pause();
@@ -408,7 +452,7 @@ async function verifyLinkedTrade() {
   }
   await waitFor(() => document.querySelector(".tl-chart-drawer-paper .tl-trade-details"), "linked trade details");
   assert(document.querySelector('.tl-tabs [aria-selected="true"]')?.textContent === "Trades", "Deep link opens Trades");
-  assert(document.querySelector(`.tl-trade-row.Mui-selected [aria-label$="trade ${id}"]`), "Linked trade's month expands and row is selected");
+  await waitFor(() => document.querySelector(`.tl-trade-row.Mui-selected [aria-label$="trade ${id}"]`), "linked trade's month expands and row is selected");
   assert(!document.querySelector(".tl-editor"), "Deep link opens read-only details");
   const row = document.querySelector(".tl-trade-row.Mui-selected")!.getBoundingClientRect();
   const container = document.querySelector(".tl-table-container")!.getBoundingClientRect();

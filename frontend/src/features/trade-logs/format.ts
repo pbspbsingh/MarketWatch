@@ -1,11 +1,12 @@
 import type { TradeLog, TradeLogExecutionInput, TradeLogInput } from "../../api/tradeLogs";
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const quantity = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 export const money = (value: string | null | undefined) => value == null ? "—" : currency.format(Number(value));
 export const shares = (value: string) => quantity.format(Number(value));
 export const pnlClass = (value: string) => Number(value) > 0 ? "tl-positive" : Number(value) < 0 ? "tl-negative" : "";
 export const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
-export const localDate = (value: string) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+export const localDate = (value: string) => date.format(new Date(value));
 export function localDateTime(value: string) {
   if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return value.slice(0, 16);
   const date = new Date(value);

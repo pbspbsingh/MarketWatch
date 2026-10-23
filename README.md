@@ -123,6 +123,17 @@ viewport tests (Chrome/Chromium and installed frontend dependencies required):
 ./scripts/check-trade-logs.sh
 ```
 
+Browser checks and performance measurements share one permission-friendly entry point:
+
+```bash
+node frontend/scripts/trade-statistics-browser.mjs
+node frontend/scripts/trade-statistics-browser.mjs --performance
+```
+
+The default runs isolated fixtures. Performance mode requires a frontend build and
+the local backend on port 8080; it uses read-only interactions against the journal.
+Screenshots, timing reports, and a CPU profile are written under `/tmp`.
+
 Statistics has separate Overview, Distribution, Tags, Timing, Duration, and Symbols
 views. Global filters define the baseline; the Statistics tag selector refines it
 with Any/All matching and respects the tag source filter. Return percentages use

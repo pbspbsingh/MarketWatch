@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Tooltip } from "@mui/material";
 import {
   tradePnlCurve, quantile, rankingValue, type HistogramBin, type RankingMetric,
@@ -28,17 +28,46 @@ export function useChartSize() {
 
 function ChartFrame({ label, children }: { label: string; children: (width: number, height: number) => ReactNode }) {
   const { ref, size } = useChartSize();
-  return <div className="tl-stats-chart" ref={ref}>
+  return <ChartTooltip containerRef={ref}>
     <svg viewBox={`0 0 ${size.width} ${size.height}`} role="group" aria-label={label}>{children(size.width, size.height)}</svg>
-  </div>;
+  </ChartTooltip>;
+}
+
+// One delegated tooltip per plot; its hover state does not rerender the plotted marks.
+function ChartTooltip({ containerRef, children }: { containerRef: RefObject<HTMLDivElement | null>; children: ReactNode }) {
+  const [tip, setTip] = useState<{ anchor: SVGElement; label: string } | null>(null);
+  const anchor = tip?.anchor ?? null;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!anchor || !container) return;
+    // Refresh the active label or dismiss a removed mark after a background data update.
+    const observer = new MutationObserver(() => setTip(current => {
+      if (!current || current.anchor !== anchor) return current;
+      if (!anchor.isConnected) return null;
+      const label = anchor.getAttribute("aria-label") ?? "";
+      return current.label === label ? current : { anchor, label };
+    }));
+    observer.observe(container, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-label"] });
+    return () => observer.disconnect();
+  }, [anchor, containerRef]);
+  const show = (target: EventTarget | null) => {
+    const next = target instanceof Element ? target.closest<SVGElement>(".tl-stats-mark") : null;
+    setTip(current => current?.anchor === next ? current : next ? { anchor: next, label: next.getAttribute("aria-label") ?? "" } : null);
+  };
+  return <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{tip?.label}</span>}
+    open={tip !== null} arrow placement="top" disableInteractive disableHoverListener disableFocusListener disableTouchListener
+    slotProps={{ popper: { anchorEl: anchor } }}>
+    <div className="tl-stats-chart" ref={containerRef} onMouseOver={event => show(event.target)} onMouseLeave={() => setTip(null)}
+      onFocus={event => show(event.target)} onBlur={() => setTip(null)} onPointerDown={() => setTip(null)} onKeyDown={() => setTip(null)}>
+      {children}
+    </div>
+  </Tooltip>;
 }
 
 function Mark({ label, onClick, href, children }: { label: string; children: ReactNode } & ({ onClick: () => void; href?: never } | { href: string; onClick?: never })) {
-  return <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{label}</span>} arrow>
-    {href !== undefined ? <a className="tl-stats-mark" href={href} target="_blank" rel="noopener noreferrer" tabIndex={0} aria-label={label}>{children}</a>
+  return href !== undefined ? <a className="tl-stats-mark" href={href} target="_blank" rel="noopener noreferrer" tabIndex={0} aria-label={label}>{children}</a>
       : <g className="tl-stats-mark" role="button" tabIndex={0} aria-label={label} onClick={onClick}
-        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}>{children}</g>}
-  </Tooltip>;
+        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}>{children}</g>;
 }
 
 function domain(values: (number | null)[], includeZero = true): [number, number] {

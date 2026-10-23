@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import { deleteTradeLogTag, saveTradeLogTag, type TradeLogTag } from "../../api/tradeLogs";
 import { errorMessage } from "./format";
 
-export function TradeTags({ tags, onRefresh }: { tags: TradeLogTag[]; onRefresh: () => void }) {
+export const TradeTags = memo(function TradeTags({ tags, onRefresh }: { tags: TradeLogTag[]; onRefresh: () => void }) {
   const [editing, setEditing] = useState<{ tag: TradeLogTag | null; name: string; description: string } | null>(null);
   const [deleting, setDeleting] = useState<TradeLogTag | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,4 +34,4 @@ export function TradeTags({ tags, onRefresh }: { tags: TradeLogTag[]; onRefresh:
     <Dialog open={editing !== null} onClose={() => { if (!busy) setEditing(null); }} fullWidth maxWidth="xs"><DialogTitle>{editing?.tag ? "Edit tag" : "Create tag"}</DialogTitle><DialogContent>{error && <Alert severity="error">{error}</Alert>}<TextField autoFocus fullWidth margin="dense" label="Tag name" value={editing?.name ?? ""} disabled={busy} onChange={e => setEditing(current => current && { ...current, name: e.target.value })} slotProps={{ htmlInput: { maxLength: 100 } }} onKeyDown={e => { if (e.key === "Enter" && editing?.name.trim()) void save(); }} /><TextField fullWidth multiline minRows={3} maxRows={8} margin="dense" label="Description (optional)" helperText="Describe when to use this tag." value={editing?.description ?? ""} disabled={busy} onChange={e => setEditing(current => current && { ...current, description: e.target.value })} slotProps={{ htmlInput: { maxLength: 2000 } }} /></DialogContent><DialogActions><Button disabled={busy} onClick={() => setEditing(null)}>Cancel</Button><Button variant="contained" disabled={busy || !editing?.name.trim()} onClick={() => void save()}>Save tag</Button></DialogActions></Dialog>
     <Dialog open={deleting !== null} onClose={() => { if (!busy) setDeleting(null); }} fullWidth maxWidth="xs"><DialogTitle>Delete {deleting?.name}?</DialogTitle><DialogContent>{error && <Alert severity="error">{error}</Alert>}This removes the tag from all trades and executions. Trades and executions are preserved. Open drafts using it will need to be reloaded or updated.</DialogContent><DialogActions><Button disabled={busy} onClick={() => setDeleting(null)}>Cancel</Button><Button color="error" disabled={busy} onClick={() => void remove()}>Delete tag</Button></DialogActions></Dialog>
   </div>;
-}
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { Alert, Button, Checkbox, FormControlLabel, MenuItem, Pagination, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import type { TradeLogSnapshot, TradeLogValuation } from "../../api/tradeLogs";
@@ -52,7 +52,7 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
   </TextField></ControlTooltip>;
 }
 
-export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marketError, includeOpen, onIncludeOpen, onRetryPrices }: {
+export const TradeStatistics = memo(function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marketError, includeOpen, onIncludeOpen, onRetryPrices }: {
   snapshot: TradeLogSnapshot; tagScope: TagScope; marks: Map<number, TradeLogValuation>; marksLoading: boolean; marketError: string;
   includeOpen: boolean; onIncludeOpen: (value: boolean) => void; onRetryPrices: () => void;
 }) {
@@ -123,7 +123,7 @@ export function TradeStatistics({ snapshot, tagScope, marks, marksLoading, marke
       <ControlTooltip title={includeOpen ? "Open positions use the latest available completed daily candle for each ticker. Recorded fees and partial exits are included; future exit fees are excluded. Price dates may differ by ticker." : "Open positions and their realized partial exits are excluded. Enable Include open trades to value them at the latest daily close."}><span>{includeOpen ? priceDates.length ? `Open close prices: ${priceDates[0]}${priceDates.length > 1 ? ` – ${priceDates.at(-1)}` : ""} ⓘ` : "No open close prices" : `${snapshot.open_trades} open · ${money(snapshot.open_realized_pnl)} realized on open trades ⓘ`}</span></ControlTooltip></div>
     {drillGroup && <StatisticsTradeList group={drillGroup} unavailable={incomplete} onClose={() => setDrill(null)} />}
   </div>;
-}
+});
 
 function Empty({ children = "No trades with available returns match these filters." }: { children?: ReactNode }) { return <div className="tl-stats-empty">{children}</div>; }
 

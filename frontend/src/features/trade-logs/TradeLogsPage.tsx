@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tab, Tabs, TextField, Tooltip } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
@@ -42,12 +42,14 @@ export function TradeLogsPage() {
   const [searchParams] = useSearchParams();
   const linkedTradeId = tradeIdFromSearch(searchParams);
   const [tab, setTab] = useState(0);
+  const [visitedTabs, setVisitedTabs] = useState([0]);
   const [statisticsIncludeOpen, setStatisticsIncludeOpen] = useState(false);
   const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
   const focusRefresh = useFocusRefresh();
   const [selectedTrade, setSelectedTrade] = useState<TradeLog | null>(null);
   const [filters, setFilters] = useState(() => linkedTradeId === undefined ? restoreFilters() : initialFilters);
   const [filterLinkId, setFilterLinkId] = useState(linkedTradeId);
+  const previousFilters = useRef({ filters, linkedTradeId });
   const [snapshot, setSnapshot] = useState<TradeLogSnapshot | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(restoreDraft);
   const [loading, setLoading] = useState(true);
@@ -61,14 +63,20 @@ export function TradeLogsPage() {
   if (filterLinkId !== linkedTradeId) {
     setFilterLinkId(linkedTradeId);
     setFilters(linkedTradeId === undefined ? restoreFilters() : initialFilters);
+    setLoading(true);
   }
   const { marks, error: marketError, loading: marksLoading } = useTradeValuations(snapshot?.trades ?? [], refresh + focusRefresh, tab === 0 || tab === 1 && statisticsIncludeOpen);
   const dirty = editor !== null && JSON.stringify(editor.draft) !== editor.baseline;
-  const refreshData = () => setRefresh(n => n + 1);
+  const refreshData = useCallback(() => setRefresh(n => n + 1), []);
+  const changeTab = (value: number) => {
+    setTab(value);
+    setVisitedTabs(current => current.includes(value) ? current : [...current, value]);
+  };
   // Persist user changes only; opening a trade link temporarily bypasses saved filters.
   const changeFilter = (patch: Partial<TradeLogFilters>) => {
     const next = { ...filters, ...patch };
     setFilters(next);
+    setLoading(true);
     saveFilters(next);
   };
   useEffect(() => {
@@ -81,15 +89,20 @@ export function TradeLogsPage() {
   }, [linkedTradeId]);
   useEffect(() => {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
+    const debounce = previousFilters.current.linkedTradeId === linkedTradeId && previousFilters.current.filters.symbol !== filters.symbol;
+    previousFilters.current = { filters, linkedTradeId };
+    const load = () => {
       setLoading(true);
       void fetchTradeLogs(filters, controller.signal)
         .then(value => { if (!controller.signal.aborted) { setSnapshot(value); setLoadError(""); } })
         .catch(cause => { if (!controller.signal.aborted) setLoadError(errorMessage(cause)); })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    }, 200);
+    };
+    // Only text entry needs debouncing; navigation, refresh, and selections load immediately.
+    const timer = debounce ? window.setTimeout(load, 200) : undefined;
+    if (!debounce) load();
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [filters, refresh, focusRefresh]);
+  }, [filters, refresh, focusRefresh, linkedTradeId]);
   useEffect(() => {
     try {
       if (dirty) sessionStorage.setItem(draftKey, JSON.stringify(editor));
@@ -120,17 +133,20 @@ export function TradeLogsPage() {
     window.addEventListener("keydown", dismissChart);
     return () => window.removeEventListener("keydown", dismissChart);
   }, [tab, selectedTrade]);
-  const guarded = (action: () => void) => {
+  const guarded = useCallback((action: () => void) => {
     if (busy) return;
     if (dirty) setConfirm({ title: "Discard unsaved changes?", text: "Your changes to this trade have not been saved.", action });
     else action();
-  };
-  const select = async (id: number) => {
+  }, [busy, dirty]);
+  const select = useCallback(async (id: number) => {
     setBusy(true); setError(""); setNotice("");
     try { setEditor(editorFor(await fetchTradeLog(id))); }
     catch (cause) { setError(errorMessage(cause)); }
     finally { setBusy(false); }
-  };
+  }, []);
+  const selectTrade = useCallback((trade: TradeLog) => setSelectedTrade(current => current?.id === trade.id ? null : trade), []);
+  const editTrade = useCallback((trade: TradeLog) => guarded(() => void select(trade.id)), [guarded, select]);
+  const closeChart = useCallback(() => setSelectedTrade(null), []);
   const create = () => guarded(() => { const draft = newDraft(); setEditor({ saved: null, draft, baseline: JSON.stringify(draft) }); setTab(0); setError(""); setNotice(""); });
   const save = async () => {
     if (!editor || busy) return;
@@ -155,7 +171,7 @@ export function TradeLogsPage() {
   return <div className="trade-logs-page trade-logs-ui" aria-busy={loading || marksLoading}>
     <header className="tl-page-header">
       <h1>Trade Logs</h1>
-      <Tabs value={tab} onChange={(_, value: number) => setTab(value)} aria-label="Trade Logs sections" className="tl-tabs">
+      <Tabs value={tab} onChange={(_, value: number) => changeTab(value)} aria-label="Trade Logs sections" className="tl-tabs">
         {["Trades", "Statistics", "Tags"].map((label, index) => <Tab key={label} label={label} id={`tl-tab-${index}`} aria-controls={`tl-panel-${index}`} />)}
       </Tabs>
       {tab !== 2 && <div className="tl-filters" role="group" aria-label="Trade filters">
@@ -179,12 +195,12 @@ export function TradeLogsPage() {
       {marketError && <Alert severity="warning">Open-position prices could not refresh. Check the valuation dates before using the displayed returns.</Alert>}
       <div className="tl-trade-layout">
         <SplitPane orientation="horizontal" initialSplit={100 - initialChartWidth} secondVisible={selected !== null} onSplitChange={split => saveChartWidth(chartWidthKey, 100 - split)}
-          first={<TradeTable trades={snapshot?.trades ?? []} tags={snapshot?.tags ?? []} marks={marks} selectedId={selected?.id ?? null} loading={loading} onSelect={trade => setSelectedTrade(current => current?.id === trade.id ? null : trade)} onEdit={trade => guarded(() => void select(trade.id))} />}
-          second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={() => setSelectedTrade(null)} onEdit={trade => guarded(() => void select(trade.id))} />} />
+          first={<TradeTable trades={snapshot?.trades ?? []} tags={snapshot?.tags ?? []} marks={marks} selectedId={selected?.id ?? null} loading={loading && !snapshot?.trades.length} onSelect={selectTrade} onEdit={editTrade} />}
+          second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={closeChart} onEdit={editTrade} />} />
       </div>
     </div>
-    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{snapshot ? <TradeStatistics snapshot={snapshot} tagScope={filters.tag_scope} marks={marks} marksLoading={marksLoading} marketError={marketError} includeOpen={statisticsIncludeOpen} onIncludeOpen={setStatisticsIncludeOpen} onRetryPrices={refreshData} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>}</div>
-    <div role="tabpanel" hidden={tab !== 2} id="tl-panel-2" aria-labelledby="tl-tab-2"><TradeTags tags={snapshot?.tags ?? []} onRefresh={refreshData} /></div>
+    <div role="tabpanel" hidden={tab !== 1} id="tl-panel-1" aria-labelledby="tl-tab-1">{visitedTabs.includes(1) && (snapshot ? <TradeStatistics snapshot={snapshot} tagScope={filters.tag_scope} marks={marks} marksLoading={marksLoading} marketError={marketError} includeOpen={statisticsIncludeOpen} onIncludeOpen={setStatisticsIncludeOpen} onRetryPrices={refreshData} /> : <div className="tl-empty-small">{loading ? "Loading statistics…" : "Statistics could not be loaded."}</div>)}</div>
+    <div role="tabpanel" hidden={tab !== 2} id="tl-panel-2" aria-labelledby="tl-tab-2">{visitedTabs.includes(2) && <TradeTags tags={snapshot?.tags ?? []} onRefresh={refreshData} />}</div>
     <Dialog open={editor !== null} onClose={() => guarded(() => setEditor(null))} fullWidth maxWidth="lg" aria-label={editor?.saved ? "Edit trade" : "New trade"} slotProps={{ paper: { className: "trade-logs-ui tl-editor-dialog" } }}>
       <DialogContent className="tl-editor-dialog-content">
         {changed && <Alert severity="warning" action={<Button disabled={busy} onClick={() => guarded(() => void select(currentSaved.id))}>Reload saved</Button>}>This trade changed since you opened it. Reload before saving further edits.</Alert>}
