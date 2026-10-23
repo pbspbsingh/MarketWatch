@@ -4,6 +4,10 @@ pub(crate) mod news;
 mod request_throttle;
 mod yahoo;
 
+#[cfg(test)]
+pub(crate) use ai::tests::{
+    TestAiServer, probe_automatic_preemption, probe_cancellation, probe_wait_for_completion,
+};
 pub use ai::{AiClient, AiError};
 pub(crate) use ai::{AiStreamDelta, BackgroundAiRequest, UserAiJob};
 pub use finviz::{FinvizClient, IndustryClassification};

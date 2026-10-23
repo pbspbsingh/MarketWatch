@@ -1,5 +1,5 @@
 export type NewsSource = "stock_titan" | "finviz";
-export type NFactorPhase = "queued" | "waiting_for_source" | "fetching_news" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "failed";
+export type NFactorPhase = "queued" | "waiting_for_source" | "fetching_news" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "cancelled" | "failed";
 
 export interface NewsItem {
   id: number;
@@ -70,7 +70,7 @@ export interface NFactorState {
 }
 
 export function isNFactorActive(job: NFactorJobProgress | null | undefined) {
-  return job != null && job.phase !== "completed" && job.phase !== "failed";
+  return job != null && job.phase !== "completed" && job.phase !== "cancelled" && job.phase !== "failed";
 }
 
 async function request<T>(url: string, options: RequestInit): Promise<T> {

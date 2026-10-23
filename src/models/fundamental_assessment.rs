@@ -76,12 +76,13 @@ pub enum AssessmentPhase {
     Analyzing,
     Saving,
     Completed,
+    Cancelled,
     Failed,
 }
 
 impl AssessmentPhase {
     pub fn is_active(self) -> bool {
-        !matches!(self, Self::Completed | Self::Failed)
+        !matches!(self, Self::Completed | Self::Cancelled | Self::Failed)
     }
 }
 

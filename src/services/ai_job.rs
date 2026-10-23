@@ -1,7 +1,21 @@
 use tokio::sync::watch;
 use tracing::info;
 
-use crate::providers::{AiClient, BackgroundAiRequest, UserAiJob};
+use crate::providers::{AiClient, AiError, BackgroundAiRequest, UserAiJob};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AiJobOutcome {
+    Succeeded,
+    Preempted,
+    Failed,
+}
+
+pub(super) fn is_preempted(error: &anyhow::Error) -> bool {
+    matches!(
+        error.downcast_ref::<AiError>(),
+        Some(AiError::BackgroundPreempted)
+    )
+}
 
 pub(super) enum AiAdmission {
     User,
@@ -46,7 +60,7 @@ where
         }
         if !permit.user_work_pending() {
             info!("Background AI admission granted");
-            return Ok(AiAdmission::Background(permit));
+            return Ok(AiAdmission::Background(permit.with_origin(origin.clone())));
         }
         info!("Yielding background AI admission to user-started work");
     }
@@ -57,10 +71,10 @@ where
 pub(super) struct AiJobControl {
     user_job: Option<UserAiJob>,
     pub background: watch::Sender<bool>,
-    finished: watch::Sender<Option<bool>>,
+    finished: watch::Sender<Option<AiJobOutcome>>,
 }
 
-pub(super) struct AiJobCompletion(watch::Receiver<Option<bool>>);
+pub(super) struct AiJobCompletion(watch::Receiver<Option<AiJobOutcome>>);
 
 impl AiJobControl {
     pub fn new(background: bool, user_job: Option<UserAiJob>) -> Self {
@@ -88,22 +102,27 @@ impl AiJobControl {
 
     /// Keep a completion signal outside the registry: a new request may replace
     /// the terminal job before its supervisor publishes the outcome.
-    pub fn finish_signal(&self) -> impl FnOnce(bool) + Send + 'static {
+    pub fn finish_signal(&self) -> impl FnOnce(AiJobOutcome) + Send + 'static {
         let finished = self.finished.clone();
-        move |succeeded| {
-            finished.send_replace(Some(succeeded));
+        move |outcome| {
+            finished.send_replace(Some(outcome));
         }
     }
 }
 
 impl AiJobCompletion {
-    pub async fn wait(mut self) -> bool {
+    #[cfg(test)]
+    pub async fn wait(self) -> bool {
+        self.outcome().await == AiJobOutcome::Succeeded
+    }
+
+    pub async fn outcome(mut self) -> AiJobOutcome {
         loop {
-            if let Some(succeeded) = *self.0.borrow_and_update() {
-                return succeeded;
+            if let Some(outcome) = *self.0.borrow_and_update() {
+                return outcome;
             }
             if self.0.changed().await.is_err() {
-                return false;
+                return AiJobOutcome::Failed;
             }
         }
     }
@@ -114,14 +133,18 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn completion_survives_registry_replacement_and_reports_failure() {
-        for succeeded in [true, false] {
+    async fn completion_survives_registry_replacement_and_preserves_outcome() {
+        for outcome in [
+            AiJobOutcome::Succeeded,
+            AiJobOutcome::Preempted,
+            AiJobOutcome::Failed,
+        ] {
             let control = AiJobControl::new(true, None);
             let completion = control.completion();
             let finish = control.finish_signal();
             drop(control);
-            finish(succeeded);
-            assert_eq!(completion.wait().await, succeeded);
+            finish(outcome);
+            assert_eq!(completion.outcome().await, outcome);
         }
         let control = AiJobControl::new(true, None);
         let completion = control.completion();

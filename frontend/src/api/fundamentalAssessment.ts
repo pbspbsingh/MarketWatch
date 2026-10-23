@@ -32,7 +32,7 @@ export interface FundamentalAssessment {
 export interface AssessmentJob {
   id: string;
   symbol: string;
-  phase: "queued" | "fetching_fundamentals" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "failed";
+  phase: "queued" | "fetching_fundamentals" | "waiting_for_ai" | "analyzing" | "saving" | "completed" | "cancelled" | "failed";
   updated_at: string;
   background: boolean;
   snapshot: {
@@ -64,7 +64,7 @@ export interface AssessmentState {
 }
 
 export function isAssessmentActive(job: AssessmentJob | null | undefined): boolean {
-  return job != null && job.phase !== "completed" && job.phase !== "failed";
+  return job != null && job.phase !== "completed" && job.phase !== "cancelled" && job.phase !== "failed";
 }
 
 async function request<T>(url: string, signal?: AbortSignal, method = "GET"): Promise<T> {

@@ -3,7 +3,10 @@ use std::{
     time::Duration,
 };
 
-use tokio::{sync::Notify, time::Instant};
+use tokio::{
+    sync::{Notify, watch},
+    time::Instant,
+};
 use tracing::info;
 
 /// Registers whole user jobs as well as requests, so preparation and batch gaps
@@ -16,7 +19,7 @@ pub(super) struct AiActivity {
 struct ActivityState {
     user_jobs: usize,
     user_requests: usize,
-    background_request: bool,
+    background_request: Option<BackgroundActivity>,
     last_user_finished: Instant,
 }
 
@@ -28,8 +31,14 @@ pub(super) struct UserAiRequest {
     activity: Arc<AiActivity>,
 }
 
+struct BackgroundActivity {
+    cancel: watch::Sender<bool>,
+    origin: Option<watch::Receiver<bool>>,
+}
+
 pub(crate) struct BackgroundAiRequest {
     activity: Arc<AiActivity>,
+    cancellation: watch::Receiver<bool>,
 }
 
 impl AiActivity {
@@ -38,7 +47,7 @@ impl AiActivity {
             state: Mutex::new(ActivityState {
                 user_jobs: 0,
                 user_requests: 0,
-                background_request: false,
+                background_request: None,
                 last_user_finished: Instant::now(),
             }),
             changed: Notify::new(),
@@ -53,21 +62,37 @@ impl AiActivity {
         }
     }
 
-    pub(super) async fn user_request(self: &Arc<Self>) -> UserAiRequest {
-        loop {
-            let changed = self.changed.notified();
-            tokio::pin!(changed);
-            changed.as_mut().enable();
-            {
-                let mut state = self.state.lock().expect("AI activity lock");
-                if !state.background_request {
-                    state.user_requests += 1;
-                    return UserAiRequest {
-                        activity: self.clone(),
-                    };
+    pub(super) fn user_request(self: &Arc<Self>) -> UserAiRequest {
+        self.state.lock().expect("AI activity lock").user_requests += 1;
+        UserAiRequest {
+            activity: self.clone(),
+        }
+    }
+
+    /// Called only after the user's attempt to acquire a request slot fails.
+    /// User requests have no cancellation sender and can never be selected here.
+    pub(super) fn preempt_background(&self) {
+        // Never acquire a watch-channel lock while holding the activity mutex.
+        // A cancellation receiver also inspects activity when checking promotion.
+        let background = {
+            let state = self.state.lock().expect("AI activity lock");
+            state
+                .background_request
+                .as_ref()
+                .map(|background| (background.cancel.clone(), background.origin.clone()))
+        };
+        if let Some((cancel, origin)) = background
+            && origin.as_ref().is_none_or(|origin| *origin.borrow())
+            && cancel.send_if_modified(|cancelled| {
+                if *cancelled {
+                    false
+                } else {
+                    *cancelled = true;
+                    true
                 }
-            }
-            changed.await;
+            })
+        {
+            info!("Background AI request yielding a full request slot to user work");
         }
     }
 
@@ -79,8 +104,10 @@ impl AiActivity {
             changed.as_mut().enable();
             let deadline = {
                 let state = self.state.lock().expect("AI activity lock");
-                (state.user_jobs == 0 && state.user_requests == 0 && !state.background_request)
-                    .then_some(state.last_user_finished + delay)
+                (state.user_jobs == 0
+                    && state.user_requests == 0
+                    && state.background_request.is_none())
+                .then_some(state.last_user_finished + delay)
             };
             match deadline {
                 Some(deadline) if deadline <= Instant::now() => {
@@ -131,12 +158,17 @@ impl AiActivity {
                 let mut state = self.state.lock().expect("AI activity lock");
                 if state.user_jobs == 0
                     && state.user_requests == 0
-                    && !state.background_request
+                    && state.background_request.is_none()
                     && state.last_user_finished + delay <= Instant::now()
                 {
-                    state.background_request = true;
+                    let (cancel, cancellation) = watch::channel(false);
+                    state.background_request = Some(BackgroundActivity {
+                        cancel,
+                        origin: None,
+                    });
                     return BackgroundAiRequest {
                         activity: self.clone(),
+                        cancellation,
                     };
                 }
             }
@@ -146,6 +178,39 @@ impl AiActivity {
 }
 
 impl BackgroundAiRequest {
+    pub(crate) fn with_origin(self, origin: watch::Receiver<bool>) -> Self {
+        self.activity
+            .state
+            .lock()
+            .expect("AI activity lock")
+            .background_request
+            .as_mut()
+            .expect("background admission is held")
+            .origin = Some(origin);
+        self
+    }
+
+    pub(super) async fn preempted(&self) {
+        let mut cancellation = self.cancellation.clone();
+        // Drop the returned watch borrow before inspecting activity state.
+        let requested = cancellation.wait_for(|cancelled| *cancelled).await.is_ok();
+        if requested {
+            let origin = {
+                let state = self.activity.state.lock().expect("AI activity lock");
+                state
+                    .background_request
+                    .as_ref()
+                    .map(|background| background.origin.clone())
+            };
+            if origin.is_some_and(|origin| origin.as_ref().is_none_or(|origin| *origin.borrow())) {
+                return;
+            }
+        }
+        // Promotion is permanent for this request. A prior cancellation signal
+        // must not interrupt a request that has become user-initiated work.
+        std::future::pending::<()>().await;
+    }
+
     pub(crate) fn user_work_pending(&self) -> bool {
         self.activity
             .state
@@ -186,7 +251,7 @@ impl Drop for BackgroundAiRequest {
             .state
             .lock()
             .expect("AI activity lock")
-            .background_request = false;
+            .background_request = None;
         self.activity.changed.notify_waiters();
     }
 }
@@ -228,7 +293,7 @@ mod tests {
             .await
             .is_err()
         );
-        let request = activity.user_request().await;
+        let request = activity.user_request();
         drop(request);
         assert!(
             timeout(
@@ -251,21 +316,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_finishes_before_user_requests_and_never_overlaps_them() {
+    async fn user_requests_can_overlap_background_but_block_new_background_admission() {
         let activity = AiActivity::new();
         let background = activity.background_request(Duration::ZERO).await;
         let job = activity.user_job();
         assert!(background.user_work_pending());
+        let first = activity.user_request();
+        let second = activity.user_request();
         assert!(
-            timeout(Duration::from_millis(10), activity.user_request())
+            timeout(Duration::from_millis(10), background.preempted())
                 .await
                 .is_err()
         );
         drop(background);
-        let first = activity.user_request().await;
-        let second = timeout(Duration::from_millis(10), activity.user_request())
-            .await
-            .unwrap();
         assert!(
             timeout(
                 Duration::from_millis(10),
@@ -276,7 +339,7 @@ mod tests {
         );
         drop((first, second, job));
         timeout(
-            Duration::from_millis(10),
+            Duration::from_millis(100),
             activity.background_request(Duration::ZERO),
         )
         .await

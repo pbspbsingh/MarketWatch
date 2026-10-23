@@ -1,6 +1,8 @@
 mod activity;
 mod ollama;
 mod openai_compatible;
+#[cfg(test)]
+pub(super) mod tests;
 
 use crate::config::AiConfig;
 use reqwest::{Client, Response, StatusCode};
@@ -8,7 +10,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, TryAcquireError};
 use tracing::{error, info};
 
 use activity::AiActivity;
@@ -27,6 +29,12 @@ pub struct AiClient {
 pub(crate) enum AiStreamDelta<'a> {
     Content(&'a str),
     Reasoning(&'a str),
+}
+
+#[derive(Clone, Copy)]
+enum RequestPriority {
+    User,
+    Background,
 }
 
 enum Provider {
@@ -63,6 +71,9 @@ impl Provider {
 
 #[derive(Debug, Error)]
 pub enum AiError {
+    #[error("Background AI request yielded to user work")]
+    BackgroundPreempted,
+
     #[error("AI request timed out while waiting for response data")]
     Timeout(#[source] reqwest::Error),
 
@@ -214,31 +225,49 @@ impl AiClient {
         F: FnMut(AiStreamDelta<'_>) + Send,
     {
         let _job = self.user_job();
-        let _request = self.activity.user_request().await;
-        self.complete_admitted(prompt, &mut on_delta).await
+        let _request = self.activity.user_request();
+        self.complete_admitted(prompt, &mut on_delta, RequestPriority::User)
+            .await
     }
 
     pub(crate) async fn complete_background_with_updates<F>(
         &self,
         prompt: &str,
-        _request: BackgroundAiRequest,
+        request: BackgroundAiRequest,
         mut on_delta: F,
     ) -> Result<String, AiError>
     where
         F: FnMut(AiStreamDelta<'_>) + Send,
     {
-        self.complete_admitted(prompt, &mut on_delta).await
+        tokio::select! {
+            biased;
+            result = self.complete_admitted(prompt, &mut on_delta, RequestPriority::Background) => result,
+            () = request.preempted() => Err(AiError::BackgroundPreempted),
+        }
     }
 
-    async fn complete_admitted<F>(&self, prompt: &str, on_delta: &mut F) -> Result<String, AiError>
+    async fn complete_admitted<F>(
+        &self,
+        prompt: &str,
+        on_delta: &mut F,
+        priority: RequestPriority,
+    ) -> Result<String, AiError>
     where
         F: FnMut(AiStreamDelta<'_>) + Send,
     {
-        let _permit = self
-            .permits
-            .acquire()
-            .await
-            .map_err(|_| AiError::QueueClosed)?;
+        let _permit = match self.permits.try_acquire() {
+            Ok(permit) => permit,
+            Err(TryAcquireError::Closed) => return Err(AiError::QueueClosed),
+            Err(TryAcquireError::NoPermits) => {
+                if matches!(priority, RequestPriority::User) {
+                    self.activity.preempt_background();
+                }
+                self.permits
+                    .acquire()
+                    .await
+                    .map_err(|_| AiError::QueueClosed)?
+            }
+        };
         info!(
             provider = self.provider.name(),
             model = self.model,

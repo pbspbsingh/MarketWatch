@@ -21,6 +21,7 @@ const phaseLabels: Record<AssessmentJob["phase"], string> = {
   saving: "Saving assessment",
   completed: "Assessment complete",
   failed: "Assessment failed",
+  cancelled: "Yielded to user request",
 };
 
 export function TickerAssessmentTab({ symbol, fundamentals }: { symbol: string; fundamentals?: Fundamentals }) {
@@ -121,6 +122,7 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
       {activityJobs.length > 0 ? activityJobs.map(activityJob => <AssessmentProgress key={activityJob.id} job={activityJob} />) : <Typography className="assessment-activity-empty">No active assessments.</Typography>}
     </Popover>
     {error && <Alert severity="error">{error}</Alert>}
+    {job?.phase === "cancelled" && <Alert severity="info">Background assessment yielded to a user request. It will retry when AI is idle.</Alert>}
     {job?.phase === "failed" && <Alert severity="error">{job.error} {report && "Your saved assessment is unchanged."}</Alert>}
     {state != null && !state.ai_enabled && <Alert severity="info">Configure AI to generate assessments. Saved assessments remain available.</Alert>}
     {state?.not_found_at && <Alert severity="info">No fundamental information is available for assessment. Background checks resume after the configured refresh interval; you can retry manually.</Alert>}
@@ -143,15 +145,16 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
 function AssessmentProgress({ job, savedReport = false }: { job?: AssessmentJob | null; savedReport?: boolean }) {
   const failed = job?.phase === "failed";
   const completed = job?.phase === "completed";
+  const cancelled = job?.phase === "cancelled";
   const stage = completed ? 3 : job?.phase === "queued" || job?.phase === "fetching_fundamentals" ? 0 : job?.phase === "saving" ? 2 : 1;
-  const description = job?.error ?? (completed ? "Assessment saved." : savedReport ? "Saved assessment remains below" : job?.phase === "waiting_for_ai" && job.background ? "Waiting for AI to be idle." : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history");
+  const description = job?.error ?? (cancelled ? "Yielded to a user request. Background processing will retry when AI is idle." : completed ? "Assessment saved." : savedReport ? "Saved assessment remains below" : job?.phase === "waiting_for_ai" && job.background ? "Waiting for AI to be idle." : stage === 0 ? "Loading the latest financial data" : "AI is reviewing the financial history");
   return <section className="assessment-progress" aria-label={job ? `${job.symbol} assessment progress` : "Assessment progress"}>
-    <div className="assessment-progress-heading" role="status">{failed ? <InfoOutlinedIcon fontSize="small" /> : completed ? <CheckRoundedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}
+    <div className="assessment-progress-heading" role="status">{failed || cancelled ? <InfoOutlinedIcon fontSize="small" /> : completed ? <CheckRoundedIcon fontSize="small" /> : <CircularProgress size="0.9rem" />}
       {job && <a className="assessment-progress-symbol" href={`/market-watch?ticker=${encodeURIComponent(job.symbol)}`} target="_blank" rel="noopener noreferrer" title={`Open ${job.symbol} in Market Watch in a new tab`}>{job.symbol}</a>}
       <strong>{job ? phaseLabels[job.phase] : "Starting assessment"}</strong><span>{job?.background ? "Background" : "Manual"}</span>
     </div>
     <Typography className="assessment-progress-description">{description}</Typography>
-    <ol className="assessment-stages">{["Refresh fundamentals", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage && !failed ? "is-current" : ""} aria-current={index === stage && !failed ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
+    <ol className="assessment-stages">{["Refresh fundamentals", "AI assessment", "Saved"].map((label, index) => <li key={label} className={index < stage ? "is-complete" : index === stage && !failed && !cancelled ? "is-current" : ""} aria-current={index === stage && !failed && !cancelled ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
     {job && <div className="assessment-progress-times"><span>Last update <time dateTime={job.updated_at}>{new Date(job.updated_at).toLocaleString()}</time></span>{job.snapshot && <span>Financial data refreshed <time dateTime={job.snapshot.fundamentals_fetched_at}>{new Date(job.snapshot.fundamentals_fetched_at).toLocaleString()}</time></span>}</div>}
     <AiOutputPreview content={job?.live_response ?? ""} status={failed ? "Interrupted" : completed ? "Complete" : job?.live_response ? "Writing assessment" : "Awaiting response"} expanded />
   </section>;

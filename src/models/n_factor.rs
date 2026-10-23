@@ -95,12 +95,13 @@ pub enum NFactorPhase {
     Analyzing,
     Saving,
     Completed,
+    Cancelled,
     Failed,
 }
 
 impl NFactorPhase {
     pub fn is_active(self) -> bool {
-        !matches!(self, Self::Completed | Self::Failed)
+        !matches!(self, Self::Completed | Self::Cancelled | Self::Failed)
     }
 }
 

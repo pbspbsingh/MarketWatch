@@ -10,7 +10,10 @@ use tokio::sync::{Notify, watch};
 use tracing::{Instrument, error, info, info_span, warn};
 
 use super::{
-    ai_job::{AiAdmission, AiJobCompletion, AiJobControl, background_admission},
+    ai_job::{
+        AiAdmission, AiJobCompletion, AiJobControl, AiJobOutcome, background_admission,
+        is_preempted,
+    },
     themes::strip_code_fence,
 };
 use crate::providers::AiError;
@@ -293,25 +296,56 @@ impl NFactorService {
         // Supervise the worker so a panic cannot leave an in-memory job running forever.
         tokio::spawn(
             async move {
-                let worker_service = service.clone();
-                let worker_key = key.clone();
-                let worker_id = id.clone();
-                let result = tokio::spawn(
-                    async move {
-                        worker_service
-                            .run(&worker_key, &worker_id, &ai, background, origin)
-                            .await
+                let outcome = loop {
+                    let worker_service = service.clone();
+                    let worker_key = key.clone();
+                    let worker_id = id.clone();
+                    let worker_ai = ai.clone();
+                    let worker_origin = origin.clone();
+                    let result = tokio::spawn(
+                        async move {
+                            worker_service
+                                .run(
+                                    &worker_key,
+                                    &worker_id,
+                                    &worker_ai,
+                                    background,
+                                    worker_origin,
+                                )
+                                .await
+                        }
+                        .in_current_span(),
+                    )
+                    .await;
+                    let failure = match result {
+                        Ok(Ok(())) => None,
+                        Ok(Err(error)) => Some(error),
+                        Err(error) => Some(error.into()),
+                    };
+                    let Some(failure) = failure else {
+                        break AiJobOutcome::Succeeded;
+                    };
+                    if is_preempted(&failure) {
+                        let mut promoted = false;
+                        service.update(&key, &id, |job| {
+                            promoted = !job.background;
+                            job.phase = if promoted {
+                                NFactorPhase::Queued
+                            } else {
+                                NFactorPhase::Cancelled
+                            };
+                            job.retry_at = None;
+                            job.ai_activity_at = None;
+                            job.live_reasoning.clear();
+                            job.live_response.clear();
+                            job.error = None;
+                        });
+                        if promoted {
+                            continue;
+                        }
+                        info!("Background N-Factor job yielded to user work");
+                        break AiJobOutcome::Preempted;
                     }
-                    .in_current_span(),
-                )
-                .await;
-                let failure = match result {
-                    Ok(Ok(())) => None,
-                    Ok(Err(error)) => Some(error),
-                    Err(error) => Some(error.into()),
-                };
-                let succeeded = failure.is_none();
-                if let Some(failure) = failure {
                     let phase = service.job(&id).map(|job| job.phase);
                     error!(?phase, error = %format!("{failure:#}"), "N-Factor job failed");
                     service.update(&key, &id, |job| {
@@ -319,7 +353,8 @@ impl NFactorService {
                         job.retry_at = None;
                         job.error = Some(public_error(&failure));
                     });
-                }
+                    break AiJobOutcome::Failed;
+                };
                 if let Some(entry) = service
                     .jobs
                     .lock()
@@ -332,7 +367,7 @@ impl NFactorService {
                     "N-Factor job finished");
                     entry.control.release_user_job();
                 }
-                finish(succeeded);
+                finish(outcome);
                 service.job_changes.notify_waiters();
             }
             .instrument(span),
@@ -1393,6 +1428,145 @@ mod tests {
                 .iter()
                 .any(|job| job.symbol.as_str() == "MSFT")
         );
+    }
+
+    #[tokio::test]
+    async fn background_preemption_preserves_saved_news_report_and_allows_retry()
+    -> anyhow::Result<()> {
+        let store = Store::connect("sqlite::memory:").await?;
+        let symbol = TickerSymbol::parse("PREEMPT")?;
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: symbol.clone(),
+                name: None,
+                exchange: Exchange::Nasdaq,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await?;
+        let watchlist = store.watchlists().await?.remove(0);
+        store.add_watchlist_symbol(watchlist.id, &symbol).await?;
+        store
+            .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
+            .await?;
+        let old = Utc::now() - Duration::days(10);
+        let saved = NFactorReport {
+            symbol: symbol.clone(),
+            source: NewsSource::Finviz,
+            generated_at: old,
+            news_fetched_at: old,
+            analysis_reused: false,
+            model: "test".into(),
+            prompt_version: PROMPT_VERSION,
+            overview: "Saved analysis".into(),
+            findings: vec![],
+            news: vec![],
+            coverage: None,
+        };
+        store.save_n_factor_report(&saved).await?;
+        let date = (Utc::now() - Duration::days(1)).format("%b-%d-%y");
+        let html = format!(
+            "<table id='news-table'><tr><td>{date} 09:00AM</td><td><a class='tab-link-news' href='https://example.com/product'>New product</a></td></tr></table>"
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}/stock", listener.local_addr()?);
+        let news_server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route(
+                    "/stock",
+                    axum::routing::get(move || {
+                        let html = html.clone();
+                        async move { axum::response::Html(html) }
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        });
+        let provider_config = ProviderConfig {
+            connect_timeout_secs: 1,
+            request_timeout_secs: 2,
+            min_delay_ms: 0,
+            max_delay_ms: 0,
+        };
+        let finviz_config = FinvizConfig {
+            industry_membership_filters: vec![],
+            top_stocks_additional_filters: vec![],
+            membership_fresh_days: 1,
+        };
+        let finviz =
+            Arc::new(FinvizClient::new(&finviz_config, &provider_config)?.with_stock_url(&url));
+        let response = json!({"overview":"New product catalyst","findings":[]}).to_string();
+        let provider = crate::providers::TestAiServer::new(1, Some(response)).await?;
+        let service = Arc::new(NFactorService::new(
+            store.clone(),
+            finviz,
+            StockTitanClient::new(&provider_config)?,
+            Some(provider.ai.clone()),
+            NewsSource::Finviz,
+        ));
+        let config = FundamentalsBackgroundConfig {
+            idle_delay_secs: 0,
+            refresh_days: 7,
+            process_non_watchlist: false,
+        };
+        let (background, completion) =
+            service.start_job(symbol.clone(), NewsSource::Finviz, Some(config))?;
+        provider.started().await?;
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if !service
+                    .job(&background.id)
+                    .unwrap()
+                    .live_response
+                    .is_empty()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        assert_eq!(provider.priority().await?, "OK");
+        assert_eq!(completion.outcome().await, AiJobOutcome::Preempted);
+        let cancelled = service.job(&background.id).unwrap();
+        assert_eq!(cancelled.phase, NFactorPhase::Cancelled);
+        assert!(!cancelled.phase.is_active());
+        assert!(
+            cancelled.error.is_none()
+                && cancelled.live_response.is_empty()
+                && cancelled.live_reasoning.is_empty()
+        );
+        assert_eq!(
+            store
+                .n_factor_report(&symbol, NewsSource::Finviz)
+                .await?
+                .unwrap()
+                .generated_at,
+            old
+        );
+        assert!(service.background_eligible(&symbol, config).await?);
+        let (retry, completion) =
+            service.start_job(symbol.clone(), NewsSource::Finviz, Some(config))?;
+        assert_ne!(retry.id, background.id);
+        provider.started().await?;
+        provider.complete();
+        assert_eq!(completion.outcome().await, AiJobOutcome::Succeeded);
+        assert_eq!(
+            service.job(&retry.id).unwrap().phase,
+            NFactorPhase::Completed
+        );
+        assert_eq!(
+            store
+                .n_factor_report(&symbol, NewsSource::Finviz)
+                .await?
+                .unwrap()
+                .overview,
+            "New product catalyst"
+        );
+        news_server.abort();
+        Ok(())
     }
 
     #[tokio::test]

@@ -14,7 +14,10 @@ use tokio::sync::{Notify, watch};
 use tracing::{Instrument, error, info, info_span, warn};
 
 use super::{
-    ai_job::{AiAdmission, AiJobCompletion, AiJobControl, background_admission},
+    ai_job::{
+        AiAdmission, AiJobCompletion, AiJobControl, AiJobOutcome, background_admission,
+        is_preempted,
+    },
     details::TickerDetailsService,
 };
 
@@ -242,29 +245,60 @@ impl FundamentalAssessmentService {
         let span = info_span!("fundamental_assessment_job", job_id = %id, %symbol);
         tokio::spawn(
             async move {
-                let worker = service.clone();
-                let worker_symbol = symbol.clone();
-                let worker_id = id.clone();
-                let result = tokio::spawn(
-                    async move {
-                        worker
-                            .run(&worker_symbol, &worker_id, &ai, background, origin)
-                            .await
+                let outcome = loop {
+                    let worker = service.clone();
+                    let worker_symbol = symbol.clone();
+                    let worker_id = id.clone();
+                    let worker_ai = ai.clone();
+                    let worker_origin = origin.clone();
+                    let result = tokio::spawn(
+                        async move {
+                            worker
+                                .run(
+                                    &worker_symbol,
+                                    &worker_id,
+                                    &worker_ai,
+                                    background,
+                                    worker_origin,
+                                )
+                                .await
+                        }
+                        .in_current_span(),
+                    )
+                    .await;
+                    let failure = match result {
+                        Ok(Ok(())) => None,
+                        Ok(Err(error)) => Some(error),
+                        Err(error) => Some(error.into()),
+                    };
+                    let Some(failure) = failure else {
+                        break AiJobOutcome::Succeeded;
+                    };
+                    if is_preempted(&failure) {
+                        let mut promoted = false;
+                        // Serialize the terminal state with manual promotion. If
+                        // promotion won the race, restart as protected user work.
+                        service.update_job(&symbol, &id, |job| {
+                            promoted = !job.background;
+                            job.phase = if promoted {
+                                AssessmentPhase::Queued
+                            } else {
+                                AssessmentPhase::Cancelled
+                            };
+                            job.live_response.clear();
+                            job.error = None;
+                        });
+                        if promoted {
+                            continue;
+                        }
+                        info!("Background fundamental assessment yielded to user work");
+                        break AiJobOutcome::Preempted;
                     }
-                    .in_current_span(),
-                )
-                .await;
-                let failure = match result {
-                    Ok(Ok(())) => None,
-                    Ok(Err(error)) => Some(error),
-                    Err(error) => Some(error.into()),
-                };
-                let succeeded = failure.is_none();
-                if let Some(failure) = failure {
                     error!(%symbol, job_id = %id, error = %format!("{failure:#}"), "Fundamental assessment failed");
                     service.update(&symbol, &id, AssessmentPhase::Failed, Some(
                         "Assessment failed while refreshing fundamentals or analyzing data. Check logs and retry.".into()));
-                }
+                    break AiJobOutcome::Failed;
+                };
                 if let Some(entry) = service
                     .jobs
                     .lock()
@@ -274,9 +308,9 @@ impl FundamentalAssessmentService {
                 {
                     entry.control.release_user_job();
                 }
-                info!(succeeded, elapsed_ms = started.elapsed().as_millis(),
+                info!(?outcome, elapsed_ms = started.elapsed().as_millis(),
                     "Fundamental assessment job finished");
-                finish(succeeded);
+                finish(outcome);
                 service.job_changes.notify_waiters();
             }
             .instrument(span),

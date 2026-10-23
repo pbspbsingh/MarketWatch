@@ -1019,6 +1019,125 @@ async fn reuse_requires_matching_financials_context_and_assessment_settings() {
 }
 
 #[tokio::test]
+async fn background_preemption_preserves_saved_assessment_and_allows_retry() -> anyhow::Result<()> {
+    let store = Store::connect("sqlite::memory:").await?;
+    let data = fixture();
+    seed(&store, &data).await;
+    let watchlist = store.watchlists().await?.remove(0);
+    store
+        .add_watchlist_symbol(watchlist.id, &data.symbol)
+        .await?;
+    store
+        .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
+        .await?;
+    let mut saved = report(data.clone());
+    saved.generated_at = Utc::now() - Duration::days(10);
+    saved.prompt_version = 0;
+    save_report(&store, &saved).await;
+    let provider = crate::providers::TestAiServer::new(1, Some(ai_response().to_string())).await?;
+    let (url, _, financial_server) = fundamentals_server().await;
+    let service = Arc::new(service_with_source(
+        store.clone(),
+        Some(provider.ai.clone()),
+        &url,
+    ));
+    let (background, completion) =
+        service.start_job(data.symbol.clone(), Some(background_config()))?;
+    provider.started().await?;
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if !service
+                .state(&data.symbol)
+                .await
+                .unwrap()
+                .job
+                .unwrap()
+                .live_response
+                .is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(3), provider.priority()).await??,
+        "OK"
+    );
+    assert_eq!(completion.outcome().await, AiJobOutcome::Preempted);
+    let state = service.state(&data.symbol).await?;
+    let cancelled = state.job.unwrap();
+    assert_eq!(cancelled.phase, AssessmentPhase::Cancelled);
+    assert!(!cancelled.phase.is_active());
+    assert!(cancelled.live_response.is_empty() && cancelled.error.is_none());
+    assert_eq!(state.report.unwrap().generated_at, saved.generated_at);
+    assert!(
+        service
+            .background_eligible(&data.symbol, background_config())
+            .await?
+    );
+    let (retry, completion) = service.start_job(data.symbol.clone(), Some(background_config()))?;
+    assert_ne!(retry.id, background.id);
+    provider.started().await?;
+    provider.complete();
+    assert_eq!(completion.outcome().await, AiJobOutcome::Succeeded);
+    let state = service.state(&data.symbol).await?;
+    assert_eq!(state.job.unwrap().phase, AssessmentPhase::Completed);
+    assert_eq!(state.report.unwrap().scores.total, Some(75.0));
+    financial_server.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn promotion_protects_an_already_running_assessment_from_preemption() -> anyhow::Result<()> {
+    let store = Store::connect("sqlite::memory:").await?;
+    let data = fixture();
+    seed(&store, &data).await;
+    let watchlist = store.watchlists().await?.remove(0);
+    store
+        .add_watchlist_symbol(watchlist.id, &data.symbol)
+        .await?;
+    store
+        .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
+        .await?;
+    let provider = crate::providers::TestAiServer::new(1, Some(ai_response().to_string())).await?;
+    let (url, _, financial_server) = fundamentals_server().await;
+    let service = Arc::new(service_with_source(store, Some(provider.ai.clone()), &url));
+    let (background, completion) =
+        service.start_job(data.symbol.clone(), Some(background_config()))?;
+    provider.started().await?;
+    let promoted = service.start(data.symbol.clone()).await?;
+    assert_eq!(promoted.id, background.id);
+    assert!(!promoted.background);
+    let mut priority = Box::pin(provider.priority());
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut priority)
+            .await
+            .is_err()
+    );
+    assert_eq!(provider.cancellations(), 0);
+    assert!(
+        service
+            .state(&data.symbol)
+            .await?
+            .job
+            .unwrap()
+            .phase
+            .is_active()
+    );
+    provider.complete();
+    assert_eq!(completion.outcome().await, AiJobOutcome::Succeeded);
+    assert_eq!(priority.await?, "OK");
+    assert_eq!(
+        service.state(&data.symbol).await?.job.unwrap().phase,
+        AssessmentPhase::Completed
+    );
+    financial_server.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn manual_request_promotes_background_assessment_waiting_for_ai() {
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let (url, financials, server) = fundamentals_server().await;
@@ -1161,6 +1280,106 @@ async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
     .unwrap();
     drop(membership);
     server.abort();
+}
+
+#[tokio::test]
+#[ignore = "submits and aborts real assessment prompts on the configured live MLX server"]
+async fn live_assessment_cancellation() -> anyhow::Result<()> {
+    run_live_assessment_preemption(LivePreemptionMode::Abort).await
+}
+
+#[tokio::test]
+#[ignore = "queues two real assessment prompts on the configured live MLX server without aborting"]
+async fn live_assessment_wait_for_completion() -> anyhow::Result<()> {
+    run_live_assessment_preemption(LivePreemptionMode::Wait).await
+}
+
+#[tokio::test]
+#[ignore = "automatically preempts a real background assessment for a user assessment on the live MLX server"]
+async fn live_assessment_automatic_preemption() -> anyhow::Result<()> {
+    run_live_assessment_preemption(LivePreemptionMode::Automatic).await
+}
+
+enum LivePreemptionMode {
+    Abort,
+    Wait,
+    Automatic,
+}
+
+async fn run_live_assessment_preemption(mode: LivePreemptionMode) -> anyhow::Result<()> {
+    let config = crate::config::Config::load(
+        std::env::var("MARKET_WATCH_CONFIG").unwrap_or_else(|_| "config.toml".into()),
+    )?;
+    let directory = std::path::PathBuf::from(std::env::var("ASSESSMENT_LIVE_INPUT_DIR").context(
+        "ASSESSMENT_LIVE_INPUT_DIR must contain SYMBOL-data.json and SYMBOL-context.json",
+    )?);
+    let symbols = std::env::var("ASSESSMENT_LIVE_SYMBOLS").unwrap_or_else(|_| "NVDA,APP".into());
+    let mut workloads = Vec::new();
+    let mut snapshots = Vec::new();
+    for symbol in symbols.split(',') {
+        let symbol = TickerSymbol::parse(symbol)?;
+        let data: Fundamentals = serde_json::from_str(&std::fs::read_to_string(
+            directory.join(format!("{symbol}-data.json")),
+        )?)?;
+        let context: AssessmentContext = serde_json::from_str(&std::fs::read_to_string(
+            directory.join(format!("{symbol}-context.json")),
+        )?)?;
+        ensure!(data.symbol == symbol, "snapshot symbol mismatch");
+        workloads.push((symbol.to_string(), build_prompt(&data, &context)?));
+        snapshots.push(data);
+    }
+    ensure!(
+        workloads.len() == 2,
+        "specify exactly two assessment symbols: original,replacement"
+    );
+    let data = &snapshots[1];
+    let evidence: HashSet<&str> = data
+        .quarters
+        .iter()
+        .chain(data.annual.iter().flatten())
+        .map(|period| period.fiscal_period.as_str())
+        .chain(
+            data.quarter_forecasts
+                .iter()
+                .filter_map(|period| period.fiscal_period.as_deref()),
+        )
+        .collect();
+    let validate = |response: &str| {
+        let analysis = validate_analysis(response)?;
+        for row in &analysis.rows {
+            ensure!(
+                row.score.is_none() || !row.evidence_ids.is_empty(),
+                "scored criterion has no evidence"
+            );
+            ensure!(
+                row.evidence_ids
+                    .iter()
+                    .all(|id| evidence.contains(id.as_str())),
+                "criterion cites a period outside the replacement snapshot"
+            );
+        }
+        Ok(serde_json::to_value(analysis)?)
+    };
+    let ai = config.ai.as_ref().context("AI must be configured")?;
+    match mode {
+        LivePreemptionMode::Wait => {
+            crate::providers::probe_wait_for_completion(
+                ai,
+                &workloads[0],
+                &workloads[1],
+                |response| Ok(serde_json::to_value(validate_analysis(response)?)?),
+                validate,
+            )
+            .await
+        }
+        LivePreemptionMode::Abort => {
+            crate::providers::probe_cancellation(ai, &workloads[0], &workloads[1], validate).await
+        }
+        LivePreemptionMode::Automatic => {
+            crate::providers::probe_automatic_preemption(ai, &workloads[0], &workloads[1], validate)
+                .await
+        }
+    }
 }
 
 #[tokio::test]

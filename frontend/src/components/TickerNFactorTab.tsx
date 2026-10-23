@@ -22,6 +22,7 @@ const progressPhases: Record<NFactorPhase, { label: string; stage: number; waiti
   analyzing: { label: "Analyzing developments", stage: 1, description: "Reviewing the news for new business developments." },
   saving: { label: "Saving report", stage: 2, description: "Analysis complete. Saving the report and its supporting news." },
   completed: { label: "Report saved", stage: 3, description: "Your report and supporting news are ready." },
+  cancelled: { label: "Yielded to user request", stage: 1, waiting: true, description: "Background analysis will retry when AI is idle." },
   failed: { label: "Refresh failed", stage: 0, description: "Try refreshing again." },
 };
 
@@ -165,7 +166,8 @@ function NFactorContent({ symbol, source, onSourceChange }: { symbol: string; so
       </div>
       {error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => setReload((current) => current + 1)}>Retry load</Button>}>{error}</Alert>}
       {startError && <Alert severity="error" onClose={() => setStartError(undefined)}>{startError}</Alert>}
-      {report?.analysis_reused && !active && job?.phase !== "failed" && <Alert severity="info">No new or changed news. Existing analysis kept; AI was not run again.</Alert>}
+      {job?.phase === "cancelled" && <Alert severity="info">Background analysis yielded to a user request. It will retry when AI is idle.</Alert>}
+      {report?.analysis_reused && !active && job?.phase !== "failed" && job?.phase !== "cancelled" && <Alert severity="info">No new or changed news. Existing analysis kept; AI was not run again.</Alert>}
       {state && !state.ai_enabled && <Alert severity="info">Configure AI to generate an N-Factor report. Saved reports remain available.</Alert>}
       <Popover open={activityAnchor !== null} anchorEl={activityAnchor} onClose={() => setActivityAnchor(null)} disableScrollLock
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}

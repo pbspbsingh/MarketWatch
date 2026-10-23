@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use tracing::{Instrument, info, info_span, warn};
 
 use super::{
-    ai_job::AiJobCompletion,
+    ai_job::{AiJobCompletion, AiJobOutcome},
     fundamental_assessment::{AssessmentStartError, FundamentalAssessmentService},
     n_factor::{NFactorService, NFactorStartError},
 };
@@ -125,12 +125,19 @@ impl FundamentalsBackgroundService {
                     in_watchlist = candidate.in_watchlist, "Selected background fundamentals task");
                 match self.start(&task, config) {
                     Ok(finished) => {
-                        if !finished.wait().await {
-                            let retry_at = Utc::now() + FAILURE_BACKOFF;
-                            warn!(symbol = %task.symbol, feature = task.feature.as_str(),
+                        match finished.outcome().await {
+                            AiJobOutcome::Succeeded => {}
+                            AiJobOutcome::Preempted => {
+                                info!(symbol = %task.symbol, feature = task.feature.as_str(), "Background task preempted; retry after user work and idle delay");
+                                continue;
+                            }
+                            AiJobOutcome::Failed => {
+                                let retry_at = Utc::now() + FAILURE_BACKOFF;
+                                warn!(symbol = %task.symbol, feature = task.feature.as_str(),
                                 %retry_at, retry_after_secs = FAILURE_BACKOFF.num_seconds(),
                                 "Background fundamentals task failed; retry deferred");
-                            failures.insert(task.clone(), retry_at);
+                                failures.insert(task.clone(), retry_at);
+                            }
                         }
                         if !candidate.in_watchlist {
                             let jitter = StdDuration::from_millis(fastrand::u64(
