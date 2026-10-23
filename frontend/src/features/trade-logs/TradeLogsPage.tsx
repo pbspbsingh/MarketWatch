@@ -15,7 +15,7 @@ import { TradeEditor } from "./TradeEditor";
 import { TradeStatistics } from "./TradeStatistics";
 import { TradeTags } from "./TradeTags";
 import { TradeFilterSelect } from "./TradeFilterSelect";
-import { restoreChartWidth, saveChartWidth } from "./chartLayout";
+import { restoreChartSplit, saveChartSplit } from "./chartLayout";
 import { tradeIdFromSearch } from "./tradeLinks";
 import { initialFilters, restoreFilters, saveFilters } from "./filterStorage";
 import { draftFromTrade, errorMessage, newDraft, payload } from "./format";
@@ -44,7 +44,7 @@ export function TradeLogsPage() {
   const [tab, setTab] = useState(0);
   const [visitedTabs, setVisitedTabs] = useState([0]);
   const [statisticsIncludeOpen, setStatisticsIncludeOpen] = useState(false);
-  const [initialChartWidth] = useState(() => restoreChartWidth(chartWidthKey));
+  const [initialChartWidth] = useState(() => restoreChartSplit(chartWidthKey));
   const focusRefresh = useFocusRefresh();
   const [selectedTrade, setSelectedTrade] = useState<TradeLog | null>(null);
   const [filters, setFilters] = useState(() => linkedTradeId === undefined ? restoreFilters() : initialFilters);
@@ -194,7 +194,7 @@ export function TradeLogsPage() {
     <div role="tabpanel" hidden={tab !== 0} id="tl-panel-0" aria-labelledby="tl-tab-0">
       {marketError && <Alert severity="warning">Open-position prices could not refresh. Check the valuation dates before using the displayed returns.</Alert>}
       <div className="tl-trade-layout">
-        <SplitPane orientation="horizontal" initialSplit={100 - initialChartWidth} secondVisible={selected !== null} onSplitChange={split => saveChartWidth(chartWidthKey, 100 - split)}
+        <SplitPane orientation="horizontal" initialSplit={100 - initialChartWidth} secondVisible={selected !== null} onSplitChange={split => saveChartSplit(chartWidthKey, 100 - split)}
           first={<TradeTable trades={snapshot?.trades ?? []} tags={snapshot?.tags ?? []} marks={marks} selectedId={selected?.id ?? null} loading={loading && !snapshot?.trades.length} onSelect={selectTrade} onEdit={editTrade} />}
           second={<TradeChartDrawer trade={selected} tags={snapshot?.tags ?? []} timeZone={snapshot?.time_zone ?? null} onClose={closeChart} onEdit={editTrade} />} />
       </div>

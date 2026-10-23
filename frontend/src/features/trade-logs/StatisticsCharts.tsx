@@ -119,7 +119,7 @@ export function HistogramChart({ bins, baseline, metric, share, compare, onBin }
         })}
         <text x={right} y={height - 13} textAnchor="end">{chartNumber(range[1], unit)}</text>
         {range[0] <= 0 && range[1] >= 0 && <line className="tl-stats-zero" x1={x(0)} x2={x(0)} y1={17} y2={bottom} />}
-        <text x={left} y={13}>{share ? "Share of trades (%)" : "Number of trades"}</text>
+        <text x={left} y={13}>{share ? "Trades (%)" : "Number of trades"}</text>
       </>;
     }}
   </ChartFrame>;

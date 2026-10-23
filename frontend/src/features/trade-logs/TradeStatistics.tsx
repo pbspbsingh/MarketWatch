@@ -33,7 +33,7 @@ const statHints: Record<string, string> = {
 const choiceHints: Record<string, string> = {
   "Statistics chart": "Switch between focused chart views. Your tag drill-down stays active across views.",
   "Result": "P&L % compares returns relative to gross entry notional. P&L $ shows the actual profit or loss. Both include fees.",
-  "Frequency": "Share (%) shows each bucket as a percentage of its population. Trade count shows the number of trades in each bucket.",
+  "Frequency": "Trades (%) shows the percentage of trades in each bucket. Each trade counts once, regardless of price or position size. Trade count shows the number of trades in each bucket.",
   "Bucket target": "Approximate number of result ranges in the histogram. More buckets show finer detail. All trades, including outliers, remain included.",
   "Chart": "Cumulative P&L adds trade results over time. Drawdown shows the dollar decline from the highest daily cumulative P&L. Included open trades contribute one current daily-close valuation; historical unrealized P&L is not reconstructed.",
   "Measure": "Net P&L totals dollars; median return shows a typical trade; win rate measures winning frequency; trade count shows sample size. Return spread shows the middle 50%, median, and extremes.",
@@ -139,15 +139,15 @@ function DistributionView({ points, baseline, filtered, onDrill }: { points: Tra
   return <>
     <div className="tl-stats-chart-heading"><h3>Outcome distribution</h3><div className="tl-stats-controls">
       <Choice label="Result" value={metric} options={[["return", "P&L %"], ["pnl", "P&L $"]]} onChange={setMetric} />
-      <Choice label="Frequency" value={frequency} options={[["share", "Share (%)"], ["count", "Trade count"]]} onChange={setFrequency} />
+      <Choice label="Frequency" value={frequency} options={[["share", "Trades (%)"], ["count", "Trade count"]]} onChange={setFrequency} />
       <Choice label="Bucket target" value={binCount} options={[["10", "10"], ["20", "20"], ["30", "30"]]} onChange={setBinCount} />
-      {filtered && <ControlTooltip title="Outline bars show all trades matching the global filters; filled bars show your selected tags. In Share (%) mode, each population totals 100% independently."><FormControlLabel control={<Checkbox size="small" checked={compare} onChange={(_, checked) => setCompare(checked)} />} label="Compare to all" /></ControlTooltip>}
+      {filtered && <ControlTooltip title="Outline bars show all trades matching the global filters; filled bars show your selected tags. In Trades (%) mode, each group totals 100% independently."><FormControlLabel control={<Checkbox size="small" checked={compare} onChange={(_, checked) => setCompare(checked)} />} label="Compare to all" /></ControlTooltip>}
     </div></div>
     {edges.length > 0 && (count > 0 || filtered && compare) ? <HistogramChart bins={bins} baseline={baseBins} metric={metric} share={frequency === "share"} compare={filtered && compare} onBin={bin => onDrill({
       kind: "bucket", metric, lower: bin.lower, upper: bin.upper, includesUpper: bin.includesUpper,
       label: `${chartNumber(bin.lower, metric === "return" ? "percent" : "money")} ≤ result ${bin.includesUpper ? "≤" : "<"} ${chartNumber(bin.upper, metric === "return" ? "percent" : "money")}`,
     })} /> : <Empty />}
-    <p className="tl-stats-footnote">{filtered && compare ? <><span className="tl-stats-legend-base" /> All filtered trades <span className="tl-stats-legend-selection" /> Selected tags · </> : null}Select a bucket to inspect trades. Buckets stay fixed while drilling into tags.{frequency === "share" && " Each population is normalized separately."}</p>
+    <p className="tl-stats-footnote">{filtered && compare ? <><span className="tl-stats-legend-base" /> All filtered trades <span className="tl-stats-legend-selection" /> Selected tags · </> : null}Select a bucket to inspect trades. Buckets stay fixed while drilling into tags.{frequency === "share" && " Each group of trades totals 100%."}</p>
   </>;
 }
 

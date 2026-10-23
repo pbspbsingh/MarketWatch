@@ -7,17 +7,18 @@ import { TradeMonthRow } from "./TradeMonthRow";
 import { TradeTickerLink } from "./TradeTickerLink";
 import { useTradeTableWindow } from "./useTradeTableWindow";
 
-type SortColumn = "opened" | "symbol" | "side" | "status" | "return" | "net" | "realized" | "unrealized" | "quantity" | "tags";
+type SortColumn = "opened" | "symbol" | "side" | "status" | "return" | "net" | "realized" | "unrealized" | "quantity" | "size" | "tags";
 const columns: { key: SortColumn | "entry"; label: string; numeric?: boolean }[] = [
   { key: "opened", label: "Opened" }, { key: "symbol", label: "Ticker" }, { key: "side", label: "Side" }, { key: "status", label: "Status" },
   { key: "return", label: "Gain / loss %", numeric: true }, { key: "net", label: "Net P&L", numeric: true },
   { key: "realized", label: "Realized", numeric: true }, { key: "unrealized", label: "Unrealized", numeric: true },
-  { key: "entry", label: "Avg. entry", numeric: true }, { key: "quantity", label: "Open shares", numeric: true }, { key: "tags", label: "Tags", numeric: true },
+  { key: "entry", label: "Avg. entry", numeric: true }, { key: "quantity", label: "Open shares", numeric: true },
+  { key: "size", label: "Position size", numeric: true }, { key: "tags", label: "Tags", numeric: true },
 ];
 
 type TradeRowData = {
   trade: TradeLog; open: boolean; mark: TradeLogValuation | undefined; quantity: string;
-  net: string | null; roi: number | null; tags: string[]; status: string;
+  net: string | null; roi: number | null; size: number; tags: string[]; status: string;
 };
 type TableItem = { kind: "month"; key: string; month: string; trades: TradeLog[]; expanded: boolean }
   | { kind: "trade"; key: string; row: TradeRowData };
@@ -45,6 +46,7 @@ export const TradeTable = memo(function TradeTable({ trades, tags, marks, select
         quantity: trade.direction === "short" && trade.summary.remaining_quantity !== "0" ? `-${trade.summary.remaining_quantity}` : trade.summary.remaining_quantity,
         net: open ? mark?.total_pnl ?? null : trade.summary.realized_pnl,
         roi: open ? mark?.net_return_percent ?? null : trade.summary.net_return_percent,
+        size: Number(trade.summary.average_entry_price) * Number(trade.summary.remaining_quantity),
         tags: tags.filter(tag => trade.tag_ids.includes(tag.id)).map(tag => tag.name),
         status: open ? "Open" : Number(trade.summary.realized_pnl) > 0 ? "Win" : Number(trade.summary.realized_pnl) < 0 ? "Loss" : "BE",
       };
@@ -60,6 +62,7 @@ export const TradeTable = memo(function TradeTable({ trades, tags, marks, select
         case "realized": return Number(row.trade.summary.realized_pnl);
         case "unrealized": return row.open && row.mark?.unrealized_pnl != null ? Number(row.mark.unrealized_pnl) : null;
         case "quantity": return Number(row.quantity);
+        case "size": return row.size;
         case "tags": return row.tags.length;
       }
     };
@@ -136,7 +139,7 @@ function Spacer({ height }: { height: number }) {
 const TradeDataRow = memo(function TradeDataRow({ row, selected, rowIndex, onSelect, onEdit }: {
   row: TradeRowData; selected: boolean; rowIndex: number; onSelect: (trade: TradeLog) => void; onEdit: (trade: TradeLog) => void;
 }) {
-  const { trade, open, mark, net, roi, quantity, tags: names, status } = row;
+  const { trade, open, mark, net, roi, quantity, size, tags: names, status } = row;
   const priceInfo = open ? mark?.mark_date ? `Valued at $${mark.mark_price}, daily close on ${mark.mark_date}. Includes recorded fees; future exit fees excluded.` : "Daily valuation unavailable or awaiting a completed close after the last execution." : "Final result after recorded fees.";
   return <TableRow aria-rowindex={rowIndex} hover selected={selected} className="tl-trade-row" onClick={() => onSelect(trade)}>
     <TableCell><Button className="tl-date-link" size="small" aria-label={`View charts for ${trade.symbol} trade ${trade.id}`} aria-expanded={selected} onClick={event => { event.stopPropagation(); onSelect(trade); }}>{localDate(trade.summary.opened_at)}</Button></TableCell>
@@ -146,6 +149,7 @@ const TradeDataRow = memo(function TradeDataRow({ row, selected, rowIndex, onSel
     <TableCell align="right" className={pnlClass(trade.summary.realized_pnl)}>{money(trade.summary.realized_pnl)}</TableCell>
     <TableCell align="right" className={mark?.unrealized_pnl ? pnlClass(mark.unrealized_pnl) : ""}><Tooltip title={priceInfo}><span>{open ? money(mark?.unrealized_pnl) : "—"}</span></Tooltip></TableCell>
     <TableCell align="right">{money(trade.summary.average_entry_price)}</TableCell><TableCell align="right">{shares(quantity)}</TableCell>
+    <TableCell align="right"><Tooltip title="Average entry price × remaining open shares, excluding fees. Short positions show a positive size."><span>{money(String(size))}</span></Tooltip></TableCell>
     <TableCell align="right"><Tooltip title={names.join(", ") || "No tags"}><span className="tl-table-tags" tabIndex={0}>{names.length}</span></Tooltip></TableCell>
     <TableCell><IconButton size="small" aria-label={`Edit ${trade.symbol} trade ${trade.id}`} onClick={event => { event.stopPropagation(); onEdit(trade); }}><EditOutlinedIcon fontSize="small" /></IconButton></TableCell>
   </TableRow>;

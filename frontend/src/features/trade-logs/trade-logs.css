@@ -649,7 +649,7 @@
 }
 
 .tl-trades-table {
-  min-width: 70rem;
+  min-width: 76rem;
 
   & .MuiTableCell-root {
     white-space: nowrap;
@@ -769,13 +769,6 @@
   }
 }
 
-.tl-drawer-charts {
-  display: grid;
-  min-height: 0;
-  flex: 1;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-}
-
 .tl-trade-view-section {
   display: flex;
   flex-direction: column;
@@ -786,7 +779,6 @@
   margin: 0;
 }
 
-.tl-drawer-charts > section + section,
 .tl-charts-overlay-layout > .split-pane {
   border-top: 0.0625rem solid var(--color-border);
 }

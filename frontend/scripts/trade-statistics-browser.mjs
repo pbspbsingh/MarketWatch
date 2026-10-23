@@ -73,6 +73,8 @@ try {
     await runPerformanceChecks(call, evaluate, address.port);
   } else {
     await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await call("Page.bringToFront");
+    const splitterResult = await verifyDrawerSplit(call, evaluate, `http://127.0.0.1:${address.port}/__trade-statistics-test.html?trade_id=2`);
     await call("Page.navigate", { url: `http://127.0.0.1:${address.port}/__trade-statistics-test.html` });
     await call("Page.bringToFront");
     let ready = false;
@@ -84,6 +86,7 @@ try {
     assert(ready, "Browser fixture failed to load");
     const results = [];
     const record = value => { results.push(value); console.log(JSON.stringify(value)); };
+    record(splitterResult);
     record(await evaluate("window.tradeStatisticsTest.runChecks()"));
     await evaluate("window.tradeStatisticsTest.showTab('Duration')");
     for (const activation of ["keyboard", "mouse"]) {
@@ -228,6 +231,46 @@ try {
   await rm(profile, { recursive: true, force: true });
 }
 
+
+async function verifyDrawerSplit(call, evaluate, url) {
+  const selector = ".tl-chart-drawer-paper .split-pane-vertical";
+  const storageKey = "market-watch.trade-logs-chart-height-percent";
+  const load = async target => {
+    await call("Page.navigate", { url: target });
+    for (let index = 0; index < 200; index++) {
+      if (await evaluate(`location.href === ${JSON.stringify(target)} && Boolean(document.querySelector(${JSON.stringify(selector)})) && document.querySelector('.trade-logs-page')?.getAttribute('aria-busy') === 'false' && !document.querySelector('.tl-chart-drawer-paper').getAnimations().some(animation => animation.playState === 'running')`)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error("Chart splitter did not load");
+  };
+  const chartPercent = () => evaluate(`(() => {
+    const pane = document.querySelector(${JSON.stringify(selector)});
+    return 100 * pane.firstElementChild.getBoundingClientRect().height / (pane.getBoundingClientRect().height - 1);
+  })()`);
+  await load(url);
+  const point = await evaluate(`(() => {
+    const pane = document.querySelector(${JSON.stringify(selector)}), bounds = pane.getBoundingClientRect();
+    const divider = pane.querySelector('.split-pane-divider').getBoundingClientRect();
+    const x = divider.x + divider.width / 2, y = divider.y + divider.height / 2;
+    return { x, y, targetY: bounds.top + bounds.height * 0.65, hit: document.elementFromPoint(x, y)?.className, width: divider.width, height: divider.height };
+  })()`);
+  assert(String(point.hit).includes("split-pane-divider"), `Chart divider receives pointer events: ${JSON.stringify(point)}`);
+  await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+  await call("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1 });
+  await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.targetY, button: "left", buttons: 1 });
+  await call("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.targetY, button: "left", buttons: 0, clickCount: 1 });
+  const saved = await evaluate(`Number(localStorage.getItem(${JSON.stringify(storageKey)}))`);
+  assert(Math.abs(saved - 65) < 0.5, `Dragging persists the chart height percentage: ${saved}`);
+  assert(Math.abs(await chartPercent() - saved) < 0.5, "Dragging resizes the chart");
+  await evaluate(`(async () => {
+    [...document.querySelectorAll('.tl-date-link')].find(button => !button.getAttribute('aria-label').endsWith('trade 2')).click();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  })()`);
+  assert(Math.abs(await chartPercent() - saved) < 0.5, "Switching trades retains the chart height");
+  await load(`${url}&split_reload=1`);
+  assert(Math.abs(await chartPercent() - saved) < 0.5, "Reloading restores the chart height");
+  return { chartDividerDraggable: true, splitRetainedAcrossTrades: true, splitRestoredAfterReload: true };
+}
 
 async function runPerformanceChecks(call, evaluate, port) {
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });

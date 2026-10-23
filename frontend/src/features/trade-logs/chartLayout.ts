@@ -1,15 +1,15 @@
-export function restoreChartWidth(storageKey: string, fallback = 48): number {
+export function restoreChartSplit(storageKey: string, fallback = 48): number {
   try {
     const raw = localStorage.getItem(storageKey);
     if (raw !== null && raw.trim() !== "") {
-      const width = Number(raw);
-      if (Number.isFinite(width) && width >= 0 && width <= 100) return width;
+      const percent = Number(raw);
+      if (Number.isFinite(percent) && percent >= 0 && percent <= 100) return percent;
     }
   } catch { /* Keep resizing available when browser storage is unavailable. */ }
   return fallback;
 }
 
-export function saveChartWidth(storageKey: string, width: number) {
-  try { localStorage.setItem(storageKey, String(width)); }
+export function saveChartSplit(storageKey: string, percent: number) {
+  try { localStorage.setItem(storageKey, String(percent)); }
   catch { /* The splitter still retains its position until this page is reloaded. */ }
 }

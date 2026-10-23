@@ -36,7 +36,7 @@ export const TradeMonthRow = memo(function TradeMonthRow({ month, trades, marks,
     <MonthAmount value={summary.unrealized} title="Remaining positions valued at their latest completed daily close." />
     <MonthAmount value={summary.largestWin} returnPercent={summary.largestWinReturnPercent} label="Largest win" title="Largest net profit on a closed trade, after fees, with that trade’s return percentage." emptyTitle="No closed winning trades in this month and current filters." />
     <MonthAmount value={summary.largestLoss} returnPercent={summary.largestLossReturnPercent} label="Largest loss" title="Largest net loss on a closed trade, after fees, with that trade’s return percentage." emptyTitle="No closed losing trades in this month and current filters." />
-    <TableCell colSpan={2} />
+    <TableCell colSpan={3} />
   </TableRow>;
 });
 

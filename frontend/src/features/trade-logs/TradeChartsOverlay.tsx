@@ -5,7 +5,7 @@ import { SplitPane } from "../../components/SplitPane";
 import { TradeDetails, type TradeExecutionSelection } from "./TradeDetails";
 import { TradeHourlyChart } from "./TradeHourlyChart";
 import { TradeLogChart } from "./TradeLogChart";
-import { restoreChartWidth, saveChartWidth } from "./chartLayout";
+import { restoreChartSplit, saveChartSplit } from "./chartLayout";
 
 const dailyWidthKey = "market-watch.trade-logs-overlay-daily-width-percent";
 
@@ -13,12 +13,12 @@ export function TradeChartsOverlay({ trade, tags, timeZone, selectedExecution, o
   trade: TradeLog; tags: TradeLogTag[]; timeZone: string; selectedExecution: TradeExecutionSelection | null;
   onSelect: (index: number) => void; onClose: () => void; onEdit: () => void;
 }) {
-  const [initialDailyWidth] = useState(() => restoreChartWidth(dailyWidthKey, 50));
+  const [initialDailyWidth] = useState(() => restoreChartSplit(dailyWidthKey, 50));
   return <Dialog open onClose={onClose} fullWidth maxWidth="xl" aria-label={`${trade.symbol} trade charts`} slotProps={{ paper: { className: "trade-logs-ui tl-charts-overlay" } }}>
     <DialogContent className="tl-charts-overlay-content">
       <div className="tl-charts-overlay-layout">
         <TradeHourlyChart trade={trade} timeZone={timeZone} onSelect={onSelect} onClose={onClose} />
-        <SplitPane orientation="horizontal" initialSplit={100 - initialDailyWidth} onSplitChange={split => saveChartWidth(dailyWidthKey, 100 - split)}
+        <SplitPane orientation="horizontal" initialSplit={100 - initialDailyWidth} onSplitChange={split => saveChartSplit(dailyWidthKey, 100 - split)}
           first={<TradeDetails trade={trade} tags={tags} timeZone={timeZone} selectedExecution={selectedExecution} />}
           second={<TradeLogChart trade={trade} onSelect={onSelect} onEdit={onEdit} />} />
       </div>
