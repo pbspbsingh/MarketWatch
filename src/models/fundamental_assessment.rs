@@ -3,12 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Fundamentals, TickerSymbol};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum AssessmentProfile {
-    Profitable,
-    RevenueFocused,
-}
+pub(crate) const RUBRIC_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AssessmentContext {
@@ -33,20 +28,9 @@ pub struct AssessmentRow {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AssessmentScores {
-    pub profile: AssessmentProfile,
-    pub profile_reason: String,
-    pub gaap_status: String,
     pub rows: Vec<AssessmentRow>,
     pub total: Option<f64>,
     pub provisional: bool,
-    pub data_quality: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AssessmentConcern {
-    pub reason: String,
-    pub evidence_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,7 +47,6 @@ pub struct FundamentalAssessment {
     pub context: AssessmentContext,
     pub scores: AssessmentScores,
     pub summary: String,
-    pub concerns: Vec<AssessmentConcern>,
 }
 
 /// Unavailable fundamentals (source 404 or no reported quarters) are saved with

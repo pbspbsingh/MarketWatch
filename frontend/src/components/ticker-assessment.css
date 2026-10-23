@@ -29,7 +29,7 @@
   & .MuiButton-root { min-height: 1.75rem; padding: 0.2rem 0.75rem; font-size: 0.7rem; }
   & .MuiButton-startIcon > svg { font-size: 1rem; }
 }
-.assessment-overview { display: grid; grid-template-columns: minmax(10rem, 0.7fr) minmax(12rem, 1fr) minmax(16rem, 1.8fr); gap: 0.75rem; }
+.assessment-overview { display: grid; grid-template-columns: minmax(10rem, 0.7fr) minmax(16rem, 1.8fr); gap: 0.75rem; }
 .assessment-card,
 .assessment-panel,
 .assessment-progress { border: 0.0625rem solid var(--color-border); border-radius: 0.25rem; background: var(--color-canvas); }
@@ -52,14 +52,9 @@
 }
 .assessment-score-number { color: var(--color-accent); font-size: 2.15rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.04em; }
 .assessment-score-number > span { margin-left: 0.4rem; color: var(--color-muted); font-size: 0.75rem; font-weight: 400; letter-spacing: 0; }
-.assessment-profile .MuiChip-root { margin-top: auto; max-width: 100%; height: auto; }
-.assessment-profile .MuiChip-label { padding-block: 0.2rem; white-space: normal; }
 .assessment-summary {
   & > p:first-of-type { color: var(--color-text); font-size: 0.75rem; }
 }
-.assessment-data-quality { margin-top: auto; padding-top: 0.5rem; }
-.assessment-data-quality > span { color: var(--color-muted); font-size: 0.6rem; font-weight: 600; }
-.assessment-data-quality p { margin-top: 0.2rem; font-size: 0.65rem; }
 .assessment-panel { min-width: 0; }
 .assessment-panel-heading {
   flex-wrap: wrap;
@@ -99,13 +94,6 @@
 }
 .is-evidence-invalid .assessment-subtext { color: inherit; }
 .assessment-subtext { display: block; margin-top: 0.3rem; color: var(--color-muted); font-size: 0.9em; font-weight: 400; overflow-wrap: anywhere; }
-.assessment-concerns {
-  & ul { display: grid; gap: 0.4rem; margin: 0; padding: 0.75rem 1rem 0.75rem 1.8rem; }
-  & li { color: var(--color-muted); font-size: 0.7rem; line-height: 1.5; }
-  & li::marker { color: var(--color-accent); }
-  & li.is-evidence-invalid,
-  & li.is-evidence-invalid::marker { color: var(--color-negative); }
-}
 .assessment-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem 1rem; color: var(--color-muted); font-size: 0.625rem; }
 .assessment-progress { padding: 0.75rem; }
 .assessment-progress-heading {
@@ -169,7 +157,6 @@
 }
 @media (max-width: 850px) {
   .assessment-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .assessment-summary { grid-column: 1 / -1; }
 }
 @media (max-width: 500px) {
   .assessment-overview { grid-template-columns: minmax(0, 1fr); }

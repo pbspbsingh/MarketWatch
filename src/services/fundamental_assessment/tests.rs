@@ -146,23 +146,14 @@ async fn seed_profile(store: &Store, data: &Fundamentals) {
 
 fn ai_response() -> Value {
     json!({
-        "scores": {
-            "profile":"profitable",
-            "profile_reason":"Profitability is established despite variation between quarters.",
-            "gaap_status":"GAAP EPS profitable",
-            "rows":[
-                {"id":"eps_strength","score":23.0,"maximum":30.0,"reason":"Strong EPS record with one softer quarter.","evidence_ids":["2026Q2","2026Q1"]},
-                {"id":"eps_acceleration","score":14.0,"maximum":20.0,"reason":"The wider earnings trend supports improvement.","evidence_ids":["2026Q2"]},
-                {"id":"revenue_strength","score":17.0,"maximum":20.0,"reason":"Revenue consistently exceeds 1B per quarter.","evidence_ids":["2026Q2"]},
-                {"id":"revenue_acceleration","score":10.0,"maximum":15.0,"reason":"Sales improve across the recent record.","evidence_ids":["2026Q2"]},
-                {"id":"annual","score":8.0,"maximum":10.0,"reason":"Completed annual results support the recent record.","evidence_ids":["2025FY"]},
-                {"id":"forecasts","score":3.0,"maximum":5.0,"reason":"Near-term estimates suggest continued growth.","evidence_ids":["2026Q3"]}
-            ],
-            "total":75.0,"provisional":false,
-            "data_quality":"Quarterly history, annual actuals and near-term estimates are supplied."
-        },
-        "summary":"Broad growth remains good despite quarterly variation.",
-        "concerns":[]
+        "rows":[
+            {"id":"eps_strength","score":23.0,"maximum":30.0,"reason":"Strong EPS record with one softer quarter.","evidence_ids":["2026Q2","2026Q1"]},
+            {"id":"eps_acceleration","score":22.0,"maximum":30.0,"reason":"The smoothed earnings trend supports improvement.","evidence_ids":["2026Q2"]},
+            {"id":"revenue_confirmation","score":24.0,"maximum":30.0,"reason":"Sales growth supports earnings strength.","evidence_ids":["2026Q2"]},
+            {"id":"earnings_surprises","score":6.0,"maximum":10.0,"reason":"Recent EPS beats are favorable despite a miss.","evidence_ids":["2026Q2"]}
+        ],
+        "total":75.0,"provisional":false,
+        "summary":"Broad growth remains good despite quarterly variation."
     })
 }
 
@@ -177,76 +168,89 @@ fn report(data: Fundamentals) -> FundamentalAssessment {
         fingerprint: fingerprint(&data).unwrap(),
         scores: validate_analysis(&ai_response().to_string())
             .unwrap()
-            .scores,
+            .scores(),
         fundamentals: data,
         context: AssessmentContext::default(),
         summary: "Saved AI assessment".into(),
-        concerns: vec![],
     }
 }
 
 #[test]
-fn ai_decides_scores_and_validation_only_enforces_contract_and_bounds() {
+fn ai_decides_scores_and_validation_enforces_four_factor_contract_and_sum() {
     let valid = ai_response();
     let analysis = validate_analysis(&valid.to_string()).unwrap();
-    assert_eq!(analysis.scores.total, Some(75.0));
-    assert_eq!(analysis.scores.rows[0].score, Some(23.0));
+    assert_eq!(analysis.total, Some(75.0));
+    assert_eq!(analysis.rows[0].score, Some(23.0));
+    assert_eq!(analysis.rows[2].label, "Revenue confirmation");
     let mut different = valid.clone();
-    different["scores"]["rows"][0]["score"] = json!(18.0);
-    different["scores"]["total"] = json!(70.0);
+    different["rows"][0]["score"] = json!(18.0);
+    different["total"] = json!(70.0);
     let analysis = validate_analysis(&different.to_string()).unwrap();
-    assert_eq!(analysis.scores.rows[0].score, Some(18.0));
-    assert_eq!(analysis.scores.total, Some(70.0));
+    assert_eq!(analysis.rows[0].score, Some(18.0));
+    assert_eq!(analysis.total, Some(70.0));
     let mut invalid = valid.clone();
-    invalid["scores"]["rows"][0]["score"] = json!(31.0);
+    invalid["rows"][0]["score"] = json!(31.0);
+    invalid["total"] = json!(83.0);
     assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
-    invalid["scores"]["rows"].as_array_mut().unwrap().pop();
+    invalid["rows"][2]["score"] = json!(31.0);
+    invalid["total"] = json!(82.0);
     assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
-    invalid["scores"]["rows"][1] = invalid["scores"]["rows"][0].clone();
+    invalid["rows"].as_array_mut().unwrap().pop();
     assert!(validate_analysis(&invalid.to_string()).is_err());
     invalid = valid.clone();
-    invalid["scores"]["rows"][0]["available"] = json!(30);
+    invalid["rows"][1] = invalid["rows"][0].clone();
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid = valid.clone();
+    invalid["rows"][0]["maximum"] = json!(40.0);
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid = valid.clone();
+    invalid["rows"][2]["id"] = json!("revenue_strength");
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid = valid.clone();
+    invalid["rows"][0]["available"] = json!(30);
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid = valid.clone();
+    invalid["total"] = json!(76.0);
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid["total"] = Value::Null;
+    assert!(validate_analysis(&invalid.to_string()).is_err());
+    invalid = valid.clone();
+    invalid["profile"] = json!("profitable");
     assert!(validate_analysis(&invalid.to_string()).is_err());
 
     let explanation = "Evidence supports the assessment. ".repeat(30);
     let mut longer = valid.clone();
     longer["summary"] = json!(explanation);
-    for field in ["profile_reason", "gaap_status", "data_quality"] {
-        longer["scores"][field] = json!(explanation);
-    }
-    longer["scores"]["rows"][0]["reason"] = json!(explanation);
-    longer["concerns"] = json!([{ "reason": explanation, "evidence_ids": ["2026Q2"] }]);
+    longer["rows"][0]["reason"] = json!(explanation);
     let accepted = validate_analysis(&longer.to_string()).unwrap();
     assert_eq!(accepted.summary, explanation);
-    assert_eq!(accepted.scores.rows[0].reason, explanation);
-    assert_eq!(accepted.concerns[0].reason, explanation);
-    longer["scores"]["rows"][0]["reason"] = json!(" \n ");
+    assert_eq!(accepted.rows[0].reason, explanation);
+    longer["rows"][0]["reason"] = json!("   ");
     assert!(validate_analysis(&longer.to_string()).is_err());
 }
 
 #[test]
-fn ai_can_select_the_revenue_focused_profile_with_its_own_scores() {
+fn unavailable_criteria_require_null_total_and_provisional_without_reweighting() {
     let mut response = ai_response();
-    response["scores"]["profile"] = json!("revenue_focused");
-    response["scores"]["profile_reason"] =
-        json!("Revenue is the more useful basis for this assessment.");
-    response["scores"]["rows"] = json!([
-        {"id":"revenue_strength","score":38.0,"maximum":45.0,"reason":"Consistent sales support the assessment.","evidence_ids":["2026Q2"]},
-        {"id":"revenue_acceleration","score":23.0,"maximum":30.0,"reason":"Recent revenue trends improve.","evidence_ids":["2026Q2"]},
-        {"id":"annual","score":10.0,"maximum":15.0,"reason":"Annual sales support the recent record.","evidence_ids":["2025FY"]},
-        {"id":"forecasts","score":6.0,"maximum":10.0,"reason":"Estimates suggest further progress.","evidence_ids":["2026Q3"]}
-    ]);
-    response["scores"]["total"] = json!(77.0);
+    response["rows"][3]["score"] = Value::Null;
+    response["rows"][3]["reason"] = json!("Matching EPS estimates are unavailable.");
+    response["rows"][3]["evidence_ids"] = json!([]);
+    assert!(validate_analysis(&response.to_string()).is_err());
+    response["total"] = Value::Null;
+    assert!(validate_analysis(&response.to_string()).is_err());
+    response["provisional"] = json!(true);
     let analysis = validate_analysis(&response.to_string()).unwrap();
-    assert_eq!(analysis.scores.profile, AssessmentProfile::RevenueFocused);
-    assert_eq!(analysis.scores.total, Some(77.0));
-    assert_eq!(analysis.scores.rows.len(), 4);
+    assert!(analysis.total.is_none());
+    assert!(analysis.provisional);
+    assert_eq!(analysis.rows[0].score, Some(23.0));
+    assert_eq!(analysis.rows[3].maximum, 10.0);
+    assert!(analysis.rows[3].score.is_none());
 }
 
 #[test]
-fn prompt_preserves_all_raw_values_and_supplies_book_guidance_without_derived_inputs() {
+fn prompt_preserves_raw_values_and_supplies_the_simplified_sepa_guidance() {
     for mut data in
         serde_json::from_str::<Vec<Fundamentals>>(include_str!("fixtures/refreshed.json")).unwrap()
     {
@@ -260,17 +264,15 @@ fn prompt_preserves_all_raw_values_and_supplies_book_guidance_without_derived_in
         };
         let prompt = build_prompt(&data, &context).unwrap();
         assert!(prompt.contains("Software - Application"));
-        assert!(prompt.contains("Software"));
-        assert!(prompt.contains("1 BILLION PER QUARTER"));
-        assert!(prompt.contains("stable revenue is good enough"));
-        assert!(prompt.contains("triple-digit (100% or greater) YoY EPS growth"));
-        assert!(prompt.contains("consistent record of meaningful positive surprises"));
-        assert!(prompt.contains("may be facing conservative estimates"));
-        assert!(prompt.contains("Calculate EPS/revenue YoY growth yourself"));
-        assert!(prompt.contains("two-quarter moving average"));
-        assert!(prompt.contains("Do not mechanically fail a company for one weak quarter"));
-        assert!(prompt.contains("not mandatory gates or automatic score bands"));
-        let raw = prompt.split("FINANCIAL SNAPSHOT:\n").nth(1).unwrap();
+        assert!(prompt.contains("latest three reported quarters"));
+        assert!(prompt.contains("two-quarter moving average of YoY growth rates"));
+        assert!(prompt.contains("Do not assess profit margins"));
+        assert!(!prompt.contains("<<"));
+        for (id, label, maximum) in CRITERIA {
+            assert!(prompt.contains(id));
+            assert!(prompt.contains(&format!("{label} — {maximum}")));
+        }
+        let raw = prompt.split("FINANCIAL DATA:\n").nth(1).unwrap();
         let value: Value = serde_json::from_str(raw).unwrap();
         assert_eq!(value, serde_json::to_value(&data).unwrap());
         assert!(value.get("scores").is_none());
@@ -443,7 +445,7 @@ async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timesta
     let mut saved = report(data.clone());
     saved.rubric_version += 1;
     save_report(&store, &saved).await;
-    assert!(service.state(&data.symbol).await.unwrap().stale);
+    assert!(service.state(&data.symbol).await.unwrap().report.is_none());
     saved.rubric_version = RUBRIC_VERSION;
     saved.prompt_version += 1;
     save_report(&store, &saved).await;
@@ -504,9 +506,9 @@ struct MockAi {
 
 async fn mock_ai(State(mock): State<Arc<MockAi>>, Json(request): Json<Value>) -> axum::body::Body {
     let prompt = request["messages"][0]["content"].as_str().unwrap();
-    assert!(prompt.contains("YOU choose the assessment profile"));
+    assert!(prompt.contains("SEPA-inspired rubric"));
     let raw: Value =
-        serde_json::from_str(prompt.split("FINANCIAL SNAPSHOT:\n").nth(1).unwrap()).unwrap();
+        serde_json::from_str(prompt.split("FINANCIAL DATA:\n").nth(1).unwrap()).unwrap();
     let data: Fundamentals = serde_json::from_value(raw).unwrap();
     let fetched = mock
         .store
@@ -565,12 +567,8 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     let data = fixture();
     seed_profile(&store, &data).await;
     let mut response = ai_response();
-    response["scores"]["rows"][2]["evidence_ids"] = json!(["2026Q2", "2022Q2"]);
-    response["scores"]["rows"][3]["evidence_ids"] = json!([]);
-    response["concerns"] = json!([
-        {"reason":"An unsupported historical comparison.", "evidence_ids":["2022Q2"]},
-        {"reason":"A concern without citations.", "evidence_ids":[]}
-    ]);
+    response["rows"][2]["evidence_ids"] = json!(["2026Q2", "2022Q2"]);
+    response["rows"][3]["evidence_ids"] = json!([]);
     let mock = Arc::new(MockAi {
         store: store.clone(),
         entered: Notify::new(),
@@ -670,8 +668,6 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     assert_eq!(saved.scores.rows[0].score, Some(23.0));
     assert_eq!(saved.scores.rows[2].evidence_ids, ["2026Q2", "2022Q2"]);
     assert!(saved.scores.rows[3].evidence_ids.is_empty());
-    assert_eq!(saved.concerns[0].evidence_ids, ["2022Q2"]);
-    assert!(saved.concerns[1].evidence_ids.is_empty());
     assert_eq!(
         saved.fundamentals.quarters[0].revenue,
         data.quarters[0].revenue
@@ -1222,14 +1218,14 @@ async fn live_configured_assessments() -> anyhow::Result<()> {
                 }
                 match validate_analysis(&response) {
                     Ok(analysis) => {
-                        let output = json!({"scores":analysis.scores,"summary":analysis.summary,"concerns":analysis.concerns});
+                        let output = serde_json::to_value(&analysis)?;
                         std::fs::write(
                             path("analysis.json"),
                             serde_json::to_string_pretty(&output)?,
                         )?;
                         println!(
                             "{symbol}: validated score {:?}, {:.1}s elapsed",
-                            analysis.scores.total,
+                            analysis.total,
                             started.elapsed().as_secs_f64()
                         );
                         Ok(())

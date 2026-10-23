@@ -10,13 +10,9 @@ export interface AssessmentRow {
 }
 
 export interface AssessmentScores {
-  profile: "profitable" | "revenue_focused";
-  profile_reason: string;
-  gaap_status: string;
   rows: AssessmentRow[];
   total: number | null;
   provisional: boolean;
-  data_quality: string;
 }
 
 export interface FundamentalAssessment {
@@ -31,7 +27,6 @@ export interface FundamentalAssessment {
   context: AssessmentContext;
   scores: AssessmentScores;
   summary: string;
-  concerns: { reason: string; evidence_ids: string[] }[];
 }
 
 export interface AssessmentJob {

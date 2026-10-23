@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use super::Store;
 use crate::models::{
     TickerSymbol,
+    fundamental_assessment::RUBRIC_VERSION,
     fundamentals_background::{FundamentalsFeature, FundamentalsTask},
 };
 
@@ -27,6 +28,7 @@ impl Store {
         let excluded = serde_json::to_string(excluded)?;
         let symbol = symbol.map(TickerSymbol::as_str);
         let feature = feature.map(FundamentalsFeature::as_str);
+        let rubric_version = i64::from(RUBRIC_VERSION);
         let row = sqlx::query!(
             r#"WITH features(feature) AS (VALUES ('assessment'), ('n_factor')),
                candidates AS (
@@ -34,7 +36,9 @@ impl Store {
                        EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,
                        CASE f.feature WHEN 'assessment' THEN
                            (SELECT COALESCE(json_extract(a.payload, '$.not_found_at'), json_extract(a.payload, '$.last_checked_at'), json_extract(a.payload, '$.generated_at'))
-                            FROM fundamental_assessments a WHERE a.symbol = c.symbol)
+                            FROM fundamental_assessments a WHERE a.symbol = c.symbol
+                                AND (json_extract(a.payload, '$.rubric_version') = ?6
+                                    OR json_extract(a.payload, '$.not_found_at') IS NOT NULL))
                        ELSE
                            (SELECT COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))
                             FROM n_factor_reports r WHERE r.symbol = c.symbol
@@ -66,6 +70,7 @@ impl Store {
             excluded,
             symbol,
             feature,
+            rubric_version,
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -125,6 +130,7 @@ mod tests {
     ) {
         let symbol = ticker.as_str();
         let payload = serde_json::json!({
+            "rubric_version": RUBRIC_VERSION,
             "generated_at": generated_at,
             "last_checked_at": checked_at,
             "news_fetched_at": checked_at.unwrap_or(generated_at),
@@ -145,6 +151,37 @@ mod tests {
                 ).execute(&store.pool).await.unwrap();
             }
         }
+    }
+
+    #[tokio::test]
+    async fn old_rubric_does_not_delay_background_reassessment() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = seed(&store, "OLD").await;
+        let now = Utc::now();
+        let payload = serde_json::json!({
+            "rubric_version": RUBRIC_VERSION - 1,
+            "generated_at": now,
+            "last_checked_at": now,
+        })
+        .to_string();
+        let symbol_str = symbol.as_str();
+        sqlx::query!(
+            "INSERT INTO fundamental_assessments (symbol, payload) VALUES (?, ?) ON CONFLICT (symbol) DO UPDATE SET payload = excluded.payload",
+            symbol_str, payload,
+        ).execute(&store.pool).await.unwrap();
+        let candidate = store
+            .fundamentals_candidate(
+                true,
+                now - chrono::Duration::days(7),
+                &[],
+                Some(&symbol),
+                Some(FundamentalsFeature::Assessment),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidate.task.symbol, symbol);
+        assert!(candidate.checked_at.is_none());
     }
 
     #[tokio::test]

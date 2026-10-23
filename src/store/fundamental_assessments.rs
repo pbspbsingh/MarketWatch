@@ -1,7 +1,10 @@
 use anyhow::Context;
 
 use super::Store;
-use crate::models::{Fundamentals, TickerSymbol, fundamental_assessment::AssessmentResult};
+use crate::models::{
+    Fundamentals, TickerSymbol,
+    fundamental_assessment::{AssessmentResult, RUBRIC_VERSION},
+};
 
 impl Store {
     /// Inspect the persisted shape before deserialization erases the distinction
@@ -28,16 +31,30 @@ impl Store {
         symbol: &TickerSymbol,
     ) -> anyhow::Result<Option<AssessmentResult>> {
         let symbol = symbol.as_str();
-        sqlx::query_scalar!(
+        let payload = sqlx::query_scalar!(
             r#"SELECT payload AS "payload!: String" FROM fundamental_assessments WHERE symbol = ?"#,
             symbol
         )
         .fetch_optional(&self.pool)
-        .await?
-        .map(|payload| {
-            serde_json::from_str(&payload).context("invalid saved fundamental assessment")
-        })
-        .transpose()
+        .await?;
+        let Some(payload) = payload else {
+            return Ok(None);
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&payload).context("invalid saved fundamental assessment")?;
+        // Previous rubrics have incompatible score fields. Leave them stored,
+        // but require a new assessment before returning a report.
+        if value.get("not_found_at").is_none()
+            && value
+                .get("rubric_version")
+                .and_then(serde_json::Value::as_u64)
+                != Some(u64::from(RUBRIC_VERSION))
+        {
+            return Ok(None);
+        }
+        serde_json::from_value(value)
+            .map(Some)
+            .context("invalid saved fundamental assessment")
     }
 
     pub async fn save_fundamental_assessment(
@@ -78,6 +95,43 @@ fn parse_assessment_fundamentals(payload: &str) -> anyhow::Result<Option<Fundame
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn old_rubric_payloads_are_ignored_before_parsing_their_scores() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = TickerSymbol::parse("OLD").unwrap();
+        let payload = serde_json::json!({
+            "rubric_version": RUBRIC_VERSION - 1,
+            "scores": {"profile": "revenue_focused", "rows": []},
+        })
+        .to_string();
+        let symbol_str = symbol.as_str();
+        sqlx::query!(
+            "INSERT INTO fundamental_assessments (symbol, payload) VALUES (?, ?) ON CONFLICT (symbol) DO UPDATE SET payload = excluded.payload",
+            symbol_str, payload,
+        ).execute(&store.pool).await.unwrap();
+        assert!(
+            store
+                .fundamental_assessment(&symbol)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        store
+            .save_fundamental_assessment(
+                &symbol,
+                &AssessmentResult::NotFound {
+                    not_found_at: chrono::Utc::now(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            store.fundamental_assessment(&symbol).await.unwrap(),
+            Some(AssessmentResult::NotFound { .. })
+        ));
+    }
 
     #[test]
     fn legacy_gaap_only_payloads_require_manual_refresh() {

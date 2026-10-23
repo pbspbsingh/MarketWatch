@@ -97,14 +97,12 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
   const summary = report?.summary ?? "";
   const lastUpdated = report == null ? "" : new Date(report.generated_at).toLocaleString();
   const snapshotAt = report?.fundamentals.fetched_at;
-  const concerns = report?.concerns ?? [];
   const evidence = report == null ? new Set<string>() : availableEvidence(report.fundamentals);
   const rowErrors = (scores?.rows ?? []).map(row => evidenceError(row.evidence_ids, evidence, row.score != null));
-  const concernErrors = concerns.map(concern => evidenceError(concern.evidence_ids, evidence));
-  const hasEvidenceErrors = [...rowErrors, ...concernErrors].some(Boolean);
+  const hasEvidenceErrors = rowErrors.some(Boolean);
   return <div className="assessment-tab">
     <div className="assessment-toolbar">
-      <div className="assessment-title"><AutoAwesomeOutlinedIcon /><div><Typography component="h3">Fundamental growth</Typography><Typography>{symbol} · EPS and revenue assessment</Typography></div></div>
+      <div className="assessment-title"><AutoAwesomeOutlinedIcon /><div><Typography component="h3">SEPA fundamentals</Typography><Typography>{symbol} · EPS and revenue assessment</Typography></div></div>
       <div className="assessment-actions">
         {stale && <Chip size="small" color="warning" label="Stale" />}
         {scores?.provisional && <Chip size="small" variant="outlined" label="Provisional" />}
@@ -133,14 +131,12 @@ function AssessmentContent({ symbol, fundamentals }: { symbol: string; fundament
     {(active || (job?.phase === "failed" && job.live_response)) && <AssessmentProgress job={job} savedReport={report != null} />}
     {scores ? <>
       <div className="assessment-overview">
-        <section className={`assessment-card assessment-score${stale ? " is-stale" : ""}`} aria-label="Overall growth score"><span className="assessment-eyebrow">Growth score</span><div className="assessment-score-number">{scores.total == null ? "—" : scores.total.toFixed(1)}<span>/ 100</span></div><Typography>{scores.total == null ? "Insufficient comparable history" : scores.provisional ? "Provisional · limited evidence" : "AI assessment of EPS and revenue"}</Typography></section>
-        <section className="assessment-card assessment-profile"><span className="assessment-eyebrow">Assessment profile</span><Typography component="h4">{scores.profile === "profitable" ? "Profitable" : "Revenue-focused"}</Typography><Typography><AssessmentText text={scores.profile_reason} limit={300} /></Typography>{report && <Typography className="assessment-industry">{[...report.context.industries, ...report.context.themes].join(" · ")}</Typography>}<Chip size="small" variant="outlined" label={<AssessmentText text={scores.gaap_status} limit={160} />} /></section>
-        <section className="assessment-card assessment-summary"><span className="assessment-eyebrow">Assessment</span><Typography><AssessmentText text={summary} /></Typography><div className="assessment-data-quality"><span>Data quality</span><Typography><AssessmentText text={scores.data_quality} limit={300} /></Typography></div></section>
+        <section className={`assessment-card assessment-score${stale ? " is-stale" : ""}`} aria-label="Overall growth score"><span className="assessment-eyebrow">Growth score</span><div className="assessment-score-number">{scores.total == null ? "—" : scores.total.toFixed(1)}<span>/ 100</span></div><Typography>{scores.total == null ? "Insufficient evidence for a total score" : scores.provisional ? "Provisional · limited evidence" : "AI assessment of EPS and revenue"}</Typography></section>
+        <section className="assessment-card assessment-summary"><span className="assessment-eyebrow">Assessment</span><Typography><AssessmentText text={summary} /></Typography></section>
       </div>
       <section className="assessment-panel" aria-label="Scoring breakdown"><div className="assessment-panel-heading"><FactCheckOutlinedIcon /><Typography component="h3">Scoring breakdown</Typography><span>AI-assigned scores · reported results first</span></div><ScoreTable scores={scores} summary={summary} lastUpdated={lastUpdated} evidence={evidence} errors={rowErrors} /></section>
-      {concerns.length > 0 && <section className="assessment-panel assessment-concerns"><div className="assessment-panel-heading"><InfoOutlinedIcon /><Typography component="h3">What to watch</Typography></div><ul>{concerns.map((concern, index) => <li key={index} className={concernErrors[index] ? "is-evidence-invalid" : undefined}><AssessmentText text={concern.reason} limit={300} /><AssessmentEvidence ids={concern.evidence_ids} available={evidence} error={concernErrors[index]} /></li>)}</ul></section>}
-      <div className="assessment-footer"><span>Custom rubric informed by Minervini · {report?.model}</span><span>{report?.last_checked_at && <>Last checked <time dateTime={report.last_checked_at}>{new Date(report.last_checked_at).toLocaleString()}</time></>}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
-    </> : !active && !state?.not_found_at && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS and revenue strength, acceleration, and consistency."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
+      <div className="assessment-footer"><span>SEPA-inspired rubric · custom weights · {report?.model}</span><span>{report?.last_checked_at && <>Last checked <time dateTime={report.last_checked_at}>{new Date(report.last_checked_at).toLocaleString()}</time></>}</span><span>{snapshotAt && <>Financial data fetched <time dateTime={snapshotAt}>{new Date(snapshotAt).toLocaleString()}</time></>}</span></div>
+    </> : !active && !state?.not_found_at && <div className="assessment-empty"><AutoAwesomeOutlinedIcon /><Typography component="h4">Understand the growth behind {symbol}</Typography><Typography>{state == null ? "Loading saved assessment…" : "Assess EPS strength, EPS acceleration, revenue confirmation, and earnings surprises."}</Typography><Typography>Analyze the current financial data to see criterion scores, supporting periods, and a short conclusion.</Typography></div>}
   </div>;
 }
 

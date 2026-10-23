@@ -23,9 +23,8 @@ use crate::{
     models::{
         Fundamentals, TickerSymbol,
         fundamental_assessment::{
-            AssessmentConcern, AssessmentContext, AssessmentJob, AssessmentPhase,
-            AssessmentProfile, AssessmentResult, AssessmentScores, AssessmentSnapshot,
-            FundamentalAssessment,
+            AssessmentContext, AssessmentJob, AssessmentPhase, AssessmentResult, AssessmentRow,
+            AssessmentScores, AssessmentSnapshot, FundamentalAssessment, RUBRIC_VERSION,
         },
         fundamentals_background::FundamentalsFeature,
     },
@@ -34,9 +33,7 @@ use crate::{
 };
 use input::fingerprint;
 
-const RUBRIC_VERSION: u32 = 1;
-
-const PROMPT_VERSION: u32 = 1;
+const PROMPT_VERSION: u32 = 3;
 const MAX_ACTIVE_JOBS: usize = 8;
 const MAX_RETAINED_JOBS: usize = 128;
 
@@ -74,12 +71,23 @@ pub enum AssessmentStartError {
     Busy,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Analysis {
-    scores: AssessmentScores,
+    rows: Vec<AssessmentRow>,
+    total: Option<f64>,
+    provisional: bool,
     summary: String,
-    concerns: Vec<AssessmentConcern>,
+}
+
+impl Analysis {
+    fn scores(&self) -> AssessmentScores {
+        AssessmentScores {
+            rows: self.rows.clone(),
+            total: self.total,
+            provisional: self.provisional,
+        }
+    }
 }
 
 impl FundamentalAssessmentService {
@@ -502,9 +510,8 @@ impl FundamentalAssessmentService {
             fingerprint,
             fundamentals: data,
             context,
-            scores: analysis.scores,
+            scores: analysis.scores(),
             summary: analysis.summary,
-            concerns: analysis.concerns,
         };
         self.update(symbol, id, AssessmentPhase::Saving, None);
         self.store
@@ -532,35 +539,15 @@ impl FundamentalAssessmentService {
     }
 }
 
-fn criteria(profile: AssessmentProfile) -> &'static [(&'static str, &'static str, f64)] {
-    match profile {
-        AssessmentProfile::Profitable => &[
-            ("eps_strength", "EPS growth strength", 30.0),
-            ("eps_acceleration", "EPS acceleration", 20.0),
-            ("revenue_strength", "Revenue strength and consistency", 20.0),
-            ("revenue_acceleration", "Revenue acceleration", 15.0),
-            ("annual", "Annual growth", 10.0),
-            ("forecasts", "Near-term outlook", 5.0),
-        ],
-        AssessmentProfile::RevenueFocused => &[
-            ("revenue_strength", "Revenue strength and consistency", 45.0),
-            ("revenue_acceleration", "Revenue acceleration", 30.0),
-            ("annual", "Annual growth", 15.0),
-            ("forecasts", "Near-term outlook", 10.0),
-        ],
-    }
-}
+const CRITERIA: &[(&str, &str, f64)] = &[
+    ("eps_strength", "EPS strength", 30.0),
+    ("eps_acceleration", "EPS acceleration", 30.0),
+    ("revenue_confirmation", "Revenue confirmation", 30.0),
+    ("earnings_surprises", "Earnings surprises", 10.0),
+];
 
 fn build_prompt(data: &Fundamentals, context: &AssessmentContext) -> anyhow::Result<String> {
     Ok(include_str!("fundamental_assessment/prompt.md")
-        .replace(
-            "<<PROFITABLE_CRITERIA>>",
-            &serde_json::to_string(criteria(AssessmentProfile::Profitable))?,
-        )
-        .replace(
-            "<<REVENUE_CRITERIA>>",
-            &serde_json::to_string(criteria(AssessmentProfile::RevenueFocused))?,
-        )
         .replace("<<FINANCIAL_SNAPSHOT>>", &serde_json::to_string(data)?)
         .replace("<<COMPANY_CONTEXT>>", &serde_json::to_string(context)?))
 }
@@ -570,25 +557,13 @@ fn validate_analysis(response: &str) -> anyhow::Result<Analysis> {
         .context("invalid AI assessment JSON")?;
     let text_ok = |text: &str| !text.trim().is_empty();
     ensure!(text_ok(&analysis.summary), "invalid assessment summary");
+    let expected = CRITERIA;
     ensure!(
-        text_ok(&analysis.scores.profile_reason),
-        "invalid profile reason"
-    );
-    ensure!(
-        text_ok(&analysis.scores.gaap_status),
-        "invalid GAAP assessment"
-    );
-    ensure!(
-        text_ok(&analysis.scores.data_quality),
-        "invalid data quality assessment"
-    );
-    let expected = criteria(analysis.scores.profile);
-    ensure!(
-        analysis.scores.rows.len() == expected.len(),
+        analysis.rows.len() == expected.len(),
         "missing assessment rows"
     );
     let mut seen = HashSet::new();
-    for row in &mut analysis.scores.rows {
+    for row in &mut analysis.rows {
         let (_, label, maximum) = expected
             .iter()
             .find(|(id, _, _)| *id == row.id)
@@ -609,14 +584,28 @@ fn validate_analysis(response: &str) -> anyhow::Result<Analysis> {
     }
     ensure!(
         analysis
-            .scores
             .total
             .is_none_or(|score| score.is_finite() && (0.0..=100.0).contains(&score)),
         "total score outside bounds"
     );
-    ensure!(analysis.concerns.len() <= 5, "too many assessment concerns");
-    for concern in &analysis.concerns {
-        ensure!(text_ok(&concern.reason), "invalid assessment concern");
+    let sum: Option<f64> = analysis.rows.iter().map(|row| row.score).sum();
+    match sum {
+        Some(sum) => ensure!(
+            analysis
+                .total
+                .is_some_and(|total| (total - sum).abs() <= 1e-6),
+            "total must equal the sum of criterion scores"
+        ),
+        None => {
+            ensure!(
+                analysis.total.is_none(),
+                "unavailable criteria require a null total"
+            );
+            ensure!(
+                analysis.provisional,
+                "unavailable criteria require a provisional assessment"
+            );
+        }
     }
     Ok(analysis)
 }
