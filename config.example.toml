@@ -52,6 +52,12 @@ membership_fresh_days = 15
 [n_factor]
 default_source = "stock_titan" # "stock_titan" or "finviz"
 
+# Institutions loads lazily. First use imports shared SEC fund holdings history.
+# Set SEC_USER_AGENT in the environment, or supply an application/contact below.
+# [institutions]
+# user_agent = "MarketWatch/3.0 you@your-domain.com"
+# data_directory = "data/institutions"
+
 # Optional: refresh Assessment and N-Factor reports while user-started AI work is idle.
 # Requires [ai] configuration. Leave this block commented to disable it.
 # When all ai.max_concurrent_requests slots are busy, a user AI request preempts

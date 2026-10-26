@@ -6,6 +6,7 @@ mod fundamental_assessment;
 mod global_search;
 mod home;
 mod industries;
+mod institutions;
 mod live_prices;
 mod market;
 mod market_chart;
@@ -36,6 +37,7 @@ pub fn router() -> Router<AppState> {
         .merge(global_search::router())
         .merge(home::router())
         .merge(industries::router())
+        .merge(institutions::router())
         .merge(market::router())
         .merge(market_chart::router())
         .merge(market_explorer::router())

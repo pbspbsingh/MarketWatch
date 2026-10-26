@@ -5,6 +5,7 @@ mod exchange;
 pub mod fundamental_assessment;
 mod fundamentals;
 pub(crate) mod fundamentals_background;
+pub(crate) mod institutions;
 mod market_data;
 pub mod n_factor;
 mod performance;

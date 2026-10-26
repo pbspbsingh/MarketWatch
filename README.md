@@ -85,6 +85,33 @@ npm run dev
 
 The Vite development server proxies `/api` requests to Axum at `127.0.0.1:8080`. Debug builds do not serve static frontend assets.
 
+## Institutional ownership
+
+The Institutions tab loads only when opened. Enable SEC access with
+`SEC_USER_AGENT='MarketWatch/3.0 your-contact@email.com'` or
+`institutions.user_agent` in local `config.toml`. Original source ZIPs and the SEC
+ticker catalog live under `data/institutions` (`institutions.data_directory` can
+override this). Initial preparation downloads about 3.7 GB.
+
+SEC updates are checked on demand, at most once per 24 hours. The timestamp is
+held in memory; restarting resets it. Refresh checks immediately. Only changed
+files are downloaded. One ownership workflow runs at a time, including transfers
+and scans. Disconnecting cancels it. Each tab load rereads the ZIPs and computes
+its view; there is no ownership database, saved index, or calculated-report cache.
+
+N-PORT covers registered funds, not all institutional managers. Missing filings
+are unconfirmed rather than exits. Stock splits are checked through the existing
+Yahoo provider; unavailable split data suppresses addition/reduction signals.
+Ownership percentages show approximate share-count dates and are withheld for
+issuers with multiple listed share classes or unverified depositary-receipt ratios. Tracked funds are personal selections
+saved in the browser, not performance ratings.
+
+The view separates sponsor breadth, position changes, and sponsor quality in line
+with [IBD's institutional sponsorship guidance](https://shop.investors.com/images/promotional/20-Rules_102808.pdf).
+Quality stays ungraded because these SEC source files do not supply verified fund
+performance ratings. A rising number of owners can coexist with existing owners
+reducing their positions; the UI presents those signals separately.
+
 ## Production Build
 
 ```bash

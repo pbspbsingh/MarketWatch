@@ -146,6 +146,72 @@ impl YahooClient {
         Ok(profile)
     }
 
+    pub(crate) async fn stock_splits(
+        &self,
+        symbol: &TickerSymbol,
+        start: chrono::NaiveDate,
+        end: chrono::NaiveDate,
+    ) -> Result<Vec<(chrono::NaiveDate, f64)>, YahooError> {
+        let symbol = YahooSymbol::from(symbol);
+        let mut url = endpoint(CHART_URL, &symbol);
+        url.query_pairs_mut()
+            .append_pair("interval", "1mo")
+            .append_pair(
+                "period1",
+                &start
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .timestamp()
+                    .to_string(),
+            )
+            .append_pair(
+                "period2",
+                &end.succ_opt()
+                    .unwrap_or(end)
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .timestamp()
+                    .to_string(),
+            )
+            .append_pair("events", "splits");
+        let value: serde_json::Value = self.get_json(url, &symbol).await?;
+        let result = value["chart"]["result"]
+            .as_array()
+            .and_then(|rows| rows.first())
+            .ok_or_else(|| YahooError::InvalidResponse {
+                message: "missing split history".into(),
+            })?;
+        let mut splits = Vec::new();
+        if let Some(events) = result["events"]["splits"].as_object() {
+            for event in events.values() {
+                let parsed = event["date"]
+                    .as_i64()
+                    .and_then(|date| DateTime::from_timestamp(date, 0))
+                    .zip(
+                        event["numerator"]
+                            .as_f64()
+                            .zip(event["denominator"].as_f64()),
+                    );
+                let Some((date, (numerator, denominator))) = parsed else {
+                    return Err(YahooError::InvalidResponse {
+                        message: "invalid split event".into(),
+                    });
+                };
+                let ratio = numerator / denominator;
+                if !ratio.is_finite() || ratio <= 0.0 {
+                    return Err(YahooError::InvalidResponse {
+                        message: "invalid split ratio".into(),
+                    });
+                }
+                splits.push((date.date_naive(), ratio));
+            }
+        }
+        splits.sort_by_key(|(date, _)| *date);
+        Ok(splits)
+    }
+
     pub async fn earnings_date(
         &self,
         symbol: &TickerSymbol,

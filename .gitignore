@@ -11,5 +11,6 @@
 *.log
 *.db
 config.toml
+/data/institutions/
 .DS_Store
 docs

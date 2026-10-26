@@ -1,0 +1,642 @@
+.institutions-tab {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: auto;
+  padding-top: 0.65rem;
+  color: var(--color-text);
+  font-size: 0.75rem;
+
+  & h3,
+  & h4,
+  & p {
+    margin: 0;
+  }
+
+  & .is-positive {
+    color: var(--color-positive);
+  }
+
+  & .is-negative {
+    color: var(--color-negative);
+  }
+
+  & button:focus-visible,
+  & input:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+.institutions-toolbar,
+.institutions-heading,
+.institutions-toolbar-actions,
+.institutions-section-title,
+.institutions-table-toolbar,
+.institutions-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.institutions-heading {
+  justify-content: flex-start;
+
+  & h3 {
+    font-size: 0.95rem;
+    font-weight: 650;
+  }
+
+  & p {
+    margin-top: 0.2rem;
+    color: var(--color-muted);
+    font-size: 0.7rem;
+  }
+}
+
+.institutions-toolbar-actions,
+.institutions-section-title {
+  & > span {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+  }
+}
+
+.institutions-section-title {
+  & h4 {
+    font-size: 0.78rem;
+    font-weight: 650;
+  }
+}
+
+.institutions-letter {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  color: var(--color-accent);
+  font-weight: 750;
+  font-size: 1.2rem;
+}
+
+.institutions-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.institutions-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.65rem 0.9rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+
+  & > span {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+  }
+
+  & > strong {
+    font-size: 1.6rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+  }
+
+  & > small {
+    color: var(--color-muted);
+    font-size: 0.66rem;
+  }
+}
+
+.institutions-i-factor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: var(--color-surface);
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.55rem 0.9rem;
+
+    & + div {
+      border-left: 1px solid var(--color-border);
+    }
+  }
+
+  & strong {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  & small {
+    color: var(--color-muted);
+    font-size: 0.65rem;
+    line-height: 1.5;
+  }
+}
+
+.institutions-factor-label {
+  color: var(--color-muted);
+  font-size: 0.65rem;
+}
+
+.institutions-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.institutions-chart,
+.institutions-insight {
+  padding: 0.8rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+}
+
+.institutions-bars {
+  display: flex;
+  gap: 1.25rem;
+  height: 8.3rem;
+  padding-top: 1.3rem;
+}
+
+.institutions-bar {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  padding: 0 0.5rem 0.25rem;
+  color: var(--color-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+
+  &.is-selected {
+    border-bottom-color: var(--color-accent);
+    color: var(--color-text);
+
+    & .institutions-bar-fill {
+      background: color-mix(in srgb, var(--color-accent) 75%, var(--color-surface));
+    }
+  }
+
+  & > strong {
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
+  & > span:last-child {
+    font-size: 0.65rem;
+    white-space: nowrap;
+  }
+}
+
+.institutions-bar-plot {
+  position: relative;
+  display: flex;
+  flex: 1;
+  width: min(100%, 4rem);
+  min-height: 0;
+  align-items: flex-end;
+}
+
+.institutions-bar-fill {
+  width: 100%;
+  border-radius: 0.25rem 0.25rem 0 0;
+  background: color-mix(in srgb, var(--color-accent) 35%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+  transition: background 120ms;
+}
+
+.institutions-bar-count {
+  position: absolute;
+  top: -1.2rem;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  color: var(--color-text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.institutions-direction {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.6rem;
+
+  & h4 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+}
+
+.institutions-flows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  & span {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+  }
+
+  & strong {
+    font-size: 1.2rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.institutions-insight {
+  & > p {
+    color: var(--color-muted);
+    line-height: 1.55;
+    font-size: 0.68rem;
+  }
+
+  & > .institutions-coverage {
+    margin-top: 0.3rem;
+    font-size: 0.65rem;
+  }
+}
+
+.institutions-filters {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+
+  & > button {
+    font: inherit;
+    color: var(--color-muted);
+    background: none;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: 0.3rem;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+      background: var(--color-hover);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    &.is-selected {
+      color: var(--color-accent);
+      background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
+      border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    }
+  }
+}
+
+.institutions-table-caption {
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.institutions-table-toolbar {
+  & > input {
+    width: 15rem;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.3rem;
+    color: var(--color-text);
+    background: var(--color-canvas);
+    font: inherit;
+
+    &::placeholder {
+      color: var(--color-muted);
+    }
+  }
+}
+
+.institutions-table-scroll {
+  min-height: 8rem;
+  max-height: 32rem;
+  flex-shrink: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+}
+
+.institutions-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+
+  & th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-surface);
+    color: var(--color-muted);
+    font-weight: 500;
+
+    & > button {
+      padding: 0;
+      border: none;
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    & > span {
+      display: block;
+      font-size: 0.61rem;
+      color: var(--color-muted);
+      margin-top: 0.2rem;
+    }
+
+    &.is-selected {
+      background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+      color: var(--color-accent);
+    }
+  }
+
+  & th,
+  & td {
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid var(--color-border);
+    text-align: right;
+    white-space: nowrap;
+
+    &:first-child {
+      text-align: left;
+      min-width: 17rem;
+      max-width: 25rem;
+    }
+  }
+
+  & .is-selected {
+    background: color-mix(in srgb, var(--color-accent) 5%, var(--color-canvas));
+  }
+
+  & tbody > tr:hover > td {
+    background-color: var(--color-hover);
+  }
+}
+
+.institutions-fund-name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.institutions-fund-expand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  & > span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    min-width: 0;
+  }
+
+  & strong,
+  & small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & strong {
+    font-weight: 550;
+  }
+
+  & small {
+    font-size: 0.61rem;
+    color: var(--color-muted);
+  }
+
+  & svg {
+    color: var(--color-muted);
+  }
+
+  & .is-expanded {
+    transform: rotate(180deg);
+  }
+}
+
+.institutions-star {
+  color: var(--color-accent);
+}
+
+.institutions-position {
+  display: inline-block;
+  min-width: 4.3rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.25rem;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--color-muted);
+
+  &.is-new,
+  &.is-added {
+    color: var(--color-positive);
+    background: color-mix(in srgb, var(--color-positive) 8%, transparent);
+  }
+
+  &.is-exited,
+  &.is-reduced {
+    color: var(--color-negative);
+    background: color-mix(in srgb, var(--color-negative) 8%, transparent);
+  }
+}
+
+.institutions-unconfirmed {
+  color: var(--color-muted);
+}
+
+.institutions-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+
+  & > small {
+    font-size: 0.6rem;
+    color: var(--color-muted);
+  }
+}
+
+.institutions-filing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  white-space: normal;
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.68rem;
+    color: var(--color-muted);
+  }
+
+  & strong {
+    color: var(--color-text);
+  }
+
+  & a {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  & svg {
+    font-size: 0.8rem;
+  }
+}
+
+.institutions-table-footer {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+
+  & > div {
+    display: flex;
+  }
+}
+
+.institutions-footnote {
+  color: var(--color-muted);
+  font-size: 0.65rem;
+  line-height: 1.6;
+  padding-bottom: 0.5rem;
+
+  & a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+}
+
+.institutions-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.institutions-loading {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: var(--color-surface);
+
+  &.is-initial {
+    padding: 1.5rem;
+    margin: 1rem auto;
+    width: min(38rem, 90%);
+  }
+
+  & > div:first-child {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+
+    & > span:last-child {
+      color: var(--color-muted);
+      font-size: 0.7rem;
+    }
+  }
+
+  & > p {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    margin-top: 0.6rem;
+    line-height: 1.6;
+  }
+}
+
+.institutions-warning {
+  & .MuiAlert-message {
+    font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .institutions-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .institutions-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .institutions-table-toolbar,
+  .institutions-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .institutions-table-toolbar {
+    & > input {
+      flex: 1;
+      min-width: 12rem;
+    }
+  }
+
+  .institutions-filing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .institutions-i-factor {
+    grid-template-columns: 1fr;
+
+    & > div + div {
+      border-left: none;
+      border-top: 1px solid var(--color-border);
+    }
+  }
+}

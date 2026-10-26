@@ -43,6 +43,24 @@ pub struct Config {
     pub n_factor: Option<NFactorConfig>,
     #[serde(default)]
     pub fundamentals: Option<FundamentalsConfig>,
+    #[serde(default)]
+    pub institutions: InstitutionsConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InstitutionsConfig {
+    pub user_agent: Option<String>,
+    pub data_directory: std::path::PathBuf,
+}
+
+impl Default for InstitutionsConfig {
+    fn default() -> Self {
+        Self {
+            user_agent: None,
+            data_directory: "data/institutions".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

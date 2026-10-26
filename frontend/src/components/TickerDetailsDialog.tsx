@@ -29,6 +29,7 @@ import { TickerFundamentalsTab } from "./TickerFundamentalsTab";
 import { TickerAssessmentTab } from "./TickerAssessmentTab";
 import { TickerProfileThemesTab } from "./TickerProfileThemesTab";
 import { TickerNFactorTab } from "./TickerNFactorTab";
+import { TickerInstitutionsTab } from "./TickerInstitutionsTab";
 import { Toast } from "./Toast";
 import "./ticker-details-dialog.css";
 
@@ -40,7 +41,7 @@ interface TickerDetailsDialogProps {
   onThemeChanged?: () => void;
 }
 
-const detailsTabs = ["fundamentals", "assessment", "n-factor", "profile-themes"] as const;
+const detailsTabs = ["fundamentals", "assessment", "n-factor", "institutions", "profile-themes"] as const;
 export type TickerDetailsTab = (typeof detailsTabs)[number];
 
 export function TickerDetailsDialog({
@@ -134,6 +135,7 @@ function OpenTickerDetailsDialog({
         return;
       }
       if (event.key.toLowerCase() === "r") {
+        if (tab === "institutions") return;
         event.preventDefault();
         event.stopPropagation();
         if (tab !== "n-factor") refreshDetails();
@@ -313,7 +315,7 @@ function OpenTickerDetailsDialog({
               </>
             )}
           </div>
-          {tab !== "n-factor" && <div className="ticker-details-actions">
+          {tab !== "n-factor" && tab !== "institutions" && <div className="ticker-details-actions">
             {details !== undefined && (
               <Typography color={details.stale_fundamentals ? "warning.main" : "text.secondary"}>
                 {details.stale_fundamentals ? "Stale cache" : "Updated"}{" "}
@@ -334,9 +336,10 @@ function OpenTickerDetailsDialog({
             <Tab value="fundamentals" label="Fundamentals" />
             <Tab value="assessment" label="AI Assessment" />
             <Tab value="n-factor" label="N-Factor" />
+            <Tab value="institutions" label="Institutions" />
             <Tab value="profile-themes" label="Profile / Themes" />
           </Tabs>
-          {tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
+          {tab === "institutions" ? <TickerInstitutionsTab symbol={symbol} /> : tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
             <TickerAssessmentTab symbol={symbol} fundamentals={details?.fundamentals} />
           ) : loading && details === undefined ? (
             <div className="panel-status">

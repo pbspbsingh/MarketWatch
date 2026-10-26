@@ -2,6 +2,7 @@ mod ai;
 mod finviz;
 pub(crate) mod news;
 mod request_throttle;
+pub(crate) mod sec;
 mod yahoo;
 
 #[cfg(test)]

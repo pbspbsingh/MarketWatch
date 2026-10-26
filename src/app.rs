@@ -12,6 +12,7 @@ use crate::services::fundamentals_background::FundamentalsBackgroundService;
 use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::institutions::InstitutionsService;
 use crate::services::maintenance;
 use crate::services::market_chart::MarketChartService;
 use crate::services::market_explorer::MarketExplorerService;
@@ -89,6 +90,7 @@ where
 
 #[derive(Clone)]
 pub struct AppState {
+    pub institutions: Arc<InstitutionsService>,
     pub chart: Arc<ChartService>,
     pub daily_notes: Arc<DailyNotesService>,
     pub details: Arc<TickerDetailsService>,
@@ -126,6 +128,10 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         MarketSchedule::with_holidays(&config.market, Duration::ZERO, nyse_holidays.clone())?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
     let yahoo_client = Arc::new(YahooClient::new(&config.providers));
+    let institutions = Arc::new(InstitutionsService::new(
+        &config.institutions,
+        yahoo_client.clone(),
+    )?);
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
     let n_factor = Arc::new(NFactorService::new(
         store.clone(),
@@ -253,6 +259,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     industry_refresh.spawn_refresh_task();
     maintenance::spawn(store);
     let state = AppState {
+        institutions,
         chart,
         daily_notes,
         details,

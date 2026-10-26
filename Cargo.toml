@@ -20,7 +20,7 @@ codegen-units = 1
 # Application and runtime
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 # Error handling
 anyhow = "1.0.104"
@@ -49,6 +49,8 @@ futures-util = "0.3.34"
 prost = "0.14.4"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "cookies", "gzip", "json", "deflate", "stream"] }
 scraper = "0.27.0"
+csv = "1.4.0"
+zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2"] }
 tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 
 # Configuration and serialization
