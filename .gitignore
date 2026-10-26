@@ -1,6 +1,7 @@
 /target/
 /market_watch.sqlite*
-/.env
+/institutions.sqlite*
+.env
 /frontend/node_modules/
 /frontend/dist/
 /frontend/dist_gzipped/
@@ -11,6 +12,5 @@
 *.log
 *.db
 config.toml
-/data/institutions/
 .DS_Store
 docs

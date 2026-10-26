@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT latest_period AS \"latest_period: i32\", updated_at AS \"updated_at: DateTime<Utc>\" FROM dataset WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "latest_period: i32",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "dataset",
+            "name": "latest_period"
+          }
+        }
+      },
+      {
+        "name": "updated_at: DateTime<Utc>",
+        "ordinal": 1,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "dataset",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5f46fa0b789058fd6b33a0f54ae2740db24632a0930bb2476535ca4838e0efb5"
+}

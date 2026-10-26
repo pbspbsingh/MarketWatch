@@ -1,0 +1,33 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT cik, (SELECT COUNT(*) FROM issuers other WHERE other.cik = issuers.cik) AS classes\n             FROM issuers WHERE ticker = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "cik",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "issuers",
+            "name": "cik"
+          }
+        }
+      },
+      {
+        "name": "classes",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "08f1e58c91b6204a11852c3bfbb5e6f1249f921e88d4bc73197dc25e8fa43f5a"
+}

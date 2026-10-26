@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM issuers",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "b3a789f5e09504499ad36fd1f7b30f99177e003f6aa0c587784f04b9acd2e40a"
+}

@@ -1,18 +1,15 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    path::{Path, PathBuf},
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    path::PathBuf,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
 use anyhow::{Context, Result, ensure};
-use chrono::{Datelike, NaiveDate, Utc};
-use serde_json::{Value, json};
+use chrono::{Datelike, NaiveDate};
+use serde_json::json;
 use tokio::{
-    sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc},
+    sync::{Mutex, OnceCell, Semaphore, mpsc},
     time::Instant,
 };
 
@@ -27,26 +24,20 @@ use crate::{
     },
     providers::{
         YahooClient,
-        sec::{self, FACTS_URL, NPORT_URL, Progress, SecClient, TICKERS_URL},
+        sec::{FACTS_URL, NPORT_URL, Progress, SecClient, SourceVersion, TICKERS_URL},
     },
 };
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
-#[derive(Default)]
-struct SourceHistory {
-    last_attempt: Option<Instant>,
-    archives: Vec<SourceArchive>,
-    error: Option<String>,
-    pending: bool,
-}
-
 pub struct InstitutionsService {
     sec: Option<SecClient>,
-    directory: PathBuf,
+    database_url: String,
     yahoo: Arc<YahooClient>,
     workflow: Arc<Semaphore>,
-    history: Mutex<SourceHistory>,
+    last_attempt: Mutex<Option<Instant>>,
+    store: OnceCell<institutions::Store>,
+    warning: RwLock<Option<String>>,
 }
 
 impl InstitutionsService {
@@ -59,15 +50,16 @@ impl InstitutionsService {
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| SecClient::new(&s))
                 .transpose()?,
-            directory: config.data_directory.clone(),
+            database_url: config.database_url.clone(),
             yahoo,
             workflow: Arc::new(Semaphore::new(1)),
-            history: Mutex::new(SourceHistory::default()),
+            last_attempt: Mutex::new(None),
+            store: OnceCell::new(),
+            warning: RwLock::new(None),
         })
     }
 
-    /// Results live only for this response. Closing the stream cancels requests
-    /// and signals the blocking reader; its permit is retained until it stops.
+    /// Reports are per response; shared source imports continue if the viewer closes.
     pub fn stream(self: &Arc<Self>, symbol: TickerSymbol, refresh: bool) -> mpsc::Receiver<String> {
         let (sender, receiver) = mpsc::channel(8);
         let service = self.clone();
@@ -77,14 +69,7 @@ impl InstitutionsService {
                 phase: "queued".into(),
                 ..Default::default()
             }));
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let _cancel = Cancellation(cancelled.clone());
-            let task = async {
-                let permit = Arc::new(service.workflow.clone().acquire_owned().await?);
-                service
-                    .run(symbol, refresh, &progress, cancelled, permit)
-                    .await
-            };
+            let task = service.run(symbol, refresh, &progress);
             tokio::pin!(task);
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             loop {
@@ -111,91 +96,195 @@ impl InstitutionsService {
         receiver
     }
 
-    async fn run(
+    async fn store(&self) -> Result<&institutions::Store> {
+        self.store
+            .get_or_try_init(|| async { institutions::Store::connect(&self.database_url).await })
+            .await
+    }
+
+    async fn update_sources(&self, progress: &Progress, refresh: bool) -> Result<()> {
+        let sec = self.sec.as_ref().context("Institutions needs SEC_USER_AGENT or institutions.user_agent with an application name and contact email")?;
+        let store = self.store().await?;
+        let mut last_attempt = self.last_attempt.lock().await;
+        if !refresh && last_attempt.is_some_and(|time| time.elapsed() < CHECK_INTERVAL) {
+            ensure!(
+                store.dataset().await?.is_some(),
+                "Ownership preparation did not finish. Use Refresh to retry."
+            );
+            return Ok(());
+        }
+        *last_attempt = Some(Instant::now());
+        drop(last_attempt);
+        progress.write().unwrap().phase = "checking".into();
+        let archives = sec.archives().await?;
+        let downloads = Downloads::new().await?;
+        for (index, archive) in archives.iter().enumerate() {
+            let name = archive_filename(archive);
+            let label = archive.label();
+            {
+                let mut state = progress.write().unwrap();
+                state.phase = "checking".into();
+                state.archive = Some(label.clone());
+                state.completed = index;
+                state.total = archives.len() + 1;
+                state.positions = 0;
+                state.bytes_received = 0;
+                state.bytes_total = None;
+            }
+            if let Some(version) = self
+                .download_source(sec, archive, &name, &label, &downloads, progress)
+                .await?
+            {
+                progress.write().unwrap().phase = "importing".into();
+                let path = downloads.0.join(&name);
+                let import_progress = progress.clone();
+                store
+                    .import_archive(&path, archive.period, move |rows| {
+                        import_progress.write().unwrap().positions = rows
+                    })
+                    .await
+                    .with_context(|| format!("Could not import {label} fund history"))?;
+                store
+                    .set_source_version(&name, version.modified_at, version.etag.as_deref())
+                    .await?;
+                tokio::fs::remove_file(path).await?;
+            }
+        }
+        {
+            let mut state = progress.write().unwrap();
+            state.archive = Some("Issuer share counts".into());
+            state.completed = archives.len();
+            state.positions = 0;
+        }
+        let facts = SourceArchive {
+            period: 0,
+            url: FACTS_URL.into(),
+        };
+        if let Some(version) = self
+            .download_source(
+                sec,
+                &facts,
+                "companyfacts.zip",
+                "Issuer share counts",
+                &downloads,
+                progress,
+            )
+            .await?
+        {
+            progress.write().unwrap().phase = "importing".into();
+            let path = downloads.0.join("companyfacts.zip");
+            let facts_progress = progress.clone();
+            store
+                .import_company_facts(&path, move |rows| {
+                    facts_progress.write().unwrap().positions = rows
+                })
+                .await?;
+            store
+                .set_source_version(
+                    "companyfacts.zip",
+                    version.modified_at,
+                    version.etag.as_deref(),
+                )
+                .await?;
+            tokio::fs::remove_file(path).await?;
+        }
+        let tickers = downloads.0.join("company_tickers.json");
+        tokio::fs::write(&tickers, sec.bytes(TICKERS_URL).await?).await?;
+        store.import_tickers(&tickers).await?;
+        let latest = archives.last().context("No SEC fund archives available")?;
+        let source = store
+            .source(&archive_filename(latest))
+            .await?
+            .context("Latest SEC archive was not imported")?;
+        store
+            .publish(
+                latest.period,
+                source.source_modified_at.unwrap_or(source.imported_at),
+            )
+            .await?;
+        *self.warning.write().unwrap() = None;
+        Ok(())
+    }
+
+    async fn download_source(
         &self,
+        sec: &SecClient,
+        source: &SourceArchive,
+        name: &str,
+        label: &str,
+        downloads: &Downloads,
+        progress: &Progress,
+    ) -> Result<Option<SourceVersion>> {
+        if let Some(known) = self.store().await?.source(name).await?
+            && !sec.archive_changed(source, &known).await?
+        {
+            return Ok(None);
+        }
+        {
+            let mut state = progress.write().unwrap();
+            state.phase = "downloading".into();
+            state.archive = Some(label.into());
+            state.bytes_received = 0;
+            state.bytes_total = None;
+        }
+        sec.download(source, &downloads.0.join(name), progress)
+            .await
+            .map(Some)
+    }
+
+    async fn run(
+        self: &Arc<Self>,
         symbol: TickerSymbol,
         refresh: bool,
         progress: &Progress,
-        cancelled: Arc<AtomicBool>,
-        permit: Arc<OwnedSemaphorePermit>,
     ) -> Result<InstitutionsReport> {
-        let sec = self.sec.as_ref().context("Institutions needs SEC_USER_AGENT or institutions.user_agent with an application name and contact email")?;
-        progress.write().unwrap().phase = "checking".into();
-        tokio::fs::create_dir_all(&self.directory).await?;
-        let (archives, source_warning) = self.sources(sec, refresh, progress).await?;
-        let latest = archives
-            .last()
-            .context("No SEC fund archives available")?
-            .period;
-        let directory = self.directory.clone();
-        let scan_symbol = symbol.clone();
-        let scan_progress = progress.clone();
-        let scan_cancel = cancelled.clone();
-        let scan_permit = permit.clone();
-        let (data, facts, updated_at) = tokio::task::spawn_blocking(move || {
-            let _permit = scan_permit;
-            let mut results = Vec::new();
-            let mut cusips = Vec::new();
-            for (index, archive) in archives.iter().rev().enumerate() {
-                ensure!(
-                    !scan_cancel.load(Ordering::Relaxed),
-                    "Ownership scan cancelled"
-                );
-                {
-                    let mut state = scan_progress.write().unwrap();
-                    state.phase = "scanning".into();
-                    state.archive = Some(archive.label());
-                    state.completed = index;
-                    state.total = archives.len();
-                    state.positions = 0;
-                    state.bytes_received = 0;
-                    state.bytes_total = None;
+        let store = self.store().await?;
+        let ready = store.dataset().await?.is_some();
+        if !ready || refresh {
+            // Detach the shared import from the viewer's lifetime. A closed tab
+            // should not discard minutes of preparation needed by every ticker.
+            let service = self.clone();
+            let progress = progress.clone();
+            tokio::spawn(async move {
+                let _permit = service.workflow.acquire().await?;
+                service.update_sources(&progress, refresh).await
+            })
+            .await??;
+        } else if self.sec.is_some()
+            && let Ok(permit) = self.workflow.clone().try_acquire_owned()
+        {
+            let service = self.clone();
+            let progress = Arc::new(RwLock::new(OwnershipProgress::default()));
+            tokio::spawn(async move {
+                let _permit = permit;
+                if let Err(error) = service.update_sources(&progress, false).await {
+                    tracing::warn!(error = %format!("{error:#}"), "ownership background update failed");
+                    *service.warning.write().unwrap() = Some(
+                        "SEC ownership update failed. Showing the last imported history.".into(),
+                    );
                 }
-                let path = directory.join(archive_filename(archive));
-                let data = sec::parse_archive(
-                    &path,
-                    scan_symbol.as_str(),
-                    &cusips,
-                    &scan_progress,
-                    &scan_cancel,
-                )
-                .with_context(|| format!("Could not read {} fund history", archive.label()))?;
-                cusips = data.cusips.clone();
-                results.push(data);
-            }
-            let facts = sec::company_facts(&directory, &scan_symbol);
-            let modified = std::fs::metadata(directory.join(format!(
-                "{}q{}_nport.zip",
-                latest.div_euclid(4),
-                latest.rem_euclid(4) + 1
-            )))?
-            .modified()?;
-            Ok::<_, anyhow::Error>((
-                results,
-                facts,
-                chrono::DateTime::<Utc>::from(modified).to_rfc3339(),
-            ))
-        })
-        .await??;
+            });
+        }
         progress.write().unwrap().phase = "calculating".into();
+        let data = store
+            .load(symbol.as_str())
+            .await?
+            .context("Ownership import is not ready")?;
+        let latest = data.dataset.latest_period;
         let first_day = quarter_start(latest - 4)?;
         let last_day = quarter_start(latest)? - chrono::TimeDelta::days(1);
         let splits = self
             .yahoo
             .stock_splits(&symbol, first_day - chrono::TimeDelta::days(100), last_day)
             .await;
-        let mut warnings = Vec::new();
-        if let Some(warning) = source_warning {
-            warnings.push(warning);
-        }
-        let facts = match facts {
-            Ok((_, true)) => {
+        let mut warnings: Vec<_> = self.warning.read().unwrap().clone().into_iter().collect();
+        let counts = match data.issuer {
+            Some(issuer) if issuer.multiple_classes => {
                 warnings.push("Ownership percentages are unavailable because this issuer has multiple listed share classes.".into());
                 None
             }
-            Ok((facts, false)) => Some(facts),
-            Err(error) => {
-                tracing::warn!(%symbol, %error, "issuer share counts unavailable");
+            Some(issuer) if !issuer.counts.is_empty() => Some(issuer.counts),
+            _ => {
                 warnings.push("Company shares outstanding are unavailable; fund counts and reported holdings remain available.".into());
                 None
             }
@@ -211,184 +300,32 @@ impl InstitutionsService {
         build_report(
             &symbol,
             latest,
-            data,
-            facts.as_ref(),
+            data.archives,
+            counts.as_ref(),
             splits.as_deref(),
-            updated_at,
+            data.dataset.updated_at.to_rfc3339(),
             warnings,
         )
     }
-
-    async fn sources(
-        &self,
-        sec: &SecClient,
-        refresh: bool,
-        progress: &Progress,
-    ) -> Result<(Vec<SourceArchive>, Option<String>)> {
-        let mut history = self.history.lock().await;
-        let due = refresh
-            || history
-                .last_attempt
-                .is_none_or(|time| time.elapsed() >= CHECK_INTERVAL);
-        if due {
-            // Timestamp the attempt, including failures. Refresh explicitly permits
-            // a retry; passive tab openings cannot repeatedly hit a failing source.
-            history.last_attempt = Some(Instant::now());
-            let result = sec.archives().await;
-            match result {
-                Ok(archives) => {
-                    history.archives = archives;
-                    history.error = None;
-                    history.pending = true;
-                }
-                Err(error) => {
-                    tracing::warn!(error = %format!("{error:#}"), "SEC source refresh failed");
-                    if history.archives.is_empty() {
-                        history.archives = local_archives(&self.directory).await?;
-                    }
-                    history.error = Some(format!("SEC history update failed: {error:#}"));
-                }
-            }
-        }
-        if history.archives.len() == 5 && (due || history.error.is_none()) {
-            // Keep the discovered download plan in memory before transferring.
-            // A cancelled first load can resume missing files without another
-            // daily discovery request or a permanently blocked initial setup.
-            match self
-                .prepare_sources(sec, &history.archives, due || history.pending, progress)
-                .await
-            {
-                Ok(()) => {
-                    history.pending = false;
-                }
-                Err(error) => {
-                    history.error = Some(format!("SEC source preparation failed: {error:#}"));
-                    // If a newer archive could not be downloaded, use a complete
-                    // older set, rather than labelling partial history complete.
-                    let local = local_archives(&self.directory).await?;
-                    if local.len() == 5 {
-                        history.archives = local;
-                    }
-                }
-            }
-        }
-        ensure!(
-            history.archives.len() == 5
-                && history
-                    .archives
-                    .iter()
-                    .all(|source| self.directory.join(archive_filename(source)).is_file())
-                && self.directory.join("companyfacts.zip").is_file()
-                && self.directory.join("company_tickers.json").is_file(),
-            "{}. Use Refresh to retry source preparation.",
-            history
-                .error
-                .as_deref()
-                .unwrap_or("SEC source files are incomplete")
-        );
-        let warning = history.error.as_ref().map(|_| {
-            "SEC could not be refreshed. This view uses the previously downloaded source files."
-                .into()
-        });
-        Ok((history.archives.clone(), warning))
-    }
-
-    async fn prepare_sources(
-        &self,
-        sec: &SecClient,
-        archives: &[SourceArchive],
-        check_updates: bool,
-        progress: &Progress,
-    ) -> Result<()> {
-        progress.write().unwrap().total = archives.len() + 1;
-        for (index, archive) in archives.iter().enumerate() {
-            self.ensure_archive(
-                sec,
-                archive,
-                &archive_filename(archive),
-                Some(archive.label()),
-                check_updates && index + 1 == archives.len(),
-                progress,
-            )
-            .await?;
-            progress.write().unwrap().completed = index + 1;
-        }
-        let facts = SourceArchive {
-            period: 0,
-            url: FACTS_URL.into(),
-        };
-        self.ensure_archive(
-            sec,
-            &facts,
-            "companyfacts.zip",
-            Some("Issuer share counts".into()),
-            check_updates,
-            progress,
-        )
-        .await?;
-        if check_updates || !self.directory.join("company_tickers.json").is_file() {
-            let bytes = sec.bytes(TICKERS_URL).await?;
-            let value: Value = serde_json::from_slice(&bytes)?;
-            ensure!(
-                value.as_object().is_some_and(|rows| !rows.is_empty()),
-                "SEC returned an empty ticker catalog"
-            );
-            let path = self.directory.join("company_tickers.json.part");
-            tokio::fs::write(&path, bytes).await?;
-            tokio::fs::rename(path, self.directory.join("company_tickers.json")).await?;
-        }
-        progress.write().unwrap().completed = archives.len() + 1;
-        Ok(())
-    }
-
-    async fn ensure_archive(
-        &self,
-        sec: &SecClient,
-        source: &SourceArchive,
-        filename: &str,
-        label: Option<String>,
-        check_updates: bool,
-        progress: &Progress,
-    ) -> Result<()> {
-        let path = self.directory.join(filename);
-        if let Ok(metadata) = tokio::fs::metadata(&path).await
-            && metadata.len() > 22
-            && (!check_updates || !sec.archive_changed(source, metadata.modified()?).await?)
-        {
-            return Ok(());
-        }
-        {
-            let mut state = progress.write().unwrap();
-            state.phase = "downloading".into();
-            state.archive = label;
-            state.bytes_received = 0;
-            state.bytes_total = None;
-        }
-        let partial = self.directory.join(format!("{filename}.part"));
-        let _partial = PartialDownload(partial.clone());
-        sec.download(source, &partial, progress).await?;
-        let checked = partial.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let archive = zip::ZipArchive::new(std::fs::File::open(checked)?)?;
-            ensure!(!archive.is_empty(), "empty SEC ZIP archive");
-            Ok(())
-        })
-        .await??;
-        tokio::fs::rename(&partial, &path).await?;
-        Ok(())
-    }
 }
 
-struct Cancellation(Arc<AtomicBool>);
-impl Drop for Cancellation {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
+/// Each update owns a unique OS temp directory. Drop also cleans failed imports.
+struct Downloads(PathBuf);
+impl Downloads {
+    async fn new() -> Result<Self> {
+        let path = std::env::temp_dir().join(format!(
+            "marketwatch_institutions_{:032x}",
+            fastrand::u128(..)
+        ));
+        tokio::fs::create_dir(&path).await?;
+        Ok(Self(path))
     }
 }
-struct PartialDownload(PathBuf);
-impl Drop for PartialDownload {
+impl Drop for Downloads {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            tracing::warn!(%error, path = %self.0.display(), "could not remove temporary SEC downloads");
+        }
     }
 }
 
@@ -398,33 +335,6 @@ fn archive_filename(source: &SourceArchive) -> String {
         source.period.div_euclid(4),
         source.period.rem_euclid(4) + 1
     )
-}
-
-async fn local_archives(directory: &Path) -> Result<Vec<SourceArchive>> {
-    let mut entries = tokio::fs::read_dir(directory).await?;
-    let pattern = regex::Regex::new(r"^(\d{4})q([1-4])_nport\.zip$")?;
-    let mut found = Vec::new();
-    while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !entry.file_type().await?.is_file() {
-            continue;
-        }
-        if let Some(c) = pattern.captures(&name) {
-            let period = c[1].parse::<i32>()? * 4 + c[2].parse::<i32>()? - 1;
-            found.push(SourceArchive {
-                period,
-                url: format!("https://www.sec.gov/files/dera/data/form-n-port-data-sets/{name}"),
-            });
-        }
-    }
-    found.sort_by_key(|s| std::cmp::Reverse(s.period));
-    found.truncate(5);
-    if found.windows(2).any(|w| w[0].period - w[1].period != 1) {
-        found.clear();
-    }
-    found.reverse();
-    Ok(found)
 }
 
 fn quarter_start(period: i32) -> Result<NaiveDate> {
@@ -438,44 +348,6 @@ fn split_factor(splits: &[(NaiveDate, f64)], from: NaiveDate, to: NaiveDate) -> 
         .filter(|(date, _)| *date > from && *date <= to)
         .map(|(_, ratio)| *ratio)
         .product()
-}
-
-fn share_counts(facts: Option<&Value>) -> BTreeMap<NaiveDate, f64> {
-    let mut counts = BTreeMap::<NaiveDate, (String, f64)>::new();
-    if let Some(facts) = facts {
-        for (namespace, tag) in [
-            ("dei", "EntityCommonStockSharesOutstanding"),
-            ("us-gaap", "CommonStockSharesOutstanding"),
-        ] {
-            if let Some(rows) = facts["facts"][namespace][tag]["units"]["shares"].as_array() {
-                for row in rows {
-                    let Some((date, shares)) = row["end"]
-                        .as_str()
-                        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-                        .zip(row["val"].as_f64())
-                    else {
-                        continue;
-                    };
-                    if !shares.is_finite() || shares <= 0.0 {
-                        continue;
-                    }
-                    let filed = row["filed"].as_str().unwrap_or("9999").to_owned();
-                    // Preserve the first report's units; later comparative facts
-                    // may already have been restated for a subsequent stock split.
-                    if counts
-                        .get(&date)
-                        .is_none_or(|(previous, _)| filed < *previous)
-                    {
-                        counts.insert(date, (filed, shares));
-                    }
-                }
-            }
-        }
-    }
-    counts
-        .into_iter()
-        .map(|(date, (_, shares))| (date, shares))
-        .collect()
 }
 
 fn denominator(
@@ -495,7 +367,7 @@ fn build_report(
     symbol: &TickerSymbol,
     latest: i32,
     archives: Vec<ParsedArchive>,
-    facts: Option<&Value>,
+    counts: Option<&BTreeMap<NaiveDate, f64>>,
     splits: Option<&[(NaiveDate, f64)]>,
     updated_at: String,
     mut warnings: Vec<String>,
@@ -533,7 +405,7 @@ fn build_report(
     let mut latest_filings = HashMap::<(String, usize), SourceFiling>::new();
     let mut reporting_funds = [0_usize; 4];
     for filing in filings.into_values() {
-        let date = NaiveDate::parse_from_str(&filing.report_date, "%Y-%m-%d")?;
+        let date = filing.report_date;
         let period = date.year() * 4 + date.month0() as i32 / 3;
         if !(first..latest).contains(&period) {
             continue;
@@ -560,7 +432,12 @@ fn build_report(
     if depositary_receipt {
         warnings.push("Company ownership percentages are withheld for depositary receipts because their ordinary-share conversion ratio is not verified.".into());
     }
-    let counts = share_counts(if depositary_receipt { None } else { facts });
+    let empty_counts = BTreeMap::new();
+    let counts = if depositary_receipt {
+        &empty_counts
+    } else {
+        counts.unwrap_or(&empty_counts)
+    };
     if cusips.is_empty() {
         warnings.push("No matching stock identifier was found in these filings. This does not establish that the stock has no fund owners.".into());
     }
@@ -590,12 +467,12 @@ fn build_report(
             };
             name = filing.fund_name.clone();
             registrant = filing.registrant_name.clone();
-            let date = NaiveDate::parse_from_str(&filing.report_date, "%Y-%m-%d")?;
+            let date = filing.report_date;
             let held = positions.get(&filing.accession);
             let shares = held
                 .map(|p| p.0)
                 .or_else(|| (!filing.has_omissions).then_some(0.0));
-            let denominator = denominator(&counts, date, splits);
+            let denominator = denominator(counts, date, splits);
             let ownership_percent = shares
                 .zip(denominator)
                 .map(|(shares, (_, count))| shares / count * 100.0);
@@ -611,7 +488,7 @@ fn build_report(
             let cik = filing.cik.trim_start_matches('0');
             points.push(Some(FundPosition {
                 report_date: date,
-                filing_date: NaiveDate::parse_from_str(&filing.filing_date, "%Y-%m-%d")?,
+                filing_date: filing.filing_date,
                 shares,
                 ownership_percent,
                 denominator_date: denominator.map(|(date, _)| date),
@@ -674,7 +551,7 @@ fn build_report(
         });
     }
     for (index, quarter) in quarters.iter_mut().enumerate() {
-        let total_denominator = splits.and_then(|_| denominator(&counts, quarter.end_date, splits));
+        let total_denominator = splits.and_then(|_| denominator(counts, quarter.end_date, splits));
         quarter.ownership_percent =
             total_denominator.map(|(_, count)| totals[index] / count * 100.0);
         quarter.ownership_approximate = approximate_totals[index]
@@ -712,4 +589,21 @@ fn build_report(
         warnings,
         splits_verified: splits.is_some(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Downloads;
+
+    #[tokio::test]
+    async fn temporary_downloads_are_removed_when_scope_ends() {
+        let downloads = Downloads::new().await.unwrap();
+        let path = downloads.0.clone();
+        assert!(path.starts_with(std::env::temp_dir()));
+        tokio::fs::write(path.join("source.zip"), b"partial archive")
+            .await
+            .unwrap();
+        drop(downloads);
+        assert!(!path.exists());
+    }
 }

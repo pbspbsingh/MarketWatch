@@ -82,27 +82,4 @@ impl SourceArchive {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct SourceFiling {
-    pub accession: String,
-    pub fund_id: String,
-    pub fund_name: String,
-    pub registrant_name: String,
-    pub cik: String,
-    pub report_date: String,
-    pub filing_date: String,
-    pub has_omissions: bool,
-}
-
-pub(crate) struct SourcePosition {
-    pub accession: String,
-    pub shares: f64,
-    pub portfolio_weight: f64,
-    pub depositary_receipt: bool,
-}
-
-pub(crate) struct ParsedArchive {
-    pub filings: Vec<SourceFiling>,
-    pub positions: Vec<SourcePosition>,
-    pub cusips: Vec<String>,
-}
+pub(crate) use institutions::{ParsedArchive, SourceFiling, SourcePosition};

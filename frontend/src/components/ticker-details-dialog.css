@@ -80,6 +80,23 @@
   }
 }
 
+.ticker_details_tab_bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
+
+  & .MuiTabs-root {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.ticker_details_tab_actions {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .company-description {
   font-size: 0.85rem !important;
   line-height: 1.5 !important;

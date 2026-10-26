@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT as_of AS \"as_of: NaiveDate\", shares FROM share_counts WHERE cik = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "as_of: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "share_counts",
+            "name": "as_of"
+          }
+        }
+      },
+      {
+        "name": "shares",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "share_counts",
+            "name": "shares"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "20312ebc5c3befd3f4869c716bb3d01ff8a64639991caadcddba89a98854ef16"
+}

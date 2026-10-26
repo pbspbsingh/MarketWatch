@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM holdings WHERE archive_period = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "42c33f538b52cfa1632afd830e75f3cf784950f3f4b268601986bc3055f9cffe"
+}

@@ -51,14 +51,14 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct InstitutionsConfig {
     pub user_agent: Option<String>,
-    pub data_directory: std::path::PathBuf,
+    pub database_url: String,
 }
 
 impl Default for InstitutionsConfig {
     fn default() -> Self {
         Self {
             user_agent: None,
-            data_directory: "data/institutions".into(),
+            database_url: "sqlite://institutions.sqlite?mode=rwc".into(),
         }
     }
 }

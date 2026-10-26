@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dataset (id, latest_period, updated_at) VALUES (1, ?, ?)\n             ON CONFLICT (id) DO UPDATE SET latest_period = excluded.latest_period,\n                 updated_at = excluded.updated_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b388b5ae778451791db3df56a5ff72a148cba6053ab2c64f7cba556409607ad7"
+}

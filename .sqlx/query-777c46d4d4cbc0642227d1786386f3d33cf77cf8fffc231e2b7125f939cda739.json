@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT imported_at AS \"imported_at: DateTime<Utc>\",\n                      source_modified_at AS \"source_modified_at: DateTime<Utc>\", source_etag\n               FROM imported_sources WHERE name = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "imported_at: DateTime<Utc>",
+        "ordinal": 0,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "imported_sources",
+            "name": "imported_at"
+          }
+        }
+      },
+      {
+        "name": "source_modified_at: DateTime<Utc>",
+        "ordinal": 1,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "imported_sources",
+            "name": "source_modified_at"
+          }
+        }
+      },
+      {
+        "name": "source_etag",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "imported_sources",
+            "name": "source_etag"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "777c46d4d4cbc0642227d1786386f3d33cf77cf8fffc231e2b7125f939cda739"
+}

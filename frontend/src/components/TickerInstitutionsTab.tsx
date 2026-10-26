@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Alert, Button, CircularProgress, IconButton, LinearProgress, Tooltip } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import StarOutlineRoundedIcon from "@mui/icons-material/StarOutlineRounded";
@@ -29,11 +30,16 @@ function initialTracked(): Set<string> {
   } catch { return new Set(); }
 }
 
-export function TickerInstitutionsTab({ symbol }: { symbol: string }) {
-  return <InstitutionsContent key={symbol} symbol={symbol} />;
+interface InstitutionsProps {
+  symbol: string;
+  toolbarContainer: HTMLElement | null;
 }
 
-function InstitutionsContent({ symbol }: { symbol: string }) {
+export function TickerInstitutionsTab({ symbol, toolbarContainer }: InstitutionsProps) {
+  return <InstitutionsContent key={symbol} symbol={symbol} toolbarContainer={toolbarContainer} />;
+}
+
+function InstitutionsContent({ symbol, toolbarContainer }: InstitutionsProps) {
   const [report, setReport] = useState<InstitutionsReport>();
   const [progress, setProgress] = useState<OwnershipProgress>();
   const [loading, setLoading] = useState(true);
@@ -108,13 +114,13 @@ function InstitutionsContent({ symbol }: { symbol: string }) {
   const safePage = Math.min(page, Math.max(0, Math.ceil(funds.length / pageSize) - 1));
 
   return <div className="institutions-tab">
-    <div className="institutions-toolbar">
-      <div className="institutions-heading"><span className="institutions-letter">I</span><div><h3>Institutional sponsorship</h3><p>{symbol} · Fund ownership across four reported quarters</p></div></div>
+    {toolbarContainer && createPortal(
       <div className="institutions-toolbar-actions">
+        <span className="institutions_context">Fund ownership · Four reported quarters</span>
         {report && <span>History through {date(report.quarters[3].end_date)}</span>}
+        {report && <Tooltip title={`SEC source updated ${new Date(report.source_updated_at).toLocaleString()}`}><span>Updated {date(report.source_updated_at)}</span></Tooltip>}
         <Tooltip title="Check SEC for source updates and read the history again (R)"><span><IconButton aria-label="Refresh institutions" disabled={loading} onClick={refresh}>{loading ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}</IconButton></span></Tooltip>
-      </div>
-    </div>
+      </div>, toolbarContainer)}
 
     {loading && <ScanProgress progress={progress} initial={!report} />}
     {error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={refresh} disabled={loading}>Retry</Button>}>{error}</Alert>}
@@ -199,8 +205,8 @@ function OwnershipCell({ position }: { position: FundPosition | null }) {
 }
 function ScanProgress({ progress, initial }: { progress: OwnershipProgress | undefined; initial: boolean }) {
   const phase = progress?.phase;
-  const title = phase === "queued" ? "Waiting for the current ownership request" : phase === "checking" ? "Checking fund history" : phase === "downloading" ? "Downloading ownership data" : phase === "scanning" ? "Reading fund disclosures" : phase === "calculating" ? "Calculating sponsorship" : "Loading institutions";
+  const title = phase === "queued" ? "Waiting for the ownership database" : phase === "checking" ? "Checking fund history" : phase === "downloading" ? "Downloading ownership data" : phase === "importing" ? "Preparing fund history" : phase === "calculating" ? "Calculating sponsorship" : "Loading institutions";
   const fraction = progress?.bytes_total ? Math.min(100, progress.bytes_received / progress.bytes_total * 100) : undefined;
   const transferred = progress?.bytes_received ? `${(progress.bytes_received / 1_000_000).toFixed(0)} MB${progress.bytes_total ? ` / ${(progress.bytes_total / 1_000_000).toFixed(0)} MB` : ""}` : "";
-  return <div className={`institutions-loading${initial ? " is-initial" : ""}`} role="status" aria-live="polite"><div><CircularProgress size={18} /><strong>{title}</strong><span>{progress?.archive}{transferred ? ` · ${transferred}` : ""}</span></div><LinearProgress variant={fraction == null ? "indeterminate" : "determinate"} value={fraction} /><p>{phase === "scanning" ? `Archive ${(progress?.completed ?? 0) + 1} of ${progress?.total ?? 5}. Switch tabs or close the popup to cancel.` : phase === "downloading" ? "Source files are shared by all stocks. They are downloaded only when missing or updated." : initial ? "Saved fund history is read fresh for this stock. Source updates are checked at most once per day." : "Existing results remain visible until the new read finishes."}</p></div>;
+  return <div className={`institutions-loading${initial ? " is-initial" : ""}`} role="status" aria-live="polite"><div><CircularProgress size={18} /><strong>{title}</strong><span>{progress?.archive}{transferred ? ` · ${transferred}` : ""}</span></div><LinearProgress variant={fraction == null ? "indeterminate" : "determinate"} value={fraction} /><p>{phase === "importing" ? `Source ${(progress?.completed ?? 0) + 1} of ${progress?.total ?? 6}. Preparation is shared by all stocks and continues if you close this view.` : phase === "downloading" ? "Source files are shared by all stocks. Downloads and preparation continue if you close this view." : initial ? "The first load prepares shared fund history. Later visits use the saved ownership database." : "Existing results remain visible while source updates are imported."}</p></div>;
 }

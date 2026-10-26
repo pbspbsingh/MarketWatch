@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO imported_sources (name, fingerprint, imported_at) VALUES (?, ?, ?)\n             ON CONFLICT (name) DO UPDATE SET fingerprint = excluded.fingerprint, imported_at = excluded.imported_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "733ec66c3f83edc4d7eef3eed7fba54241ae6a54893ccd925a8c7f07f204623f"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM share_counts",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "04a01048a9cf94c39391e3aedc0bdb90cbf3ab8e437cdcfea671767c394181c7"
+}

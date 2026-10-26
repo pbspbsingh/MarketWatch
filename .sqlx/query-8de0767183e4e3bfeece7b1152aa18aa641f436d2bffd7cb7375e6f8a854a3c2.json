@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE imported_sources SET source_modified_at = ?, source_etag = ? WHERE name = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8de0767183e4e3bfeece7b1152aa18aa641f436d2bffd7cb7375e6f8a854a3c2"
+}

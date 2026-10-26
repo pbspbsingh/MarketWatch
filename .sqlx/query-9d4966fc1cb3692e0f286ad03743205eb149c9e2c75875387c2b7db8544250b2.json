@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO identifiers (archive_period, holding_id, ticker)\n                         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9d4966fc1cb3692e0f286ad03743205eb149c9e2c75875387c2b7db8544250b2"
+}

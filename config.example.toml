@@ -52,11 +52,13 @@ membership_fresh_days = 15
 [n_factor]
 default_source = "stock_titan" # "stock_titan" or "finviz"
 
-# Institutions loads lazily. First use imports shared SEC fund holdings history.
+# Institutions loads lazily. First use imports shared SEC history into a separate
+# institutions.sqlite database; later views use indexed queries.
 # Set SEC_USER_AGENT in the environment, or supply an application/contact below.
 # [institutions]
 # user_agent = "MarketWatch/3.0 you@your-domain.com"
-# data_directory = "data/institutions"
+# database_url = "sqlite://institutions.sqlite?mode=rwc"
+# SEC files are downloaded into the OS temp directory and removed after import.
 
 # Optional: refresh Assessment and N-Factor reports while user-started AI work is idle.
 # Requires [ai] configuration. Leave this block commented to disable it.

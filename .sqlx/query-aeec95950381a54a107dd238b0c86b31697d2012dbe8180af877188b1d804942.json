@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO issuers (ticker, cik) SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "aeec95950381a54a107dd238b0c86b31697d2012dbe8180af877188b1d804942"
+}

@@ -80,6 +80,7 @@ function OpenTickerDetailsDialog({
     batch_size: null,
   });
   const [tab, setTab] = useState<TickerDetailsTab>(initialTab ?? "fundamentals");
+  const [institutionsToolbar, setInstitutionsToolbar] = useState<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingThemes, setSavingThemes] = useState(false);
@@ -332,14 +333,17 @@ function OpenTickerDetailsDialog({
           </div>}
         </DialogTitle>
         <DialogContent className="ticker-details-content" dividers>
-          <Tabs value={tab} onChange={(_, value: TickerDetailsTab) => setTab(value)}>
-            <Tab value="fundamentals" label="Fundamentals" />
-            <Tab value="assessment" label="AI Assessment" />
-            <Tab value="n-factor" label="N-Factor" />
-            <Tab value="institutions" label="Institutions" />
-            <Tab value="profile-themes" label="Profile / Themes" />
-          </Tabs>
-          {tab === "institutions" ? <TickerInstitutionsTab symbol={symbol} /> : tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
+          <div className="ticker_details_tab_bar">
+            <Tabs value={tab} onChange={(_, value: TickerDetailsTab) => setTab(value)} variant="scrollable" scrollButtons="auto">
+              <Tab value="fundamentals" label="Fundamentals" />
+              <Tab value="assessment" label="AI Assessment" />
+              <Tab value="n-factor" label="N-Factor" />
+              <Tab value="institutions" label="Institutions" />
+              <Tab value="profile-themes" label="Profile / Themes" />
+            </Tabs>
+            {tab === "institutions" && <div className="ticker_details_tab_actions" ref={setInstitutionsToolbar} />}
+          </div>
+          {tab === "institutions" ? <TickerInstitutionsTab symbol={symbol} toolbarContainer={institutionsToolbar} /> : tab === "n-factor" ? <TickerNFactorTab symbol={symbol} /> : tab === "assessment" ? (
             <TickerAssessmentTab symbol={symbol} fundamentals={details?.fundamentals} />
           ) : loading && details === undefined ? (
             <div className="panel-status">

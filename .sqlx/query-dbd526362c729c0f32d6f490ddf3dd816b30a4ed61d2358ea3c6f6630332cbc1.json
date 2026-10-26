@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT h.cusip FROM identifiers i JOIN holdings h\n                 ON h.archive_period = i.archive_period AND h.holding_id = i.holding_id\n             WHERE i.ticker = ? AND i.archive_period BETWEEN ? AND ? AND h.currency = 'USD'\n             ORDER BY h.cusip",
+  "describe": {
+    "columns": [
+      {
+        "name": "cusip",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "cusip"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dbd526362c729c0f32d6f490ddf3dd816b30a4ed61d2358ea3c6f6630332cbc1"
+}

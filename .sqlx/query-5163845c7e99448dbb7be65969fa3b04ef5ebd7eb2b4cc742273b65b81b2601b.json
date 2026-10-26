@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT archive_period AS \"archive_period: i32\", accession, fund_id, fund_name,\n                      registrant_name, cik, report_date AS \"report_date: NaiveDate\", filing_date AS \"filing_date: NaiveDate\", has_omissions AS \"has_omissions: bool\"\n               FROM filings WHERE archive_period BETWEEN ? AND ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "archive_period: i32",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "archive_period"
+          }
+        }
+      },
+      {
+        "name": "accession",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "accession"
+          }
+        }
+      },
+      {
+        "name": "fund_id",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "fund_id"
+          }
+        }
+      },
+      {
+        "name": "fund_name",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "fund_name"
+          }
+        }
+      },
+      {
+        "name": "registrant_name",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "registrant_name"
+          }
+        }
+      },
+      {
+        "name": "cik",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "cik"
+          }
+        }
+      },
+      {
+        "name": "report_date: NaiveDate",
+        "ordinal": 6,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "report_date"
+          }
+        }
+      },
+      {
+        "name": "filing_date: NaiveDate",
+        "ordinal": 7,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "filing_date"
+          }
+        }
+      },
+      {
+        "name": "has_omissions: bool",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "filings",
+            "name": "has_omissions"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5163845c7e99448dbb7be65969fa3b04ef5ebd7eb2b4cc742273b65b81b2601b"
+}

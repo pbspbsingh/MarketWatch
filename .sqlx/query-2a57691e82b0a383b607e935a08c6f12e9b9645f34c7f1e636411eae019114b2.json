@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM filings WHERE archive_period = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2a57691e82b0a383b607e935a08c6f12e9b9645f34c7f1e636411eae019114b2"
+}

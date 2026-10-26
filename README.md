@@ -89,15 +89,46 @@ The Vite development server proxies `/api` requests to Axum at `127.0.0.1:8080`.
 
 The Institutions tab loads only when opened. Enable SEC access with
 `SEC_USER_AGENT='MarketWatch/3.0 your-contact@email.com'` or
-`institutions.user_agent` in local `config.toml`. Original source ZIPs and the SEC
-ticker catalog live under `data/institutions` (`institutions.data_directory` can
-override this). Initial preparation downloads about 3.7 GB.
+`institutions.user_agent` in local `config.toml`. SEC files are downloaded into a
+unique OS temporary directory, imported one at a time, and removed after use.
+Failed updates also clean up their temporary files. Initial preparation downloads
+about 3.7 GB and imports it into `institutions.sqlite` beside the main database.
+Set `institutions.database_url` to change the database location.
+The first import takes time; later ticker views use indexed queries without
+opening ZIPs. Source ETags and modification dates survive restarts in SQLite,
+allowing conditional checks without keeping the ZIPs. Deleting the database
+requires downloading and importing the sources again.
 
 SEC updates are checked on demand, at most once per 24 hours. The timestamp is
-held in memory; restarting resets it. Refresh checks immediately. Only changed
-files are downloaded. One ownership workflow runs at a time, including transfers
-and scans. Disconnecting cancels it. Each tab load rereads the ZIPs and computes
-its view; there is no ownership database, saved index, or calculated-report cache.
+held in memory; restarting resets it. Refresh checks immediately. Stored HTTP
+validators skip unchanged archives. One source update/import runs at a time and
+continues if the viewer closes the tab. Existing data remains readable during imports through
+SQLite WAL transactions. Normal visits return imported history while checking
+for updates in the background; Refresh waits for the update. Each report is
+calculated from stored filings and holdings rather than a saved report cache.
+
+The `institutions` workspace crate owns its migrations and SQLx queries.
+Its `sqlx.toml` uses `INSTITUTIONS_DATABASE_URL` from that crate's `.env`;
+SQLx checks for the application crate use `DATABASE_URL` from the root `.env`.
+Runtime paths come from `config.toml`. Apply migrations to the local databases
+before checking new queries:
+
+```bash
+bash scripts/migrate.sh             # main database, using the root .env
+cd crates/institutions
+cp .env.example .env                 # first setup only; set your absolute DB path
+bash ../../scripts/migrate.sh        # ownership database, using this crate's .env
+cd ../..
+cargo sqlx prepare --workspace -- --all-targets
+SQLX_OFFLINE=true cargo test --workspace --locked --offline
+```
+
+The migration script preserves the current working directory and lets SQLx read
+its local configuration. Both schemas work without SEC records. The application
+also applies migrations when opening each database. Commit refreshed `.sqlx`
+metadata after changing queries; offline builds use it without live databases.
+The migration CLI needs SQLx 0.9 with the `sqlite,sqlx-toml` features:
+`cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,sqlx-toml`.
 
 N-PORT covers registered funds, not all institutional managers. Missing filings
 are unconfirmed rather than exits. Stock splits are checked through the existing

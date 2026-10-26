@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO filings (archive_period, accession, fund_id, fund_name, registrant_name, cik, report_date, filing_date, has_omissions)\n                         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),\n                             json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'),\n                             json_extract(value, '$[6]'), json_extract(value, '$[7]') FROM json_each(?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7a86dd2eb150414ae90def9895bbbd8fa785593f76364839da1f5b108dc18819"
+}

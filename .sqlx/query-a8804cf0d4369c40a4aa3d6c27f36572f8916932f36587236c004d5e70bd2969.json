@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT h.archive_period AS \"archive_period!: i32\", h.accession, h.shares,\n                      h.portfolio_weight, h.depositary_receipt AS \"depositary_receipt: bool\"\n               FROM json_each(?) c JOIN holdings h ON h.cusip = c.value\n               WHERE h.archive_period BETWEEN ? AND ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "archive_period!: i32",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "archive_period"
+          }
+        }
+      },
+      {
+        "name": "accession",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "accession"
+          }
+        }
+      },
+      {
+        "name": "shares",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "shares"
+          }
+        }
+      },
+      {
+        "name": "portfolio_weight",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "portfolio_weight"
+          }
+        }
+      },
+      {
+        "name": "depositary_receipt: bool",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "holdings",
+            "name": "depositary_receipt"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "a8804cf0d4369c40a4aa3d6c27f36572f8916932f36587236c004d5e70bd2969"
+}
