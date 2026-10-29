@@ -125,7 +125,7 @@ impl TestAiServer {
         let server = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
-        let ai = Arc::new(AiClient::new(&AiConfig::OpenAiCompatible {
+        let ai = Arc::new(AiClient::new(&AiConfig {
             endpoint,
             model: "test".into(),
             api_key: None,
@@ -399,16 +399,14 @@ struct Metrics {
 
 impl Metrics {
     fn configured(config: &AiConfig) -> anyhow::Result<Self> {
-        let AiConfig::OpenAiCompatible {
+        let AiConfig {
             endpoint,
             api_key,
             max_concurrent_requests: 1,
             ..
         } = config
         else {
-            anyhow::bail!(
-                "requires an OpenAI-compatible provider configured for one concurrent request"
-            );
+            anyhow::bail!("requires AI configured for one concurrent request");
         };
         let mut endpoint = reqwest::Url::parse(endpoint)?;
         endpoint.set_path("/metrics");

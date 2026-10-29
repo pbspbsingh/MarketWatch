@@ -816,7 +816,8 @@ mod tests {
                     .await
                     .unwrap();
                 // Any attempted AI request fails. A background admission would wait five minutes.
-                let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+                let ai = Arc::new(AiClient::new(&AiConfig {
+                    api_key: None,
                     endpoint: "http://127.0.0.1:1".into(),
                     model: "test".into(),
                     batch_size: 1,
@@ -980,7 +981,8 @@ mod tests {
         let watchlist = store.watchlists().await.unwrap().remove(0);
         let (finviz, stock_titan) = clients();
         // Any AI request would fail, including with configured parallelism.
-        let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+        let ai = Arc::new(AiClient::new(&AiConfig {
+            api_key: None,
             endpoint: "http://127.0.0.1:1".to_owned(),
             model: "test".to_owned(),
             batch_size: 1,
@@ -1225,7 +1227,8 @@ mod tests {
     #[tokio::test]
     async fn duplicate_start_returns_existing_job_without_network() {
         let (finviz, stock_titan) = clients();
-        let ai_config = AiConfig::Ollama {
+        let ai_config = AiConfig {
+            api_key: None,
             endpoint: "http://127.0.0.1:1".to_owned(),
             model: "test".to_owned(),
             batch_size: 1,
@@ -1572,7 +1575,8 @@ mod tests {
     #[tokio::test]
     async fn manual_start_promotes_existing_background_job_without_duplicate_or_deadlock() {
         let (finviz, stock_titan) = clients();
-        let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+        let ai = Arc::new(AiClient::new(&AiConfig {
+            api_key: None,
             endpoint: "http://127.0.0.1:1".to_owned(),
             model: "test".to_owned(),
             batch_size: 1,

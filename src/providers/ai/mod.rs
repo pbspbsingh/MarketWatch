@@ -1,6 +1,5 @@
 mod activity;
-mod ollama;
-mod openai_compatible;
+mod stream;
 #[cfg(test)]
 pub(super) mod tests;
 
@@ -18,7 +17,8 @@ pub(crate) use activity::{BackgroundAiRequest, UserAiJob};
 
 pub struct AiClient {
     http: Client,
-    provider: Provider,
+    endpoint: String,
+    api_key: Option<String>,
     model: String,
     batch_size: usize,
     max_concurrent_requests: usize,
@@ -35,38 +35,6 @@ pub(crate) enum AiStreamDelta<'a> {
 enum RequestPriority {
     User,
     Background,
-}
-
-enum Provider {
-    Ollama(ollama::OllamaProvider),
-    OpenAiCompatible(openai_compatible::OpenAiCompatibleProvider),
-}
-
-impl Provider {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Ollama(_) => "ollama",
-            Self::OpenAiCompatible(_) => "openai_compatible",
-        }
-    }
-
-    async fn complete<F>(
-        &self,
-        http: &Client,
-        model: &str,
-        prompt: &str,
-        on_delta: &mut F,
-    ) -> Result<String, AiError>
-    where
-        F: FnMut(AiStreamDelta<'_>) + Send,
-    {
-        match self {
-            Self::Ollama(provider) => provider.complete(http, model, prompt, on_delta).await,
-            Self::OpenAiCompatible(provider) => {
-                provider.complete(http, model, prompt, on_delta).await
-            }
-        }
-    }
 }
 
 #[derive(Debug, Error)]
@@ -139,39 +107,7 @@ impl<'a> ChatRequest<'a> {
 
 impl AiClient {
     pub fn new(config: &AiConfig) -> Self {
-        let (provider, model, batch_size, concurrency, read_timeout_secs) = match config {
-            AiConfig::Ollama {
-                endpoint,
-                model,
-                batch_size,
-                max_concurrent_requests,
-                read_timeout_secs,
-            } => (
-                Provider::Ollama(ollama::OllamaProvider::new(endpoint.clone())),
-                model.clone(),
-                *batch_size,
-                *max_concurrent_requests,
-                *read_timeout_secs,
-            ),
-            AiConfig::OpenAiCompatible {
-                endpoint,
-                model,
-                api_key,
-                batch_size,
-                max_concurrent_requests,
-                read_timeout_secs,
-            } => (
-                Provider::OpenAiCompatible(openai_compatible::OpenAiCompatibleProvider::new(
-                    endpoint.clone(),
-                    api_key.clone(),
-                )),
-                model.clone(),
-                *batch_size,
-                *max_concurrent_requests,
-                *read_timeout_secs,
-            ),
-        };
-        let response_idle_timeout = Duration::from_secs(read_timeout_secs);
+        let response_idle_timeout = Duration::from_secs(config.read_timeout_secs);
         let http = Client::builder()
             .connect_timeout(response_idle_timeout)
             .read_timeout(response_idle_timeout)
@@ -179,11 +115,12 @@ impl AiClient {
             .expect("AI HTTP client configuration is valid");
         Self {
             http,
-            provider,
-            model,
-            batch_size,
-            max_concurrent_requests: concurrency,
-            permits: Semaphore::new(concurrency),
+            endpoint: config.endpoint.clone(),
+            api_key: config.api_key.clone(),
+            model: config.model.clone(),
+            batch_size: config.batch_size,
+            max_concurrent_requests: config.max_concurrent_requests,
+            permits: Semaphore::new(config.max_concurrent_requests),
             activity: AiActivity::new(),
         }
     }
@@ -268,15 +205,10 @@ impl AiClient {
                     .map_err(|_| AiError::QueueClosed)?
             }
         };
-        info!(
-            provider = self.provider.name(),
-            model = self.model,
-            "requesting AI completion"
-        );
+        info!(model = self.model, "requesting AI completion");
         let started = Instant::now();
         let result = self
-            .provider
-            .complete(&self.http, &self.model, prompt, on_delta)
+            .request_completion(prompt, on_delta)
             .await
             .and_then(|content| {
                 (!content.trim().is_empty())
@@ -285,14 +217,12 @@ impl AiClient {
             });
         match &result {
             Ok(content) => info!(
-                provider = self.provider.name(),
                 model = self.model,
                 elapsed_ms = started.elapsed().as_millis(),
                 response_bytes = content.len(),
                 "AI completion succeeded"
             ),
             Err(ai_error) => error!(
-                provider = self.provider.name(),
                 model = self.model,
                 elapsed_ms = started.elapsed().as_millis(),
                 %ai_error,
@@ -330,15 +260,5 @@ fn bounded_error_body(body: &str) -> String {
         format!("{bounded}…")
     } else {
         bounded
-    }
-}
-
-fn append_deltas<F>(deltas: Vec<String>, content: &mut String, on_delta: &mut F)
-where
-    F: FnMut(AiStreamDelta<'_>),
-{
-    for delta in deltas {
-        on_delta(AiStreamDelta::Content(&delta));
-        content.push_str(&delta);
     }
 }

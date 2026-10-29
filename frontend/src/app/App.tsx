@@ -3,9 +3,6 @@ import { CircularProgress, Typography } from "@mui/material";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
 
-const AboutPage = lazy(() =>
-  import("../features/about/AboutPage").then(({ AboutPage }) => ({ default: AboutPage })),
-);
 const CsvAnalyzerPage = lazy(() =>
   import("../features/csv-analyzer/CsvAnalyzerPage").then(({ CsvAnalyzerPage }) => ({
     default: CsvAnalyzerPage,
@@ -34,11 +31,6 @@ const ThemeTrackerPage = lazy(() =>
     default: ThemeTrackerPage,
   })),
 );
-const ThemeRankPage = lazy(() =>
-  import("../features/theme-rank/ThemeRankPage").then(({ ThemeRankPage }) => ({
-    default: ThemeRankPage,
-  })),
-);
 const TopStocksPage = lazy(() =>
   import("../features/top-stocks/TopStocksPage").then(({ TopStocksPage }) => ({
     default: TopStocksPage,
@@ -63,7 +55,6 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/about" element={<Page title="About"><AboutPage /></Page>} />
         <Route index element={<Page title="Home"><HomePage /></Page>} />
         <Route path="/market-watch" element={<Page title="Market Watch"><MarketWatchPage /></Page>} />
         <Route path="/favourites" element={<Navigate to="/watchlists" replace />} />
@@ -74,7 +65,6 @@ export function App() {
         <Route path="/csv-analyzer" element={<Page title="CSV Analyzer"><CsvAnalyzerPage /></Page>} />
         <Route path="/theme-management" element={<Page title="Theme Management"><ThemeManagementPage /></Page>} />
         <Route path="/theme-tracker" element={<Page title="Theme Tracker"><ThemeTrackerPage /></Page>} />
-        <Route path="/theme-rank" element={<Page title="Theme Rank"><ThemeRankPage /></Page>} />
         <Route path="/study" element={<Page title="Study"><StudyPage /></Page>} />
         <Route path="/daily-notes" element={<Page title="Daily Notes"><DailyNotesPage /></Page>} />
         <Route path="/trade-logs" element={<Page title="Trade Logs"><TradeLogsPage /></Page>} />

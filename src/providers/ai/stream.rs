@@ -1,41 +1,30 @@
-use super::{AiError, AiStreamDelta, ChatRequest, ResponseExt};
+use super::{AiClient, AiError, AiStreamDelta, ChatRequest, ResponseExt};
 use futures_util::StreamExt;
-use reqwest::{Client, Response};
+use reqwest::Response;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-pub(super) struct OpenAiCompatibleProvider {
-    endpoint: String,
-    api_key: Option<String>,
-}
-
-impl OpenAiCompatibleProvider {
-    pub(super) fn new(endpoint: String, api_key: Option<String>) -> Self {
-        Self { endpoint, api_key }
-    }
-
-    pub(super) async fn complete<F>(
+impl AiClient {
+    pub(super) async fn request_completion<F>(
         &self,
-        http: &Client,
-        model: &str,
         prompt: &str,
         on_delta: &mut F,
     ) -> Result<String, AiError>
     where
         F: FnMut(AiStreamDelta<'_>) + Send,
     {
-        let request = http.post(&self.endpoint);
+        let request = self.http.post(&self.endpoint);
         let request = match &self.api_key {
             Some(api_key) => request.bearer_auth(api_key),
             None => request,
         };
         let response = request
-            .json(&ChatRequest::user(model, prompt))
+            .json(&ChatRequest::user(&self.model, prompt))
             .send()
             .await?
             .require_success()
             .await?;
-        read_stream(response, model, on_delta).await
+        read_stream(response, &self.model, on_delta).await
     }
 }
 
@@ -193,7 +182,7 @@ fn sse_event_boundary(buffer: &[u8]) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AiConfig, Config};
+    use crate::config::Config;
     use crate::providers::AiClient;
     use crate::store::Store;
     use anyhow::Context;
@@ -288,10 +277,6 @@ mod tests {
     async fn live_streaming_completion() -> anyhow::Result<()> {
         let config = Config::load("config.toml")?;
         let ai = config.ai.as_ref().context("AI must be configured")?;
-        anyhow::ensure!(
-            matches!(ai, AiConfig::OpenAiCompatible { .. }),
-            "configured AI provider must be OpenAI-compatible"
-        );
 
         let content = AiClient::new(ai).complete("Reply with exactly: OK").await?;
 
@@ -308,10 +293,6 @@ mod tests {
             .context("OPENAI_COMPATIBLE_JOB_ID must be an integer")?;
         let config = Config::load("config.toml")?;
         let ai = config.ai.as_ref().context("AI must be configured")?;
-        anyhow::ensure!(
-            matches!(ai, AiConfig::OpenAiCompatible { .. }),
-            "configured AI provider must be OpenAI-compatible"
-        );
         let store = Store::connect(&config.database.url).await?;
         let job = store
             .theme_ai_job(job_id)

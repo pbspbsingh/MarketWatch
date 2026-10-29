@@ -185,26 +185,15 @@ pub struct FinvizConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "provider", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AiConfig {
-    Ollama {
-        endpoint: String,
-        model: String,
-        batch_size: usize,
-        max_concurrent_requests: usize,
-        #[serde(alias = "request_timeout_secs")]
-        read_timeout_secs: u64,
-    },
-    #[serde(rename = "openai_compatible")]
-    OpenAiCompatible {
-        endpoint: String,
-        model: String,
-        api_key: Option<String>,
-        batch_size: usize,
-        max_concurrent_requests: usize,
-        #[serde(alias = "request_timeout_secs")]
-        read_timeout_secs: u64,
-    },
+#[serde(deny_unknown_fields)]
+pub struct AiConfig {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub batch_size: usize,
+    pub max_concurrent_requests: usize,
+    #[serde(alias = "request_timeout_secs")]
+    pub read_timeout_secs: u64,
 }
 
 impl Config {
@@ -336,42 +325,18 @@ fn valid_finviz_filters(filters: &[String]) -> bool {
 
 impl AiConfig {
     fn validate(&self) -> anyhow::Result<()> {
-        let (endpoint, model, batch_size, concurrency, timeout) = match self {
-            Self::Ollama {
-                endpoint,
-                model,
-                batch_size,
-                max_concurrent_requests,
-                read_timeout_secs,
-            }
-            | Self::OpenAiCompatible {
-                endpoint,
-                model,
-                batch_size,
-                max_concurrent_requests,
-                read_timeout_secs,
-                ..
-            } => (
-                endpoint,
-                model,
-                batch_size,
-                max_concurrent_requests,
-                read_timeout_secs,
-            ),
-        };
-        anyhow::ensure!(!endpoint.trim().is_empty(), "ai.endpoint is required");
-        anyhow::ensure!(!model.trim().is_empty(), "ai.model is required");
-        anyhow::ensure!(*batch_size > 0, "ai.batch_size must be positive");
+        anyhow::ensure!(!self.endpoint.trim().is_empty(), "ai.endpoint is required");
+        anyhow::ensure!(!self.model.trim().is_empty(), "ai.model is required");
+        anyhow::ensure!(self.batch_size > 0, "ai.batch_size must be positive");
         anyhow::ensure!(
-            *concurrency > 0,
+            self.max_concurrent_requests > 0,
             "ai.max_concurrent_requests must be positive"
         );
-        anyhow::ensure!(*timeout > 0, "ai.read_timeout_secs must be positive");
-        if let Self::OpenAiCompatible {
-            api_key: Some(api_key),
-            ..
-        } = self
-        {
+        anyhow::ensure!(
+            self.read_timeout_secs > 0,
+            "ai.read_timeout_secs must be positive"
+        );
+        if let Some(api_key) = &self.api_key {
             anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key cannot be empty");
         }
         Ok(())
@@ -556,10 +521,9 @@ mod tests {
     }
 
     #[test]
-    fn openai_compatible_api_key_is_optional() {
+    fn ai_api_key_is_optional() {
         let config = toml::from_str::<AiConfig>(
-            r#"provider = "openai_compatible"
-endpoint = "http://localhost:8080/v1/chat/completions"
+            r#"endpoint = "http://localhost:8080/v1/chat/completions"
 model = "local-model"
 batch_size = 10
 max_concurrent_requests = 2
@@ -567,17 +531,13 @@ read_timeout_secs = 60"#,
         )
         .unwrap();
 
-        assert!(matches!(
-            config,
-            AiConfig::OpenAiCompatible { api_key: None, .. }
-        ));
+        assert!(config.api_key.is_none());
     }
 
     #[test]
     fn accepts_legacy_ai_request_timeout_name() {
         let config = toml::from_str::<AiConfig>(
-            r#"provider = "ollama"
-endpoint = "http://localhost:11434/api/chat"
+            r#"endpoint = "http://localhost:8080/v1/chat/completions"
 model = "local-model"
 batch_size = 10
 max_concurrent_requests = 1
@@ -585,28 +545,23 @@ request_timeout_secs = 60"#,
         )
         .unwrap();
 
-        assert!(matches!(
-            config,
-            AiConfig::Ollama {
-                read_timeout_secs: 60,
-                ..
-            }
-        ));
+        assert_eq!(config.read_timeout_secs, 60);
     }
 
     #[test]
-    fn rejects_removed_deep_seek_provider_name() {
-        let error = toml::from_str::<AiConfig>(
-            r#"provider = "deep_seek"
+    fn rejects_removed_provider_selector() {
+        for provider in ["ollama", "deep_seek", "openai_compatible"] {
+            let config = format!(
+                r#"provider = "{provider}"
 endpoint = "https://example.com/chat/completions"
 model = "model"
 api_key = "key"
 batch_size = 10
 max_concurrent_requests = 2
 read_timeout_secs = 60"#,
-        )
-        .unwrap_err();
-
-        assert!(error.to_string().contains("unknown variant `deep_seek`"));
+            );
+            let error = toml::from_str::<AiConfig>(&config).unwrap_err();
+            assert!(error.to_string().contains("unknown field `provider`"));
+        }
     }
 }

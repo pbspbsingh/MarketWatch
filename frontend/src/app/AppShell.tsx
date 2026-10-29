@@ -12,11 +12,9 @@ import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
-import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   Drawer,
   IconButton,
@@ -33,8 +31,7 @@ import { SettingsDrawer } from "./SettingsDrawer";
 const homeDestination = ["Home", "/", HomeOutlinedIcon, "blue"] as const;
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
-  ["Theme Rank", "/theme-rank", FormatListNumberedIcon, "lime"],
-  ["Theme Tracker", "/theme-tracker", TrackChangesIcon, "amber"],
+  ["Theme Tracker", "/theme-tracker", FormatListNumberedIcon, "amber"],
   ["Market Explorer", "/market-explorer", TravelExploreOutlinedIcon, "blue"],
   ["Top Stocks", "/top-stocks", TrendingUpIcon, "green"],
   ["CSV Analyzer", "/csv-analyzer", TableViewIcon, "coral"],
@@ -43,7 +40,6 @@ const destinations = [
   ["Study", "/study", ScienceOutlinedIcon, "blue"],
   ["Daily Notes", "/daily-notes", NoteAltOutlinedIcon, "amber"],
   ["Trade Logs", "/trade-logs", MenuBookOutlinedIcon, "green"],
-  ["About", "/about", InfoOutlinedIcon, "blue"],
 ] as const;
 
 const triggerInset = 4;

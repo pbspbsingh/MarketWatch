@@ -535,7 +535,10 @@ async fn mock_ai(State(mock): State<Arc<MockAi>>, Json(request): Json<Value>) ->
                 }
                 _ => return None,
             };
-            let line = json!({"message":{"content":content}}).to_string() + "\n";
+            let line = format!(
+                "data: {}\n\n",
+                json!({"choices":[{"delta":{"content":content},"finish_reason": if part == 1 { Some("stop") } else { None }}]})
+            );
             Some((
                 Ok::<_, std::convert::Infallible>(line),
                 (part + 1, mock, response),
@@ -583,7 +586,8 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     let server = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+    let ai = Arc::new(AiClient::new(&AiConfig {
+        api_key: None,
         endpoint,
         model: "test".into(),
         batch_size: 1,
@@ -701,7 +705,8 @@ async fn disabled_ai_is_rejected_and_failed_refresh_does_not_create_a_report() {
         service.start(data.symbol.clone()).await,
         Err(AssessmentStartError::AiDisabled)
     ));
-    let ai = Arc::new(AiClient::new(&AiConfig::Ollama {
+    let ai = Arc::new(AiClient::new(&AiConfig {
+        api_key: None,
         endpoint: "http://127.0.0.1:1".into(),
         model: "test".into(),
         batch_size: 1,
@@ -834,7 +839,8 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
 }
 
 fn unreachable_ai() -> Arc<AiClient> {
-    Arc::new(AiClient::new(&AiConfig::Ollama {
+    Arc::new(AiClient::new(&AiConfig {
+        api_key: None,
         endpoint: "http://127.0.0.1:1/chat".into(),
         model: "test".into(),
         batch_size: 1,
