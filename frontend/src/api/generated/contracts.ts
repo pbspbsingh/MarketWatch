@@ -18,10 +18,14 @@ export type IndustryClassification = { industry_key: string, industry_name: stri
 
 export type IndustryResource = { "type": "catalog" } | { "type": "membership", industry_key: string, };
 
-export type IndustryCommand = { "type": "subscribe", subscription_id: string, resource: IndustryResource, } | { "type": "unsubscribe", subscription_id: string, };
-
 export type IndustryData = { "type": "catalog", industries: Array<IndustryClassification>, } | { "type": "membership", industry_key: string, symbols: Array<string>, };
 
 export type IndustryState = { data: IndustryData, fetched_at: string | null, expires_at: string | null, loading: boolean, error: string | null, };
 
-export type IndustryEvent = { "type": "snapshot", subscription_id: string, state: IndustryState, } | { "type": "error", subscription_id: string, message: string, };
+export type ApplicationResource = { "domain": "industry", "resource": IndustryResource };
+
+export type ApplicationCommand = { "type": "subscribe", subscription_id: string, resource: ApplicationResource, } | { "type": "unsubscribe", subscription_id: string, };
+
+export type ApplicationSnapshot = { "domain": "industry", "state": IndustryState };
+
+export type ApplicationEvent = { "type": "snapshot", subscription_id: string, payload: ApplicationSnapshot, } | { "type": "error", subscription_id: string, message: string, };

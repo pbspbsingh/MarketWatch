@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::contracts::industry::{IndustryCommand, IndustryEvent, IndustryResource};
+use crate::contracts::events::{ApplicationCommand, ApplicationEvent, ApplicationResource};
 use crate::services::industry_data::IndustryDataService;
 use axum::{
     Router,
@@ -16,6 +16,12 @@ use tokio::{
     task::AbortHandle,
     time::{Instant, MissedTickBehavior},
 };
+
+mod industry;
+
+struct EventServices {
+    industry: Arc<IndustryDataService>,
+}
 
 const SUBSCRIPTION_LIMIT: usize = 256;
 
@@ -37,11 +43,18 @@ pub fn router() -> Router<AppState> {
 async fn upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.max_message_size(16 * 1024)
         .max_frame_size(16 * 1024)
-        .on_upgrade(move |socket| serve(socket, state.industry_data))
+        .on_upgrade(move |socket| {
+            serve(
+                socket,
+                Arc::new(EventServices {
+                    industry: state.industry_data,
+                }),
+            )
+        })
 }
 
-async fn serve(mut socket: WebSocket, service: Arc<IndustryDataService>) {
-    let (sender, mut receiver) = mpsc::channel::<(u64, IndustryEvent)>(32);
+async fn serve(mut socket: WebSocket, services: Arc<EventServices>) {
+    let (sender, mut receiver) = mpsc::channel::<(u64, ApplicationEvent)>(32);
     let mut subscriptions = HashMap::<String, Subscription>::new();
     let mut generation = 0_u64;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
@@ -52,17 +65,17 @@ async fn serve(mut socket: WebSocket, service: Arc<IndustryDataService>) {
         tokio::select! {
             message = socket.recv() => match message {
                 Some(Ok(Message::Text(value))) => {
-                    let Ok(command) = serde_json::from_str::<IndustryCommand>(&value) else { break };
+                    let Ok(command) = serde_json::from_str::<ApplicationCommand>(&value) else { break };
                     match command {
-                        IndustryCommand::Subscribe { subscription_id, resource } => {
+                        ApplicationCommand::Subscribe { subscription_id, resource } => {
                             if subscription_id.is_empty() || subscription_id.len() > 128 { break; }
                             subscriptions.remove(&subscription_id);
                             if subscriptions.len() >= SUBSCRIPTION_LIMIT { break; }
                             generation += 1;
-                            let task = tokio::spawn(forward(service.clone(), subscription_id.clone(), resource, sender.clone(), generation));
+                            let task = tokio::spawn(forward(services.clone(), subscription_id.clone(), resource, sender.clone(), generation));
                             subscriptions.insert(subscription_id, Subscription { task: task.abort_handle(), generation });
                         }
-                        IndustryCommand::Unsubscribe { subscription_id } => { subscriptions.remove(&subscription_id); }
+                        ApplicationCommand::Unsubscribe { subscription_id } => { subscriptions.remove(&subscription_id); }
                     }
                 }
                 Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
@@ -75,10 +88,10 @@ async fn serve(mut socket: WebSocket, service: Arc<IndustryDataService>) {
             Some((generation, event)) = receiver.recv() => {
                 // Workers can already have queued an event when their subscription is replaced.
                 let id = match &event {
-                    IndustryEvent::Snapshot { subscription_id, .. } | IndustryEvent::Error { subscription_id, .. } => subscription_id,
+                    ApplicationEvent::Snapshot { subscription_id, .. } | ApplicationEvent::Error { subscription_id, .. } => subscription_id,
                 };
                 if !subscriptions.get(id).is_some_and(|entry| entry.generation == generation) { continue; }
-                let payload = serde_json::to_string(&event).expect("Industry event is serializable");
+                let payload = serde_json::to_string(&event).expect("Application event is serializable");
                 if !send(&mut socket, Message::Text(payload.into())).await { break; }
             }
             _ = heartbeat.tick() => {
@@ -101,100 +114,15 @@ async fn send(socket: &mut WebSocket, message: Message) -> bool {
 }
 
 async fn forward(
-    service: Arc<IndustryDataService>,
+    services: Arc<EventServices>,
     id: String,
-    resource: IndustryResource,
-    sender: mpsc::Sender<(u64, IndustryEvent)>,
+    resource: ApplicationResource,
+    sender: mpsc::Sender<(u64, ApplicationEvent)>,
     generation: u64,
 ) {
-    let (mut catalog, mut memberships) = service.changes();
-    let mut state = match service.cached(&resource).await {
-        Ok(state) => state,
-        Err(error) => {
-            tracing::warn!(%error, "Industry cache read failed");
-            let _ = sender
-                .send((
-                    generation,
-                    IndustryEvent::Error {
-                        subscription_id: id,
-                        message: "Industry cache unavailable".into(),
-                    },
-                ))
-                .await;
-            return;
-        }
-    };
-    state.loading = state.fetched_at.is_none()
-        || state
-            .expires_at
-            .is_some_and(|expiry| expiry <= chrono::Utc::now());
-    if sender
-        .send((
-            generation,
-            IndustryEvent::Snapshot {
-                subscription_id: id.clone(),
-                state: state.clone(),
-            },
-        ))
-        .await
-        .is_err()
-    {
-        return;
-    }
-    if state.loading {
-        if let Err(error) = service.load(&resource).await {
-            tracing::warn!(%error, ?resource, "Industry acquisition failed; preserving cache");
-            state.error =
-                Some("Could not load industry data; cached data has been retained".into());
-        } else {
-            match service.cached(&resource).await {
-                Ok(next) => state = next,
-                Err(error) => {
-                    tracing::warn!(%error, "Industry cache read after acquisition failed");
-                    state.error = Some("Industry cache unavailable".into());
-                }
-            }
-        }
-        state.loading = false;
-        if sender
-            .send((
-                generation,
-                IndustryEvent::Snapshot {
-                    subscription_id: id.clone(),
-                    state,
-                },
-            ))
-            .await
-            .is_err()
-        {
-            return;
-        }
-    }
-    loop {
-        let changed = match resource {
-            IndustryResource::Catalog => catalog.changed().await,
-            IndustryResource::Membership { .. } => memberships.changed().await,
-        };
-        if changed.is_err() {
-            return;
-        }
-        match service.cached(&resource).await {
-            Ok(state) => {
-                if sender
-                    .send((
-                        generation,
-                        IndustryEvent::Snapshot {
-                            subscription_id: id.clone(),
-                            state,
-                        },
-                    ))
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            Err(error) => tracing::warn!(%error, "Industry subscription cache read failed"),
+    match resource {
+        ApplicationResource::Industry(resource) => {
+            industry::forward(services.industry.clone(), id, resource, sender, generation).await;
         }
     }
 }
@@ -223,7 +151,9 @@ mod tests {
             .await
             .unwrap();
         let (service, _, _) = fixture(store.clone(), client("http://127.0.0.1:1/"));
-        let service = Arc::new(service);
+        let service = Arc::new(EventServices {
+            industry: Arc::new(service),
+        });
         let app = Router::new().route(
             "/events",
             get(move |ws: WebSocketUpgrade| {
@@ -246,7 +176,7 @@ mod tests {
         ] {
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Text(
-                    json!({"type":"subscribe", "subscription_id":id, "resource":resource})
+                    json!({"type":"subscribe", "subscription_id":id, "resource":{"domain":"industry","resource":resource}})
                         .to_string()
                         .into(),
                 ))
@@ -262,7 +192,7 @@ mod tests {
                 .unwrap();
             if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
-                assert_eq!(value["state"]["loading"], false);
+                assert_eq!(value["payload"]["state"]["loading"], false);
                 received.push(value["subscription_id"].as_str().unwrap().to_owned());
             }
         }
@@ -285,7 +215,10 @@ mod tests {
             if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
                 assert_eq!(value["subscription_id"], "members");
-                assert_eq!(value["state"]["data"]["symbols"], json!(["AMD", "NVDA"]));
+                assert_eq!(
+                    value["payload"]["state"]["data"]["symbols"],
+                    json!(["AMD", "NVDA"])
+                );
                 break;
             }
         }
@@ -299,7 +232,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        socket.send(tokio_tungstenite::tungstenite::Message::Text(json!({"type":"subscribe", "subscription_id":"again", "resource":{"type":"catalog"}}).to_string().into())).await.unwrap();
+        socket.send(tokio_tungstenite::tungstenite::Message::Text(json!({"type":"subscribe", "subscription_id":"again", "resource":{"domain":"industry","resource":{"type":"catalog"}}}).to_string().into())).await.unwrap();
         loop {
             let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
                 .await

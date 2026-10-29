@@ -85,8 +85,14 @@ npm run dev
 
 The Vite development server proxies `/api` requests to Axum at `127.0.0.1:8080`. Debug builds do not serve static frontend assets.
 
-Industry catalog and membership subscriptions share the application WebSocket at
-`/api/events`. TanStack Query holds their client cache. Industry membership includes
+`/api/events` is the global async data WebSocket. Its application commands and
+events carry namespaced domain resources and payloads; industry catalog and
+membership are the first subscription types. The shared connection handles
+routing, cancellation, and reconnects; domain adapters handle cache policy.
+TanStack Query owns server snapshots; Zustand owns shared connection status.
+Disconnects retain cached data, display reconnecting status, and replay active
+subscriptions when the connection returns. The transport stores no domain data.
+TanStack Query holds the industry client cache. Industry membership includes
 all Finviz pages without the Top Stocks filters. Missing or expired data is fetched
 on demand and reused for 30 days; there is no membership refresh job or manual
 refresh endpoint. Verified ETF membership does not expire. Failed acquisitions

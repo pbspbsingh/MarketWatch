@@ -320,14 +320,4 @@ pub(crate) mod tests {
         );
         server.abort();
     }
-
-    #[test]
-    fn resources_have_no_manual_refresh_command() {
-        assert!(
-            serde_json::from_str::<crate::contracts::industry::IndustryCommand>(
-                r#"{"type":"refresh","subscription_id":"test"}"#
-            )
-            .is_err()
-        );
-    }
 }

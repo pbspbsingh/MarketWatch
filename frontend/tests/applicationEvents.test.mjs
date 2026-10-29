@@ -5,9 +5,14 @@ import { createServer } from "vite";
 class Socket extends EventTarget {
   static OPEN = 1;
   static instances = [];
+  static failNext = false;
   readyState = 0;
   sent = [];
-  constructor(url) { super(); this.url = url; Socket.instances.push(this); }
+  constructor(url) {
+    super();
+    if (Socket.failNext) { Socket.failNext = false; throw new Error("Connection blocked"); }
+    this.url = url; Socket.instances.push(this);
+  }
   open() { this.readyState = Socket.OPEN; this.dispatchEvent(new Event("open")); }
   send(text) { this.sent.push(JSON.parse(text)); }
   receive(value) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) })); }
@@ -23,7 +28,9 @@ globalThis.window = {
   clearTimeout(id) { reconnects.delete(id); },
 };
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
-const { ApplicationEvents, industryQueryKey } = await server.ssrLoadModule("/src/api/applicationEvents.ts");
+const { ApplicationEvents } = await server.ssrLoadModule("/src/api/applicationEvents.ts");
+const { IndustrySubscriptions, industryQueryKey } = await server.ssrLoadModule("/src/api/industrySubscriptions.ts");
+const { createApplicationConnectionStore } = await server.ssrLoadModule("/src/shared/applicationConnection.ts");
 const { queryClient } = await server.ssrLoadModule("/src/shared/queryClient.ts");
 after(async () => { queryClient.clear(); await server.close(); });
 
@@ -33,18 +40,19 @@ const state = (loading, symbols = ["AMD"]) => ({
   expires_at: "2026-01-31T00:00:00Z", loading, error: null,
 });
 function setup() {
-  const events = new ApplicationEvents();
+  const connection = createApplicationConnectionStore();
+  const events = new ApplicationEvents(connection);
   events.start();
   const socket = Socket.instances.at(-1);
   socket.open();
-  return { events, socket };
+  return { events, socket, industry: new IndustrySubscriptions(events), connection };
 }
-function snapshot(socket, id, value) { socket.receive({ type: "snapshot", subscription_id: id, state: value }); }
+function snapshot(socket, id, value) { socket.receive({ type: "snapshot", subscription_id: id, payload: { domain: "industry", state: value } }); }
 
 test("stale cache remains readable while acquisition waits for its settled snapshot", async () => {
-  const { events, socket } = setup();
+  const { events, socket, industry } = setup();
   assert.equal(socket.url, "wss://market.test/api/events");
-  const pending = events.read(resource);
+  const pending = industry.read(resource);
   const id = socket.sent.at(-1).subscription_id;
   let settled = false;
   void pending.then(() => { settled = true; });
@@ -62,8 +70,8 @@ test("stale cache remains readable while acquisition waits for its settled snaps
 test("shared observers release independently and reconnect on the same application channel", () => {
   const { events, socket } = setup();
   let updates = 0;
-  const first = events.observe(resource, () => { updates++; });
-  const second = events.observe(resource, () => { updates++; });
+  const first = events.observe({ domain: "industry", resource }, () => { updates++; });
+  const second = events.observe({ resource: { industry_key: "semiconductors", type: "membership" }, domain: "industry" }, () => { updates++; });
   assert.equal(socket.sent.filter(item => item.type === "subscribe").length, 1);
   first();
   assert.equal(socket.sent.at(-1).type, "subscribe");
@@ -83,32 +91,133 @@ test("shared observers release independently and reconnect on the same applicati
 });
 
 test("aborted reads unsubscribe and failures without cache reject", async () => {
-  const { events, socket } = setup();
+  const { events, socket, industry } = setup();
   const controller = new AbortController();
-  const pending = events.read(resource, controller.signal);
+  const pending = industry.read(resource, controller.signal);
   controller.abort();
   await assert.rejects(pending, { name: "AbortError" });
   assert.equal(socket.sent.at(-1).type, "unsubscribe");
-  const failed = events.read(resource);
+  const failed = industry.read(resource);
   snapshot(socket, socket.sent.at(-1).subscription_id, { ...state(false), fetched_at: null, expires_at: null, error: "Unavailable" });
   await assert.rejects(failed, /Unavailable/);
   events.stop();
 });
 
 test("malformed events and mismatched resources close the connection", () => {
-  for (const malformed of [null, {}, { type: "snapshot", subscription_id: "1", state: {} }]) {
+  for (const malformed of [
+    null, {}, { type: "snapshot", subscription_id: "1", state: {} },
+    { type: "snapshot", subscription_id: "1", payload: { domain: "unknown", state: state(false) } },
+  ]) {
     const { events, socket } = setup();
-    events.observe(resource, () => {});
+    events.observe({ domain: "industry", resource }, () => {});
     socket.receive(malformed);
     assert.equal(socket.code, 1002);
     events.stop();
   }
   const { events, socket } = setup();
-  const release = events.observe(resource, () => assert.fail("Invalid resource delivered"));
+  const release = events.observe({ domain: "industry", resource }, () => assert.fail("Invalid resource delivered"));
   snapshot(socket, socket.sent.at(-1).subscription_id, { ...state(false), data: { type: "catalog", industries: [] } });
   assert.equal(socket.code, 1002);
   release();
   events.stop();
+});
+
+test("global transport routes domain envelopes without changing domain query caches", () => {
+  const { events, socket } = setup();
+  const cached = queryClient.getQueryData(industryQueryKey(resource));
+  let delivered;
+  const release = events.observe({ domain: "industry", resource }, payload => { delivered = payload; });
+  assert.deepEqual(socket.sent.at(-1).resource, { domain: "industry", resource });
+  snapshot(socket, socket.sent.at(-1).subscription_id, state(false, ["INTC"]));
+  assert.equal(delivered.domain, "industry");
+  assert.deepEqual(delivered.state.data.symbols, ["INTC"]);
+  assert.equal(queryClient.getQueryData(industryQueryKey(resource)), cached);
+  release();
+  events.stop();
+});
+
+test("resubscribing ignores queued snapshots from the previous delivery identity", async () => {
+  const { events, socket, industry } = setup();
+  const release = events.observe({ domain: "industry", resource }, () => {});
+  const previousId = socket.sent.at(-1).subscription_id;
+  const pending = industry.read(resource);
+  const nextId = socket.sent.at(-1).subscription_id;
+  assert.notEqual(previousId, nextId);
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  snapshot(socket, previousId, state(false, ["OUTDATED"]));
+  await Promise.resolve();
+  assert.equal(settled, false);
+  snapshot(socket, nextId, state(false, ["NVDA"]));
+  assert.deepEqual((await pending).data.symbols, ["NVDA"]);
+  release();
+  events.stop();
+});
+
+test("a failing subscriber cannot block other snapshot or error listeners", async (t) => {
+  const reported = [];
+  t.mock.method(console, "error", (...args) => { reported.push(args); });
+  const { events, socket, industry } = setup();
+  const failure = new Error("Subscriber failed");
+  const release = events.observe({ domain: "industry", resource }, () => { throw failure; });
+  const pending = industry.read(resource);
+  snapshot(socket, socket.sent.at(-1).subscription_id, state(false, ["NVDA"]));
+  assert.deepEqual((await pending).data.symbols, ["NVDA"]);
+  const rejected = industry.read(resource);
+  socket.receive({ type: "error", subscription_id: socket.sent.at(-1).subscription_id, message: "Resource unavailable" });
+  await assert.rejects(rejected, /Resource unavailable/);
+  assert.equal(reported.length, 2);
+  assert.equal(reported[0][1], failure);
+  assert.equal(reported[1][1], failure);
+  assert.equal(socket.readyState, Socket.OPEN);
+  release();
+  events.stop();
+});
+
+test("connection state is shared while server snapshots remain in the query cache across reconnects", () => {
+  const connection = createApplicationConnectionStore();
+  const events = new ApplicationEvents(connection);
+  const industry = new IndustrySubscriptions(events);
+  assert.equal(connection.getState().status, "disconnected");
+  const before = Socket.instances.length;
+  events.start();
+  events.start();
+  assert.equal(Socket.instances.length, before + 1, "Starting twice cannot create two global connections");
+  assert.equal(connection.getState().status, "connecting");
+  const socket = Socket.instances.at(-1);
+  socket.open();
+  assert.deepEqual(connection.getState(), { status: "connected", retryAttempt: 0 });
+  const release = industry.observe(resource, () => {});
+  snapshot(socket, socket.sent.at(-1).subscription_id, state(false, ["AMD"]));
+  const cached = queryClient.getQueryData(industryQueryKey(resource));
+  socket.close();
+  assert.deepEqual(connection.getState(), { status: "reconnecting", retryAttempt: 1 });
+  assert.equal(queryClient.getQueryData(industryQueryKey(resource)), cached);
+  const reconnect = [...reconnects.values()].at(-1);
+  reconnects.clear();
+  reconnect();
+  const replacement = Socket.instances.at(-1);
+  replacement.open();
+  assert.deepEqual(connection.getState(), { status: "connected", retryAttempt: 0 });
+  assert.deepEqual(replacement.sent.at(-1).resource, { domain: "industry", resource });
+  snapshot(replacement, replacement.sent.at(-1).subscription_id, state(false, ["NVDA"]));
+  assert.deepEqual(queryClient.getQueryData(industryQueryKey(resource)).data.symbols, ["NVDA"]);
+  release();
+  events.stop();
+  assert.deepEqual(connection.getState(), { status: "disconnected", retryAttempt: 0 });
+});
+
+test("synchronous connection failures enter reconnecting state and stop cancels the retry", () => {
+  const connection = createApplicationConnectionStore();
+  const events = new ApplicationEvents(connection);
+  const before = reconnects.size;
+  Socket.failNext = true;
+  events.start();
+  assert.deepEqual(connection.getState(), { status: "reconnecting", retryAttempt: 1 });
+  assert.equal(reconnects.size, before + 1);
+  events.stop();
+  assert.equal(reconnects.size, before);
+  assert.deepEqual(connection.getState(), { status: "disconnected", retryAttempt: 0 });
 });
 
 test("industry CNT ordering uses catalog totals without acquiring membership", async (t) => {

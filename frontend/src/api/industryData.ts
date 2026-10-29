@@ -1,13 +1,13 @@
 import { useEffect } from "react";
 import { queryOptions, useQueries } from "@tanstack/react-query";
-import { applicationEvents, industryQueryKey } from "./applicationEvents";
+import { industrySubscriptions, industryQueryKey } from "./industrySubscriptions";
 import type { IndustryResource, IndustryState } from "./generated/contracts";
 import { queryClient } from "../shared/queryClient";
 
 function options(resource: IndustryResource) {
   return queryOptions({
     queryKey: industryQueryKey(resource),
-    queryFn: ({ signal }) => applicationEvents.read(resource, signal),
+    queryFn: ({ signal }) => industrySubscriptions.read(resource, signal),
     staleTime: Infinity,
   });
 }
@@ -45,9 +45,9 @@ export function useIndustryData(keys: string[], enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const subscriptions = [
-      applicationEvents.observe({ type: "catalog" }, () => {}),
+      industrySubscriptions.observe({ type: "catalog" }, () => {}),
       ...key.split(",").filter(Boolean).map(industry_key =>
-        applicationEvents.observe({ type: "membership", industry_key }, () => {})),
+        industrySubscriptions.observe({ type: "membership", industry_key }, () => {})),
     ];
     return () => subscriptions.forEach(release => release());
   }, [enabled, key]);

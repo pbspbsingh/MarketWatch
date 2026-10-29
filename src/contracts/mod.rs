@@ -1,3 +1,4 @@
+pub mod events;
 pub mod industry;
 
 use std::path::Path;
@@ -16,10 +17,12 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         crate::models::ThemeRanking::decl(&config),
         industry::IndustryClassification::decl(&config),
         industry::IndustryResource::decl(&config),
-        industry::IndustryCommand::decl(&config),
         industry::IndustryData::decl(&config),
         industry::IndustryState::decl(&config),
-        industry::IndustryEvent::decl(&config),
+        events::ApplicationResource::decl(&config),
+        events::ApplicationCommand::decl(&config),
+        events::ApplicationSnapshot::decl(&config),
+        events::ApplicationEvent::decl(&config),
     ];
     let source = format!(
         "// Generated from Rust. Run cargo run -- --export-contracts.\n\n{}\n",
@@ -32,7 +35,7 @@ pub fn export(check: bool) -> anyhow::Result<()> {
     if check {
         anyhow::ensure!(
             std::fs::read_to_string(path)? == source,
-            "Generated industry contracts are stale"
+            "Generated application contracts are stale"
         );
     } else {
         std::fs::create_dir_all(path.parent().expect("contract directory"))?;
