@@ -20,9 +20,9 @@ To run without authentication on this computer, replace the credentials in
 mode = "none"
 ```
 
-The `[server.auth]` section is required. API response compression is controlled
+The `[server.auth]` section is required. API and frontend response compression is controlled
 separately by `compression = true` or `false` under `[server]`; this setting is
-required in every mode. Embedded frontend assets remain precompressed. To reach
+required in every mode. Compression is negotiated per request. To reach
 the app from other devices, set `address = "0.0.0.0:8080"` under `[server]`.
 This listens on every IPv4 interface, so restrict access with your firewall.
 Basic-auth mode can also bind there, but Basic credentials are exposed over
@@ -114,17 +114,17 @@ Runtime paths come from `config.toml`. Apply migrations to the local databases
 before checking new queries:
 
 ```bash
-bash scripts/migrate.sh             # main database, using the root .env
+cargo sqlx database setup           # main database, using the root .env
 cd crates/institutions
-cp .env.example .env                 # first setup only; set your absolute DB path
-bash ../../scripts/migrate.sh        # ownership database, using this crate's .env
+cp .env.example .env                # first setup only; set your absolute DB path
+cargo sqlx database setup           # ownership database, using this crate's .env
 cd ../..
 cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline
 ```
 
-The migration script preserves the current working directory and lets SQLx read
-its local configuration. Both schemas work without SEC records. The application
+Run SQLx from the owning crate directory so it reads the local configuration.
+Both schemas work without SEC records. The application
 also applies migrations when opening each database. Commit refreshed `.sqlx`
 metadata after changing queries; offline builds use it without live databases.
 The migration CLI needs SQLx 0.9 with the `sqlite,sqlx-toml` features:
@@ -152,9 +152,8 @@ cd ..
 cargo run --release
 ```
 
-The frontend build creates `frontend/dist` and its precompressed copy in
-`frontend/dist_gzipped`. The release binary embeds and serves
-`frontend/dist_gzipped`.
+The frontend build creates `frontend/dist`, which the release binary embeds and serves.
+`server.compression` controls negotiated gzip/deflate compression for both API and frontend responses.
 
 ## Verification
 
@@ -171,26 +170,7 @@ Run the frontend checks:
 ```bash
 npm --prefix frontend run check
 npm --prefix frontend run build
-node --test frontend/scripts/*.test.mjs
 ```
-
-Run the complete Trade Logs checks, including isolated Chrome interaction and
-viewport tests (Chrome/Chromium and installed frontend dependencies required):
-
-```bash
-./scripts/check-trade-logs.sh
-```
-
-Browser checks and performance measurements share one permission-friendly entry point:
-
-```bash
-node frontend/scripts/trade-statistics-browser.mjs
-node frontend/scripts/trade-statistics-browser.mjs --performance
-```
-
-The default runs isolated fixtures. Performance mode requires a frontend build and
-the local backend on port 8080; it uses read-only interactions against the journal.
-Screenshots, timing reports, and a CPU profile are written under `/tmp`.
 
 Statistics has separate Overview, Distribution, Tags, Timing, Duration, and Symbols
 views. Global filters define the baseline; the Statistics tag selector refines it

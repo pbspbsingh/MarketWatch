@@ -35,15 +35,17 @@ use crate::services::yahoo_live::YahooLiveHandle;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use axum::Router;
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 use axum::body::Body;
 use axum::http::StatusCode;
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 use axum::http::{Uri, header};
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 use axum::response::{IntoResponse, Response};
+#[cfg(any(not(debug_assertions), test))]
+use include_dir::Dir;
 #[cfg(not(debug_assertions))]
-use include_dir::{Dir, include_dir};
+use include_dir::include_dir;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::{
@@ -52,23 +54,23 @@ use tower_http::compression::{
 };
 
 #[cfg(not(debug_assertions))]
-static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist_gzipped");
+static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
 
-const API_COMPRESSION_CUTOFF_BYTES: u16 = 512;
+const RESPONSE_COMPRESSION_CUTOFF_BYTES: u16 = 512;
 
-fn api_compression_layer() -> CompressionLayer<And<DefaultPredicate, SizeAbove>> {
+fn response_compression_layer() -> CompressionLayer<And<DefaultPredicate, SizeAbove>> {
     // tower-http 0.6.11 treats the predicate's minimum as inclusive.
     CompressionLayer::new().compress_when(
-        DefaultPredicate::new().and(SizeAbove::new(API_COMPRESSION_CUTOFF_BYTES + 1)),
+        DefaultPredicate::new().and(SizeAbove::new(RESPONSE_COMPRESSION_CUTOFF_BYTES + 1)),
     )
 }
 
-fn with_optional_api_compression<S>(router: Router<S>, enabled: bool) -> Router<S>
+fn with_optional_compression<S>(router: Router<S>, enabled: bool) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     if enabled {
-        router.layer(api_compression_layer())
+        router.layer(response_compression_layer())
     } else {
         router
     }
@@ -286,12 +288,12 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         yahoo_live,
     };
 
-    let api_router = with_optional_api_compression(api::router(), config.server.compression);
-    let router = Router::new().nest("/api", api_router);
+    let router = Router::new().nest("/api", api::router());
     #[cfg(not(debug_assertions))]
     let router = router.fallback(frontend);
     #[cfg(debug_assertions)]
     let router = router.fallback(debug_frontend);
+    let router = with_optional_compression(router, config.server.compression);
     Ok(with_optional_auth(router, auth).with_state(state))
 }
 
@@ -302,23 +304,26 @@ async fn debug_frontend() -> (StatusCode, &'static str) {
 
 #[cfg(not(debug_assertions))]
 async fn frontend(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    let compressed_path = format!("{path}.gz");
-    let (file, content_path) = if let Some(file) = FRONTEND_DIST.get_file(&compressed_path) {
+    frontend_response(uri.path(), &FRONTEND_DIST)
+}
+
+#[cfg(any(not(debug_assertions), test))]
+fn frontend_response(path: &str, assets: &Dir<'static>) -> Response {
+    let path = path.trim_start_matches('/');
+    let (file, content_path) = if let Some(file) = assets.get_file(path) {
         (file, path)
-    } else if let Some(file) = FRONTEND_DIST.get_file("index.html.gz") {
+    } else if let Some(file) = assets.get_file("index.html") {
         (file, "index.html")
     } else {
         return StatusCode::NOT_FOUND.into_response();
     };
     Response::builder()
         .header(header::CONTENT_TYPE, content_type(content_path))
-        .header(header::CONTENT_ENCODING, "gzip")
         .body(Body::from(file.contents()))
         .expect("embedded frontend response is valid")
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn content_type(path: &str) -> &'static str {
     if path.ends_with(".css") {
         "text/css"
@@ -345,18 +350,18 @@ mod tests {
 
     #[tokio::test]
     async fn api_compression_respects_size_and_accept_encoding() {
-        let app = with_optional_api_compression(
+        let app = with_optional_compression(
             Router::new()
                 .route(
                     "/exactly-512-bytes",
                     get(|| async {
-                        Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 2))
+                        Json("x".repeat(usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES) - 2))
                     }),
                 )
                 .route(
                     "/over-512-bytes",
                     get(|| async {
-                        Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES) - 1))
+                        Json("x".repeat(usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES) - 1))
                     }),
                 ),
             true,
@@ -366,14 +371,14 @@ mod tests {
         assert!(exact.headers().get(header::CONTENT_ENCODING).is_none());
         assert_eq!(
             to_bytes(exact.into_body(), usize::MAX).await.unwrap().len(),
-            usize::from(API_COMPRESSION_CUTOFF_BYTES),
+            usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES),
         );
 
         let large = request(&app, "/over-512-bytes", Some("gzip")).await;
         assert_eq!(large.headers()[header::CONTENT_ENCODING], "gzip");
         assert!(
             to_bytes(large.into_body(), usize::MAX).await.unwrap().len()
-                < usize::from(API_COMPRESSION_CUTOFF_BYTES),
+                < usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES),
         );
 
         let deflated = request(&app, "/over-512-bytes", Some("deflate")).await;
@@ -383,7 +388,7 @@ mod tests {
                 .await
                 .unwrap()
                 .len()
-                < usize::from(API_COMPRESSION_CUTOFF_BYTES),
+                < usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES),
         );
 
         let without_compression = request(&app, "/over-512-bytes", None).await;
@@ -397,15 +402,76 @@ mod tests {
 
     #[tokio::test]
     async fn api_compression_can_be_disabled_independently_of_auth() {
-        let app = with_optional_api_compression(
+        let app = with_optional_compression(
             Router::new().route(
                 "/large",
-                get(|| async { Json("x".repeat(usize::from(API_COMPRESSION_CUTOFF_BYTES))) }),
+                get(|| async { Json("x".repeat(usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES))) }),
             ),
             false,
         );
         let response = request(&app, "/large", Some("deflate")).await;
         assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+    }
+
+    #[tokio::test]
+    async fn frontend_serves_plain_assets_and_negotiates_optional_compression() {
+        use include_dir::{DirEntry, File};
+
+        static ASSETS: Dir<'static> = Dir::new(
+            "",
+            &[
+                DirEntry::File(File::new("index.html", &[b'h'; 1024])),
+                DirEntry::File(File::new("app.js", &[b'j'; 1024])),
+                DirEntry::File(File::new("app.css", &[b'c'; 1024])),
+            ],
+        );
+
+        for (path, content_type, contents) in [
+            (
+                "/",
+                "text/html; charset=utf-8",
+                ASSETS.get_file("index.html").unwrap().contents(),
+            ),
+            (
+                "/market-watch",
+                "text/html; charset=utf-8",
+                ASSETS.get_file("index.html").unwrap().contents(),
+            ),
+            (
+                "/app.js",
+                "text/javascript",
+                ASSETS.get_file("app.js").unwrap().contents(),
+            ),
+            (
+                "/app.css",
+                "text/css",
+                ASSETS.get_file("app.css").unwrap().contents(),
+            ),
+        ] {
+            assert!(contents.len() > usize::from(RESPONSE_COMPRESSION_CUTOFF_BYTES));
+            for enabled in [false, true] {
+                let router = Router::new()
+                    .fallback(|uri: Uri| async move { frontend_response(uri.path(), &ASSETS) });
+                let app = with_optional_compression(router, enabled);
+                for encoding in [None, Some("gzip"), Some("deflate")] {
+                    let response = request(&app, path, encoding).await;
+                    assert_eq!(response.status(), StatusCode::OK);
+                    assert_eq!(response.headers()[header::CONTENT_TYPE], content_type);
+                    if enabled && let Some(encoding) = encoding {
+                        assert_eq!(response.headers()[header::CONTENT_ENCODING], encoding);
+                    } else {
+                        assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+                        assert_eq!(
+                            to_bytes(response.into_body(), usize::MAX)
+                                .await
+                                .unwrap()
+                                .as_ref(),
+                            contents
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[tokio::test]

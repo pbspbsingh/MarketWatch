@@ -38,11 +38,10 @@ fn main() {
     // Production metadata also follows embedded assets and optional Git state.
     for path in [
         "frontend/src",
-        "frontend/scripts",
         "frontend/vite.config.ts",
         "frontend/package.json",
         "frontend/package-lock.json",
-        "frontend/dist_gzipped",
+        "frontend/dist",
     ] {
         if Path::new(path).exists() {
             println!("cargo::rerun-if-changed={path}");
