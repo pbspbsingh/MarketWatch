@@ -25,7 +25,6 @@ use crate::services::theme_analysis::ThemeAnalysisService;
 use crate::services::theme_audits::ThemeAuditService;
 use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
-use crate::services::ticker_strength::TickerStrengthService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
 use crate::services::trade_logs::{TradeLogsService, market::TradeLogMarketService};
@@ -103,7 +102,6 @@ pub struct AppState {
     pub industry_analysis: Arc<IndustryAnalysisService>,
     pub study: Arc<StudyService>,
     pub ticker_catalog: Arc<TickerCatalogService>,
-    pub ticker_strength: Arc<TickerStrengthService>,
     pub market_schedule: MarketSchedule,
     pub market_chart: Arc<MarketChartService>,
     pub market_explorer: Arc<MarketExplorerService>,
@@ -180,12 +178,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         finviz.clone(),
         yahoo.clone(),
         &config.market,
-    )?);
-    let ticker_strength = Arc::new(TickerStrengthService::new(
-        store.clone(),
-        yahoo.clone(),
-        &config.market,
-        config.home.tickers.clone(),
     )?);
     let chart = Arc::new(ChartService::new(
         store.clone(),
@@ -277,7 +269,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         industry_analysis,
         study,
         ticker_catalog,
-        ticker_strength,
         market_schedule,
         market_chart,
         market_explorer,

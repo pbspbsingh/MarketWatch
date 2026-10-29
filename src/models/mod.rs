@@ -12,7 +12,6 @@ mod performance;
 mod theme_audits;
 mod themes;
 pub(crate) mod ticker_collection;
-mod ticker_strength;
 pub mod ticker_symbol;
 mod top_stock_screens;
 pub(crate) mod trade_logs;
@@ -47,7 +46,6 @@ pub use ticker_collection::{
     TickerCollection, TickerCollectionFile, TickerCollectionGroup, TickerCollectionGroups,
     TickerCollectionSource,
 };
-pub use ticker_strength::{TickerStrength, calculate_ticker_strength};
 pub use ticker_symbol::TickerSymbol;
 pub use top_stock_screens::TopStockScreen;
 pub use tradingview_symbol::TradingViewSymbol;

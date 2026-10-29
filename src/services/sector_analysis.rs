@@ -73,7 +73,6 @@ impl SectorAnalysisService {
                         key: key.clone(),
                         name,
                         etf_symbol: etf_symbol.clone(),
-                        absolute_strength: Some(performance.absolute_strength()),
                         performance: Some(performance),
                         previous_close,
                     });
@@ -90,7 +89,6 @@ impl SectorAnalysisService {
                         name,
                         etf_symbol: etf_symbol.clone(),
                         performance: None,
-                        absolute_strength: None,
                         previous_close: None,
                     });
                 }

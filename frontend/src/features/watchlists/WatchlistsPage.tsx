@@ -12,7 +12,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -36,26 +35,14 @@ import {
 import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { TickerLens } from "../ticker-lens/TickerLens";
-import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
-import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
-import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import { WatchlistIcon, watchlistIcons } from "./WatchlistIcon";
 import "./watchlists.css";
 
 const selectedWatchlistStorageKey = "market-watch.selected-watchlist";
 
 export function WatchlistsPage() {
-  return (
-    <TickerStrengthProvider>
-      <WatchlistsContent />
-    </TickerStrengthProvider>
-  );
-}
-
-function WatchlistsContent() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const tickerStrength = useTickerStrengthFeature();
   const focusRevision = useFocusRefresh();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [symbols, setSymbols] = useState<string[]>([]);
@@ -283,12 +270,6 @@ function WatchlistsContent() {
             ? ""
             : `${symbols.length}${selectedWatchlists.length > 1 ? " unique" : ""} tickers`}
         </Typography>
-        {selectionReady && (
-          <div className="watchlists-ticker-strength">
-            <Divider orientation="vertical" flexItem />
-            <TickerStrengthControls />
-          </div>
-        )}
         <TextField
           className="watchlists-add-ticker"
           size="small"
@@ -337,7 +318,6 @@ function WatchlistsContent() {
           key={selectionKey}
           accent="yellow"
           universe={{ type: "bounded", symbols }}
-          metricExtensions={tickerStrength.metricExtensions}
           watchlists={watchlists}
           onWatchlistsChange={(symbol, watchlistIds) => {
             if (!watchlistIds.some((watchlistId) => selectedIdSet.has(watchlistId))) {

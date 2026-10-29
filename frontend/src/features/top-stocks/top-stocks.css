@@ -89,12 +89,6 @@
   flex-shrink: 0;
 }
 
-.top-stocks-ticker-strength {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-}
-
 .top-stocks-controls {
   gap: 2rem;
 }

@@ -59,7 +59,6 @@ export function readTickerSortSetting(storageKey: string): TickerSortSetting {
 
 export function sortValue(group: GroupRanking, key: SortKey) {
   if (key === "count") return group.ticker_count ?? undefined;
-  if (key === "absolute_strength") return group.absolute_strength ?? undefined;
   return group.performance?.[key] ?? undefined;
 }
 
@@ -69,7 +68,6 @@ export function tickerSortValue(
   metric?: TickerMetric,
 ) {
   if (isMetricSortKey(key)) return metric?.values.get(ticker.symbol);
-  if (key === "absolute_strength") return ticker.absolute_strength ?? undefined;
   if (key === "adr_percent") return ticker[key] ?? undefined;
   if (key === "dollar_volume") return dollarVolume(ticker);
   return ticker.performance?.[key] ?? undefined;
@@ -174,7 +172,6 @@ function adrColor(adr: number) {
 }
 
 const performanceCaps: Record<Exclude<SortKey, "count">, number> = {
-  absolute_strength: 0.15,
   day: 0.025,
   week: 0.05,
   month: 0.1,

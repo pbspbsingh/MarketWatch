@@ -12,7 +12,7 @@ export type TickerCollection = { version: number, source: TickerCollectionSource
 
 export type PerformancePeriods = { day: number, week: number, month: number, quarter: number, half_year: number, year: number, };
 
-export type ThemeRanking = { id: number, name: string, etf_symbol: TickerSymbol, ticker_count: number, performance: PerformancePeriods | null, absolute_strength: number | null, previous_close: number | null, };
+export type ThemeRanking = { id: number, name: string, etf_symbol: TickerSymbol, ticker_count: number, performance: PerformancePeriods | null, previous_close: number | null, };
 
 export type IndustryClassification = { industry_key: string, industry_name: string, sector_key: string, sector_name: string, ticker_count: number, };
 

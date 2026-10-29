@@ -234,7 +234,7 @@ test("industry CNT ordering uses catalog totals without acquiring membership", a
   t.after(() => { globalThis.fetch = original; });
   globalThis.fetch = async (url) => {
     assert.equal(url, "/api/industries", "Counts must not require ticker-membership requests");
-    return Response.json([{ key: "semiconductors", performance: { week: 0.1 }, absolute_strength: 0.2 }]);
+    return Response.json([{ key: "semiconductors", performance: { week: 0.1 } }]);
   };
   const groups = await fetchGlobalGroupRankings("industry");
   assert.deepEqual(sortGroups(groups, { key: "count", direction: "desc" }).map(group => group.key), ["shellcompanies", "semiconductors", "empty"]);
@@ -242,12 +242,26 @@ test("industry CNT ordering uses catalog totals without acquiring membership", a
   assert.equal(groups.find(group => group.key === "shellcompanies").performance, null, "An industry without performance still has a count");
 });
 
+test("1D sorts groups and tickers by daily return, with unavailable returns last", async () => {
+  const { sortGroups, sortTickers } = await server.ssrLoadModule("/src/features/ticker-lens/utils.ts");
+  const groups = [
+    { name: "Up", performance: { day: 0.02, week: -0.1 } },
+    { name: "Down", performance: { day: -0.01, week: 0.2 } },
+    { name: "Unknown", performance: null },
+  ];
+  const tickers = groups.map(group => ({ symbol: group.name, performance: group.performance }));
+  for (const [direction, expected] of [["desc", ["Up", "Down", "Unknown"]], ["asc", ["Down", "Up", "Unknown"]]]) {
+    assert.deepEqual(sortGroups(groups, { key: "day", direction }).map(group => group.name), expected);
+    assert.deepEqual(sortTickers(tickers, { key: "day", direction }, true).map(ticker => ticker.symbol), expected);
+  }
+});
+
 test("theme counts include Unassigned without returning its tickers", async (t) => {
   const { fetchGlobalGroupRankings } = await server.ssrLoadModule("/src/features/ticker-lens/groupRankings.ts");
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
   globalThis.fetch = async (url, options) => {
-    if (url === "/api/theme-rankings") return Response.json([{ id: 1, name: "AI", ticker_count: 12, performance: null, absolute_strength: null }]);
+    if (url === "/api/theme-rankings") return Response.json([{ id: 1, name: "AI", ticker_count: 12, performance: null }]);
     assert.equal(url, "/api/ticker-group-summary");
     assert.deepEqual(JSON.parse(options.body), { mode: "theme", group_keys: ["unassigned"] });
     return Response.json({ selected_groups: [{ key: "unassigned", ticker_count: 30 }], related_groups: [] });

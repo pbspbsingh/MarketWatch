@@ -114,7 +114,6 @@ impl TickerCatalogService {
         Ok(TickerRanking {
             symbol: symbol.clone(),
             watchlist_ids,
-            absolute_strength: Some(performance.absolute_strength()),
             performance: Some(performance),
             adr_percent: Some(adr_percent),
             latest_close,
@@ -194,7 +193,6 @@ impl TickerCatalogService {
                         .cloned()
                         .unwrap_or_default(),
                     performance: None,
-                    absolute_strength: None,
                     adr_percent: None,
                     latest_close: None,
                     average_volume: None,
@@ -243,7 +241,6 @@ impl TickerCatalogService {
                             .cloned()
                             .unwrap_or_default(),
                         symbol,
-                        absolute_strength: Some(performance.absolute_strength()),
                         performance: Some(performance),
                         adr_percent: Some(adr_percent),
                         latest_close,
@@ -263,7 +260,6 @@ impl TickerCatalogService {
                             .unwrap_or_default(),
                         symbol,
                         performance: None,
-                        absolute_strength: None,
                         adr_percent: None,
                         latest_close: None,
                         average_volume: None,

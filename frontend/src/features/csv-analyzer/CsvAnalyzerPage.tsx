@@ -25,21 +25,9 @@ import {
 } from "../../api/tickerCollections";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
-import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
-import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
-import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import "./csv-analyzer.css";
 
 export function CsvAnalyzerPage() {
-  return (
-    <TickerStrengthProvider>
-      <CsvAnalyzerContent />
-    </TickerStrengthProvider>
-  );
-}
-
-function CsvAnalyzerContent() {
-  const tickerStrength = useTickerStrengthFeature();
   const [collection, setCollection] = useState<TickerCollection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -124,9 +112,6 @@ function CsvAnalyzerContent() {
       >
         <header className="panel-header csv-analyzer-header">
           <Typography component="h1">CSV Analyzer</Typography>
-          <div className="csv-analyzer-ticker-strength">
-            <TickerStrengthControls />
-          </div>
           <div className="csv-analyzer-actions">
             {loading && !uploading && <CircularProgress size="0.85rem" />}
             {collection !== null && (
@@ -195,7 +180,6 @@ function CsvAnalyzerContent() {
           <TickerLens
             accent="coral"
             universe={{ type: "bounded", symbols: collection.symbols }}
-            metricExtensions={tickerStrength.metricExtensions}
             onBoundedResolution={setFailedSymbols}
           />
         )}

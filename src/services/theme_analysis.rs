@@ -59,7 +59,6 @@ impl ThemeAnalysisService {
                         id: theme.id,
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
-                        absolute_strength: Some(performance.absolute_strength()),
                         performance: Some(performance),
                         previous_close,
                     });
@@ -77,7 +76,6 @@ impl ThemeAnalysisService {
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
                         performance: None,
-                        absolute_strength: None,
                         previous_close: None,
                     });
                 }

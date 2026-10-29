@@ -184,7 +184,6 @@ impl TickerCollectionService {
                     sector_key: ranking.and_then(|ranking| ranking.sector_key.clone()),
                     sector_name: ranking.and_then(|ranking| ranking.sector_name.clone()),
                     performance: ranking.map(|ranking| ranking.performance),
-                    absolute_strength: ranking.map(|ranking| ranking.absolute_strength),
                     symbols,
                 }
             })
@@ -232,7 +231,6 @@ impl TickerCollectionService {
                     sector_key: None,
                     sector_name: None,
                     performance: ranking.and_then(|ranking| ranking.performance),
-                    absolute_strength: ranking.and_then(|ranking| ranking.absolute_strength),
                     symbols,
                 }
             })
@@ -250,7 +248,6 @@ impl TickerCollectionService {
                 sector_key: None,
                 sector_name: None,
                 performance: None,
-                absolute_strength: None,
                 symbols: unassigned,
             });
         }

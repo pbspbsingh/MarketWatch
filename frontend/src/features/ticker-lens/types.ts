@@ -1,7 +1,7 @@
 import type { PerformancePeriods } from "../../api/industries";
 
 type GroupSortKey = "count";
-export type SortKey = GroupSortKey | "absolute_strength" | keyof PerformancePeriods;
+export type SortKey = GroupSortKey | keyof PerformancePeriods;
 export type BuiltInTickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume";
 export type MetricSortKey = `metric:${string}`;
 export type TickerSortKey = BuiltInTickerSortKey | MetricSortKey;
@@ -23,20 +23,9 @@ export type TickerMetric = {
   tooltipLines?: (symbol: string, value: number) => readonly string[];
 };
 
-export type TickerUniverseSnapshot = {
+export type TickerGroupSelection = {
   mode: GroupMode;
   groupKeys: string[];
-  groups: { key: string; name: string }[];
-  symbols: string[];
-};
-
-export type TickerMetricExtension = {
-  /** The ID defines attachment identity and must be unique within a TickerLens. */
-  metric: TickerMetric;
-  /** Receives scope changes and null on detach; replacing this handler does not replay state. */
-  onScopeChange: (snapshot: TickerUniverseSnapshot | null) => void;
-  /** Receives active-state changes; replacing this handler does not replay state. */
-  onActiveChange: (active: boolean) => void;
 };
 
 export type DefaultMetricSort = {
@@ -76,7 +65,6 @@ export type GroupRanking = {
   sector_name?: string | null;
   ticker_count?: number;
   performance: PerformancePeriods | null;
-  absolute_strength: number | null;
 };
 
 export type SelectedTickerContext = {

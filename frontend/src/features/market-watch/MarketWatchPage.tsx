@@ -10,13 +10,10 @@ import { unassignedGroupKey } from "../ticker-lens/constants";
 import type {
   ResolveGroupsRequest,
   ResolveTickersRequest,
-  TickerUniverseSnapshot,
+  TickerGroupSelection,
 } from "../ticker-lens/types";
-import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
-import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
 import { tradeIdFromSearch } from "../trade-logs/tradeLinks";
-import { MarketWatchToolbar } from "./MarketWatchToolbar";
 import "./market-watch.css";
 
 const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<string>) =>
@@ -31,21 +28,10 @@ const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<str
       } as const);
 
 export function MarketWatchPage() {
-  return (
-    <TickerStrengthProvider>
-      <MarketWatchContent />
-    </TickerStrengthProvider>
-  );
-}
-
-function MarketWatchContent() {
-  const tickerStrength = useTickerStrengthFeature();
   const [searchParams] = useSearchParams();
   const tradeId = tradeIdFromSearch(searchParams);
   const [linkedTrade, setLinkedTrade] = useState<TradeLog>();
-  const [selection, setSelection] = useState<
-    Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "groups">
-  >({ mode: "industry", groupKeys: [], groups: [] });
+  const [selection, setSelection] = useState<TickerGroupSelection>({ mode: "industry", groupKeys: [] });
   const [notice, setNotice] = useState<{
     text: string;
     severity: "success" | "error";
@@ -77,20 +63,15 @@ function MarketWatchContent() {
       resolveTickerMembership(tickerSelection(mode, groupKeys), signal),
     [],
   );
-  const handleTickerUniverseChange = useCallback((snapshot: TickerUniverseSnapshot) => {
+  const handleGroupSelectionChange = useCallback((next: TickerGroupSelection) => {
     setSelection((current) =>
-      current.mode === snapshot.mode
-        && current.groupKeys.join("\0") === snapshot.groupKeys.join("\0")
-        && current.groups.map((group) => group.name).join("\0")
-          === snapshot.groups.map((group) => group.name).join("\0")
-        ? current
-        : { mode: snapshot.mode, groupKeys: snapshot.groupKeys, groups: snapshot.groups }
+      current.mode === next.mode && current.groupKeys.join("\0") === next.groupKeys.join("\0")
+        ? current : next
     );
   }, []);
   const membershipRevision = useIndustryData(selection.groupKeys, selection.mode === "industry");
   return (
-    <section className="market-watch-page">
-      <MarketWatchToolbar />
+    <section className="market-watch-page" aria-label="Market Watch">
       <TickerLens
         accent="purple"
         chartAnnotations={chartAnnotations}
@@ -100,8 +81,7 @@ function MarketWatchContent() {
           resolveTickers,
           revision: membershipRevision,
         }}
-        metricExtensions={tickerStrength.metricExtensions}
-        onTickerUniverseChange={handleTickerUniverseChange}
+        onGroupSelectionChange={handleGroupSelectionChange}
       />
       <Toast
         message={notice?.text}

@@ -15,9 +15,6 @@ import {
 } from "../../api/topStocks";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
-import { TickerStrengthControls } from "../ticker-strength/TickerStrengthControls";
-import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext";
-import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import "./top-stocks.css";
 
 const periods: { period: TopStocksPeriod; label: string }[] = [
@@ -30,15 +27,6 @@ const defaultScreenCount = 200;
 const periodMode = "periods";
 
 export function TopStocksPage() {
-  return (
-    <TickerStrengthProvider>
-      <TopStocksContent />
-    </TickerStrengthProvider>
-  );
-}
-
-function TopStocksContent() {
-  const tickerStrength = useTickerStrengthFeature();
   const [snapshot, setSnapshot] = useState<TopStocksSnapshot | null>();
   const [screens, setScreens] = useState<TopStockScreen[]>([]);
   const [periodSelections, setPeriodSelections] = useState<TopStocksSelection[]>([]);
@@ -123,9 +111,6 @@ function TopStocksContent() {
     <section className="workspace-panel top-stocks-page" aria-label="Top Stocks">
       <header className="panel-header top-stocks-header">
         <Typography component="h1">Top Stocks</Typography>
-        <div className="top-stocks-ticker-strength">
-          <TickerStrengthControls />
-        </div>
         <div className="top-stocks-actions"><div className="top-stocks-controls">
           {loading && <CircularProgress size="0.8rem" />}
           {selectedMode === periodMode && <TextField className="top-stocks-period-count" size="small" type="number" value={draftCount} disabled={loading}
@@ -197,7 +182,6 @@ function TopStocksContent() {
         : <TickerLens
             accent="green"
             universe={{ type: "bounded", symbols: snapshot.symbols }}
-            metricExtensions={tickerStrength.metricExtensions}
           />}
       {editor !== undefined && <ScreenEditor screen={editor} onClose={() => setEditor(undefined)} onSave={saveScreen} />}
       <Dialog open={deleteTarget !== undefined} onClose={() => setDeleteTarget(undefined)}>

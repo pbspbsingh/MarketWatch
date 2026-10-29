@@ -16,7 +16,6 @@ mod study;
 mod theme_audits;
 mod themes;
 mod ticker_collections;
-mod ticker_strength;
 mod tickers;
 mod top_stocks;
 mod trade_logs;
@@ -45,7 +44,6 @@ pub fn router() -> Router<AppState> {
         .merge(live_prices::router())
         .merge(study::router())
         .merge(tickers::router())
-        .merge(ticker_strength::router())
         .merge(ticker_collections::router())
         .merge(themes::router())
         .merge(theme_audits::router())

@@ -1,7 +1,7 @@
 import type { BuiltInTickerSortKey, SortKey, SortSetting, TickerSortSetting } from "./types";
 
 export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
-  { key: "absolute_strength", label: "AS" },
+  { key: "day", label: "1D" },
   { key: "count", label: "CNT" },
   { key: "week", label: "1W" },
   { key: "month", label: "1M" },
@@ -10,7 +10,7 @@ export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
   { key: "year", label: "1Y" },
 ];
 export const tickerSortOptions: ReadonlyArray<{ key: BuiltInTickerSortKey; label: string }> = [
-  { key: "absolute_strength", label: "AS" },
+  { key: "day", label: "1D" },
   { key: "adr_percent", label: "ADR" },
   { key: "dollar_volume", label: "DV" },
   { key: "week", label: "1W" },
@@ -30,11 +30,11 @@ export const chartIntervalKey = "market-watch.chart-interval";
 export const chartBenchmarkKey = "market-watch.chart-benchmark";
 export const chartThemeEtfKey = "market-watch.theme-etf-chart";
 export const defaultSortSetting: SortSetting = {
-  key: "absolute_strength",
+  key: "day",
   direction: "desc",
 };
 export const defaultTickerSortSetting: TickerSortSetting = {
-  key: "absolute_strength",
+  key: "day",
   direction: "desc",
 };
 export const unassignedGroupKey = "unassigned";

@@ -54,7 +54,6 @@ const unassignedGroup: GroupRanking = {
   key: unassignedGroupKey,
   name: "Unassigned",
   performance: null,
-  absolute_strength: null,
 };
 
 interface GroupPanelProps {
@@ -153,7 +152,7 @@ export function GroupPanel({
 
   const activeSortSetting = useMemo(
     () => !countSortAvailable && sortSetting.key === "count"
-      ? ({ key: "absolute_strength", direction: "desc" } as const)
+      ? ({ key: "day", direction: "desc" } as const)
       : sortSetting,
     [countSortAvailable, sortSetting],
   );

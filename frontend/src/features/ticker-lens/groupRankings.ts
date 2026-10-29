@@ -21,7 +21,6 @@ export function fetchGlobalGroupRankings(
         sector_name,
         ticker_count,
         performance: rankings.get(industry_key)?.performance ?? null,
-        absolute_strength: rankings.get(industry_key)?.absolute_strength ?? null,
       }));
     });
   }
@@ -30,19 +29,17 @@ export function fetchGlobalGroupRankings(
     fetchThemeRankings(signal),
     fetchTickerGroupSummary("theme", [unassignedGroupKey], undefined, signal),
   ]).then(([themes, summary]) => [
-    ...themes.map(({ id, name, ticker_count, performance, absolute_strength }) => ({
+    ...themes.map(({ id, name, ticker_count, performance }) => ({
       key: String(id),
       name,
       ticker_count,
       performance,
-      absolute_strength,
     })),
     {
       key: unassignedGroupKey,
       name: "Unassigned",
       ticker_count: summary.selected_groups.find(group => group.key === unassignedGroupKey)?.ticker_count ?? 0,
       performance: null,
-      absolute_strength: null,
     },
   ]);
 }

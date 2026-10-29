@@ -20,7 +20,6 @@ pub struct IndustryRanking {
     pub sector_key: Option<String>,
     pub sector_name: Option<String>,
     pub performance: PerformancePeriods,
-    pub absolute_strength: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -30,7 +29,6 @@ pub struct ThemeRanking {
     pub etf_symbol: TickerSymbol,
     pub ticker_count: i64,
     pub performance: Option<PerformancePeriods>,
-    pub absolute_strength: Option<f64>,
     pub previous_close: Option<f64>,
 }
 
@@ -40,7 +38,6 @@ pub struct SectorRanking {
     pub name: String,
     pub etf_symbol: TickerSymbol,
     pub performance: Option<PerformancePeriods>,
-    pub absolute_strength: Option<f64>,
     pub previous_close: Option<f64>,
 }
 
@@ -49,18 +46,11 @@ pub struct TickerRanking {
     pub symbol: TickerSymbol,
     pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
-    pub absolute_strength: Option<f64>,
     pub adr_percent: Option<f64>,
     pub latest_close: Option<f64>,
     pub average_volume: Option<i64>,
     pub above_200_sma: Option<bool>,
     pub rs_trend: Option<RelativeStrengthTrend>,
-}
-
-impl PerformancePeriods {
-    pub fn absolute_strength(self) -> f64 {
-        0.55 * self.month + 0.45 * self.quarter
-    }
 }
 
 pub fn candle_performance(candles: &[DailyCandle], as_of: NaiveDate) -> PerformancePeriods {
@@ -187,16 +177,5 @@ mod tests {
         assert!((performance.week - 0.111_111_111_111_111_16).abs() < f64::EPSILON);
         assert!((performance.year - 1.0).abs() < f64::EPSILON);
         assert_eq!(performance.month, 1.0);
-    }
-
-    #[test]
-    fn calculates_absolute_strength() {
-        let performance = PerformancePeriods {
-            month: 0.20,
-            quarter: 0.30,
-            ..Default::default()
-        };
-
-        assert!((performance.absolute_strength() - 0.245).abs() < f64::EPSILON);
     }
 }

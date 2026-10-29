@@ -54,7 +54,6 @@ impl IndustryAnalysisService {
                     name: industry.name,
                     sector_key: classification.map(|value| value.sector_key.clone()),
                     sector_name: classification.map(|value| value.sector_name.clone()),
-                    absolute_strength: performance.absolute_strength(),
                     performance,
                 }
             })

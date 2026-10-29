@@ -7,7 +7,6 @@ export interface IndustryRanking {
   sector_key: string | null;
   sector_name: string | null;
   performance: PerformancePeriods;
-  absolute_strength: number;
 }
 
 export interface SectorRanking {
@@ -15,7 +14,6 @@ export interface SectorRanking {
   name: string;
   etf_symbol: string;
   performance: PerformancePeriods | null;
-  absolute_strength: number | null;
   previous_close: number | null;
 }
 

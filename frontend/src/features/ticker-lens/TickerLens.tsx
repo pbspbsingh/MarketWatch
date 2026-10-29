@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
@@ -38,8 +38,7 @@ import type {
   TickerFilterCounts,
   TickerFilters,
   TickerMetric,
-  TickerMetricExtension,
-  TickerUniverseSnapshot,
+  TickerGroupSelection,
   TickerUniverse,
 } from "./types";
 import {
@@ -64,8 +63,7 @@ interface TickerLensProps {
   onBoundedResolution?: (failedSymbols: string[]) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
   metrics?: readonly TickerMetric[];
-  metricExtensions?: readonly TickerMetricExtension[];
-  onTickerUniverseChange?: (snapshot: TickerUniverseSnapshot) => void;
+  onGroupSelectionChange?: (selection: TickerGroupSelection) => void;
   defaultMetricSort?: DefaultMetricSort;
 }
 
@@ -96,19 +94,7 @@ interface SectorRankingsState {
   error?: string;
 }
 
-type AttachedMetricExtension = Pick<
-  TickerMetricExtension,
-  "onScopeChange" | "onActiveChange"
-> & {
-  active: boolean;
-};
-
-type TickerUniverseSymbolsState = {
-  contextKey: string;
-  symbolsKey: string;
-  symbols: string[];
-};
-
+const emptyMetrics: readonly TickerMetric[] = [];
 const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
@@ -120,9 +106,8 @@ export function TickerLens({
   onWatchlistsChange,
   onBoundedResolution,
   accent,
-  metrics = [],
-  metricExtensions = [],
-  onTickerUniverseChange,
+  metrics = emptyMetrics,
+  onGroupSelectionChange,
   defaultMetricSort,
 }: TickerLensProps) {
   const { showWeeklyChartOverlay, setShowWeeklyChartOverlay } = useAppSettings();
@@ -182,11 +167,6 @@ export function TickerLens({
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
   const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
   const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
-  const attachedMetricExtensionsRef = useRef(new Map<string, AttachedMetricExtension>());
-  const latestTickerUniverseRef = useRef<TickerUniverseSnapshot | undefined>(undefined);
-  const [tickerUniverseSymbolsState, setTickerUniverseSymbolsState] =
-    useState<TickerUniverseSymbolsState>({ contextKey: "", symbolsKey: "", symbols: [] });
-  const [activeMetricId, setActiveMetricId] = useState<string>();
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string> | undefined>(() => {
     const keys = initialGroupKeys(searchParams);
     const key = keys.size === 1 ? keys.values().next().value : undefined;
@@ -234,77 +214,13 @@ export function TickerLens({
     : emptySymbols;
   const boundedSymbolsKey = boundedSymbols.join("\0");
   const selectedGroupKey = [...selectedGroupKeys].sort().join("\0");
-  const tickerUniverseContextKey = `${groupsRequestKey}\u0002${selectedGroupKey}\u0002${marketUniverseRevision}`;
-  const receiveTickerUniverse = useCallback((symbols: string[]) => {
-    const symbolsKey = symbols.join("\0");
-    setTickerUniverseSymbolsState((current) =>
-      current.contextKey === tickerUniverseContextKey && current.symbolsKey === symbolsKey
-        ? current
-        : { contextKey: tickerUniverseContextKey, symbolsKey, symbols }
-    );
-  }, [tickerUniverseContextKey]);
-  const tickerUniverseSymbols = tickerUniverseSymbolsState.contextKey === tickerUniverseContextKey
-    ? tickerUniverseSymbolsState.symbols
-    : emptySymbols;
-  const availableMetrics = useMemo(
-    () => validatedMetrics(metrics, metricExtensions),
-    [metricExtensions, metrics],
-  );
+  const availableMetrics = useMemo(() => validatedMetrics(metrics), [metrics]);
   useEffect(() => {
-    const attached = attachedMetricExtensionsRef.current;
-    const next = new Map<string, AttachedMetricExtension>();
-    const currentIds = new Set(metricExtensions.map((extension) => extension.metric.id));
-    attached.forEach((extension, id) => {
-      if (!currentIds.has(id)) {
-        extension.onActiveChange(false);
-        extension.onScopeChange(null);
-      }
-    });
-    metricExtensions.forEach((extension) => {
-      const id = extension.metric.id;
-      const active = id === activeMetricId;
-      const previous = attached.get(id);
-      if (previous === undefined) {
-        if (latestTickerUniverseRef.current !== undefined) {
-          extension.onScopeChange(latestTickerUniverseRef.current);
-        }
-        extension.onActiveChange(active);
-      } else if (previous.active !== active) {
-        extension.onActiveChange(active);
-      }
-      next.set(id, {
-        onScopeChange: extension.onScopeChange,
-        onActiveChange: extension.onActiveChange,
-        active,
-      });
-    });
-    attachedMetricExtensionsRef.current = next;
-  });
-  const reportTickerUniverse = useCallback((symbols: string[]) => {
-    const snapshot: TickerUniverseSnapshot = {
+    onGroupSelectionChange?.({
       mode: groupMode,
       groupKeys: selectedGroupKey === "" ? [] : selectedGroupKey.split("\0"),
-      groups: groups
-        .filter((group) => selectedGroupKeys.has(group.key))
-        .map(({ key, name }) => ({ key, name })),
-      symbols,
-    };
-    latestTickerUniverseRef.current = snapshot;
-    onTickerUniverseChange?.(snapshot);
-    attachedMetricExtensionsRef.current.forEach((extension) => extension.onScopeChange(snapshot));
-  }, [groupMode, groups, onTickerUniverseChange, selectedGroupKey, selectedGroupKeys]);
-  useEffect(() => {
-    reportTickerUniverse(tickerUniverseSymbols);
-  }, [reportTickerUniverse, tickerUniverseSymbols]);
-  useEffect(() => {
-    return () => {
-      attachedMetricExtensionsRef.current.forEach((extension) => {
-        extension.onActiveChange(false);
-        extension.onScopeChange(null);
-      });
-      attachedMetricExtensionsRef.current.clear();
-    };
-  }, []);
+    });
+  }, [groupMode, onGroupSelectionChange, selectedGroupKey]);
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
@@ -386,14 +302,13 @@ export function TickerLens({
                 ? undefined
                 : `${failed_symbols.length} ticker${failed_symbols.length === 1 ? "" : "s"} could not be enriched`,
               boundedSymbolsByGroup: new Map(groups.map((group) => [group.key, group.symbols])),
-              groups: groups.map(({ key, name, sector_key, sector_name, performance, absolute_strength, symbols }) => ({
+              groups: groups.map(({ key, name, sector_key, sector_name, performance, symbols }) => ({
                 key,
                 name,
                 sector_key,
                 sector_name,
                 ticker_count: symbols.length,
                 performance,
-                absolute_strength,
               })),
             } satisfies GroupsState;
           },
@@ -558,8 +473,6 @@ export function TickerLens({
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
         onTickersChange={setSearchTickerSymbols}
-        onTickerUniverseChange={receiveTickerUniverse}
-        onActiveMetricChange={setActiveMetricId}
         onFilterCountsChange={setTickerFilterCounts}
         tickerFilters={hasGroupSelection ? tickerFilters : undefined}
         revealTicker={revealTicker}
@@ -654,19 +567,15 @@ function themeKeysFromSearch(searchParams: URLSearchParams) {
   return keys;
 }
 
-function validatedMetrics(
-  metrics: readonly TickerMetric[],
-  extensions: readonly TickerMetricExtension[],
-) {
-  const result = [...metrics, ...extensions.map((extension) => extension.metric)];
+function validatedMetrics(metrics: readonly TickerMetric[]) {
   const ids = new Set<string>();
-  result.forEach((metric) => {
+  metrics.forEach((metric) => {
     if (ids.has(metric.id)) {
       throw new Error(`Duplicate ticker metric ID "${metric.id}"`);
     }
     ids.add(metric.id);
   });
-  return result;
+  return metrics;
 }
 
 function isTypingTarget(target: EventTarget | null) {

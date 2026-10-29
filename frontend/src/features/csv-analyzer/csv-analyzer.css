@@ -35,11 +35,6 @@
   }
 }
 
-.csv-analyzer-ticker-strength {
-  display: flex;
-  align-items: center;
-}
-
 .csv-analyzer-actions {
   display: flex;
   margin-left: auto;

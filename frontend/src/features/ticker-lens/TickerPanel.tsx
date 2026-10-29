@@ -91,8 +91,6 @@ interface TickerPanelProps {
   providedWatchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onTickersChange?: (symbols: string[]) => void;
-  onTickerUniverseChange?: (symbols: string[]) => void;
-  onActiveMetricChange?: (metricId: string | undefined) => void;
   onFilterCountsChange?: (counts: TickerFilterCounts) => void;
   tickerFilters?: TickerFilters;
   revealTicker?: RevealRequest<string>;
@@ -211,8 +209,6 @@ export function TickerPanel({
   providedWatchlists,
   onWatchlistsChange,
   onTickersChange,
-  onTickerUniverseChange,
-  onActiveMetricChange,
   onFilterCountsChange,
   tickerFilters,
   revealTicker,
@@ -252,9 +248,6 @@ export function TickerPanel({
   if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) {
     setSortSetting(defaultTickerSortSetting);
   }
-  useEffect(() => {
-    onActiveMetricChange?.(activeMetric?.id);
-  }, [activeMetric?.id, onActiveMetricChange]);
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
       mode,
@@ -340,7 +333,6 @@ export function TickerPanel({
             symbol,
             watchlist_ids: memberships.get(symbol) ?? [],
             performance: null,
-            absolute_strength: null,
             adr_percent: null,
             latest_close: null,
             average_volume: null,
@@ -428,12 +420,6 @@ export function TickerPanel({
     tickers.length,
   ]);
 
-  useEffect(() => {
-    if (panelLoading) return;
-    onTickerUniverseChange?.(
-      tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0"),
-    );
-  }, [onTickerUniverseChange, panelLoading, tickerSymbolsKey]);
   const selectedTickerPosition =
     sortedTickers.findIndex((ticker) => ticker.symbol === selectedTicker) + 1;
 
