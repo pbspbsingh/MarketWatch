@@ -65,9 +65,13 @@ export async function clearTickerWatchlists(symbol: string): Promise<void> {
 }
 
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(url, {
     ...init,
-    headers: init.body === undefined ? init.headers : { "Content-Type": "application/json", ...init.headers },
+    headers,
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;

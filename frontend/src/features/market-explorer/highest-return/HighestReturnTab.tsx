@@ -25,6 +25,7 @@ export function HighestReturnTab({ toolbarContainer }: { toolbarContainer: HTMLE
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const groupFilters = useMarketExplorerGroupFilters();
+  // oxlint-disable-next-line react/purity -- Keep the date limit current on each render.
   const today = formatDate(new Date());
   const requestSettings = useMemo<HighestReturnSettings>(() => ({
     ...settings,

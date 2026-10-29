@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
@@ -46,9 +46,11 @@ export const DailyNoteEditor = forwardRef<DailyNoteEditorHandle, {
   const initialValueRef = useRef(value);
   const cursorLineRef = useRef(0);
   const synchronizingRef = useRef(false);
-  onChangeRef.current = onChange;
-  onCursorLineChangeRef.current = onCursorLineChange;
-  onPasteImageRef.current = onPasteImage;
+  useLayoutEffect(() => {
+    onChangeRef.current = onChange;
+    onCursorLineChangeRef.current = onCursorLineChange;
+    onPasteImageRef.current = onPasteImage;
+  }, [onChange, onCursorLineChange, onPasteImage]);
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),

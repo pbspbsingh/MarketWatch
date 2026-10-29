@@ -167,6 +167,9 @@ cargo test
 
 Run the frontend checks:
 
+Type checking uses TypeScript 7. Oxlint and its native TypeScript-aware engine
+provide JavaScript, TypeScript, and React lint checks without ESLint or TypeScript 6.
+
 ```bash
 npm --prefix frontend run check
 npm --prefix frontend run build

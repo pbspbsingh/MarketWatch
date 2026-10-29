@@ -22,6 +22,8 @@ export function DateRangePicker({ start, end, onChange }: {
   const id = useId();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [draft, setDraft] = useState<DateRange>();
+  // oxlint-disable-next-line react/purity -- Keep the calendar year limit current on each render.
+  const currentYear = new Date().getFullYear();
   const twoMonths = useMediaQuery("(min-width: 600px)");
   const open = (element: HTMLElement) => {
     setDraft(start || end ? { from: fromKey(start), to: fromKey(end) } : undefined);
@@ -45,7 +47,7 @@ export function DateRangePicker({ start, end, onChange }: {
       slotProps={{ paper: { id, className: "date-range-popover", role: "dialog", "aria-label": "Choose date range" } }}>
       <p className="date-range-selection" aria-live="polite">{draft ? rangeLabel(draft.from, draft.to) : "Select start and end dates"}</p>
       <DayPicker mode="range" autoFocus numberOfMonths={twoMonths ? 2 : 1} captionLayout="dropdown" navLayout="after"
-        defaultMonth={draft?.from ?? draft?.to} startMonth={new Date(1970, 0)} endMonth={new Date(new Date().getFullYear() + 10, 11)}
+        defaultMonth={draft?.from ?? draft?.to} startMonth={new Date(1970, 0)} endMonth={new Date(currentYear + 10, 11)}
         selected={draft} onSelect={(range, day) => setDraft(draft?.from && !draft.to ? range : { from: day })} />
       <div className="date-range-actions">
         <Button size="small" onClick={() => { onChange("", ""); setAnchor(null); }}>Clear</Button>

@@ -47,9 +47,11 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     const onChartReadyRef = useRef(onChartReady);
     const onChartDestroyRef = useRef(onChartDestroy);
     const attributionUrlRef = useRef(attributionUrl);
-    onChartReadyRef.current = onChartReady;
-    onChartDestroyRef.current = onChartDestroy;
-    attributionUrlRef.current = attributionUrl;
+    useLayoutEffect(() => {
+      onChartReadyRef.current = onChartReady;
+      onChartDestroyRef.current = onChartDestroy;
+      attributionUrlRef.current = attributionUrl;
+    }, [onChartReady, onChartDestroy, attributionUrl]);
 
     useImperativeHandle(ref, () => ({
       getChart: () => chartRef.current,
