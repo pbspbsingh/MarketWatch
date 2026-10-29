@@ -33,7 +33,6 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/n-factor/{symbol}", get(state))
         .route("/n-factor/{symbol}/refresh", post(refresh))
-        .route("/n-factor/jobs/{id}", get(job))
 }
 
 async fn state(
@@ -76,16 +75,4 @@ async fn refresh(
             };
             (status, Json(json!({"error": error.to_string()})))
         })
-}
-
-async fn job(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<NFactorJob>, ApiError> {
-    state.n_factor.job(&id).map(Json).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "This job is no longer available; reopen the saved report"})),
-        )
-    })
 }

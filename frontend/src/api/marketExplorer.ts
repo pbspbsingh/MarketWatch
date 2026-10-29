@@ -1,6 +1,6 @@
-export type CandleFetchPhase = "idle" | "running" | "paused" | "completed";
+type CandleFetchPhase = "idle" | "running" | "paused" | "completed";
 
-export interface CandleFetchMessage {
+interface CandleFetchMessage {
   symbol: string;
   error: string;
 }
@@ -25,7 +25,7 @@ export type HighestVolumeScanRange = "month1" | "months3" | "months6";
 export type HighestVolumeLookback = "months3" | "months6" | "year1" | "years2";
 export type HighestVolumeLimit = 25 | 50 | 100 | 250;
 
-export interface HighestVolumeEvent {
+interface HighestVolumeEvent {
   symbol: string;
   event_date: string;
   volume: number;
@@ -40,7 +40,7 @@ export interface HighestVolumeResult {
   events: HighestVolumeEvent[];
 }
 
-export interface MarketExplorerGroupSelection {
+interface MarketExplorerGroupSelection {
   industryKeys?: string[];
   themeIds?: number[];
 }
@@ -54,7 +54,7 @@ export interface HighestVolumeSettings extends MarketExplorerGroupSelection {
   minimumDollarVolume: number;
 }
 
-export interface HighestReturnEvent {
+interface HighestReturnEvent {
   symbol: string;
   start_date: string;
   end_date: string;
@@ -76,7 +76,7 @@ export interface HighestReturnSettings extends MarketExplorerGroupSelection {
   minimumDollarVolume: number;
 }
 
-export interface HighRsEvent {
+interface HighRsEvent {
   symbol: string;
   as_of: string;
   latest_rs: number;
@@ -101,7 +101,7 @@ export interface HighRsSettings extends MarketExplorerGroupSelection {
   minimumDollarVolume: number;
 }
 
-export interface PowerPlayEvent {
+interface PowerPlayEvent {
   symbol: string;
   start_date: string;
   end_date: string;

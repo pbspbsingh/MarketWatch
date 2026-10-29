@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-export function tableWindow(offsets: number[], scrollTop: number, height: number, overscan = 8) {
+function tableWindow(offsets: number[], scrollTop: number, height: number, overscan = 8) {
   const count = offsets.length - 1;
   const find = (position: number) => {
     let low = 0, high = count;

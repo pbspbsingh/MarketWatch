@@ -20,9 +20,9 @@ const settingsKey = "market-watch.settings.v1";
 const legacyChartEngineKey = "market-watch.chart-engine";
 const legacyStudyLogarithmicScaleKey = "market-watch.study-logarithmic-scale";
 
-export type ChartEngine = "tradingview" | "lightweight";
+type ChartEngine = "tradingview" | "lightweight";
 export type CandlePalette = "solid" | "hollow" | "monochrome";
-export type RelativeStrengthDisplay = "top-line" | "bottom-line";
+type RelativeStrengthDisplay = "top-line" | "bottom-line";
 export type RelativeStrengthLineStyle =
   | "solid"
   | "dashed"

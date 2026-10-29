@@ -4,11 +4,11 @@ import type { CandlePalette } from "../../app/AppSettings";
 import type { AppThemeMode } from "../../app/theme";
 import { visualizationColors } from "../../components/lightweight-chart/chartOptions";
 
-export const positiveRsColor = visualizationColors.relativeStrengthPositive;
-export const negativeRsColor = visualizationColors.relativeStrengthNegative;
-export const neutralRsColor = visualizationColors.relativeStrengthNeutral;
-export const rsSwingHighColor = visualizationColors.relativeStrengthHigh;
-export const rsSwingLowColor = visualizationColors.relativeStrengthLow;
+const positiveRsColor = visualizationColors.relativeStrengthPositive;
+const negativeRsColor = visualizationColors.relativeStrengthNegative;
+const neutralRsColor = visualizationColors.relativeStrengthNeutral;
+const rsSwingHighColor = visualizationColors.relativeStrengthHigh;
+const rsSwingLowColor = visualizationColors.relativeStrengthLow;
 
 function monochromeRsColor(theme: AppThemeMode) {
   return theme === "dark" ? "#a0a0a0" : "#505050";
@@ -19,7 +19,7 @@ export function rsSwingColor(kind: "high" | "low", palette: CandlePalette, theme
   return kind === "high" ? rsSwingHighColor : rsSwingLowColor;
 }
 
-export function relativeRsColor(value: number, palette: CandlePalette = "solid", theme: AppThemeMode = "dark") {
+function relativeRsColor(value: number, palette: CandlePalette = "solid", theme: AppThemeMode = "dark") {
   if (palette === "monochrome") return monochromeRsColor(theme);
   if (value > 0.5) return positiveRsColor;
   if (value < -0.5) return negativeRsColor;

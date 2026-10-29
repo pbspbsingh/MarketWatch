@@ -12,7 +12,7 @@ import { formatVolume } from "./utils";
 const filterValuesStorageKey = "market-watch.ticker-filter-values";
 const filterStateStorageKey = "market-watch.ticker-filter-state";
 
-export const defaultTickerFilters: TickerFilters = {
+const defaultTickerFilters: TickerFilters = {
   adr: {
     enabled: false,
     min: 0,

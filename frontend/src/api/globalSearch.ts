@@ -1,4 +1,4 @@
-export type GlobalSearchResultType = "industry" | "theme" | "ticker";
+type GlobalSearchResultType = "industry" | "theme" | "ticker";
 
 export interface GlobalSearchResult {
   type: GlobalSearchResultType;

@@ -6,7 +6,7 @@ export interface Theme {
   stock_count: number;
 }
 
-export interface ThemeAssignment {
+interface ThemeAssignment {
   theme_id: number;
   theme_name: string;
   source: "manual" | "manual_ai" | "automatic_ai";
@@ -35,7 +35,7 @@ export interface ThemeSuggestion {
   reasoning?: string | null;
 }
 
-export type ThemeSuggestionStreamEvent =
+type ThemeSuggestionStreamEvent =
   | { type: "reasoning"; value: string }
   | { type: "response"; value: string }
   | { type: "complete"; value: ThemeSuggestion }
@@ -68,17 +68,17 @@ export interface ThemeAiJob {
   updated_at: string;
 }
 
-export interface ThemeSuggestionError {
+interface ThemeSuggestionError {
   symbol: string | null;
   error: string;
 }
 
-export interface ThemeAuditTheme {
+interface ThemeAuditTheme {
   id: number;
   name: string;
 }
 
-export interface ThemeAudit {
+interface ThemeAudit {
   symbol: string;
   current_themes: ThemeAuditTheme[];
   suggested_themes: ThemeAuditTheme[];
@@ -100,14 +100,14 @@ export type ThemeAuditAcceptance =
       current_input_fingerprint: string;
     };
 
-export interface ThemeAuditBatchProgress {
+interface ThemeAuditBatchProgress {
   number: number;
   symbols: string[];
   reasoning: string;
   response: string;
 }
 
-export interface ThemeAuditProgress {
+interface ThemeAuditProgress {
   status: "running" | "completed" | "incomplete";
   include_manual: boolean;
   model: string;
@@ -206,12 +206,6 @@ export const parseThemeSuggestions = (response: string) =>
   request<ThemeSuggestion[]>("/api/theme-ai/parse", {
     method: "POST",
     ...json({ response }),
-  });
-
-export const suggestThemeAssignments = (symbols: string[]) =>
-  request<ThemeSuggestion[]>("/api/theme-ai/suggest", {
-    method: "POST",
-    ...json({ symbols }),
   });
 
 export async function streamThemeSuggestion(

@@ -278,7 +278,9 @@ mod tests {
         let config = Config::load("config.toml")?;
         let ai = config.ai.as_ref().context("AI must be configured")?;
 
-        let content = AiClient::new(ai).complete("Reply with exactly: OK").await?;
+        let content = AiClient::new(ai)
+            .complete_with_updates("Reply with exactly: OK", |_| {})
+            .await?;
 
         assert_eq!(content.trim(), "OK");
         Ok(())
@@ -299,7 +301,9 @@ mod tests {
             .await?
             .with_context(|| format!("theme AI job {job_id} does not exist"))?;
 
-        let content = AiClient::new(ai).complete(&job.prompt).await?;
+        let content = AiClient::new(ai)
+            .complete_with_updates(&job.prompt, |_| {})
+            .await?;
         let suggestions = serde_json::from_str::<Vec<LiveThemeSuggestion>>(strip_fence(&content))
             .context("OpenAI-compatible response must be a JSON suggestion array")?;
         let expected = job

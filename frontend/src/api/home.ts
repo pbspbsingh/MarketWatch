@@ -1,4 +1,4 @@
-export interface HomeCharts {
+interface HomeCharts {
   tickers: [string, string, string, string];
 }
 

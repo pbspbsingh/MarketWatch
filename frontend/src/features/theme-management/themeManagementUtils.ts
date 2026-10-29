@@ -1,6 +1,6 @@
 import { addThemeTicker, type ThemeAiJob, type ThemeTicker, type ThemeTickerIndustry } from "../../api/themes";
 
-export const unclassifiedIndustryKey = "__unclassified__";
+const unclassifiedIndustryKey = "__unclassified__";
 
 export type IndustryFilterOption = ThemeTickerIndustry;
 
@@ -20,7 +20,7 @@ export function industryFilterOptions(
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function matchesIndustryFilter(ticker: ThemeTicker, selectedIndustryKeys: Set<string>) {
+function matchesIndustryFilter(ticker: ThemeTicker, selectedIndustryKeys: Set<string>) {
   return ticker.industries.length === 0
     ? selectedIndustryKeys.has(unclassifiedIndustryKey)
     : ticker.industries.some((industry) => selectedIndustryKeys.has(industry.key));
@@ -28,7 +28,7 @@ export function matchesIndustryFilter(ticker: ThemeTicker, selectedIndustryKeys:
 
 export type MatchRange = [number, number];
 
-export interface TickerSearchMatch {
+interface TickerSearchMatch {
   symbolRanges: MatchRange[];
   nameRanges: MatchRange[];
   score: number;

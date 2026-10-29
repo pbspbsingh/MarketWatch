@@ -33,7 +33,7 @@ export interface StudyResult {
   }>;
 }
 
-export interface StudyRange {
+interface StudyRange {
   start: string;
   end: string;
 }

@@ -23,11 +23,11 @@ export interface TickerGroupSummary {
   related_groups: TickerGroupSummaryItem[];
 }
 
-export type TickerGroupSelection =
+type TickerGroupSelection =
   | { group_type: "industry"; keys: string[] }
   | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
 
-export type IndustryMembershipRefreshResult = {
+type IndustryMembershipRefreshResult = {
   industry_count: number;
   ticker_count: number;
   added_count: number;

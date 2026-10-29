@@ -16,12 +16,12 @@ export interface DailyNoteDocument {
   html: string;
 }
 
-export interface RenderedMarkdown {
+interface RenderedMarkdown {
   html: string;
   match_count: number;
 }
 
-export interface DailyNoteImageUpload {
+interface DailyNoteImageUpload {
   id: number;
   markdown: string;
 }

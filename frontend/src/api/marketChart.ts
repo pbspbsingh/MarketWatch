@@ -1,5 +1,5 @@
 export type MarketChartInterval = "daily" | "weekly";
-export type VolumeEventKind = "history_high" | "year_high";
+type VolumeEventKind = "history_high" | "year_high";
 
 export const maximumMarketChartHistoryDays = 10_000;
 
@@ -13,7 +13,7 @@ export interface MarketChartCandle {
   volume_event?: VolumeEventKind;
 }
 
-export interface MarketChartPoint {
+interface MarketChartPoint {
   date: string;
   value: number;
 }
@@ -23,18 +23,18 @@ export interface MarketChartSeries {
   points: MarketChartPoint[];
 }
 
-export interface MarketChartRelativeStrengthPoint extends MarketChartPoint {
+interface MarketChartRelativeStrengthPoint extends MarketChartPoint {
   ticker_return_percent: number | null;
   comparison_return_percent: number | null;
   relative_return_percent: number | null;
 }
 
-export interface MarketChartRelativeStrengthCalculation {
+interface MarketChartRelativeStrengthCalculation {
   moving_average_period: number;
   points: MarketChartRelativeStrengthPoint[];
 }
 
-export interface MarketChartRelativeStrengthSwing {
+interface MarketChartRelativeStrengthSwing {
   date: string;
   value: number;
   kind: "high" | "low";

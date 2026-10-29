@@ -15,7 +15,7 @@ export interface NewsCoverage {
   stop_reason: "six_months" | "article_limit" | "source_exhausted" | "source_limited" | "source_not_found";
 }
 
-export interface NFactorFinding {
+interface NFactorFinding {
   title: string;
   category: "product" | "management" | "contract" | "acquisition" | "expansion" | "industry";
   what_is_new: string;
@@ -24,7 +24,7 @@ export interface NFactorFinding {
   evidence_ids: number[];
 }
 
-export interface NFactorReport {
+interface NFactorReport {
   symbol: string;
   source: NewsSource;
   generated_at: string;

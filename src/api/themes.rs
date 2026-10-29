@@ -61,7 +61,6 @@ pub fn router() -> Router<AppState> {
         .route("/theme-ai/capability", get(ai_capability))
         .route("/theme-ai/prompt", post(prompt))
         .route("/theme-ai/parse", post(parse))
-        .route("/theme-ai/suggest", post(suggest))
         .route("/theme-ai/suggest-stream", post(suggest_stream))
         .route("/theme-ai/jobs", get(ai_jobs).post(create_ai_jobs))
         .route("/theme-ai/jobs/applied", delete(delete_applied_ai_jobs))
@@ -218,18 +217,6 @@ async fn parse(
     state
         .themes
         .parse_suggestions(&input.response)
-        .await
-        .map(Json)
-        .map_err(api_error)
-}
-
-async fn suggest(
-    State(state): State<AppState>,
-    Json(input): Json<SymbolsInput>,
-) -> ApiResult<Vec<ThemeSuggestion>> {
-    state
-        .themes
-        .suggest(&input.symbols)
         .await
         .map(Json)
         .map_err(api_error)

@@ -40,7 +40,7 @@ export function resolveStatisticsDrill(points: TradePoint[], drill: StatisticsDr
   }) };
 }
 
-export function closedTradePoints(trades: TradeLog[], timeZone: string): TradePoint[] {
+function closedTradePoints(trades: TradeLog[], timeZone: string): TradePoint[] {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
   return trades.filter(trade => trade.summary.status === "closed" && trade.summary.closed_at !== null).map(trade => ({
     trade, pnl: Number(trade.summary.realized_pnl), pnlCash: trade.summary.realized_pnl,
@@ -71,7 +71,7 @@ export function statisticsPopulation(trades: TradeLog[], timeZone: string, inclu
   return { points, unavailable };
 }
 
-export function tradeTagIds(trade: TradeLog, scope: TagScope): Set<number> {
+function tradeTagIds(trade: TradeLog, scope: TagScope): Set<number> {
   return new Set([
     ...(!scope.length || scope.includes("trade") ? trade.tag_ids : []),
     ...(!scope.length || scope.includes("leg") ? trade.executions.flatMap(leg => leg.tag_ids) : []),
@@ -137,7 +137,7 @@ export function summarizePoints(points: TradePoint[]) {
   };
 }
 
-export const pointValue = (point: TradePoint, metric: ReturnMetric): number | null => metric === "return" ? point.returnPercent : point.pnl;
+const pointValue = (point: TradePoint, metric: ReturnMetric): number | null => metric === "return" ? point.returnPercent : point.pnl;
 
 /** The baseline defines shared buckets, so tag comparisons never change their meaning. */
 export function histogramEdges(points: TradePoint[], metric: ReturnMetric, targetBins: number): number[] {

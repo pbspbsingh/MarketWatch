@@ -145,7 +145,7 @@ export function candleSeriesOptions(palette: CandlePalette, mode: AppThemeMode) 
   };
 }
 
-export const volumePriceScaleId = "volume";
+const volumePriceScaleId = "volume";
 
 export const volumeSeriesOptions = {
   priceFormat: { type: "volume" as const },

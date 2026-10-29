@@ -11,7 +11,7 @@ import type { GroupMode } from "../ticker-lens/types";
 const startDateStorageKey = "market-watch.ticker-strength-start-date";
 const benchmarkStorageKey = "market-watch.ticker-strength-benchmark";
 
-export type TickerStrengthUniverse = {
+type TickerStrengthUniverse = {
   symbols: string[];
   benchmarkContext?: {
     mode: GroupMode;

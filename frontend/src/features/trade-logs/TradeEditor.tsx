@@ -103,6 +103,6 @@ export function TradeEditor({ draft, saved, tags, dirty, busy, onChange, onSave,
   </article>;
 }
 
-export function Metric({ label, value, className = "" }: { label: string; value: string | number; className?: string }) {
+function Metric({ label, value, className = "" }: { label: string; value: string | number; className?: string }) {
   return <div className="tl-metric"><span>{label}</span><strong className={className}>{value}</strong></div>;
 }

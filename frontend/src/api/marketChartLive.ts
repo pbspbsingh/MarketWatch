@@ -8,7 +8,7 @@ import {
 } from "./marketChart";
 import { isVolumeRunRateState, type VolumeRunRateState } from "./volumeRunRate";
 
-export interface MarketChartLiveRequest {
+interface MarketChartLiveRequest {
   volume_run_rate?: boolean;
   chart_id: string;
   symbol: string;

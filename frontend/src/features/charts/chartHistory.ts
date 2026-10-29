@@ -6,7 +6,7 @@ import {
 
 const millisecondsPerDay = 86_400_000;
 
-export interface MarketChartHistoryRange {
+interface MarketChartHistoryRange {
   start: string;
   end: string;
 }

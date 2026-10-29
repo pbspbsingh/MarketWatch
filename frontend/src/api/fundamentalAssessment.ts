@@ -1,6 +1,6 @@
 import type { Fundamentals } from "./details";
 
-export interface AssessmentRow {
+interface AssessmentRow {
   id: string;
   label: string;
   score: number | null;
@@ -15,7 +15,7 @@ export interface AssessmentScores {
   provisional: boolean;
 }
 
-export interface FundamentalAssessment {
+interface FundamentalAssessment {
   symbol: string;
   generated_at: string;
   last_checked_at: string | null;
@@ -44,7 +44,7 @@ export interface AssessmentJob {
   error: string | null;
 }
 
-export interface AssessmentContext {
+interface AssessmentContext {
   company_name: string | null;
   company_description: string | null;
   industries: string[];

@@ -1,4 +1,4 @@
-export interface FundamentalPeriod {
+interface FundamentalPeriod {
   fiscal_period: string;
   earnings_release_date: string | null;
   earnings_per_share: number | null;
@@ -29,7 +29,7 @@ export interface FundamentalForecast {
   revenue: number | null;
 }
 
-export interface FundamentalGrowthPoint {
+interface FundamentalGrowthPoint {
   period: string;
   value: number | null;
   growth: number | null;
@@ -41,7 +41,7 @@ export interface FundamentalGrowthSeries {
   forecasts: FundamentalGrowthPoint[];
 }
 
-export interface FundamentalGrowthMetric {
+interface FundamentalGrowthMetric {
   qoq: FundamentalGrowthSeries;
   yoy: FundamentalGrowthSeries;
   annual: FundamentalGrowthSeries;

@@ -240,30 +240,6 @@ impl ThemeService {
         self.validate_raw_suggestions(suggestions).await
     }
 
-    pub async fn suggest(
-        &self,
-        symbols: &[TickerSymbol],
-    ) -> Result<Vec<ThemeSuggestion>, ThemeServiceError> {
-        let ai = self.ai.as_ref().ok_or_else(|| {
-            ThemeServiceError::Validation("AI theme suggestion is disabled".into())
-        })?;
-        let _user_job = ai.user_job();
-        let themes = self.themes().await?;
-        let tickers = self.selected_tickers(symbols).await?;
-        let prompt = build_prompt(&themes, &tickers);
-        let response = ai.complete(&prompt).await?;
-        let suggestions: Vec<RawThemeSuggestion> =
-            serde_json::from_str(strip_code_fence(&response))
-                .map_err(ThemeServiceError::InvalidAiResponse)?;
-        let symbols = tickers
-            .iter()
-            .map(|ticker| ticker.symbol.clone())
-            .collect::<Vec<_>>();
-        let suggestions = typed_suggestions(suggestions)?;
-        self.validate_automatic_suggestions(suggestions, &symbols)
-            .await
-    }
-
     pub async fn suggest_stream(
         self: &Arc<Self>,
         symbol: TickerSymbol,

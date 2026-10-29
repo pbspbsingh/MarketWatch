@@ -2,9 +2,9 @@ import { useCallback, useMemo } from "react";
 import type { TickerMetric, TickerMetricExtension } from "../ticker-lens/types";
 import { useTickerStrength } from "./TickerStrengthContext";
 
-export const tickerStrengthMetricId = "ticker-strength";
+const tickerStrengthMetricId = "ticker-strength";
 
-export function useTickerStrengthMetric() {
+function useTickerStrengthMetric() {
   const tickerStrength = useTickerStrength();
   return useMemo<TickerMetric>(() => {
     const scores = new Map(tickerStrength.scores.map((score) => [score.symbol, score.score]));

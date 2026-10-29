@@ -213,7 +213,7 @@ impl NFactorService {
         self.default_source
     }
 
-    pub fn job(&self, id: &str) -> Option<NFactorJob> {
+    fn job(&self, id: &str) -> Option<NFactorJob> {
         self.jobs
             .lock()
             .expect("N-Factor registry lock")

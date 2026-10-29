@@ -1,14 +1,13 @@
 import { createTheme } from "@mui/material/styles";
 
 export type AppThemeMode = "dark" | "light";
-export type FeatureAccent =
+type FeatureAccent =
   | "purple"
   | "yellow"
   | "green"
   | "coral"
   | "magenta"
   | "amber"
-  | "lime"
   | "blue"
   | "indigo";
 
@@ -66,7 +65,6 @@ export const featureAccents: Record<AppThemeMode, Record<FeatureAccent, string>>
     coral: "#fb7185",
     magenta: "#e879f9",
     amber: "#f59e0b",
-    lime: "#84cc16",
     blue: "#58a6ff",
     indigo: "#818cf8",
   },
@@ -77,7 +75,6 @@ export const featureAccents: Record<AppThemeMode, Record<FeatureAccent, string>>
     coral: "#c2415a",
     magenta: "#9836a3",
     amber: "#9a5b00",
-    lime: "#527d0b",
     blue: "#1769aa",
     indigo: "#4338ca",
   },

@@ -22,7 +22,7 @@ export interface FundPosition {
   filing_url: string;
 }
 
-export interface OwnershipQuarter {
+interface OwnershipQuarter {
   label: string;
   end_date: string;
   owners: number;

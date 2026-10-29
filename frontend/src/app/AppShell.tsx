@@ -3,9 +3,6 @@ import CandlestickChartIcon from "@mui/icons-material/CandlestickChart";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import MenuIcon from "@mui/icons-material/Menu";
-import PushPinIcon from "@mui/icons-material/PushPin";
-import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import NoteAltOutlinedIcon from "@mui/icons-material/NoteAltOutlined";
 import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
@@ -13,22 +10,17 @@ import TableViewIcon from "@mui/icons-material/TableView";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TuneIcon from "@mui/icons-material/Tune";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
 import {
-  Drawer,
   IconButton,
   List,
   ListItemButton,
   ListItemIcon,
-  ListItemText,
   Tooltip,
-  Typography,
 } from "@mui/material";
 import { NavLink, Outlet } from "react-router-dom";
 import { SettingsDrawer } from "./SettingsDrawer";
 
-const homeDestination = ["Home", "/", HomeOutlinedIcon, "blue"] as const;
 const destinations = [
   ["Market Watch", "/market-watch", CandlestickChartIcon, "purple"],
   ["Theme Tracker", "/theme-tracker", FormatListNumberedIcon, "amber"],
@@ -43,26 +35,18 @@ const destinations = [
 ] as const;
 
 const triggerInset = 4;
-const navigationTriggerPositionKey = "navigation-trigger-y";
 const settingsTriggerPositionKey = "settings-trigger-y";
-const navigationModeKey = "navigation-mode";
 
-type NavigationMode = "tray" | "rail";
-
-function readNavigationMode(): NavigationMode {
-  return localStorage.getItem(navigationModeKey) === "tray" ? "tray" : "rail";
-}
-
-function readTriggerPosition(key: string) {
-  const storedValue = localStorage.getItem(key);
+function readSettingsTriggerPosition() {
+  const storedValue = localStorage.getItem(settingsTriggerPositionKey);
   if (storedValue === null) return triggerInset;
 
   const storedPosition = Number(storedValue);
   return Number.isFinite(storedPosition) ? storedPosition : triggerInset;
 }
 
-function useVerticalTrigger(positionKey: string) {
-  const [position, setPosition] = useState(() => readTriggerPosition(positionKey));
+function useSettingsTrigger() {
+  const [position, setPosition] = useState(readSettingsTriggerPosition);
   const ref = useRef<HTMLButtonElement>(null);
   const drag = useRef({
     pointerId: 0,
@@ -119,7 +103,7 @@ function useVerticalTrigger(positionKey: string) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    if (state.moved) localStorage.setItem(positionKey, String(state.currentPosition));
+    if (state.moved) localStorage.setItem(settingsTriggerPositionKey, String(state.currentPosition));
   };
 
   const consumeDrag = () => {
@@ -139,17 +123,7 @@ function useVerticalTrigger(positionKey: string) {
 }
 
 export function AppShell() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [navigationMode, setNavigationMode] = useState<NavigationMode>(readNavigationMode);
-  const {
-    ref: navigationTriggerRef,
-    position: navigationTriggerPosition,
-    consumeDrag: consumeNavigationDrag,
-    handlePointerDown: handleNavigationPointerDown,
-    handlePointerMove: handleNavigationPointerMove,
-    handlePointerUp: handleNavigationPointerUp,
-  } = useVerticalTrigger(navigationTriggerPositionKey);
   const {
     ref: settingsTriggerRef,
     position: settingsTriggerPosition,
@@ -157,84 +131,22 @@ export function AppShell() {
     handlePointerDown: handleSettingsPointerDown,
     handlePointerMove: handleSettingsPointerMove,
     handlePointerUp: handleSettingsPointerUp,
-  } = useVerticalTrigger(settingsTriggerPositionKey);
-
-  const handleTriggerClick = () => {
-    if (consumeNavigationDrag()) return;
-    setDrawerOpen(true);
-  };
-
-  const selectNavigationMode = (mode: NavigationMode) => {
-    localStorage.setItem(navigationModeKey, mode);
-    setNavigationMode(mode);
-    setDrawerOpen(false);
-  };
+  } = useSettingsTrigger();
 
   return (
     <div className="app-shell">
-      {navigationMode === "tray" ? (
-        <>
-          <Tooltip title="Open navigation">
-            <IconButton
-              ref={navigationTriggerRef}
-              className="navigation-trigger"
-              size="small"
-              aria-label="Open navigation"
-              style={{ top: navigationTriggerPosition }}
-              onClick={handleTriggerClick}
-              onPointerDown={handleNavigationPointerDown}
-              onPointerMove={handleNavigationPointerMove}
-              onPointerUp={handleNavigationPointerUp}
-              onPointerCancel={handleNavigationPointerUp}
-            >
-              <MenuIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
-          <Drawer
-            open={drawerOpen}
-            onClose={() => setDrawerOpen(false)}
-            slotProps={{ paper: { className: "navigation-drawer" } }}
-          >
-            <div className="navigation-drawer-header">
-              <Typography variant="subtitle2">Navigation</Typography>
-              <Tooltip title="Keep navigation visible">
-                <IconButton
-                  size="small"
-                  aria-label="Keep navigation visible"
-                  onClick={() => selectNavigationMode("rail")}
-                >
-                  <PushPinOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </div>
-            <NavigationItems onNavigate={() => setDrawerOpen(false)} />
-          </Drawer>
-        </>
-      ) : (
-        <aside className="navigation-rail">
-          <Tooltip title="Market Watch" placement="right">
-            <NavLink className="navigation-rail-brand" to="/" aria-label="Home">
-              <img
-                className={import.meta.env.DEV ? "development-logo" : undefined}
-                src="/favicon.svg"
-                alt="Market Watch"
-              />
-            </NavLink>
-          </Tooltip>
-          <NavigationItems compact />
-          <Tooltip title="Use sliding navigation" placement="right">
-            <IconButton
-              className="navigation-mode-button"
-              size="small"
-              aria-label="Use sliding navigation"
-              onClick={() => selectNavigationMode("tray")}
-            >
-              <PushPinIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </aside>
-      )}
+      <aside className="navigation-rail">
+        <Tooltip title="Market Watch" placement="right">
+          <NavLink className="navigation-rail-brand" to="/" aria-label="Home">
+            <img
+              className={import.meta.env.DEV ? "development-logo" : undefined}
+              src="/favicon.svg"
+              alt="Market Watch"
+            />
+          </NavLink>
+        </Tooltip>
+        <NavigationItems />
+      </aside>
 
       <main className="workspace">
         <Outlet />
@@ -263,39 +175,18 @@ export function AppShell() {
   );
 }
 
-function NavigationItems({
-  compact = false,
-  onNavigate,
-}: {
-  compact?: boolean;
-  onNavigate?: () => void;
-}) {
+function NavigationItems() {
   return (
     <List dense disablePadding component="nav" aria-label="Primary navigation">
-      {(compact ? destinations : [homeDestination, ...destinations]).map(
-        ([label, path, DestinationIcon, accent]) => {
-        const item = (
-          <ListItemButton
-            component={NavLink}
-            key={path}
-            to={path}
-            end={path === "/"}
-            aria-label={compact ? label : undefined}
-            onClick={onNavigate}
-          >
+      {destinations.map(([label, path, DestinationIcon, accent]) => (
+        <Tooltip key={path} title={label} placement="right">
+          <ListItemButton component={NavLink} to={path} aria-label={label}>
             <ListItemIcon className={`navigation-icon-${accent}`}>
               <DestinationIcon fontSize="small" />
             </ListItemIcon>
-            {!compact && <ListItemText primary={label} />}
           </ListItemButton>
-        );
-        return compact ? (
-          <Tooltip key={path} title={label} placement="right">
-            {item}
-          </Tooltip>
-        ) : item;
-        },
-      )}
+        </Tooltip>
+      ))}
     </List>
   );
 }

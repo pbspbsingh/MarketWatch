@@ -1,8 +1,4 @@
 /** Data-encoding colors that intentionally sit outside the application UI palette. */
-export function categoricalColor(id: number) {
-  return `hsl(${(id * 137.508) % 360} 72% 60%)`;
-}
-
 type RgbColor = readonly [red: number, green: number, blue: number];
 
 export const tickerMetricScale = {

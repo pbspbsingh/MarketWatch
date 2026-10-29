@@ -145,7 +145,7 @@ impl TestAiServer {
         self.state.release.notify_one();
     }
     pub async fn priority(&self) -> Result<String, AiError> {
-        self.ai.complete(SHORT_PROMPT).await
+        self.ai.complete_with_updates(SHORT_PROMPT, |_| {}).await
     }
     pub fn cancellations(&self) -> usize {
         self.state.cancelled.load(Ordering::SeqCst)
@@ -311,7 +311,7 @@ async fn concurrent_user_arrivals_preempt_background_once_without_leaking_slots(
             let barrier = barrier.clone();
             users.spawn(async move {
                 barrier.wait().await;
-                ai.complete(SHORT_PROMPT).await
+                ai.complete_with_updates(SHORT_PROMPT, |_| {}).await
             });
         }
         barrier.wait().await;

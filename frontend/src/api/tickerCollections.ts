@@ -1,4 +1,4 @@
-export interface TickerCollectionFile {
+interface TickerCollectionFile {
   name: string;
   row_count: number;
   extracted_count: number;
@@ -13,7 +13,7 @@ export interface TickerCollection {
   created_at: string;
 }
 
-export interface BoundedTickerGroup {
+interface BoundedTickerGroup {
   key: string;
   name: string;
   sector_key: string | null;
@@ -30,7 +30,7 @@ export interface BoundedTickerGroup {
   symbols: string[];
 }
 
-export interface BoundedTickerGroups {
+interface BoundedTickerGroups {
   symbols: string[];
   groups: BoundedTickerGroup[];
   failed_symbols: string[];

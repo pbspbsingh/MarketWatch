@@ -6,12 +6,12 @@ export interface Watchlist {
   ticker_count: number;
 }
 
-export interface WatchlistInput {
+interface WatchlistInput {
   name: string;
   icon_key: string;
 }
 
-export interface TickerWatchlists {
+interface TickerWatchlists {
   symbol: string;
   watchlist_ids: number[];
 }

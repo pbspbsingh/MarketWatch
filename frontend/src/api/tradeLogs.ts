@@ -1,4 +1,4 @@
-export type TradeLogSide = "buy" | "sell";
+type TradeLogSide = "buy" | "sell";
 export type TradeLogDirection = "long" | "short";
 export type TradeLogAction = "Open" | "Add" | "Reduce" | "Close";
 export interface TradeLogExecutionInput {
@@ -56,7 +56,7 @@ export interface TradeLogTag {
   trade_count: number;
   execution_count: number;
 }
-export interface TradeLogStatistics {
+interface TradeLogStatistics {
   closed_trades: number;
   winners: number;
   losers: number;
@@ -101,7 +101,7 @@ export interface TradeLogHourlyChart {
   candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
   history_limited: boolean;
 }
-export class TradeLogRequestError extends Error {
+class TradeLogRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

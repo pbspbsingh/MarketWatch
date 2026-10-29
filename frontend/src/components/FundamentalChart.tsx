@@ -19,7 +19,7 @@ import { ChartHost } from "./lightweight-chart/ChartHost";
 const chartTimeOrigin = Date.UTC(2000, 0, 1) / 1000;
 const chartTimeStep = 24 * 60 * 60;
 
-export interface FundamentalChartSeries {
+interface FundamentalChartSeries {
   kind: "line" | "histogram";
   label: string;
   color: string;
@@ -29,7 +29,7 @@ export interface FundamentalChartSeries {
   width?: 1 | 2 | 3 | 4;
 }
 
-export interface FundamentalTooltipRow {
+interface FundamentalTooltipRow {
   lines: Array<{ label: string; value: string; color: string }>;
   detail?: string;
 }

@@ -137,10 +137,6 @@ impl AiClient {
         self.max_concurrent_requests
     }
 
-    pub async fn complete(&self, prompt: &str) -> Result<String, AiError> {
-        self.complete_with_updates(prompt, |_| {}).await
-    }
-
     pub(crate) fn user_job(&self) -> UserAiJob {
         self.activity.user_job()
     }

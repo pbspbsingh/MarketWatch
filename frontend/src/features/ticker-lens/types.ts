@@ -1,11 +1,11 @@
 import type { PerformancePeriods } from "../../api/industries";
 
-export type GroupSortKey = "count";
+type GroupSortKey = "count";
 export type SortKey = GroupSortKey | "absolute_strength" | keyof PerformancePeriods;
 export type BuiltInTickerSortKey = Exclude<SortKey, GroupSortKey> | "adr_percent" | "dollar_volume";
 export type MetricSortKey = `metric:${string}`;
 export type TickerSortKey = BuiltInTickerSortKey | MetricSortKey;
-export type SortDirection = "asc" | "desc";
+type SortDirection = "asc" | "desc";
 export type SortSetting = { key: SortKey; direction: SortDirection };
 export type TickerSortSetting = { key: TickerSortKey; direction: SortDirection };
 export type GroupMode = "industry" | "theme";

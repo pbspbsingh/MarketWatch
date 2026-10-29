@@ -3,13 +3,13 @@ import { fetchIndustries } from "../../../api/industries";
 import { fetchThemes } from "../../../api/themes";
 import { clearCommonFilter, readCommonFilter, writeCommonFilter } from "./commonFilterStorage";
 
-export type MarketExplorerFilterOption<Value extends string | number> = {
+type MarketExplorerFilterOption<Value extends string | number> = {
   value: Value;
   label: string;
   group?: string;
 };
 
-export type MarketExplorerGroupSelection = {
+type MarketExplorerGroupSelection = {
   industryKeys?: string[];
   themeIds?: number[];
 };
