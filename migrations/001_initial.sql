@@ -1,0 +1,353 @@
+CREATE TABLE tickers (
+    symbol TEXT PRIMARY KEY NOT NULL,
+    name TEXT,
+    exchange TEXT NOT NULL,
+    description TEXT,
+    profile_fetched_at DATETIME
+);
+
+CREATE TABLE daily_candles (
+    symbol TEXT NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    market_date DATE NOT NULL,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    volume INTEGER NOT NULL,
+    PRIMARY KEY (symbol, market_date)
+);
+
+CREATE TABLE fundamentals (
+    symbol TEXT PRIMARY KEY NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    payload JSON NOT NULL,
+    fetched_at DATETIME NOT NULL
+);
+
+CREATE TABLE nyse_holidays (
+    market_date DATE PRIMARY KEY,
+    fetched_at DATETIME NOT NULL
+);
+
+CREATE TABLE industry_rankings (
+    industry_key TEXT PRIMARY KEY NOT NULL,
+    industry_name TEXT NOT NULL,
+    market_date DATE NOT NULL,
+    fetched_at DATETIME NOT NULL,
+    performance_day REAL NOT NULL,
+    performance_week REAL NOT NULL,
+    performance_month REAL NOT NULL,
+    performance_quarter REAL NOT NULL,
+    performance_half_year REAL NOT NULL,
+    performance_year REAL NOT NULL,
+    performance_year_to_date REAL NOT NULL
+);
+
+CREATE TABLE industry_memberships (
+    industry_key TEXT PRIMARY KEY NOT NULL,
+    fetched_at DATETIME NOT NULL,
+    industry_name TEXT
+);
+
+CREATE TABLE industry_membership_tickers (
+    industry_key TEXT NOT NULL REFERENCES industry_memberships(industry_key) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    PRIMARY KEY (industry_key, symbol)
+);
+
+CREATE INDEX industry_membership_tickers_symbol
+    ON industry_membership_tickers (symbol);
+
+CREATE TABLE industry_classifications (
+    industry_key TEXT PRIMARY KEY NOT NULL,
+    industry_name TEXT NOT NULL,
+    sector_key TEXT NOT NULL,
+    sector_name TEXT NOT NULL,
+    fetched_at DATETIME NOT NULL
+);
+
+CREATE INDEX industry_classifications_sector
+    ON industry_classifications (sector_name, industry_name);
+
+CREATE TABLE themes (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    etf_symbol TEXT NOT NULL COLLATE NOCASE,
+    description TEXT
+);
+
+CREATE INDEX themes_etf_symbol
+    ON themes (etf_symbol);
+
+CREATE TABLE theme_stocks (
+    theme_id INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL COLLATE NOCASE,
+    source TEXT NOT NULL CHECK (source IN ('manual', 'manual_ai', 'automatic_ai')),
+    reasoning TEXT,
+    model TEXT,
+    assigned_at DATETIME NOT NULL,
+    PRIMARY KEY (theme_id, symbol)
+);
+
+CREATE INDEX theme_stocks_symbol
+    ON theme_stocks (symbol);
+
+CREATE TABLE theme_ai_jobs (
+    id INTEGER PRIMARY KEY NOT NULL,
+    status TEXT NOT NULL CHECK (status IN (
+        'pending', 'running', 'completed', 'partially_failed', 'failed', 'applied'
+    )),
+    symbols JSON NOT NULL,
+    model TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    response TEXT,
+    suggestions JSON,
+    validation_errors JSON,
+    error TEXT,
+    retry_of_job_id INTEGER,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE INDEX theme_ai_jobs_updated_at
+    ON theme_ai_jobs (updated_at DESC);
+
+CREATE TABLE theme_ai_processed_symbols (
+    symbol TEXT PRIMARY KEY NOT NULL,
+    job_id INTEGER REFERENCES theme_ai_jobs(id) ON DELETE SET NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('assigned', 'no_theme')),
+    processed_at DATETIME NOT NULL
+);
+
+INSERT INTO themes (name, etf_symbol, description)
+VALUES
+    ('Semiconductors', 'SOXX', 'Chip designers and equipment; excludes software'),
+    ('Software', 'IGV', 'Application and SaaS software; excludes infrastructure and security'),
+    ('Cybersecurity', 'CIBR', 'Dedicated security vendors only'),
+    ('Payments and Fintech', 'IPAY', 'Payments processors and digital finance'),
+    ('Blockchain', 'BKCH', 'Crypto miners and exchanges; no payments overlap'),
+    ('AI and Data', 'AIQ', 'AI compute and enablers; distinct from pure software'),
+    ('Data Centers', 'SRVR', 'Data center REITs and digital infrastructure'),
+    ('Quantum Computing', 'QTUM', 'Quantum computing and enabling technologies'),
+    ('IoT', 'SNSR', 'Connected devices and sensors; excludes pure software'),
+    ('Telecom', 'IYZ', 'Carriers and tower companies; excludes media'),
+    ('Social Media', 'SOCL', 'Social platforms; excludes carriers and traditional media'),
+    ('EVs and Mobility', 'DRIV', 'Electric vehicles and mobility; broader than EV OEMs only'),
+    ('Homebuilders', 'ITB', 'Residential builders and building products'),
+    ('Retail', 'XRT', 'Broadline and specialty retail; excludes grocery and e-commerce'),
+    ('Travel', 'JETS', 'Airlines and lodging'),
+    ('Gaming and Gambling', 'BETZ', 'Gambling and gaming exposure; broader than casinos alone'),
+    ('Video Games', 'HERO', 'Game publishers and esports; no casinos'),
+    ('Food and Beverage', 'PBJ', 'Packaged food and beverages; excludes restaurants and retail'),
+    ('Grocery', 'FXG', 'Grocery chains and staple retailers only'),
+    ('Biotech', 'ARKG', 'Gene editing and biotech R and D; no devices or pharma'),
+    ('Pharma', 'IHE', 'Established drug makers; excludes biotech and devices'),
+    ('Medical Devices', 'IHI', 'Devices and diagnostics; excludes pharma and biotech'),
+    ('Healthcare Services', 'IHF', 'Hospitals and managed care; excludes products'),
+    ('Banks', 'KBE', 'Large and diversified banks; excludes insurance and capital markets'),
+    ('Regional Banks', 'KRE', 'Regional banks only; no large-cap banks'),
+    ('Insurance', 'IAK', 'P and C plus life plus reinsurance; excludes banks'),
+    ('Capital Markets', 'IAI', 'Brokers and asset managers; excludes banks and insurance'),
+    ('Mortgage Finance', 'REM', 'Mortgage REITs and servicers; no commercial banks'),
+    ('Aerospace and Defense', 'ITA', 'Defense primes and suppliers; excludes commercial industrials'),
+    ('Drones', 'DRNZ', 'UAV makers and enablers; distinct from broad defense'),
+    ('Space', 'UFO', 'Pure-play space and satellite; excludes broad defense'),
+    ('Industrial Automation', 'ROBO', 'Industrial automation and robotics; excludes A and D'),
+    ('Construction', 'PKB', 'Engineering and construction firms; excludes homebuilders'),
+    ('Transportation', 'IYT', 'Trucking rail and freight; excludes airlines'),
+    ('Waste and Environment', 'EVX', 'Waste management and environmental services'),
+    ('Oil and Gas E/P', 'XOP', 'Exploration and production only; excludes services and midstream'),
+    ('Oil Services', 'OIH', 'Oilfield services; excludes E/P and midstream'),
+    ('Pipelines', 'AMLP', 'Midstream pipelines and MLPs; excludes E/P and services'),
+    ('Refiners', 'CRAK', 'Oil refiners; excludes E/P and midstream'),
+    ('Nuclear', 'URA', 'Uranium miners and nuclear; no fossil fuel overlap'),
+    ('Solar', 'TAN', 'Solar manufacturers and installers only'),
+    ('Wind', 'FAN', 'Wind turbine makers and operators only'),
+    ('Diversified Clean Energy', 'ICLN', 'Broad renewables excluding solar and wind pure plays'),
+    ('Batteries', 'LIT', 'Lithium miners and battery makers; no solar or wind'),
+    ('Power Grid', 'GRID', 'Grid and electrification infrastructure; excludes generation'),
+    ('Gold Miners', 'GDX', 'Gold miners; excludes silver and base metals'),
+    ('Silver Miners', 'SIL', 'Silver miners only; no gold or base metals'),
+    ('Copper', 'COPX', 'Copper miners; excludes precious metals and steel'),
+    ('Steel', 'SLX', 'Steel producers and processors; excludes miners'),
+    ('Timber', 'WOOD', 'Timber and forest products; distinct from metals'),
+    ('Agribusiness', 'MOO', 'Ag producers and equipment; excludes food manufacturers'),
+    ('Residential REITs', 'REZ', 'Apartment and single-family REITs; no commercial'),
+    ('Commercial REITs', 'RWR', 'Office and retail REITs; excludes residential and industrial'),
+    ('Industrial REITs', 'INDS', 'Warehouse and logistics REITs; no residential or office'),
+    ('Electric Utilities', 'XLU', 'Regulated electric utilities; broad utility coverage'),
+    ('Water', 'PHO', 'Water utilities and treatment; excludes electric'),
+    ('Infrastructure', 'PAVE', 'Roads bridges and airports; excludes REITs and utilities'),
+    ('Critical Minerals', 'REMX', 'Rare earth and strategic mineral producers'),
+    ('Computer Hardware', 'XLK', 'Generic computer hardware, fallback for all tech related tickers'),
+    ('Photonics', 'EUV', 'Companies significantly involved in semiconductor photonics and light-based technologies.'),
+    ('Memory', 'DRAM', 'Memory semiconductor designers and manufacturers; excludes broad semiconductor exposure');
+
+CREATE TABLE watchlists (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('favourites', 'custom')),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    icon_key TEXT NOT NULL DEFAULT 'bookmark'
+);
+
+CREATE TABLE watchlist_tickers (
+    watchlist_id INTEGER NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL COLLATE NOCASE REFERENCES tickers(symbol) ON DELETE CASCADE,
+    added_at DATETIME NOT NULL,
+    PRIMARY KEY (watchlist_id, symbol)
+);
+
+CREATE INDEX watchlist_tickers_symbol
+    ON watchlist_tickers (symbol);
+
+CREATE UNIQUE INDEX watchlists_icon_key
+    ON watchlists (icon_key);
+
+CREATE UNIQUE INDEX watchlists_single_favourites
+    ON watchlists (kind)
+    WHERE kind = 'favourites';
+
+INSERT INTO watchlists (name, kind, icon_key, created_at, updated_at)
+VALUES ('Favourites', 'favourites', 'bookmark', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+CREATE TABLE top_stock_screens (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    url TEXT NOT NULL,
+    max_stock_count INTEGER NOT NULL DEFAULT 100
+        CHECK (max_stock_count BETWEEN 1 AND 500),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE daily_notes (
+    note_date DATE PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL,
+    markdown TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE VIRTUAL TABLE daily_notes_fts USING fts5(
+    title,
+    markdown,
+    content = 'daily_notes',
+    content_rowid = 'rowid',
+    tokenize = 'trigram'
+);
+
+CREATE TRIGGER daily_notes_fts_insert
+AFTER INSERT ON daily_notes
+BEGIN
+    INSERT INTO daily_notes_fts (rowid, title, markdown)
+    VALUES (new.rowid, new.title, new.markdown);
+END;
+
+CREATE TRIGGER daily_notes_fts_update
+AFTER UPDATE OF title, markdown ON daily_notes
+BEGIN
+    INSERT INTO daily_notes_fts (daily_notes_fts, rowid, title, markdown)
+    VALUES ('delete', old.rowid, old.title, old.markdown);
+    INSERT INTO daily_notes_fts (rowid, title, markdown)
+    VALUES (new.rowid, new.title, new.markdown);
+END;
+
+CREATE TRIGGER daily_notes_fts_delete
+AFTER DELETE ON daily_notes
+BEGIN
+    INSERT INTO daily_notes_fts (daily_notes_fts, rowid, title, markdown)
+    VALUES ('delete', old.rowid, old.title, old.markdown);
+END;
+
+CREATE TABLE daily_note_images (
+    id INTEGER PRIMARY KEY NOT NULL,
+    note_date DATE NOT NULL REFERENCES daily_notes(note_date) ON DELETE CASCADE,
+    width INTEGER NOT NULL CHECK (width BETWEEN 1 AND 1920),
+    height INTEGER NOT NULL CHECK (height BETWEEN 1 AND 1920),
+    image_blob BLOB NOT NULL CHECK (length(image_blob) BETWEEN 1 AND 5242880),
+    detached_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX daily_note_images_note_date
+    ON daily_note_images (note_date);
+
+CREATE INDEX daily_note_images_detached_at
+    ON daily_note_images (detached_at)
+    WHERE detached_at IS NOT NULL;
+
+CREATE TABLE theme_audits (
+    symbol TEXT PRIMARY KEY NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    current_themes JSON NOT NULL,
+    suggested_themes JSON NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('matched', 'pending', 'accepted', 'ignored')),
+    confidence REAL NOT NULL CHECK (confidence >= 0.0 AND confidence <= 1.0),
+    reasoning TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_fingerprint TEXT NOT NULL,
+    audited_at DATETIME NOT NULL,
+    processed_at DATETIME
+);
+
+CREATE INDEX theme_audits_status_confidence
+    ON theme_audits (status, confidence DESC);
+
+CREATE TABLE n_factor_reports (
+    symbol TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('stock_titan', 'finviz')),
+    payload JSON NOT NULL,
+    PRIMARY KEY (symbol, source)
+);
+
+CREATE TABLE fundamental_assessments (
+    symbol TEXT PRIMARY KEY NOT NULL,
+    payload JSON NOT NULL CHECK (json_valid(payload))
+);
+
+CREATE TABLE trade_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    symbol TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    direction TEXT NOT NULL DEFAULT 'long' CHECK (direction IN ('long', 'short'))
+);
+
+CREATE TABLE trade_log_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    trade_id INTEGER NOT NULL REFERENCES trade_logs(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    executed_at TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    price INTEGER NOT NULL CHECK (price > 0),
+    fee INTEGER NOT NULL CHECK (fee >= 0),
+    notes TEXT NOT NULL DEFAULT '',
+    UNIQUE (trade_id, sequence)
+);
+CREATE INDEX trade_log_executions_trade ON trade_log_executions(trade_id);
+
+CREATE TABLE trade_log_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    description TEXT,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)
+);
+
+CREATE TABLE trade_log_tag_links (
+    trade_id INTEGER NOT NULL REFERENCES trade_logs(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES trade_log_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (trade_id, tag_id)
+);
+CREATE INDEX trade_log_tag_links_tag ON trade_log_tag_links(tag_id);
+
+CREATE TABLE trade_log_execution_tags (
+    execution_id INTEGER NOT NULL REFERENCES trade_log_executions(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES trade_log_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (execution_id, tag_id)
+);
+CREATE INDEX trade_log_execution_tags_tag ON trade_log_execution_tags(tag_id);

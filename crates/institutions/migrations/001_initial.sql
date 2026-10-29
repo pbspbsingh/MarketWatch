@@ -1,7 +1,9 @@
 CREATE TABLE imported_sources (
     name TEXT PRIMARY KEY NOT NULL,
     fingerprint TEXT NOT NULL,
-    imported_at DATETIME NOT NULL
+    imported_at DATETIME NOT NULL,
+    source_modified_at DATETIME,
+    source_etag TEXT
 );
 
 CREATE TABLE dataset (

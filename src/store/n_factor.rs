@@ -61,7 +61,6 @@ mod tests {
     use crate::models::AssignmentSource;
     use crate::models::fundamentals_background::{FundamentalsFeature, FundamentalsTask};
     use chrono::Utc;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     #[tokio::test]
     async fn candidates_require_industry_mapping_exclude_etfs_and_preserve_watchlist_membership() {
@@ -214,16 +213,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn json_migration_preserves_both_source_payloads() {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        sqlx::raw_sql(include_str!("../../migrations/09_n_factor.sql"))
-            .execute(&pool)
-            .await
-            .unwrap();
+    async fn fresh_schema_stores_both_source_payloads_as_json() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let pool = &store.pool;
         let symbol = "AAA";
         let mut expected = Vec::new();
         for source in ["stock_titan", "finviz"] {
@@ -232,21 +224,15 @@ mod tests {
                 "INSERT INTO n_factor_reports (symbol, source, payload) VALUES (?, ?, ?) ON CONFLICT (symbol, source) DO UPDATE SET payload = excluded.payload",
                 symbol, source, payload,
             )
-            .execute(&pool)
+            .execute(pool)
             .await
             .unwrap();
             expected.push(payload);
         }
-        let mut transaction = pool.begin().await.unwrap();
-        sqlx::raw_sql(include_str!("../../migrations/10_n_factor_json.sql"))
-            .execute(&mut *transaction)
-            .await
-            .unwrap();
-        transaction.commit().await.unwrap();
         let declared_type = sqlx::query_scalar!(
             r#"SELECT CAST(type AS TEXT) AS "type!: String" FROM pragma_table_info('n_factor_reports') WHERE name = 'payload'"#,
         )
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .unwrap();
         assert_eq!(declared_type, "JSON");
@@ -254,7 +240,7 @@ mod tests {
             r#"SELECT payload AS "payload!: String" FROM n_factor_reports WHERE symbol = ?"#,
             symbol,
         )
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
         .unwrap();
         actual.sort();
