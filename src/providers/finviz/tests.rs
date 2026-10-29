@@ -28,6 +28,66 @@ fn screen_page(first: usize, total: usize, size: usize, tickers: &[String]) -> S
 
 type Parameters = HashMap<String, String>;
 
+#[test]
+fn industry_counts_use_headers_and_reject_invalid_overviews() {
+    let html = include_str!("fixtures/industry_counts.html");
+    let counts = parse_industry_counts(html).unwrap();
+    assert_eq!(counts.len(), 3);
+    assert_eq!(counts["advertisingagencies"], 37);
+    assert_eq!(counts["aerospacedefense"], 95);
+    assert_eq!(
+        parse_industry_counts(&html.replace(">37</td>", ">1,037</td>")).unwrap()["advertisingagencies"],
+        1_037
+    );
+    assert_eq!(
+        parse_industry_counts(&html.replace(">37</td>", ">0</td>")).unwrap()["advertisingagencies"],
+        0
+    );
+    for invalid in [
+        "<html>Access denied</html>".to_owned(),
+        html.replace("Stocks", "Unknown"),
+        html.replace(">37</td>", ">-1</td>"),
+        html.replace("ind_aerospacedefense", "ind_advertisingagencies"),
+    ] {
+        assert!(parse_industry_counts(&invalid).is_err());
+    }
+}
+
+#[tokio::test]
+async fn industry_counts_fetch_overview_once_and_only_metadata_for_missing_industry() {
+    let mock = MockFinviz::start(|parameters| {
+        if parameters.get("v").is_some_and(|value| value == "110") {
+            assert_eq!(parameters["g"], "industry");
+            return (
+                StatusCode::OK,
+                include_str!("fixtures/industry_counts.html").into(),
+            );
+        }
+        assert_eq!(parameters["v"], "111");
+        assert_eq!(parameters["f"], "industry_shellcompanies");
+        assert!(!parameters.contains_key("r"));
+        (StatusCode::OK, screen_page(0, 170, 20, &["AAC".into()]))
+    })
+    .await;
+    let industries = ["advertisingagencies", "shellcompanies"].map(|key| IndustryClassification {
+        industry: IndustryIdentity {
+            key: key.into(),
+            name: key.into(),
+        },
+        sector: IndustryIdentity {
+            key: "financial".into(),
+            name: "Financial".into(),
+        },
+    });
+    let counts = mock.client().industry_counts(&industries).await.unwrap();
+    assert_eq!(counts["advertisingagencies"], 37);
+    assert_eq!(
+        counts["shellcompanies"], 170,
+        "Use metadata total, not the number of loaded rows"
+    );
+    assert_eq!(mock.requests.lock().unwrap().len(), 2);
+}
+
 struct MockFinviz {
     url: Url,
     requests: Arc<Mutex<Vec<Parameters>>>,
@@ -62,9 +122,8 @@ impl MockFinviz {
     fn client(&self) -> FinvizClient {
         let mut client = FinvizClient::new(
             &FinvizConfig {
-                industry_membership_filters: vec!["sh_price_o5".into()],
+                top_stocks_base_filters: vec!["sh_price_o5".into()],
                 top_stocks_additional_filters: vec![],
-                membership_fresh_days: 1,
             },
             &ProviderConfig {
                 connect_timeout_secs: 1,
@@ -174,7 +233,7 @@ async fn all_stock_list_methods_paginate_and_respect_limits_and_filters() {
         for parameters in mock.requests.lock().unwrap().iter() {
             assert_eq!(parameters["v"], "111");
             match method {
-                "industry" => assert_eq!(parameters["f"], "industry_semiconductors,sh_price_o5"),
+                "industry" => assert_eq!(parameters["f"], "industry_semiconductors"),
                 "top" => {
                     assert_eq!(parameters["f"], "sh_price_o5,sh_avgvol_o100");
                     assert_eq!(parameters["o"], "-perf1w");
@@ -206,7 +265,7 @@ async fn empty_stock_lists_succeed_and_empty_later_pages_stop_pagination() {
                 (
                     StatusCode::OK,
                     screen_page(
-                        first,
+                        if rows.is_empty() { 0 } else { first },
                         if empty_first || first > 0 { 0 } else { 45 },
                         20,
                         &rows,
@@ -226,8 +285,15 @@ async fn empty_stock_lists_succeed_and_empty_later_pages_stop_pagination() {
                         )
                         .await
                 }
+            };
+            if method == "industry" && !empty_first {
+                assert!(
+                    result.is_err(),
+                    "Incomplete membership must not replace the cache"
+                );
+                continue;
             }
-            .unwrap();
+            let result = result.unwrap();
             assert_eq!(result.len(), if empty_first { 0 } else { 20 });
             assert_eq!(
                 mock.offsets(),
@@ -408,7 +474,7 @@ async fn fundamentals_with_no_reports_or_forecasts_succeed_and_invalid_pages_fai
 async fn live_checks_every_public_method_and_empty_screens() -> anyhow::Result<()> {
     let config = Config::load("config.toml")?;
     let mut client = FinvizClient::new(&config.finviz, &config.providers)?;
-    client.industry_membership_filters.clear();
+    client.top_stocks_base_filters.clear();
     let industries = client.industries().await?;
     let classifications = client.industry_classifications().await?;
     assert!(!industries.is_empty());
@@ -518,9 +584,8 @@ async fn news_404_and_empty_quote_pages_complete_without_ai_or_retries() {
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let mut client = FinvizClient::new(
             &FinvizConfig {
-                industry_membership_filters: vec![],
+                top_stocks_base_filters: vec![],
                 top_stocks_additional_filters: vec![],
-                membership_fresh_days: 1,
             },
             &ProviderConfig {
                 connect_timeout_secs: 1,

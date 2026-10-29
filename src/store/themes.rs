@@ -125,6 +125,7 @@ impl Store {
             .commit()
             .await
             .context("failed to commit ticker deletion")?;
+        self.membership_changes.send_replace(());
         Ok(deleted > 0)
     }
 
@@ -1452,7 +1453,9 @@ mod tests {
             .await
             .unwrap();
 
+        let changes = store.subscribe_memberships();
         assert!(store.delete_ticker(&ticker("DELETE")).await.unwrap());
+        assert!(changes.has_changed().unwrap());
         assert!(
             store
                 .company_profile(&ticker("DELETE"))

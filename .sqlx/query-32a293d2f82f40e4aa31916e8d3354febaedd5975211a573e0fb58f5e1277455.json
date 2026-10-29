@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT industry_key, industry_name, sector_key, sector_name\n             FROM industry_classifications\n             WHERE industry_key = ?",
+  "query": "SELECT industry_key, industry_name, sector_key, sector_name, ticker_count\n             FROM industry_classifications\n             WHERE industry_key = ?",
   "describe": {
     "columns": [
       {
@@ -46,6 +46,17 @@
             "name": "sector_name"
           }
         }
+      },
+      {
+        "name": "ticker_count",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "industry_classifications",
+            "name": "ticker_count"
+          }
+        }
       }
     ],
     "parameters": {
@@ -55,8 +66,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "a558bbc843dfaeb768636e84ef33569eecbaf68c20c8b6e3ceb5a492434d117b"
+  "hash": "32a293d2f82f40e4aa31916e8d3354febaedd5975211a573e0fb58f5e1277455"
 }

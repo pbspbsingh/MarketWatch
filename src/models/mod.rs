@@ -11,7 +11,7 @@ pub mod n_factor;
 mod performance;
 mod theme_audits;
 mod themes;
-mod ticker_collection;
+pub(crate) mod ticker_collection;
 mod ticker_strength;
 pub mod ticker_symbol;
 mod top_stock_screens;

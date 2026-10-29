@@ -85,6 +85,30 @@ npm run dev
 
 The Vite development server proxies `/api` requests to Axum at `127.0.0.1:8080`. Debug builds do not serve static frontend assets.
 
+Industry catalog and membership subscriptions share the application WebSocket at
+`/api/events`. TanStack Query holds their client cache. Industry membership includes
+all Finviz pages without the Top Stocks filters. Missing or expired data is fetched
+on demand and reused for 30 days; there is no membership refresh job or manual
+refresh endpoint. Verified ETF membership does not expire. Failed acquisitions
+preserve the previous membership and fetch time. Ticker imports reject individual
+tickers whose industry membership or profile cannot be verified.
+
+The open Market Watch universe shows group ticker counts and supports CNT ordering.
+Industry counts come from Finviz's group overview, with first-page metadata totals
+for omitted industries. Counts are cached with the catalog without loading group
+memberships. The ticker column stays empty until groups are selected and clears
+when the last selection is removed. Bounded lists retain their full-list behavior.
+
+Generate the TypeScript contracts from Rust after changing these wire types:
+
+```bash
+cargo run -- --export-contracts
+cargo run -- --export-contracts --check
+```
+
+These commands do not start the server or open the databases. Other existing
+features retain their current transports while they are migrated incrementally.
+
 ## Institutional ownership
 
 The Institutions tab loads only when opened. Enable SEC access with

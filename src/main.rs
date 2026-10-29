@@ -9,6 +9,7 @@ mod app;
 mod auth;
 mod config;
 mod constants;
+mod contracts;
 mod models;
 pub mod providers;
 mod services;
@@ -23,6 +24,17 @@ use tracing_subscriber::{EnvFilter, fmt::time::ChronoLocal};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if arguments
+        .first()
+        .is_some_and(|value| value == "--export-contracts")
+    {
+        anyhow::ensure!(
+            arguments.len() == 1 || arguments == ["--export-contracts", "--check"],
+            "Use --export-contracts [--check]"
+        );
+        return contracts::export(arguments.len() == 2);
+    }
     init_tracing();
 
     let configured_path = std::env::var_os("MARKET_WATCH_CONFIG");

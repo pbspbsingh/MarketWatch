@@ -734,9 +734,8 @@ mod tests {
             max_delay_ms: 250,
         };
         let finviz = FinvizConfig {
-            industry_membership_filters: vec![],
+            top_stocks_base_filters: vec![],
             top_stocks_additional_filters: vec![],
-            membership_fresh_days: 1,
         };
         (
             Arc::new(FinvizClient::new(&finviz, &provider).unwrap()),
@@ -1494,9 +1493,8 @@ mod tests {
             max_delay_ms: 0,
         };
         let finviz_config = FinvizConfig {
-            industry_membership_filters: vec![],
+            top_stocks_base_filters: vec![],
             top_stocks_additional_filters: vec![],
-            membership_fresh_days: 1,
         };
         let finviz =
             Arc::new(FinvizClient::new(&finviz_config, &provider_config)?.with_stock_url(&url));

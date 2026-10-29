@@ -84,11 +84,6 @@ interface GroupsState {
   warning?: string;
 }
 
-interface GroupCountsState {
-  key: string;
-  counts: Map<string, number>;
-}
-
 interface GlobalRankingGroupsState {
   key: GroupMode | "";
   groups: GroupRanking[];
@@ -117,7 +112,6 @@ type TickerUniverseSymbolsState = {
 const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
-const emptyGroupCounts = new Map<string, number>();
 
 export function TickerLens({
   universe,
@@ -175,7 +169,6 @@ export function TickerLens({
   const [selectedTickerContext, setSelectedTickerContext] =
     useState<SelectedTickerContext>();
   const [groupsCollapsed, setGroupsCollapsed] = useState(false);
-  const [groupCountsState, setGroupCountsState] = useState<GroupCountsState>({ key: "", counts: new Map() });
   const [globalRankingGroupsState, setGlobalRankingGroupsState] =
     useState<GlobalRankingGroupsState>({ key: "", groups: [] });
   const [sectorRankingsState, setSectorRankingsState] =
@@ -212,10 +205,8 @@ export function TickerLens({
     universe.type === "market-watch" ? universe.resolveTickers : undefined;
   const marketResolveGroups =
     universe.type === "market-watch" ? universe.resolveGroups : undefined;
-  const marketResolveGroupCounts =
-    universe.type === "market-watch" ? universe.resolveGroupCounts : undefined;
   const marketUniverseRevision = universe.type === "market-watch" ? universe.revision ?? 0 : 0;
-  const groupsRequestKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
+  const groupsRequestKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}\0${marketUniverseRevision}`;
   const activeGroupsState = groupsState.key === groupsRequestKey ? groupsState : undefined;
   const groups = activeGroupsState?.groups ?? emptyGroups;
   const groupsLoading = activeGroupsState === undefined;
@@ -314,14 +305,6 @@ export function TickerLens({
       attachedMetricExtensionsRef.current.clear();
     };
   }, []);
-  const groupCountsRequestKey = !bounded
-    && selectedGroupKey !== ""
-    && marketResolveGroupCounts !== undefined
-    ? `${groupMode}\0${selectedGroupKey}\0${marketUniverseRevision}`
-    : undefined;
-  const selectedGroupTickerCounts = groupCountsState.key === groupCountsRequestKey
-    ? groupCountsState.counts
-    : emptyGroupCounts;
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
@@ -484,6 +467,7 @@ export function TickerLens({
   const resolveTickers = useCallback(
     (request: ResolveTickersRequest) => {
       if (!bounded) {
+        if (request.groupKeys.size === 0) return Promise.resolve([]);
         return marketResolveTickers?.(request) ?? Promise.resolve([]);
       }
       if (request.groupKeys.size === 0) {
@@ -496,28 +480,6 @@ export function TickerLens({
     },
     [bounded, boundedSymbolsByGroup, boundedSymbolsKey, marketResolveTickers],
   );
-
-  useEffect(() => {
-    if (groupCountsRequestKey === undefined || marketResolveGroupCounts === undefined) return;
-
-    const controller = new AbortController();
-    marketResolveGroupCounts({
-      mode: groupMode,
-      groupKeys: new Set(selectedGroupKey.split("\0")),
-      signal: controller.signal,
-    })
-      .then((counts) => {
-        if (!controller.signal.aborted) {
-          setGroupCountsState({ key: groupCountsRequestKey, counts });
-        }
-      })
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setGroupCountsState({ key: groupCountsRequestKey, counts: new Map() });
-        }
-      });
-    return () => controller.abort();
-  }, [groupCountsRequestKey, groupMode, marketResolveGroupCounts, selectedGroupKey]);
 
   return (
     <section
@@ -556,8 +518,7 @@ export function TickerLens({
           selectedTickerContext={selectedTickerContext}
           requestedThemeNames={requestedThemeNames}
           requestedUnassigned={requestedUnassigned}
-          selectedGroupTickerCounts={selectedGroupTickerCounts}
-          countSortAvailable={bounded}
+          countSortAvailable={bounded || (groups.length > 0 && groups.every(group => group.ticker_count !== undefined))}
           groups={groups}
           globalRankingGroups={globalRankingGroups}
           sectorRankings={sectorRankings}

@@ -91,6 +91,7 @@ async fn parse_csv(
     let collection = state
         .ticker_collections
         .parse_csv_files(files)
+        .await
         .map_err(status_from_error)?;
     info!(
         symbol_count = collection.symbols.len(),
@@ -122,7 +123,10 @@ async fn parse_pasted_tickers(
     State(state): State<AppState>,
     Json(request): Json<PastedTickersRequest>,
 ) -> Json<TickerCollection> {
-    let collection = state.ticker_collections.parse_pasted_text(&request.text);
+    let collection = state
+        .ticker_collections
+        .parse_pasted_text(&request.text)
+        .await;
     info!(
         symbol_count = collection.symbols.len(),
         skipped_tokens = collection.skipped_rows,

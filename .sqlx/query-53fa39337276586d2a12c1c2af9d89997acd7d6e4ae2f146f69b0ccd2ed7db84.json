@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol FROM industry_membership_tickers WHERE industry_key = ? ORDER BY symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_membership_tickers",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "53fa39337276586d2a12c1c2af9d89997acd7d6e4ae2f146f69b0ccd2ed7db84"
+}

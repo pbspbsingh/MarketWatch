@@ -274,6 +274,11 @@ function CollectionDetailsDialog({
         {failedSymbols === undefined ? <Typography color="text.secondary">Resolving tickers…</Typography>
           : failedSymbols.length === 0 ? <Typography>All tickers resolved</Typography>
           : <Typography color="warning.main">Failed to resolve ({failedSymbols.length}): {failedSymbols.join(", ")}</Typography>}
+        {collection.rejected_symbols.length > 0 && (
+          <Typography color="warning.main">
+            Rejected: {collection.rejected_symbols.map(item => `${item.symbol}: ${item.reason}`).join("; ")}
+          </Typography>
+        )}
         <Typography>Tickers: {collection.symbols.join(", ") || "None"}</Typography>
       </DialogContent>
     </Dialog>
@@ -288,7 +293,7 @@ function summary(collection: TickerCollection, failedResolutionCount?: number) {
     : "PASTED";
   const failed = failedResolutionCount === undefined ? ""
     : ` · ${failedResolutionCount} Failed`;
-  return `${source} · ${collection.symbols.length} tickers${failed}`;
+  return `${source} · ${collection.symbols.length} tickers${collection.rejected_symbols.length ? ` · ${collection.rejected_symbols.length} rejected` : ""}${failed}`;
 }
 
 function isTickerFile(file: File) {

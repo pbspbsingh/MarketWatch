@@ -1,17 +1,5 @@
-interface TickerCollectionFile {
-  name: string;
-  row_count: number;
-  extracted_count: number;
-  skipped_rows: number;
-}
-
-export interface TickerCollection {
-  version: number;
-  source: { type: "csv"; files: TickerCollectionFile[] } | { type: "pasted" };
-  symbols: string[];
-  skipped_rows: number;
-  created_at: string;
-}
+import type { TickerCollection } from "./generated/contracts";
+export type { TickerCollection } from "./generated/contracts";
 
 interface BoundedTickerGroup {
   key: string;

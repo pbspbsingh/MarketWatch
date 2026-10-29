@@ -5,10 +5,11 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, TS)]
 #[serde(transparent)]
-pub struct TickerSymbol(SmolStr);
+pub struct TickerSymbol(#[ts(type = "string")] SmolStr);
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 #[error("invalid ticker symbol")]

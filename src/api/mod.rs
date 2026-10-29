@@ -1,6 +1,7 @@
 mod chart;
 mod daily_notes;
 mod details;
+mod events;
 mod fundamental_assessment;
 mod global_search;
 mod home;
@@ -31,6 +32,7 @@ pub fn router() -> Router<AppState> {
         .merge(chart::router())
         .merge(daily_notes::router())
         .merge(details::router())
+        .merge(events::router())
         .merge(fundamental_assessment::router())
         .merge(global_search::router())
         .merge(home::router())

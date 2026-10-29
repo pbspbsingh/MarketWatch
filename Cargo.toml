@@ -60,6 +60,7 @@ tokio-tungstenite = { version = "0.29.0", default-features = false, features = [
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 smol_str = { version = "0.3.6", features = ["serde"] }
+ts-rs = { version = "12.0.1", features = ["chrono-impl"] }
 toml = "1.1.6"
 
 # Observability

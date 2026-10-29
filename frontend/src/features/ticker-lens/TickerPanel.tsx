@@ -80,7 +80,7 @@ const emptyTickers: TickerRanking[] = [];
 interface TickerPanelProps {
   tickerStream: TickerStreamClient;
   bounded: boolean;
-  universeRevision: number;
+  universeRevision: number | string;
   metrics: readonly TickerMetric[];
   defaultMetricSort?: DefaultMetricSort;
   mode: GroupMode;
@@ -244,8 +244,9 @@ export function TickerPanel({
   });
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
   const groupKey = [...groupKeys].sort().join("\0");
+  const awaitingGroupSelection = !bounded && groupKeys.size === 0;
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
-  const metricsActive = groupKeys.size > 0 || filtersActive;
+  const metricsActive = !awaitingGroupSelection && (groupKeys.size > 0 || filtersActive);
   const activeMetric = metricForKey(metrics, sortSetting.key);
   const sortActive = metricsActive || activeMetric !== undefined;
   if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) {
@@ -278,7 +279,7 @@ export function TickerPanel({
   const resolvedTickers = resolvedTickerState.key === resolvedTickerRequestKey
     ? resolvedTickerState.tickers
     : undefined;
-  const baseTickers = metricsActive ? rankingStream.tickers : resolvedTickers ?? emptyTickers;
+  const baseTickers = awaitingGroupSelection ? emptyTickers : metricsActive ? rankingStream.tickers : resolvedTickers ?? emptyTickers;
   const rankingOverrides = rankingOverrideState.key === panelRequestKey
     ? rankingOverrideState.rankings
     : undefined;
@@ -289,9 +290,9 @@ export function TickerPanel({
     }),
     [baseTickers, rankingOverrides],
   );
-  const panelLoading = metricsActive
+  const panelLoading = !awaitingGroupSelection && (metricsActive
     ? rankingStream.loading
-    : resolvedTickerState.key !== resolvedTickerRequestKey;
+    : resolvedTickerState.key !== resolvedTickerRequestKey);
   const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
     ?? rankingStream.error
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
@@ -314,7 +315,7 @@ export function TickerPanel({
   }, [focusRevision, providedWatchlists, reportError]);
 
   useEffect(() => {
-    if (metricsActive) return;
+    if (metricsActive || awaitingGroupSelection) return;
     const controller = new AbortController();
 
     resolveTickers({
@@ -354,7 +355,7 @@ export function TickerPanel({
         }
       });
     return () => controller.abort();
-  }, [groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
+  }, [awaitingGroupSelection, groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
 
   useEffect(() => {
     if (!isMetricSortKey(sortSetting.key)) {
@@ -676,7 +677,7 @@ export function TickerPanel({
       )}
       {!panelLoading && !panelError && tickers.length === 0 && (
         <Typography className="panel-empty" color="text.secondary">
-          No known tickers
+          {awaitingGroupSelection ? "Select groups to view tickers" : "No known tickers"}
         </Typography>
       )}
       {!panelLoading && !panelError && tickers.length > 0 && sortedTickers.length === 0 && (

@@ -75,7 +75,7 @@ impl TickerCollectionService {
             .is_some()
     }
 
-    pub fn parse_csv_files(
+    pub async fn parse_csv_files(
         &self,
         files: Vec<UploadedTickerFile>,
     ) -> Result<TickerCollection, TickerCollectionError> {
@@ -83,11 +83,31 @@ impl TickerCollectionService {
             return Err(TickerCollectionError::EmptyUpload);
         }
         let collection = parse_csv_files(files);
-        Ok(self.remember_collection(collection))
+        Ok(self.validate_collection(collection).await)
     }
 
-    pub fn parse_pasted_text(&self, text: &str) -> TickerCollection {
-        self.remember_collection(parse_pasted_text(text))
+    pub async fn parse_pasted_text(&self, text: &str) -> TickerCollection {
+        self.validate_collection(parse_pasted_text(text)).await
+    }
+
+    async fn validate_collection(&self, mut collection: TickerCollection) -> TickerCollection {
+        let mut accepted = Vec::new();
+        for symbol in collection.symbols {
+            match self.ticker_catalog.ensure_ticker_symbol(&symbol).await {
+                Ok(()) => accepted.push(symbol),
+                Err(error) => {
+                    warn!(%symbol, %error, "Ticker import rejected: industry membership or profile could not be verified");
+                    collection.rejected_symbols.push(
+                        crate::models::ticker_collection::RejectedTicker {
+                            symbol,
+                            reason: "Could not verify ticker and industry membership".into(),
+                        },
+                    );
+                }
+            }
+        }
+        collection.symbols = accepted;
+        self.remember_collection(collection)
     }
 
     fn remember_collection(&self, collection: TickerCollection) -> TickerCollection {
@@ -282,6 +302,7 @@ fn parse_csv_files(files: Vec<UploadedTickerFile>) -> TickerCollection {
         symbols,
         skipped_rows,
         created_at: Utc::now(),
+        rejected_symbols: Vec::new(),
     }
 }
 
@@ -305,6 +326,7 @@ fn parse_pasted_text(text: &str) -> TickerCollection {
         symbols,
         skipped_rows,
         created_at: Utc::now(),
+        rejected_symbols: Vec::new(),
     }
 }
 
@@ -352,6 +374,67 @@ fn normalize_symbol(value: &str) -> Option<TickerSymbol> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn import_rejects_only_ticker_without_verified_membership() {
+        use crate::{
+            models::{CompanyProfile, Exchange},
+            services::industry_data::tests::{client, fixture},
+            store::Store,
+        };
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let accepted = TickerSymbol::parse("NVDA").unwrap();
+        store
+            .add_ticker_industry("semiconductors", "Semiconductors", &accepted)
+            .await
+            .unwrap();
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: accepted.clone(),
+                name: None,
+                exchange: Exchange::Nasdaq,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let (_, catalog, yahoo) = fixture(store.clone(), client(&url));
+        let config: crate::config::Config =
+            toml::from_str(include_str!("../../config.example.toml")).unwrap();
+        let service = TickerCollectionService::new(
+            catalog,
+            Arc::new(IndustryAnalysisService::new(store.clone())),
+            Arc::new(ThemeAnalysisService::new(store.clone(), yahoo, &config.market).unwrap()),
+        );
+        let collection = service.parse_pasted_text("NVDA UNKNOWN NVDA").await;
+        assert_eq!(collection.symbols, ["NVDA"]);
+        assert_eq!(collection.rejected_symbols.len(), 1);
+        assert_eq!(collection.rejected_symbols[0].symbol, "UNKNOWN");
+        assert!(
+            !store
+                .ticker_has_industry(&TickerSymbol::parse("UNKNOWN").unwrap())
+                .await
+                .unwrap()
+        );
+        assert!(
+            store
+                .company_profile(&TickerSymbol::parse("UNKNOWN").unwrap())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(service.last().unwrap().symbols, ["NVDA"]);
+        server.abort();
+    }
 
     #[test]
     fn parses_first_column_and_skips_noise() {

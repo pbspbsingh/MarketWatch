@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { CircularProgress, Typography } from "@mui/material";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
+import { applicationEvents } from "../api/applicationEvents";
 
 const CsvAnalyzerPage = lazy(() =>
   import("../features/csv-analyzer/CsvAnalyzerPage").then(({ CsvAnalyzerPage }) => ({
@@ -52,6 +53,10 @@ const TradeLogsPage = lazy(() =>
 );
 
 export function App() {
+  useEffect(() => {
+    applicationEvents.start();
+    return () => applicationEvents.stop();
+  }, []);
   return (
     <Routes>
       <Route element={<AppShell />}>

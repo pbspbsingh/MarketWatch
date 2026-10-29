@@ -26,7 +26,7 @@ pub struct FinvizClient {
     industry_url: Url,
     screener_url: Url,
     stock_url: Url,
-    industry_membership_filters: Vec<String>,
+    top_stocks_base_filters: Vec<String>,
     request_throttle: RequestThrottle,
 }
 
@@ -127,6 +127,12 @@ struct ScreenerRowText {
 }
 
 impl FinvizClient {
+    #[cfg(test)]
+    pub(crate) fn with_screener_url(mut self, url: &str) -> Self {
+        self.screener_url = Url::parse(url).expect("valid test screener URL");
+        self
+    }
+
     pub async fn news(&self, ticker: &TickerSymbol) -> anyhow::Result<NewsBatch> {
         let mut url = self.stock_url.clone();
         url.query_pairs_mut()
@@ -168,7 +174,7 @@ impl FinvizClient {
             industry_url: Url::parse(INDUSTRY_URL).context("invalid Finviz industry URL")?,
             screener_url: Url::parse(SCREENER_URL).context("invalid Finviz screener URL")?,
             stock_url: Url::parse(STOCK_URL).context("invalid Finviz stock URL")?,
-            industry_membership_filters: finviz.industry_membership_filters.clone(),
+            top_stocks_base_filters: finviz.top_stocks_base_filters.clone(),
             request_throttle: RequestThrottle::new(
                 Duration::from_millis(provider.min_delay_ms),
                 Duration::from_millis(provider.max_delay_ms),
@@ -281,17 +287,45 @@ impl FinvizClient {
     pub async fn industry_tickers(&self, industry_key: &str) -> anyhow::Result<Vec<TickerSymbol>> {
         anyhow::ensure!(!industry_key.trim().is_empty(), "industry key is required");
 
-        let filters = std::iter::once(format!("industry_{industry_key}"))
-            .chain(self.industry_membership_filters.iter().cloned())
-            .collect::<Vec<_>>()
-            .join(",");
-        let tickers = self.screener_tickers(&filters, None, usize::MAX).await?;
+        let pairs = vec![("f".to_owned(), format!("industry_{industry_key}"))];
+        let tickers = self
+            .screener_tickers_with_pairs(&pairs, usize::MAX, true)
+            .await?;
         info!(
             industry_key,
             ticker_count = tickers.len(),
             "fetched Finviz industry membership"
         );
         Ok(tickers)
+    }
+
+    pub async fn industry_counts(
+        &self,
+        industries: &[IndustryClassification],
+    ) -> anyhow::Result<HashMap<String, i64>> {
+        let mut url = self.industry_url.clone();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs([("g", "industry"), ("v", "110")]);
+        let mut counts = parse_industry_counts(&self.get(url).await?)?;
+        for industry in industries {
+            if counts.contains_key(&industry.industry.key) {
+                continue;
+            }
+            let mut url = self.screener_url.clone();
+            url.query_pairs_mut()
+                .clear()
+                .append_pair("v", SCREENER_OVERVIEW_VIEW)
+                .append_pair("f", &format!("industry_{}", industry.industry.key));
+            // The catalog can include industries omitted from the overview (e.g.
+            // Shell Companies). Only their metadata total is needed, not membership.
+            let page = parse_screener_props(&self.get(url).await?)?;
+            counts.insert(
+                industry.industry.key.clone(),
+                i64::try_from(page.data.total_count)?,
+            );
+        }
+        Ok(counts)
     }
 
     pub async fn top_stocks(
@@ -304,7 +338,7 @@ impl FinvizClient {
         anyhow::ensure!(count > 0, "top stock count must be positive");
 
         let filters = self
-            .industry_membership_filters
+            .top_stocks_base_filters
             .iter()
             .chain(additional_filters)
             .cloned()
@@ -331,7 +365,9 @@ impl FinvizClient {
             .filter(|(key, _)| key != "v" && key != "r")
             .map(|(key, value)| (key.into_owned(), value.into_owned()))
             .collect::<Vec<_>>();
-        let tickers = self.screener_tickers_with_pairs(&pairs, count).await?;
+        let tickers = self
+            .screener_tickers_with_pairs(&pairs, count, false)
+            .await?;
         info!(
             screen_url,
             ticker_count = tickers.len(),
@@ -403,17 +439,19 @@ impl FinvizClient {
         if let Some(sort) = sort {
             pairs.push(("o".to_owned(), sort.to_owned()));
         }
-        self.screener_tickers_with_pairs(&pairs, count).await
+        self.screener_tickers_with_pairs(&pairs, count, false).await
     }
 
     async fn screener_tickers_with_pairs(
         &self,
         pairs: &[(String, String)],
         count: usize,
+        complete_membership: bool,
     ) -> anyhow::Result<Vec<TickerSymbol>> {
         let mut tickers = Vec::new();
         let mut seen = HashSet::new();
         let mut next_row = 0;
+        let mut expected_total = None;
         loop {
             let mut url = self.screener_url.clone();
             {
@@ -442,6 +480,21 @@ impl FinvizClient {
             }
 
             let page = parse_screener_page(&self.get(url).await?)?;
+            if complete_membership {
+                anyhow::ensure!(
+                    page.first_row == next_row,
+                    "Finviz membership offset changed"
+                );
+                anyhow::ensure!(
+                    expected_total.is_none_or(|total| total == page.total),
+                    "Finviz membership total changed during pagination"
+                );
+                expected_total = Some(page.total);
+                anyhow::ensure!(
+                    !page.tickers.is_empty() || next_row == page.total,
+                    "Finviz membership ended before its advertised total"
+                );
+            }
             if page.tickers.is_empty() {
                 return Ok(tickers);
             }
@@ -465,6 +518,50 @@ impl FinvizClient {
             }
         }
     }
+}
+
+fn parse_industry_counts(html: &str) -> anyhow::Result<HashMap<String, i64>> {
+    let document = Html::parse_document(html);
+    let table = document
+        .select(&selector("table.groups_table")?)
+        .next()
+        .context("Finviz groups table missing")?;
+    let headers = table
+        .select(&selector("thead th")?)
+        .map(text)
+        .collect::<Vec<_>>();
+    let name_column = headers
+        .iter()
+        .position(|value| value == "Name")
+        .context("Finviz group Name column missing")?;
+    let count_column = headers
+        .iter()
+        .position(|value| value == "Stocks")
+        .context("Finviz group Stocks column missing")?;
+    let mut counts = HashMap::new();
+    for row in table.select(&selector("tr.styled-row")?) {
+        let cells = row.select(&selector("td")?).collect::<Vec<_>>();
+        anyhow::ensure!(
+            cells.len() == headers.len(),
+            "Finviz group row/header column mismatch"
+        );
+        let link = cells[name_column]
+            .select(&selector(r#"a[href*="f=ind_"], a[href*="f=industry_"]"#)?)
+            .next()
+            .context("Finviz industry identity missing")?;
+        let key = industry_key(link)?;
+        let count = text(cells[count_column])
+            .replace(',', "")
+            .parse::<i64>()
+            .context("Invalid Finviz stock count")?;
+        anyhow::ensure!(count >= 0, "Negative Finviz stock count");
+        anyhow::ensure!(
+            counts.insert(key, count).is_none(),
+            "Duplicate Finviz industry count"
+        );
+    }
+    anyhow::ensure!(!counts.is_empty(), "Finviz groups table is empty");
+    Ok(counts)
 }
 
 fn parse_industries(html: &str) -> anyhow::Result<Vec<IndustryPerformance>> {
@@ -541,7 +638,8 @@ fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
         "Finviz screener page size is invalid"
     );
     anyhow::ensure!(
-        data.rows.len() <= data.total_count.saturating_sub(data.first_row),
+        data.first_row <= data.total_count
+            && data.rows.len() <= data.total_count.saturating_sub(data.first_row),
         "Finviz screener rows exceed its total"
     );
     Ok(ScreenerPage {

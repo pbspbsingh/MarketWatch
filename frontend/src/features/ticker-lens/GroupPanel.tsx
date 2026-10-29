@@ -67,7 +67,6 @@ interface GroupPanelProps {
   selectedTickerContext: SelectedTickerContext | undefined;
   requestedThemeNames: string[];
   requestedUnassigned: boolean;
-  selectedGroupTickerCounts: Map<string, number>;
   countSortAvailable: boolean;
   groups: GroupRanking[];
   globalRankingGroups: GroupRanking[];
@@ -89,7 +88,6 @@ export function GroupPanel({
   selectedTickerContext,
   requestedThemeNames,
   requestedUnassigned,
-  selectedGroupTickerCounts,
   countSortAvailable,
   groups,
   globalRankingGroups,
@@ -153,21 +151,13 @@ export function GroupPanel({
     setSelectedGroupKeys,
   ]);
 
-  const groupsWithCounts = useMemo(
-    () =>
-      groups.map((group) => ({
-        ...group,
-        ticker_count: group.ticker_count ?? selectedGroupTickerCounts.get(group.key),
-      })),
-    [groups, selectedGroupTickerCounts],
-  );
   const activeSortSetting = useMemo(
     () => !countSortAvailable && sortSetting.key === "count"
       ? ({ key: "absolute_strength", direction: "desc" } as const)
       : sortSetting,
     [countSortAvailable, sortSetting],
   );
-  const sortedGroups = useMemo(() => sortGroups(groupsWithCounts, activeSortSetting), [groupsWithCounts, activeSortSetting]);
+  const sortedGroups = useMemo(() => sortGroups(groups, activeSortSetting), [groups, activeSortSetting]);
   const rankByGroupKey = useMemo(
     () => activeSortSetting.key === "count"
       ? new Map<string, number>()
@@ -537,10 +527,10 @@ export function GroupPanel({
               >
                 <span
                   className="ranked-name"
-                  title={`Unassigned${countLabel(unassignedGroup, selectedGroupTickerCounts)}`}
+                  title={`Unassigned${countLabel(unassignedGroup)}`}
                 >
                   Unassigned
-                  {countLabel(unassignedGroup, selectedGroupTickerCounts)}
+                  {countLabel(unassignedGroup)}
                 </span>
               </button>
             </li>
@@ -592,13 +582,13 @@ export function GroupPanel({
                   {rank === undefined ? (
                     <span className="ranked-name" style={{ color: nameColor }}>
                       {group.name}
-                      {countLabel(group, selectedGroupTickerCounts)}
+                      {countLabel(group)}
                     </span>
                   ) : (
                     <Tooltip title={`Global rank #${rank}`} placement="right" arrow>
                       <span className="ranked-name" style={{ color: nameColor }}>
                         {group.name}
-                        {countLabel(group, selectedGroupTickerCounts)}
+                        {countLabel(group)}
                       </span>
                     </Tooltip>
                   )}
@@ -675,12 +665,7 @@ function readExpandedSectors() {
   }
 }
 
-function countLabel(
-  group: GroupRanking,
-  selectedGroupTickerCounts: Map<string, number>,
-) {
-  const count =
-    group.ticker_count ??
-    selectedGroupTickerCounts.get(group.key);
+function countLabel(group: GroupRanking) {
+  const count = group.ticker_count;
   return count === undefined ? "" : ` (${count})`;
 }

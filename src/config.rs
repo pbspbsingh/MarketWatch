@@ -178,10 +178,9 @@ pub struct ProviderConfig {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinvizConfig {
-    pub industry_membership_filters: Vec<String>,
+    pub top_stocks_base_filters: Vec<String>,
     #[serde(default)]
     pub top_stocks_additional_filters: Vec<String>,
-    pub membership_fresh_days: u16,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -256,16 +255,12 @@ impl Config {
             "providers.max_delay_ms must not be below providers.min_delay_ms"
         );
         anyhow::ensure!(
-            valid_finviz_filters(&self.finviz.industry_membership_filters),
-            "finviz.industry_membership_filters must contain valid Finviz filter tokens"
+            valid_finviz_filters(&self.finviz.top_stocks_base_filters),
+            "finviz.top_stocks_base_filters must contain valid Finviz filter tokens"
         );
         anyhow::ensure!(
             valid_finviz_filters(&self.finviz.top_stocks_additional_filters),
             "finviz.top_stocks_additional_filters must contain valid Finviz filter tokens"
-        );
-        anyhow::ensure!(
-            self.finviz.membership_fresh_days > 0,
-            "finviz.membership_fresh_days must be positive"
         );
         if let Some(ai) = &self.ai {
             ai.validate()?;

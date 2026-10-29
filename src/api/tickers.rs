@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use crate::models::{TickerRanking, TickerSymbol};
-use crate::services::tickers::{IndustryMembershipRefreshError, IndustryMembershipRefreshResult};
+use crate::services::tickers::TickerCatalogService;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -8,7 +8,6 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -69,11 +68,6 @@ struct TickerRankingRequest {
 }
 
 #[derive(Deserialize)]
-struct IndustryMembershipRefreshRequest {
-    industry_keys: Vec<String>,
-}
-
-#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum GroupSummaryMode {
     Industry,
@@ -128,7 +122,6 @@ pub fn router() -> Router<AppState> {
         .route("/tickers", get(tickers_socket))
         .route("/ticker-ranking", post(ticker_ranking))
         .route("/ticker-membership", post(membership))
-        .route("/ticker-membership/refresh", post(refresh_membership))
         .route("/ticker-group-summary", post(group_summary))
 }
 
@@ -316,28 +309,6 @@ async fn membership(
     })
 }
 
-async fn refresh_membership(
-    State(state): State<AppState>,
-    Json(request): Json<IndustryMembershipRefreshRequest>,
-) -> Result<Json<IndustryMembershipRefreshResult>, (StatusCode, Json<Value>)> {
-    state
-        .ticker_catalog
-        .refresh_industry_memberships(&request.industry_keys)
-        .await
-        .map(Json)
-        .map_err(|request_error| {
-            let status = match &request_error {
-                IndustryMembershipRefreshError::Validation(_) => StatusCode::BAD_REQUEST,
-                IndustryMembershipRefreshError::Provider { .. } => StatusCode::BAD_GATEWAY,
-                IndustryMembershipRefreshError::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            if status.is_server_error() {
-                error!(error = %request_error, "failed to refresh industry memberships");
-            }
-            (status, Json(json!({ "error": request_error.to_string() })))
-        })
-}
-
 async fn ticker_ranking(
     State(state): State<AppState>,
     Json(request): Json<TickerRankingRequest>,
@@ -357,10 +328,12 @@ async fn group_summary(
     State(state): State<AppState>,
     Json(request): Json<GroupSummaryRequest>,
 ) -> Result<Json<GroupSummary>, StatusCode> {
-    let symbols = summary_symbols(&state, &request).await.map_err(|error| {
-        error!(%error, "failed to resolve ticker group summary symbols");
-        StatusCode::BAD_REQUEST
-    })?;
+    let symbols = summary_symbols(&state.ticker_catalog, &request)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to resolve ticker group summary symbols");
+            StatusCode::BAD_REQUEST
+        })?;
     let mut summary = match request.mode {
         GroupSummaryMode::Industry => industry_summary(&state, &symbols).await,
         GroupSummaryMode::Theme => theme_summary(&state, &symbols).await,
@@ -379,27 +352,22 @@ async fn group_summary(
 }
 
 async fn summary_symbols(
-    state: &AppState,
+    catalog: &TickerCatalogService,
     request: &GroupSummaryRequest,
 ) -> anyhow::Result<Vec<TickerSymbol>> {
-    let base_symbols = match &request.symbols {
-        Some(symbols) => unique_sorted(symbols),
-        None => state.ticker_catalog.industry_tickers(&[]).await?,
-    };
-    if request.group_keys.is_empty() {
-        return Ok(base_symbols);
+    if let Some(symbols) = &request.symbols {
+        let base_symbols = unique_sorted(symbols);
+        if request.group_keys.is_empty() {
+            return Ok(base_symbols);
+        }
+        return selected_base_symbols(catalog, request, base_symbols).await;
     }
-    if request.symbols.is_some() {
-        return selected_base_symbols(state, request, base_symbols).await;
+    if request.group_keys.is_empty() {
+        return Ok(Vec::new());
     }
 
-    let selected_symbols = match request.mode {
-        GroupSummaryMode::Industry => {
-            state
-                .ticker_catalog
-                .industry_tickers(&request.group_keys)
-                .await?
-        }
+    match request.mode {
+        GroupSummaryMode::Industry => catalog.industry_tickers(&request.group_keys).await,
         GroupSummaryMode::Theme => {
             let theme_ids = request
                 .group_keys
@@ -407,31 +375,24 @@ async fn summary_symbols(
                 .filter(|key| key.as_str() != "unassigned")
                 .map(|key| key.parse::<i64>())
                 .collect::<Result<Vec<_>, _>>()?;
-            state
-                .ticker_catalog
+            catalog
                 .theme_tickers(
                     &theme_ids,
                     request.group_keys.iter().any(|key| key == "unassigned"),
                 )
-                .await?
+                .await
         }
-    };
-    let selected_symbols = selected_symbols.into_iter().collect::<HashSet<_>>();
-    Ok(base_symbols
-        .into_iter()
-        .filter(|symbol| selected_symbols.contains(symbol))
-        .collect())
+    }
 }
 
 async fn selected_base_symbols(
-    state: &AppState,
+    catalog: &TickerCatalogService,
     request: &GroupSummaryRequest,
     base_symbols: Vec<TickerSymbol>,
 ) -> anyhow::Result<Vec<TickerSymbol>> {
     let base_symbol_set = base_symbols.iter().cloned().collect::<HashSet<_>>();
     let selected_symbol_set = match request.mode {
-        GroupSummaryMode::Industry => state
-            .ticker_catalog
+        GroupSummaryMode::Industry => catalog
             .industries_for_symbols(&base_symbols)
             .await?
             .into_iter()
@@ -446,10 +407,7 @@ async fn selected_base_symbols(
                 .map(|key| key.parse::<i64>())
                 .collect::<Result<HashSet<_>, _>>()?;
             let include_unassigned = request.group_keys.iter().any(|key| key == "unassigned");
-            let memberships = state
-                .ticker_catalog
-                .themes_for_symbols(&base_symbols)
-                .await?;
+            let memberships = catalog.themes_for_symbols(&base_symbols).await?;
             let assigned_symbols = memberships
                 .iter()
                 .map(|membership| membership.symbol.clone())
@@ -584,6 +542,53 @@ impl Drop for AbortOnDrop {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn group_summaries_resolve_selected_members_without_open_universe_fallback() {
+        use crate::{
+            services::industry_data::tests::{client, fixture},
+            store::Store,
+        };
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .replace_industry_membership(
+                "semiconductors",
+                chrono::Utc::now(),
+                &[TickerSymbol::parse("NVDA").unwrap()],
+            )
+            .await
+            .unwrap();
+        let (_, catalog, _) = fixture(store, client("http://127.0.0.1:1/"));
+        let mut request = GroupSummaryRequest {
+            mode: GroupSummaryMode::Industry,
+            group_keys: vec![],
+            symbols: None,
+        };
+        assert!(
+            summary_symbols(&catalog, &request)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        request.group_keys.push("semiconductors".into());
+        assert_eq!(summary_symbols(&catalog, &request).await.unwrap(), ["NVDA"]);
+        request.symbols = Some(vec![TickerSymbol::parse("AMD").unwrap()]);
+        assert!(
+            summary_symbols(&catalog, &request)
+                .await
+                .unwrap()
+                .is_empty(),
+            "Bounded summaries remain restricted to their uploaded symbols"
+        );
+        request.mode = GroupSummaryMode::Theme;
+        request.group_keys = vec!["unassigned".into()];
+        request.symbols = None;
+        let symbols = summary_symbols(&catalog, &request).await.unwrap();
+        assert_eq!(symbols, ["NVDA"]);
+        let counts = theme_counts(&symbols, Vec::new());
+        assert_eq!(counts[0].key, "unassigned");
+        assert_eq!(counts[0].ticker_count, 1);
+    }
 
     #[test]
     fn symbol_stream_keeps_valid_tickers_when_one_is_invalid() {

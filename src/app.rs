@@ -12,6 +12,7 @@ use crate::services::fundamentals_background::FundamentalsBackgroundService;
 use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
+use crate::services::industry_data::IndustryDataService;
 use crate::services::institutions::InstitutionsService;
 use crate::services::maintenance;
 use crate::services::market_chart::MarketChartService;
@@ -92,6 +93,7 @@ where
 
 #[derive(Clone)]
 pub struct AppState {
+    pub industry_data: Arc<IndustryDataService>,
     pub institutions: Arc<InstitutionsService>,
     pub chart: Arc<ChartService>,
     pub daily_notes: Arc<DailyNotesService>,
@@ -149,6 +151,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let yahoo = Arc::new(YahooService::new(
         store.clone(),
         yahoo_client.clone(),
+        finviz.clone(),
         &config.market,
         nyse_holidays,
     )?);
@@ -176,7 +179,6 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         store.clone(),
         finviz.clone(),
         yahoo.clone(),
-        &config.finviz,
         &config.market,
     )?);
     let ticker_strength = Arc::new(TickerStrengthService::new(
@@ -252,15 +254,20 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         market_repositioning_dates,
         &config.market,
     ));
-    let industry_refresh = IndustryRefreshService::new(
+    let industry_refresh = Arc::new(IndustryRefreshService::new(
         store.clone(),
         finviz.clone(),
         &config.market,
-        &config.finviz,
-    )?;
-    industry_refresh.spawn_refresh_task();
+    )?);
+    industry_refresh.clone().spawn_refresh_task();
+    let industry_data = Arc::new(IndustryDataService::new(
+        store.clone(),
+        industry_refresh,
+        ticker_catalog.clone(),
+    ));
     maintenance::spawn(store);
     let state = AppState {
+        industry_data,
         institutions,
         chart,
         daily_notes,

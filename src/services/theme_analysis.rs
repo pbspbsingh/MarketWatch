@@ -55,6 +55,7 @@ impl ThemeAnalysisService {
                         .find(|candle| candle.market_date <= as_of)
                         .map(|candle| candle.close);
                     rankings.push(ThemeRanking {
+                        ticker_count: theme.stock_count,
                         id: theme.id,
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,
@@ -71,6 +72,7 @@ impl ThemeAnalysisService {
                         "failed to load theme ETF performance"
                     );
                     rankings.push(ThemeRanking {
+                        ticker_count: theme.stock_count,
                         id: theme.id,
                         name: theme.name,
                         etf_symbol: theme.etf_symbol,

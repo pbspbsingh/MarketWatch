@@ -195,6 +195,7 @@ export function ThemeTrackerPage() {
         const rankingsById = new Map(rankings?.map((theme) => [theme.id, theme]));
         const allThemes = metadata.map((theme) => rankingsById.get(theme.id) ?? {
           id: theme.id, name: theme.name, etf_symbol: theme.etf_symbol,
+          ticker_count: theme.stock_count,
           performance: null, absolute_strength: null, previous_close: null,
         });
         setThemes(allThemes);

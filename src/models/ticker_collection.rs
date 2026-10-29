@@ -1,25 +1,27 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::{PerformancePeriods, TickerSymbol};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct TickerCollection {
     pub version: u8,
     pub source: TickerCollectionSource,
     pub symbols: Vec<TickerSymbol>,
     pub skipped_rows: usize,
     pub created_at: DateTime<Utc>,
+    pub rejected_symbols: Vec<RejectedTicker>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TickerCollectionSource {
     Csv { files: Vec<TickerCollectionFile> },
     Pasted,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct TickerCollectionFile {
     pub name: String,
     pub row_count: usize,
@@ -43,4 +45,10 @@ pub struct TickerCollectionGroups {
     pub symbols: Vec<TickerSymbol>,
     pub groups: Vec<TickerCollectionGroup>,
     pub failed_symbols: Vec<TickerSymbol>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct RejectedTicker {
+    pub symbol: TickerSymbol,
+    pub reason: String,
 }

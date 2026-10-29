@@ -37,6 +37,7 @@ fn service_with_source(
         YahooService::new(
             store.clone(),
             Arc::new(YahooClient::new(&config.providers)),
+            Arc::new(FinvizClient::new(&config.finviz, &config.providers).unwrap()),
             &config.market,
             HashSet::new(),
         )

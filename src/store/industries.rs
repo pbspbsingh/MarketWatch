@@ -2,13 +2,7 @@ use super::Store;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct IndustryClassification {
-    pub industry_key: String,
-    pub industry_name: String,
-    pub sector_key: String,
-    pub sector_name: String,
-}
+pub use crate::contracts::industry::IndustryClassification;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct IndustryRankings {
@@ -45,6 +39,28 @@ struct StoredIndustryRanking {
 }
 
 impl Store {
+    pub async fn industry_classification_snapshot(
+        &self,
+    ) -> anyhow::Result<(Vec<IndustryClassification>, Option<DateTime<Utc>>)> {
+        let mut transaction = self.pool.begin().await?;
+        let fetched_at = sqlx::query_scalar!(
+            "SELECT fetched_at AS \"fetched_at: NaiveDateTime\"
+             FROM industry_classifications
+             ORDER BY fetched_at DESC LIMIT 1"
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let rows = sqlx::query_as!(
+            IndustryClassification,
+            "SELECT industry_key, industry_name, sector_key, sector_name, ticker_count
+             FROM industry_classifications ORDER BY industry_name"
+        )
+        .fetch_all(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok((rows, fetched_at.map(|value| value.and_utc())))
+    }
+
     pub async fn industry_classifications_fetched_at(
         &self,
     ) -> anyhow::Result<Option<DateTime<Utc>>> {
@@ -81,12 +97,13 @@ impl Store {
         for classification in classifications {
             sqlx::query!(
                 "INSERT INTO industry_classifications (
-                    industry_key, industry_name, sector_key, sector_name, fetched_at
-                 ) VALUES (?, ?, ?, ?, ?)",
+                    industry_key, industry_name, sector_key, sector_name, ticker_count, fetched_at
+                 ) VALUES (?, ?, ?, ?, ?, ?)",
                 classification.industry_key,
                 classification.industry_name,
                 classification.sector_key,
                 classification.sector_name,
+                classification.ticker_count,
                 fetched_at,
             )
             .execute(&mut *transaction)
@@ -96,13 +113,15 @@ impl Store {
         transaction
             .commit()
             .await
-            .context("failed to commit industry classifications")
+            .context("failed to commit industry classifications")?;
+        self.classification_changes.send_replace(());
+        Ok(())
     }
 
     pub async fn industry_classifications(&self) -> anyhow::Result<Vec<IndustryClassification>> {
         sqlx::query_as!(
             IndustryClassification,
-            "SELECT industry_key, industry_name, sector_key, sector_name
+            "SELECT industry_key, industry_name, sector_key, sector_name, ticker_count
              FROM industry_classifications ORDER BY industry_name"
         )
         .fetch_all(&self.pool)
@@ -116,7 +135,7 @@ impl Store {
     ) -> anyhow::Result<Option<IndustryClassification>> {
         sqlx::query_as!(
             IndustryClassification,
-            "SELECT industry_key, industry_name, sector_key, sector_name
+            "SELECT industry_key, industry_name, sector_key, sector_name, ticker_count
              FROM industry_classifications
              WHERE industry_key = ?",
             industry_key,
@@ -299,6 +318,7 @@ mod tests {
             industry_name: "Semiconductors".to_owned(),
             sector_key: "technology".to_owned(),
             sector_name: "Technology".to_owned(),
+            ticker_count: 69,
         };
         store
             .replace_industry_classifications(std::slice::from_ref(&expected), Utc::now())
@@ -310,11 +330,26 @@ mod tests {
                 .industry_classification("semiconductors")
                 .await
                 .unwrap(),
-            Some(expected),
+            Some(expected.clone()),
         );
         assert_eq!(
             store.industry_classification("missing").await.unwrap(),
             None,
+        );
+        let before = store.industry_classification_snapshot().await.unwrap();
+        let invalid = IndustryClassification {
+            ticker_count: -1,
+            ..expected
+        };
+        assert!(
+            store
+                .replace_industry_classifications(&[invalid], Utc::now())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            store.industry_classification_snapshot().await.unwrap(),
+            before
         );
     }
 

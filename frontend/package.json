@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "npm run typecheck && npm run lint",
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
     "typecheck": "tsc -b",
     "lint": "oxlint --type-aware --max-warnings=0 src",
     "preview": "vite preview"
@@ -24,6 +25,7 @@
     "@lezer/highlight": "^1.2.5",
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
+    "@tanstack/react-query": "5.105.0",
     "lightweight-charts": "^5.2.1",
     "modern-screenshot": "^4.7.0",
     "react": "19.3.0",

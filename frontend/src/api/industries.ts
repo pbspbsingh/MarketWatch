@@ -1,11 +1,5 @@
-export interface PerformancePeriods {
-  day: number;
-  week: number;
-  month: number;
-  quarter: number;
-  half_year: number;
-  year: number;
-}
+import type { PerformancePeriods, ThemeRanking } from "./generated/contracts";
+export type { PerformancePeriods, ThemeRanking } from "./generated/contracts";
 
 export interface IndustryRanking {
   key: string;
@@ -14,15 +8,6 @@ export interface IndustryRanking {
   sector_name: string | null;
   performance: PerformancePeriods;
   absolute_strength: number;
-}
-
-export interface ThemeRanking {
-  id: number;
-  name: string;
-  etf_symbol: string;
-  performance: PerformancePeriods | null;
-  absolute_strength: number | null;
-  previous_close: number | null;
 }
 
 export interface SectorRanking {

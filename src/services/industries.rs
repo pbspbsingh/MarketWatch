@@ -1,10 +1,12 @@
-use crate::config::{FinvizConfig, MarketConfig};
+use crate::config::MarketConfig;
+use crate::contracts::industry::MEMBERSHIP_FRESH_DAYS;
 use crate::providers::FinvizClient;
 use crate::store::{IndustryClassification, IndustryRankingRow, IndustryRankings, Store};
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, TimeDelta, Utc};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 const REFRESH_SLEEP_DURATION: Duration = Duration::from_mins(15);
@@ -14,7 +16,7 @@ pub struct IndustryRefreshService {
     store: Store,
     finviz: Arc<FinvizClient>,
     market_schedule: MarketSchedule,
-    classification_fresh_days: i64,
+    classification_lock: Mutex<()>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,23 +31,19 @@ impl IndustryRefreshService {
         store: Store,
         finviz: Arc<FinvizClient>,
         market: &MarketConfig,
-        finviz_config: &FinvizConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             store,
             finviz,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
-            classification_fresh_days: i64::from(finviz_config.membership_fresh_days),
+            classification_lock: Mutex::new(()),
         })
     }
 
-    pub fn spawn_refresh_task(self) {
+    pub fn spawn_refresh_task(self: Arc<Self>) {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(10)).await;
             loop {
-                if let Err(error) = self.refresh_classifications_if_stale().await {
-                    warn!(%error, "scheduled industry classification refresh failed");
-                }
                 if let Err(error) = self.refresh_if_stale().await {
                     warn!(%error, "scheduled industry refresh failed");
                 }
@@ -54,8 +52,9 @@ impl IndustryRefreshService {
         });
     }
 
-    async fn refresh_classifications_if_stale(&self) -> anyhow::Result<()> {
-        let stale_before = Utc::now() - TimeDelta::days(self.classification_fresh_days);
+    pub async fn refresh_classifications_if_stale(&self) -> anyhow::Result<()> {
+        let _guard = self.classification_lock.lock().await;
+        let stale_before = Utc::now() - TimeDelta::days(MEMBERSHIP_FRESH_DAYS);
         if self
             .store
             .industry_classifications_fetched_at()
@@ -65,18 +64,22 @@ impl IndustryRefreshService {
             return Ok(());
         }
 
-        let classifications = self
-            .finviz
-            .industry_classifications()
-            .await?
+        let classifications = self.finviz.industry_classifications().await?;
+        let counts = self.finviz.industry_counts(&classifications).await?;
+        let classifications = classifications
             .into_iter()
-            .map(|classification| IndustryClassification {
-                industry_key: classification.industry.key,
-                industry_name: classification.industry.name,
-                sector_key: classification.sector.key,
-                sector_name: classification.sector.name,
+            .map(|classification| {
+                Ok(IndustryClassification {
+                    ticker_count: *counts.get(&classification.industry.key).ok_or_else(|| {
+                        anyhow::anyhow!("Industry count missing: {}", classification.industry.key)
+                    })?,
+                    industry_key: classification.industry.key,
+                    industry_name: classification.industry.name,
+                    sector_key: classification.sector.key,
+                    sector_name: classification.sector.name,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<anyhow::Result<Vec<_>>>()?;
         self.store
             .replace_industry_classifications(&classifications, Utc::now())
             .await?;

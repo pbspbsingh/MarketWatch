@@ -1,3 +1,4 @@
+import { fetchIndustryMembers } from "./industryData";
 import type { PerformancePeriods } from "./industries";
 
 export interface TickerRanking {
@@ -27,17 +28,15 @@ type TickerGroupSelection =
   | { group_type: "industry"; keys: string[] }
   | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
 
-type IndustryMembershipRefreshResult = {
-  industry_count: number;
-  ticker_count: number;
-  added_count: number;
-  removed_count: number;
-};
-
 export async function resolveTickerMembership(
   selection: TickerGroupSelection,
   signal?: AbortSignal,
 ): Promise<string[]> {
+  if ((selection.group_type === "industry" && selection.keys.length === 0)
+    || (selection.group_type === "theme" && selection.ids.length === 0 && !selection.include_unassigned)) return [];
+  if (selection.group_type === "industry" && selection.keys.length > 0) {
+    return fetchIndustryMembers(selection.keys, signal);
+  }
   const response = await fetch("/api/ticker-membership", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,21 +47,6 @@ export async function resolveTickerMembership(
     throw new Error(`Failed to resolve ticker membership: HTTP ${response.status}`);
   }
   return response.json() as Promise<string[]>;
-}
-
-export async function refreshIndustryMemberships(
-  industryKeys: string[],
-): Promise<IndustryMembershipRefreshResult> {
-  const response = await fetch("/api/ticker-membership/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ industry_keys: industryKeys }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? `Failed to refresh ticker membership: HTTP ${response.status}`);
-  }
-  return response.json() as Promise<IndustryMembershipRefreshResult>;
 }
 
 export async function fetchTickerRanking(

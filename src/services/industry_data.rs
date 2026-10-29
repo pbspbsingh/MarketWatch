@@ -1,0 +1,333 @@
+use crate::contracts::industry::{
+    ETF_INDUSTRY_KEY, IndustryData, IndustryResource, IndustryState, MEMBERSHIP_FRESH_DAYS,
+};
+use crate::services::industries::IndustryRefreshService;
+use crate::services::tickers::TickerCatalogService;
+use crate::store::Store;
+use chrono::{TimeDelta, Utc};
+use std::sync::Arc;
+use tokio::sync::watch;
+
+pub struct IndustryDataService {
+    store: Store,
+    catalog: Arc<IndustryRefreshService>,
+    tickers: Arc<TickerCatalogService>,
+}
+
+impl IndustryDataService {
+    pub fn new(
+        store: Store,
+        catalog: Arc<IndustryRefreshService>,
+        tickers: Arc<TickerCatalogService>,
+    ) -> Self {
+        Self {
+            store,
+            catalog,
+            tickers,
+        }
+    }
+
+    pub fn changes(&self) -> (watch::Receiver<()>, watch::Receiver<()>) {
+        (
+            self.store.subscribe_classifications(),
+            self.store.subscribe_memberships(),
+        )
+    }
+
+    pub async fn cached(&self, resource: &IndustryResource) -> anyhow::Result<IndustryState> {
+        let (data, fetched_at, permanent) = match resource {
+            IndustryResource::Catalog => {
+                let (industries, fetched_at) =
+                    self.store.industry_classification_snapshot().await?;
+                (IndustryData::Catalog { industries }, fetched_at, false)
+            }
+            IndustryResource::Membership { industry_key } => {
+                let (symbols, fetched_at) = self
+                    .store
+                    .industry_membership_snapshot(industry_key)
+                    .await?;
+                let fetched_at =
+                    fetched_at.filter(|value| *value != chrono::DateTime::<Utc>::UNIX_EPOCH);
+                let symbols = symbols
+                    .into_iter()
+                    .map(|symbol| symbol.to_string())
+                    .collect();
+                (
+                    IndustryData::Membership {
+                        industry_key: industry_key.clone(),
+                        symbols,
+                    },
+                    fetched_at,
+                    industry_key == ETF_INDUSTRY_KEY,
+                )
+            }
+        };
+        Ok(IndustryState {
+            data,
+            fetched_at,
+            expires_at: fetched_at
+                .filter(|_| !permanent)
+                .map(|value| value + TimeDelta::days(MEMBERSHIP_FRESH_DAYS)),
+            loading: false,
+            error: None,
+        })
+    }
+
+    pub async fn load(&self, resource: &IndustryResource) -> anyhow::Result<()> {
+        match resource {
+            IndustryResource::Catalog => self.catalog.refresh_classifications_if_stale().await,
+            IndustryResource::Membership { industry_key } => {
+                anyhow::ensure!(
+                    !industry_key.is_empty()
+                        && industry_key
+                            .bytes()
+                            .all(|value| value.is_ascii_alphanumeric()),
+                    "Invalid industry key"
+                );
+                self.catalog.refresh_classifications_if_stale().await?;
+                let known = industry_key == ETF_INDUSTRY_KEY
+                    || self
+                        .store
+                        .industry_classifications()
+                        .await?
+                        .iter()
+                        .any(|item| item.industry_key == *industry_key);
+                anyhow::ensure!(known, "Unknown industry key");
+                self.tickers
+                    .industry_tickers(std::slice::from_ref(industry_key))
+                    .await?;
+                Ok(())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::{
+        config::Config,
+        providers::{FinvizClient, YahooClient},
+        services::yahoo::YahooService,
+        store::IndustryClassification,
+    };
+
+    pub(crate) fn fixture(
+        store: Store,
+        finviz: Arc<FinvizClient>,
+    ) -> (
+        IndustryDataService,
+        Arc<TickerCatalogService>,
+        Arc<YahooService>,
+    ) {
+        let config: Config = toml::from_str(include_str!("../../config.example.toml")).unwrap();
+        let yahoo = Arc::new(
+            YahooService::new(
+                store.clone(),
+                Arc::new(YahooClient::new(&config.providers)),
+                finviz.clone(),
+                &config.market,
+                Default::default(),
+            )
+            .unwrap(),
+        );
+        let tickers = Arc::new(
+            TickerCatalogService::new(store.clone(), finviz.clone(), yahoo.clone(), &config.market)
+                .unwrap(),
+        );
+        let catalog =
+            Arc::new(IndustryRefreshService::new(store.clone(), finviz, &config.market).unwrap());
+        (
+            IndustryDataService::new(store, catalog, tickers.clone()),
+            tickers,
+            yahoo,
+        )
+    }
+
+    pub(crate) fn client(url: &str) -> Arc<FinvizClient> {
+        let mut config: Config = toml::from_str(include_str!("../../config.example.toml")).unwrap();
+        config.providers.min_delay_ms = 0;
+        config.providers.max_delay_ms = 0;
+        Arc::new(
+            FinvizClient::new(&config.finviz, &config.providers)
+                .unwrap()
+                .with_screener_url(url)
+                .with_stock_url(url),
+        )
+    }
+
+    pub(crate) async fn seed_catalog(store: &Store) {
+        store
+            .replace_industry_classifications(
+                &[IndustryClassification {
+                    industry_key: "semiconductors".into(),
+                    industry_name: "Semiconductors".into(),
+                    sector_key: "technology".into(),
+                    sector_name: "Technology".into(),
+                    ticker_count: 69,
+                }],
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn open_universe_does_not_resolve_or_stream_known_tickers() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        store
+            .add_ticker_industry(
+                "semiconductors",
+                "Semiconductors",
+                &crate::models::TickerSymbol::parse("NVDA").unwrap(),
+            )
+            .await
+            .unwrap();
+        let (_, catalog, _) = fixture(store, client("http://127.0.0.1:1/"));
+        assert!(catalog.industry_tickers(&[]).await.unwrap().is_empty());
+        assert!(catalog.theme_tickers(&[], false).await.unwrap().is_empty());
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        catalog
+            .stream_industry_tickers(1, &[], &sender)
+            .await
+            .unwrap();
+        catalog
+            .stream_theme_tickers(2, &[], false, &sender)
+            .await
+            .unwrap();
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_is_lazy_coalesced_and_etfs_do_not_expire() {
+        use axum::{Router, routing::get};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = Router::new().route("/", get(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async { r#"<script type="application/json" data-ssr-props="screener-island">{"screenerType":"stocks","filters":{"filters":[]},"data":{"firstRow":0,"totalCount":1,"pageSize":20,"rows":[{"text":{"ticker":"NVDA"}}]}}</script>"# }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        seed_catalog(&store).await;
+        let old = Utc::now() - TimeDelta::days(31);
+        store
+            .replace_industry_membership(
+                "semiconductors",
+                old,
+                &[crate::models::TickerSymbol::parse("AMD").unwrap()],
+            )
+            .await
+            .unwrap();
+        store
+            .replace_industry_membership(
+                ETF_INDUSTRY_KEY,
+                old,
+                &[crate::models::TickerSymbol::parse("SPY").unwrap()],
+            )
+            .await
+            .unwrap();
+        let (service, _, _) = fixture(store.clone(), client(&url));
+        let resource = IndustryResource::Membership {
+            industry_key: "semiconductors".into(),
+        };
+        assert!(service.cached(&resource).await.unwrap().expires_at.unwrap() < Utc::now());
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            0,
+            "Reading the cache must not acquire data"
+        );
+        let (a, b) = tokio::join!(service.load(&resource), service.load(&resource));
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            1,
+            "Concurrent demand shares one acquisition"
+        );
+        assert_eq!(
+            store
+                .tickers_for_industries(&["semiconductors".into()])
+                .await
+                .unwrap(),
+            ["NVDA"]
+        );
+        let etf = IndustryResource::Membership {
+            industry_key: ETF_INDUSTRY_KEY.into(),
+        };
+        service.load(&etf).await.unwrap();
+        assert!(service.cached(&etf).await.unwrap().expires_at.is_none());
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            store
+                .industry_membership_fetched_at(ETF_INDUSTRY_KEY)
+                .await
+                .unwrap(),
+            Some(old)
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_acquisition_preserves_members_and_timestamp() {
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(|| async { axum::http::StatusCode::SERVICE_UNAVAILABLE }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        seed_catalog(&store).await;
+        let old = Utc::now() - TimeDelta::days(31);
+        store
+            .replace_industry_membership(
+                "semiconductors",
+                old,
+                &[crate::models::TickerSymbol::parse("AMD").unwrap()],
+            )
+            .await
+            .unwrap();
+        let (service, _, _) = fixture(store.clone(), client(&url));
+        assert!(
+            service
+                .load(&IndustryResource::Membership {
+                    industry_key: "semiconductors".into()
+                })
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .industry_membership_fetched_at("semiconductors")
+                .await
+                .unwrap(),
+            Some(old)
+        );
+        assert_eq!(
+            store
+                .tickers_for_industries(&["semiconductors".into()])
+                .await
+                .unwrap(),
+            ["AMD"]
+        );
+        server.abort();
+    }
+
+    #[test]
+    fn resources_have_no_manual_refresh_command() {
+        assert!(
+            serde_json::from_str::<crate::contracts::industry::IndustryCommand>(
+                r#"{"type":"refresh","subscription_id":"test"}"#
+            )
+            .is_err()
+        );
+    }
+}

@@ -5,6 +5,7 @@ use sqlx::sqlite::{
 };
 use std::str::FromStr;
 use std::time::Duration;
+use tokio::sync::watch;
 
 use crate::models::DailyNote;
 use chrono::NaiveDate;
@@ -56,9 +57,19 @@ pub struct DailyNoteImage {
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
+    membership_changes: watch::Sender<()>,
+    classification_changes: watch::Sender<()>,
 }
 
 impl Store {
+    pub fn subscribe_memberships(&self) -> watch::Receiver<()> {
+        self.membership_changes.subscribe()
+    }
+
+    pub fn subscribe_classifications(&self) -> watch::Receiver<()> {
+        self.classification_changes.subscribe()
+    }
+
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
         let options = SqliteConnectOptions::from_str(database_url)
             .with_context(|| format!("invalid database URL: {database_url}"))?
@@ -78,6 +89,10 @@ impl Store {
             .run(&pool)
             .await
             .context("failed to run database migrations")?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            membership_changes: watch::channel(()).0,
+            classification_changes: watch::channel(()).0,
+        })
     }
 }

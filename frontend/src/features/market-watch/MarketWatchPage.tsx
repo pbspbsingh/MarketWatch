@@ -1,7 +1,8 @@
+import { useIndustryData } from "../../api/industryData";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
-import { refreshIndustryMemberships, resolveTickerMembership } from "../../api/tickers";
+import { resolveTickerMembership } from "../../api/tickers";
 import { Toast } from "../../components/Toast";
 import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
 import { TickerLens } from "../ticker-lens/TickerLens";
@@ -15,7 +16,6 @@ import { TickerStrengthProvider } from "../ticker-strength/TickerStrengthContext
 import { useTickerStrengthFeature } from "../ticker-strength/useTickerStrengthMetric";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
 import { tradeIdFromSearch } from "../trade-logs/tradeLinks";
-import { IndustryMembershipRefreshDialog } from "./IndustryMembershipRefreshDialog";
 import { MarketWatchToolbar } from "./MarketWatchToolbar";
 import "./market-watch.css";
 
@@ -43,13 +43,10 @@ function MarketWatchContent() {
   const [searchParams] = useSearchParams();
   const tradeId = tradeIdFromSearch(searchParams);
   const [linkedTrade, setLinkedTrade] = useState<TradeLog>();
-  const [membershipRevision, setMembershipRevision] = useState(0);
   const [selection, setSelection] = useState<
     Pick<TickerUniverseSnapshot, "mode" | "groupKeys" | "groups">
   >({ mode: "industry", groupKeys: [], groups: [] });
-  const [refreshingMembership, setRefreshingMembership] = useState(false);
-  const [membershipRefreshTarget, setMembershipRefreshTarget] = useState<string[]>();
-  const [refreshMessage, setRefreshMessage] = useState<{
+  const [notice, setNotice] = useState<{
     text: string;
     severity: "success" | "error";
   }>();
@@ -61,7 +58,7 @@ function MarketWatchContent() {
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setLinkedTrade(undefined);
-          setRefreshMessage({
+          setNotice({
             severity: "error",
             text: `Trade markers unavailable: ${error instanceof Error ? error.message : "Failed to load trade"}`,
           });
@@ -80,21 +77,6 @@ function MarketWatchContent() {
       resolveTickerMembership(tickerSelection(mode, groupKeys), signal),
     [],
   );
-  const resolveGroupCounts = useCallback(
-    async ({ mode, groupKeys, signal }: ResolveTickersRequest) => {
-      const counts = new Map<string, number>();
-      for (const groupKey of [...groupKeys].sort()) {
-        const groupSelection = new Set([groupKey]);
-        const symbols = await resolveTickerMembership(
-          tickerSelection(mode, groupSelection),
-          signal,
-        );
-        counts.set(groupKey, symbols.length);
-      }
-      return counts;
-    },
-    [],
-  );
   const handleTickerUniverseChange = useCallback((snapshot: TickerUniverseSnapshot) => {
     setSelection((current) =>
       current.mode === snapshot.mode
@@ -105,47 +87,10 @@ function MarketWatchContent() {
         : { mode: snapshot.mode, groupKeys: snapshot.groupKeys, groups: snapshot.groups }
     );
   }, []);
-  const requestMembershipRefresh = useCallback(() => {
-    if (selection.mode === "industry" && selection.groupKeys.length > 0) {
-      setMembershipRefreshTarget([...selection.groupKeys]);
-    }
-  }, [selection]);
-  const refreshMembership = useCallback(() => {
-    if (membershipRefreshTarget === undefined) return;
-    const industryKeys = membershipRefreshTarget;
-    setMembershipRefreshTarget(undefined);
-    setRefreshingMembership(true);
-    void refreshIndustryMemberships(industryKeys)
-      .then((result) => {
-        setRefreshMessage({
-          severity: "success",
-          text: `Refreshed ${result.industry_count} ${result.industry_count === 1
-            ? "industry"
-            : "industries"}: ${result.ticker_count} tickers (${result.added_count} added, ${result.removed_count} removed)`,
-        });
-      })
-      .catch((requestError: unknown) => {
-        setRefreshMessage({
-          severity: "error",
-          text: requestError instanceof Error
-            ? requestError.message
-            : "Failed to refresh industry tickers",
-        });
-      })
-      .finally(() => {
-        setMembershipRevision((revision) => revision + 1);
-        setRefreshingMembership(false);
-      });
-  }, [membershipRefreshTarget]);
+  const membershipRevision = useIndustryData(selection.groupKeys, selection.mode === "industry");
   return (
     <section className="market-watch-page">
-      <MarketWatchToolbar
-        membershipRefreshDisabled={selection.mode !== "industry"
-          || selection.groupKeys.length === 0}
-        membershipRefreshTooltip={membershipRefreshTooltip(selection)}
-        refreshingMembership={refreshingMembership}
-        onRefreshMembership={requestMembershipRefresh}
-      />
+      <MarketWatchToolbar />
       <TickerLens
         accent="purple"
         chartAnnotations={chartAnnotations}
@@ -153,34 +98,16 @@ function MarketWatchContent() {
           type: "market-watch",
           resolveGroups,
           resolveTickers,
-          resolveGroupCounts,
           revision: membershipRevision,
         }}
         metricExtensions={tickerStrength.metricExtensions}
         onTickerUniverseChange={handleTickerUniverseChange}
       />
       <Toast
-        message={refreshMessage?.text}
-        severity={refreshMessage?.severity}
-        onClose={() => setRefreshMessage(undefined)}
+        message={notice?.text}
+        severity={notice?.severity}
+        onClose={() => setNotice(undefined)}
       />
-      {membershipRefreshTarget !== undefined && (
-        <IndustryMembershipRefreshDialog
-          industryCount={membershipRefreshTarget.length}
-          onCancel={() => setMembershipRefreshTarget(undefined)}
-          onConfirm={refreshMembership}
-        />
-      )}
     </section>
   );
-}
-
-function membershipRefreshTooltip(
-  selection: Pick<TickerUniverseSnapshot, "mode" | "groups">,
-) {
-  if (selection.mode !== "industry") return "Switch to Industries to refresh memberships";
-  const names = selection.groups.map((group) => group.name);
-  if (names.length === 0) return "Select industries to refresh memberships";
-  if (names.length === 1) return `Refresh membership of ${names[0]}`;
-  return `Refresh membership of ${names.slice(0, -1).join(", ")} & ${names.at(-1)}`;
 }

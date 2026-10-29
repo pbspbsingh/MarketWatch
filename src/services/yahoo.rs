@@ -2,6 +2,7 @@ use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY;
 use crate::models::ticker_symbol::InvalidTickerSymbol;
 use crate::models::{CompanyProfile, DailyCandle, TickerSymbol, YahooSymbol};
+use crate::providers::FinvizClient;
 use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
@@ -22,6 +23,7 @@ const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 pub struct YahooService {
     store: Store,
     yahoo: Arc<YahooClient>,
+    finviz: Arc<FinvizClient>,
     market_schedule: MarketSchedule,
     daily_candle_locks: KeyedLock<TickerSymbol>,
     first_trade_dates: Mutex<HashMap<TickerSymbol, NaiveDate>>,
@@ -60,6 +62,12 @@ pub enum YahooServiceError {
     #[error("Yahoo persistence failed: {0}")]
     Persistence(#[source] anyhow::Error),
 
+    #[error("Industry membership could not be verified for {symbol}: {source}")]
+    IndustryMembership {
+        symbol: TickerSymbol,
+        source: anyhow::Error,
+    },
+
     #[error("daily candle range must be increasing")]
     InvalidRange,
 
@@ -74,12 +82,14 @@ impl YahooService {
     pub fn new(
         store: Store,
         yahoo: Arc<YahooClient>,
+        finviz: Arc<FinvizClient>,
         market: &MarketConfig,
         holidays: HashSet<NaiveDate>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             store,
             yahoo,
+            finviz,
             market_schedule: MarketSchedule::with_holidays(market, POST_CLOSE_DELAY, holidays)?,
             daily_candle_locks: KeyedLock::new(),
             first_trade_dates: Mutex::new(HashMap::new()),
@@ -100,6 +110,25 @@ impl YahooService {
         }
 
         let profile = self.fetch_profile(symbol).await?;
+        if !self
+            .store
+            .ticker_has_industry(symbol)
+            .await
+            .map_err(YahooServiceError::Persistence)?
+        {
+            let industry = self
+                .finviz
+                .ticker_industry(symbol)
+                .await
+                .map_err(|source| YahooServiceError::IndustryMembership {
+                    symbol: symbol.clone(),
+                    source,
+                })?;
+            self.store
+                .add_ticker_industry(&industry.key, &industry.name, symbol)
+                .await
+                .map_err(YahooServiceError::Persistence)?;
+        }
         self.store
             .upsert_company_profile(&profile)
             .await

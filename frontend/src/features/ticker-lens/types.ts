@@ -100,8 +100,7 @@ export type TickerUniverse =
       type: "market-watch";
       resolveGroups: (request: ResolveGroupsRequest) => Promise<GroupRanking[]>;
       resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
-      resolveGroupCounts: (request: ResolveTickersRequest) => Promise<Map<string, number>>;
-      revision?: number;
+      revision?: number | string;
     }
   | {
       type: "bounded";

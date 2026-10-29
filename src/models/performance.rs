@@ -1,8 +1,9 @@
 use crate::models::{DailyCandle, RelativeStrengthTrend, TickerSymbol};
 use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, TS)]
 pub struct PerformancePeriods {
     pub day: f64,
     pub week: f64,
@@ -22,11 +23,12 @@ pub struct IndustryRanking {
     pub absolute_strength: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct ThemeRanking {
     pub id: i64,
     pub name: String,
     pub etf_symbol: TickerSymbol,
+    pub ticker_count: i64,
     pub performance: Option<PerformancePeriods>,
     pub absolute_strength: Option<f64>,
     pub previous_close: Option<f64>,
