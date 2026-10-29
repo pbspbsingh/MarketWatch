@@ -19,7 +19,6 @@ mod tradingview_symbol;
 mod watchlists;
 mod yahoo_symbol;
 
-pub use chart_relative_strength::RelativeStrengthTrend;
 pub(crate) use chart_relative_strength::{
     ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationError,
     analyze_relative_strength_structure, calculate_relative_strength_line,

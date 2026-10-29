@@ -20,11 +20,6 @@ export const tickerSortOptions: ReadonlyArray<{ key: BuiltInTickerSortKey; label
   { key: "year", label: "1Y" },
 ];
 
-export const sortSettingKey = "market-watch.industry-sort";
-export const groupModeKey = "market-watch.group-mode";
-export const sectorGroupingKey = "market-watch.sector-grouping";
-export const expandedSectorsKey = "market-watch.expanded-sectors";
-export const tickerSortSettingKey = "market-watch.ticker-sort";
 export const chartSplitKey = "market-watch.chart-split";
 export const chartIntervalKey = "market-watch.chart-interval";
 export const chartBenchmarkKey = "market-watch.chart-benchmark";

@@ -1,5 +1,6 @@
 use crate::config::{FinvizConfig, ProviderConfig};
 use crate::constants::BROWSER_USER_AGENT;
+use crate::contracts::industry::ETF_INDUSTRY_KEY;
 use crate::models::n_factor::NewsStopReason;
 use crate::models::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
 use crate::providers::news::{NewsBatch, limit_finviz_news, parse_finviz_news};
@@ -651,6 +652,20 @@ fn parse_screener_page(html: &str) -> anyhow::Result<ScreenerPage> {
 
 fn parse_ticker_industry(html: &str) -> anyhow::Result<IndustryIdentity> {
     let document = Html::parse_document(html);
+    // Finviz ETF pages use an ETF-specific category link, not a stock industry
+    // link. Require the provider's explicit asset marker before assigning ETFs.
+    if document
+        .select(&selector(
+            r#".js-quote-navigation-root[data-isetf="true"]"#,
+        )?)
+        .next()
+        .is_some()
+    {
+        return Ok(IndustryIdentity {
+            key: ETF_INDUSTRY_KEY.into(),
+            name: "Exchange Traded Fund".into(),
+        });
+    }
     let industry_selector = selector(
         r#".quote-header_meta a[href*="f=ind_"], .quote-header_meta a[href*="f=industry_"]"#,
     )?;

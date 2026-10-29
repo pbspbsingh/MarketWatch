@@ -1,4 +1,3 @@
-import { useIndustryData } from "../../api/industryData";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
@@ -10,7 +9,6 @@ import { unassignedGroupKey } from "../ticker-lens/constants";
 import type {
   ResolveGroupsRequest,
   ResolveTickersRequest,
-  TickerGroupSelection,
 } from "../ticker-lens/types";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
 import { tradeIdFromSearch } from "../trade-logs/tradeLinks";
@@ -31,7 +29,6 @@ export function MarketWatchPage() {
   const [searchParams] = useSearchParams();
   const tradeId = tradeIdFromSearch(searchParams);
   const [linkedTrade, setLinkedTrade] = useState<TradeLog>();
-  const [selection, setSelection] = useState<TickerGroupSelection>({ mode: "industry", groupKeys: [] });
   const [notice, setNotice] = useState<{
     text: string;
     severity: "success" | "error";
@@ -63,13 +60,6 @@ export function MarketWatchPage() {
       resolveTickerMembership(tickerSelection(mode, groupKeys), signal),
     [],
   );
-  const handleGroupSelectionChange = useCallback((next: TickerGroupSelection) => {
-    setSelection((current) =>
-      current.mode === next.mode && current.groupKeys.join("\0") === next.groupKeys.join("\0")
-        ? current : next
-    );
-  }, []);
-  const membershipRevision = useIndustryData(selection.groupKeys, selection.mode === "industry");
   return (
     <section className="market-watch-page" aria-label="Market Watch">
       <TickerLens
@@ -79,9 +69,7 @@ export function MarketWatchPage() {
           type: "market-watch",
           resolveGroups,
           resolveTickers,
-          revision: membershipRevision,
         }}
-        onGroupSelectionChange={handleGroupSelectionChange}
       />
       <Toast
         message={notice?.text}

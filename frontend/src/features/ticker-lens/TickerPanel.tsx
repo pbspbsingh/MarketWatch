@@ -41,6 +41,7 @@ import {
   removeTickerFromWatchlist,
   type Watchlist,
 } from "../../api/watchlists";
+import { useTickerLensState } from "./TickerLensState";
 import { Toast } from "../../components/Toast";
 import { useFocusRefresh } from "../../shared/useFocusRefresh";
 import { useTickerRankingStream } from "../../shared/useTickerRankingStream";
@@ -49,10 +50,8 @@ import "../watchlists/ticker-watchlist-control.css";
 import {
   defaultTickerSortSetting,
   tickerSortOptions,
-  tickerSortSettingKey,
 } from "./constants";
 import type {
-  DefaultMetricSort,
   GroupMode,
   ResolveTickersRequest,
   RevealRequest,
@@ -69,7 +68,6 @@ import {
   metricForKey,
   metricColor,
   metricSortKey,
-  readTickerSortSetting,
   sortTickers,
   tickerSortValue,
 } from "./utils";
@@ -82,7 +80,6 @@ interface TickerPanelProps {
   bounded: boolean;
   universeRevision: number | string;
   metrics: readonly TickerMetric[];
-  defaultMetricSort?: DefaultMetricSort;
   mode: GroupMode;
   groupKeys: Set<string>;
   selectedTicker: string | undefined;
@@ -200,7 +197,6 @@ export function TickerPanel({
   bounded,
   universeRevision,
   metrics,
-  defaultMetricSort,
   mode,
   groupKeys,
   selectedTicker,
@@ -227,27 +223,18 @@ export function TickerPanel({
   const scheduledRevealTickerRevision = useRef<number | undefined>(undefined);
   const revealTickerFrame = useRef<number | undefined>(undefined);
   const rankingRequests = useRef(new Set<string>());
-  const [sortSetting, setSortSetting] = useState<TickerSortSetting>(() => {
-    const defaultMetric = defaultMetricSort === undefined
-      ? undefined
-      : metrics.find((metric) => metric.id === defaultMetricSort.metricId);
-    return defaultMetric === undefined
-      ? readTickerSortSetting(tickerSortSettingKey)
-      : {
-          key: metricSortKey(defaultMetric.id),
-          direction: defaultMetricSort!.direction,
-        };
-  });
+  const sortSetting = useTickerLensState(state => state.metricSort ?? state.preferences.tickerSort);
+  const setSortSetting = useTickerLensState(state => state.setTickerSort);
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
   const groupKey = [...groupKeys].sort().join("\0");
   const awaitingGroupSelection = !bounded && groupKeys.size === 0;
-  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled || tickerFilters.rsTrend.enabled);
+  const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
   const metricsActive = !awaitingGroupSelection && (groupKeys.size > 0 || filtersActive);
   const activeMetric = metricForKey(metrics, sortSetting.key);
   const sortActive = metricsActive || activeMetric !== undefined;
-  if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) {
-    setSortSetting(defaultTickerSortSetting);
-  }
+  useEffect(() => {
+    if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) setSortSetting(defaultTickerSortSetting);
+  }, [activeMetric, setSortSetting, sortSetting.key]);
   const resolveRankedSymbols = useCallback(
     (signal: AbortSignal) => resolveTickers({
       mode,
@@ -264,8 +251,6 @@ export function TickerPanel({
   });
   const resolvedTickerRequestKey = `${mode}\0${groupKey}\0${universeRevision}`;
   const panelRequestKey = `${metricsActive ? "ranked" : "resolved"}\0${resolvedTickerRequestKey}`;
-  const selectionContextKey = `${mode}\0${groupKey}\0${metricsActive}`;
-  const previousSelectionContextKey = useRef(selectionContextKey);
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
   }, [panelRequestKey]);
@@ -289,12 +274,6 @@ export function TickerPanel({
   const panelError = (errorState?.key === panelRequestKey ? errorState.message : undefined)
     ?? rankingStream.error
     ?? (resolvedTickerState.key === resolvedTickerRequestKey ? resolvedTickerState.error : undefined);
-
-  useEffect(() => {
-    if (previousSelectionContextKey.current === selectionContextKey) return;
-    previousSelectionContextKey.current = selectionContextKey;
-    setSelectedTicker(undefined);
-  }, [selectionContextKey, setSelectedTicker]);
 
   useEffect(() => {
     if (providedWatchlists !== undefined) return;
@@ -337,7 +316,6 @@ export function TickerPanel({
             latest_close: null,
             average_volume: null,
             above_200_sma: null,
-            rs_trend: null,
           })),
         });
       })
@@ -348,12 +326,6 @@ export function TickerPanel({
       });
     return () => controller.abort();
   }, [awaitingGroupSelection, groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
-
-  useEffect(() => {
-    if (!isMetricSortKey(sortSetting.key)) {
-      localStorage.setItem(tickerSortSettingKey, JSON.stringify(sortSetting));
-    }
-  }, [sortSetting]);
 
   const tickerDataSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
   const setStreamTickerWatchlists = rankingStream.setTickerWatchlists;
@@ -401,12 +373,12 @@ export function TickerPanel({
   const tickerSymbolsKey = filteredTickers.map((ticker) => ticker.symbol).join("\0");
 
   useEffect(() => {
-    if (panelLoading) return;
+    if (panelLoading || awaitingGroupSelection) return;
     const availableSymbols = new Set(tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0"));
     setSelectedTicker((current) =>
       current !== undefined && !availableSymbols.has(current) ? undefined : current,
     );
-  }, [panelLoading, setSelectedTicker, tickerSymbolsKey]);
+  }, [awaitingGroupSelection, panelLoading, setSelectedTicker, tickerSymbolsKey]);
 
   useEffect(() => {
     const symbols = tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0");
@@ -722,14 +694,13 @@ export function TickerPanel({
 }
 
 function filterTickers(tickers: TickerRanking[], filters: TickerFilters | undefined) {
-  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled && !filters.rsTrend.enabled)) return tickers;
+  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled)) return tickers;
   const adrMin = clamp(filters.adr.min, 0, 20);
   const dollarVolumeMin = clamp(filters.dollarVolume.min, 0, 1_000_000_000);
   return tickers.filter((ticker) => {
     if (filters.adr.enabled && (ticker.adr_percent ?? -Infinity) < adrMin) return false;
     if (filters.dollarVolume.enabled && dollarVolume(ticker) < dollarVolumeMin) return false;
     if (filters.above200Sma.enabled && ticker.above_200_sma === false) return false;
-    if (filters.rsTrend.enabled && (ticker.rs_trend === null || !filters.rsTrend[ticker.rs_trend])) return false;
     return true;
   });
 }

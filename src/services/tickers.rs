@@ -1,10 +1,8 @@
 use crate::config::MarketConfig;
 use crate::contracts::industry::{ETF_INDUSTRY_KEY, MEMBERSHIP_FRESH_DAYS};
-use crate::models::chart::MarketChartInterval;
 use crate::models::{
-    ChartDateRange, DailyCandle, RelativeStrengthTrend, TickerRanking, TickerSymbol,
-    analyze_relative_strength_structure, average_daily_range_percent, average_volume,
-    calculate_relative_strength_line, candle_performance, close_above_sma,
+    DailyCandle, TickerRanking, TickerSymbol, average_daily_range_percent, average_volume,
+    candle_performance, close_above_sma,
 };
 use crate::providers::FinvizClient;
 use crate::services::yahoo::YahooService;
@@ -25,7 +23,6 @@ pub struct TickerCatalogService {
     store: Store,
     finviz: Arc<FinvizClient>,
     yahoo: Arc<YahooService>,
-    benchmark: TickerSymbol,
     market_schedule: MarketSchedule,
     adr_sessions: usize,
     average_volume_sessions: usize,
@@ -43,7 +40,6 @@ impl TickerCatalogService {
             store,
             finviz,
             yahoo,
-            benchmark: TickerSymbol::parse(&market.benchmark)?,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             adr_sessions: usize::from(market.adr_sessions),
             average_volume_sessions: usize::from(market.average_volume_sessions),
@@ -99,13 +95,6 @@ impl TickerCatalogService {
             .map_or_else(Vec::new, |membership| membership.watchlist_ids);
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        let benchmark = match self.yahoo.daily_candles_for_year(&self.benchmark).await {
-            Ok(candles) => Some(candles),
-            Err(error) => {
-                warn!(benchmark = %self.benchmark, %error, "failed to load Yahoo RS benchmark history");
-                None
-            }
-        };
         let performance = candle_performance(&candles, as_of);
         let adr_percent = average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
         let latest_close = candles.last().map(|candle| candle.close);
@@ -119,9 +108,6 @@ impl TickerCatalogService {
             latest_close,
             average_volume: Some(average_volume),
             above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
-            rs_trend: benchmark
-                .as_deref()
-                .and_then(|benchmark| relative_strength_trend(&candles, benchmark)),
         })
     }
 
@@ -197,7 +183,6 @@ impl TickerCatalogService {
                     latest_close: None,
                     average_volume: None,
                     above_200_sma: None,
-                    rs_trend: None,
                 })
                 .await
                 .is_err()
@@ -219,13 +204,6 @@ impl TickerCatalogService {
         }
 
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        let benchmark = match self.yahoo.daily_candles_for_year(&self.benchmark).await {
-            Ok(candles) => Some(candles),
-            Err(error) => {
-                warn!(benchmark = %self.benchmark, %error, "failed to load Yahoo RS benchmark history");
-                None
-            }
-        };
         for symbol in symbols {
             let ranking = match self.yahoo.daily_candles_for_year(&symbol).await {
                 Ok(candles) => {
@@ -246,9 +224,6 @@ impl TickerCatalogService {
                         latest_close,
                         average_volume: Some(average_volume),
                         above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
-                        rs_trend: benchmark
-                            .as_deref()
-                            .and_then(|benchmark| relative_strength_trend(&candles, benchmark)),
                     }
                 }
                 Err(error) => {
@@ -264,7 +239,6 @@ impl TickerCatalogService {
                         latest_close: None,
                         average_volume: None,
                         above_200_sma: None,
-                        rs_trend: None,
                     }
                 }
             };
@@ -279,12 +253,13 @@ impl TickerCatalogService {
     pub async fn ensure_ticker_symbol(&self, symbol: &TickerSymbol) -> anyhow::Result<()> {
         if !self.store.ticker_has_industry(symbol).await? {
             let industry = self.finviz.ticker_industry(symbol).await?;
-            let has_current_ranking = self.store.has_industry_ranking(&industry.key).await?;
+            let missing_stock_ranking = industry.key != ETF_INDUSTRY_KEY
+                && !self.store.has_industry_ranking(&industry.key).await?;
             self.store
                 .add_ticker_industry(&industry.key, &industry.name, symbol)
                 .await?;
             self.yahoo.profile(symbol).await?;
-            if !has_current_ranking {
+            if missing_stock_ranking {
                 warn!(
                     %symbol,
                     industry_key = industry.key,
@@ -358,26 +333,4 @@ fn deduplicate_symbols(symbols: &[TickerSymbol]) -> Vec<TickerSymbol> {
 
 fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
     &candles[candles.len().saturating_sub(sessions)..]
-}
-
-fn relative_strength_trend(
-    ticker: &[DailyCandle],
-    benchmark: &[DailyCandle],
-) -> Option<RelativeStrengthTrend> {
-    let (start, end) = ticker
-        .first()
-        .zip(ticker.last())
-        .and_then(|(first, last)| {
-            last.market_date
-                .succ_opt()
-                .map(|end| (first.market_date, end))
-        })?;
-    let line = calculate_relative_strength_line(
-        ticker,
-        benchmark,
-        MarketChartInterval::Daily,
-        ChartDateRange { start, end },
-    )
-    .ok()?;
-    Some(analyze_relative_strength_structure(&line.points).trend)
 }

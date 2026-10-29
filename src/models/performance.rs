@@ -1,4 +1,4 @@
-use crate::models::{DailyCandle, RelativeStrengthTrend, TickerSymbol};
+use crate::models::{DailyCandle, TickerSymbol};
 use chrono::{NaiveDate, TimeDelta};
 use serde::Serialize;
 use ts_rs::TS;
@@ -50,7 +50,6 @@ pub struct TickerRanking {
     pub latest_close: Option<f64>,
     pub average_volume: Option<i64>,
     pub above_200_sma: Option<bool>,
-    pub rs_trend: Option<RelativeStrengthTrend>,
 }
 
 pub fn candle_performance(candles: &[DailyCandle], as_of: NaiveDate) -> PerformancePeriods {

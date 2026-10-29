@@ -115,6 +115,13 @@ cargo run -- --export-contracts --check
 These commands do not start the server or open the databases. Other existing
 features retain their current transports while they are migrated incrementally.
 
+Each TickerLens instance has a scoped Zustand store for group/ticker selections,
+filter settings, sorting, and group display preferences. URL parameters serialize
+the shareable selection and restore it on navigation. Zustand persists preferences
+under `market-watch.ticker-lens-preferences`; filter enablement survives reload only
+when pinned. Custom metric sorts belong to their current view. Server snapshots
+stay in TanStack Query.
+
 ## Institutional ownership
 
 The Institutions tab loads only when opened. Enable SEC access with

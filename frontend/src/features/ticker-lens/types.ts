@@ -23,11 +23,6 @@ export type TickerMetric = {
   tooltipLines?: (symbol: string, value: number) => readonly string[];
 };
 
-export type TickerGroupSelection = {
-  mode: GroupMode;
-  groupKeys: string[];
-};
-
 export type DefaultMetricSort = {
   metricId: string;
   direction: SortDirection;
@@ -44,12 +39,6 @@ export type TickerFilters = {
   };
   above200Sma: {
     enabled: boolean;
-  };
-  rsTrend: {
-    enabled: boolean;
-    unclear: boolean;
-    downtrend: boolean;
-    uptrend: boolean;
   };
 };
 
@@ -88,7 +77,6 @@ export type TickerUniverse =
       type: "market-watch";
       resolveGroups: (request: ResolveGroupsRequest) => Promise<GroupRanking[]>;
       resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
-      revision?: number | string;
     }
   | {
       type: "bounded";

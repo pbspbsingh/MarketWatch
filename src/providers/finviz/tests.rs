@@ -29,6 +29,67 @@ fn screen_page(first: usize, total: usize, size: usize, tickers: &[String]) -> S
 type Parameters = HashMap<String, String>;
 
 #[test]
+fn etf_membership_requires_explicit_provider_asset_metadata() {
+    let html = include_str!("fixtures/etf_quote.html");
+    let industry = parse_ticker_industry(html).unwrap();
+    assert_eq!(industry.key, ETF_INDUSTRY_KEY);
+    assert_eq!(industry.name, "Exchange Traded Fund");
+    assert!(
+        parse_ticker_industry(&html.replace("data-isetf=\"true\"", "data-isetf=\"false\""))
+            .is_err()
+    );
+    assert!(
+        parse_ticker_industry(
+            "<h1>ETF investment company</h1><div class=\"quote-header_meta\"></div>"
+        )
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn importing_spy_records_etf_membership_once_without_a_stock_industry_link() {
+    use crate::{
+        models::{CompanyProfile, Exchange},
+        services::industry_data::tests::fixture,
+        store::Store,
+    };
+    let mock = MockFinviz::start(|parameters| {
+        assert_eq!(parameters["t"], "SPY");
+        (
+            StatusCode::OK,
+            include_str!("fixtures/etf_quote.html").into(),
+        )
+    })
+    .await;
+    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let symbol = TickerSymbol::parse("SPY").unwrap();
+    store
+        .upsert_company_profile(&CompanyProfile {
+            symbol: symbol.clone(),
+            name: Some("SPDR S&P 500 ETF Trust".into()),
+            exchange: Exchange::Nyse,
+            description: None,
+            fetched_at: Utc::now(),
+        })
+        .await
+        .unwrap();
+    let (_, catalog, _) = fixture(store.clone(), Arc::new(mock.client()));
+    catalog.ensure_ticker_symbol(&symbol).await.unwrap();
+    assert!(
+        store
+            .ticker_has_industry_membership(&symbol, ETF_INDUSTRY_KEY)
+            .await
+            .unwrap()
+    );
+    catalog.ensure_ticker_symbol(&symbol).await.unwrap();
+    assert_eq!(
+        mock.requests.lock().unwrap().len(),
+        1,
+        "Verified ETF assignment is reused"
+    );
+}
+
+#[test]
 fn industry_counts_use_headers_and_reject_invalid_overviews() {
     let html = include_str!("fixtures/industry_counts.html");
     let counts = parse_industry_counts(html).unwrap();

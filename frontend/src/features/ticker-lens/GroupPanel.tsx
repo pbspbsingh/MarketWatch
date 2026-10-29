@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,11 +26,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { useTickerLensState } from "./TickerLensState";
 import type { SectorRanking } from "../../api/industries";
 import {
   sortOptions,
-  sortSettingKey,
-  expandedSectorsKey,
   unassignedGroupKey,
 } from "./constants";
 import type {
@@ -45,7 +43,6 @@ import {
   formatMetric,
   highlightedGroups,
   metricColor,
-  readSortSetting,
   sortGroups,
   sortValue,
 } from "./utils";
@@ -64,8 +61,6 @@ interface GroupPanelProps {
   selectedGroupKeys: Set<string>;
   setSelectedGroupKeys: Dispatch<SetStateAction<Set<string>>>;
   selectedTickerContext: SelectedTickerContext | undefined;
-  requestedThemeNames: string[];
-  requestedUnassigned: boolean;
   countSortAvailable: boolean;
   groups: GroupRanking[];
   globalRankingGroups: GroupRanking[];
@@ -85,8 +80,6 @@ export function GroupPanel({
   selectedGroupKeys,
   setSelectedGroupKeys,
   selectedTickerContext,
-  requestedThemeNames,
-  requestedUnassigned,
   countSortAvailable,
   groups,
   globalRankingGroups,
@@ -99,56 +92,27 @@ export function GroupPanel({
 }: GroupPanelProps) {
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const handledRevealGroupRevision = useRef<number | undefined>(undefined);
-  const [sortSetting, setSortSetting] = useState(() => readSortSetting(sortSettingKey));
-  const [exploredGroups, setExploredGroups] = useState<Record<GroupMode, Set<string>>>(() => ({
-    industry: new Set(),
-    theme: new Set(),
-  }));
-  const [expandedSectors, setExpandedSectors] = useState(readExpandedSectors);
+  const sortSetting = useTickerLensState(state => state.preferences.groupSort);
+  const setSortSetting = useTickerLensState(state => state.setGroupSort);
+  const exploredGroupKeys = useTickerLensState(state => state.exploredGroups[mode]);
+  const markExplored = useTickerLensState(state => state.markExplored);
+  const clearExplored = useTickerLensState(state => state.clearExplored);
+  const expandedSectorKeys = useTickerLensState(state => state.preferences.expandedSectors);
+  const expandedSectors = useMemo(() => new Set(expandedSectorKeys), [expandedSectorKeys]);
+  const setExpandedSectors = useTickerLensState(state => state.setExpandedSectors);
+  const requestedThemeNames = useTickerLensState(state => state.requestedThemeNames);
+  const resolveThemeNames = useTickerLensState(state => state.resolveThemeNames);
   const [collapsedRequiredSectors, setCollapsedRequiredSectors] = useState<{
     key: string;
     sectors: Set<string>;
   }>(() => ({ key: "", sectors: new Set() }));
-  const exploredGroupKeys = exploredGroups[mode];
-  const setExploredGroupKeys = useCallback((action: SetStateAction<Set<string>>) => {
-    setExploredGroups((current) => {
-      const next = typeof action === "function" ? action(current[mode]) : action;
-      return next === current[mode] ? current : { ...current, [mode]: next };
-    });
-  }, [mode]);
-
   useEffect(() => {
-    localStorage.setItem(sortSettingKey, JSON.stringify(sortSetting));
-  }, [sortSetting]);
-
-  useEffect(() => {
-    localStorage.setItem(expandedSectorsKey, JSON.stringify([...expandedSectors]));
-  }, [expandedSectors]);
-
-  useEffect(() => {
-    if (mode !== "theme") return;
-    if (requestedThemeNames.length === 0 && !requestedUnassigned) return;
-
-    const requestedNames = new Set(requestedThemeNames);
-    const next = new Set(
-      groups
-        .filter((group) => requestedNames.has(group.name))
-        .map((group) => group.key),
-    );
-    if (requestedUnassigned) next.add(unassignedGroupKey);
-    if (next.size > 0 || requestedThemeNames.length === 0) {
-      setSelectedGroupKeys(next);
-      const onlyKey = next.size === 1 ? next.values().next().value : undefined;
-      if (onlyKey !== undefined) onRevealGroup(onlyKey);
+    if (mode === "theme" && !loadingGroups && !groupError && requestedThemeNames.length > 0) {
+      const resolved = new Set([...selectedGroupKeys, ...groups.filter(group => requestedThemeNames.includes(group.name)).map(group => group.key)]);
+      resolveThemeNames(groups);
+      if (resolved.size === 1) onRevealGroup([...resolved][0]);
     }
-  }, [
-    groups,
-    mode,
-    onRevealGroup,
-    requestedThemeNames,
-    requestedUnassigned,
-    setSelectedGroupKeys,
-  ]);
+  }, [groupError, groups, loadingGroups, mode, onRevealGroup, requestedThemeNames, resolveThemeNames, selectedGroupKeys]);
 
   const activeSortSetting = useMemo(
     () => !countSortAvailable && sortSetting.key === "count"
@@ -277,27 +241,6 @@ export function GroupPanel({
     }
   }, [highlightedGroupKey, revealGroup, sectorRankingsLoading, visibleExpandedSectors]);
 
-  const markExplored = (groupKey: string) => {
-    const keys = selectedGroupKeys.size > 0 ? selectedGroupKeys : new Set([groupKey]);
-    setExploredGroupKeys((current) => {
-      const next = new Set(current);
-      keys.forEach((key) => next.add(key));
-      return next;
-    });
-    setSelectedGroupKeys((current) => {
-      const next = new Set(current);
-      keys.forEach((key) => next.delete(key));
-      return next.size === current.size ? current : next;
-    });
-  };
-
-  useEffect(() => {
-    setSelectedGroupKeys((current) => {
-      const next = new Set([...current].filter((key) => !exploredGroupKeys.has(key)));
-      return next.size === current.size ? current : next;
-    });
-  }, [exploredGroupKeys, setSelectedGroupKeys]);
-
   return (
     <section className="workspace-panel industries-panel">
       <header className="panel-header panel-list-header">
@@ -345,7 +288,7 @@ export function GroupPanel({
             size="small"
             aria-label={`Clear ${exploredGroupKeys.size} explored groups`}
             disabled={exploredGroupKeys.size === 0}
-            onClick={() => setExploredGroupKeys(new Set())}
+            onClick={clearExplored}
           >
             <Badge badgeContent={exploredGroupKeys.size} color="secondary">
               <RemoveCircleOutlineIcon fontSize="small" />
@@ -653,15 +596,6 @@ function rankColor(rank: number, totalRanks: number) {
 
 function mixRankColors(from: string, to: string, progress: number) {
   return `color-mix(in oklab, ${to} ${(100 * progress).toFixed(1)}%, ${from})`;
-}
-
-function readExpandedSectors() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(expandedSectorsKey) ?? "[]") as unknown;
-    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : []);
-  } catch {
-    return new Set<string>();
-  }
 }
 
 function countLabel(group: GroupRanking) {

@@ -44,15 +44,19 @@ export function useIndustryData(keys: string[], enabled: boolean) {
   ];
   useEffect(() => {
     if (!enabled) return;
-    const subscriptions = [
-      industrySubscriptions.observe({ type: "catalog" }, () => {}),
-      ...key.split(",").filter(Boolean).map(industry_key =>
-        industrySubscriptions.observe({ type: "membership", industry_key }, () => {})),
-    ];
+    return industrySubscriptions.observe({ type: "catalog" }, () => {});
+  }, [enabled]);
+  useEffect(() => {
+    if (!enabled) return;
+    const subscriptions = key.split(",").filter(Boolean).map(industry_key =>
+      industrySubscriptions.observe({ type: "membership", industry_key }, () => {}));
     return () => subscriptions.forEach(release => release());
   }, [enabled, key]);
   const queries = useQueries({ queries: resources.map(options) });
-  // Delivery/loading/error notifications must not restart membership acquisition.
-  // Only a change in the actual catalog or symbols invalidates the displayed universe.
-  return queries.map(query => query.data ? JSON.stringify(query.data.data) : "").join("\0");
+  // Selection/membership updates must not invalidate the group catalog. Status
+  // notifications also leave both data revisions unchanged.
+  return {
+    catalogRevision: queries[0]?.data ? JSON.stringify(queries[0].data.data) : "",
+    membershipRevision: queries.slice(1).map(query => query.data ? JSON.stringify(query.data.data) : "").join("\0"),
+  };
 }

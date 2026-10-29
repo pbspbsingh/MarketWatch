@@ -3,7 +3,6 @@ import {
   interpolateRgbColor,
   tickerMetricScale,
 } from "../../app/visualizationColors";
-import { defaultSortSetting, defaultTickerSortSetting, sortOptions, tickerSortOptions } from "./constants";
 import type { ChartBenchmarkMode, GroupMode, GroupRanking, MetricSortKey, SelectedTickerContext, SortKey, SortSetting, TickerMetric, TickerSortKey, TickerSortSetting } from "./types";
 
 const metricPrefix = "metric:";
@@ -23,38 +22,6 @@ export function metricForKey(
   if (!isMetricSortKey(key)) return undefined;
   const id = key.slice(metricPrefix.length);
   return metrics.find((metric) => metric.id === id);
-}
-
-export function readSortSetting(storageKey: string): SortSetting {
-  const value = localStorage.getItem(storageKey);
-  if (value === null) return defaultSortSetting;
-
-  try {
-    const setting = JSON.parse(value) as Partial<SortSetting>;
-    const validKey = sortOptions.some((option) => option.key === setting.key);
-    const validDirection = setting.direction === "asc" || setting.direction === "desc";
-    return validKey && validDirection
-      ? { key: setting.key as SortKey, direction: setting.direction as SortSetting["direction"] }
-      : defaultSortSetting;
-  } catch {
-    return defaultSortSetting;
-  }
-}
-
-export function readTickerSortSetting(storageKey: string): TickerSortSetting {
-  const value = localStorage.getItem(storageKey);
-  if (value === null) return defaultTickerSortSetting;
-
-  try {
-    const setting = JSON.parse(value) as Partial<TickerSortSetting>;
-    const validKey = tickerSortOptions.some((option) => option.key === setting.key);
-    const validDirection = setting.direction === "asc" || setting.direction === "desc";
-    return validKey && validDirection
-      ? { key: setting.key as TickerSortKey, direction: setting.direction as TickerSortSetting["direction"] }
-      : defaultTickerSortSetting;
-  } catch {
-    return defaultTickerSortSetting;
-  }
 }
 
 export function sortValue(group: GroupRanking, key: SortKey) {
@@ -210,14 +177,6 @@ export function isArrowKeyControl(target: EventTarget | null) {
     target.closest("input, textarea, select, [contenteditable='true'], [role='combobox'], [role='listbox']") !==
       null
   );
-}
-
-export function readGroupMode(searchParams?: URLSearchParams): GroupMode {
-  return searchParams !== undefined
-    ? (searchGroupMode(searchParams) ?? readGroupMode())
-    : localStorage.getItem("market-watch.group-mode") === "theme"
-      ? "theme"
-      : "industry";
 }
 
 export function searchGroupMode(searchParams: URLSearchParams): GroupMode | undefined {

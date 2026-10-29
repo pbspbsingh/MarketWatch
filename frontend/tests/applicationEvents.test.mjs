@@ -256,6 +256,34 @@ test("1D sorts groups and tickers by daily return, with unavailable returns last
   }
 });
 
+test("membership selection and updates do not change the catalog revision", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { QueryClientProvider } = await import("@tanstack/react-query");
+  const { useIndustryData } = await server.ssrLoadModule("/src/api/industryData.ts");
+  queryClient.setQueryData(industryQueryKey(resource), state(false, ["NVDA"]));
+  const software = { type: "membership", industry_key: "software" };
+  queryClient.setQueryData(industryQueryKey(software), {
+    ...state(false, ["MSFT"]), data: { ...software, symbols: ["MSFT"] },
+  });
+  const revision = keys => {
+    let value;
+    function Probe() { value = useIndustryData(keys, true); return null; }
+    renderToStaticMarkup(createElement(QueryClientProvider, { client: queryClient }, createElement(Probe)));
+    return value;
+  };
+  const initial = revision([]);
+  const selected = revision(["semiconductors"]);
+  const changed = revision(["semiconductors", "software"]);
+  assert.equal(selected.catalogRevision, initial.catalogRevision);
+  assert.equal(changed.catalogRevision, initial.catalogRevision);
+  assert.notEqual(selected.membershipRevision, changed.membershipRevision);
+  queryClient.setQueryData(industryQueryKey(resource), state(false, ["AMD", "NVDA"]));
+  const updated = revision(["semiconductors", "software"]);
+  assert.equal(updated.catalogRevision, initial.catalogRevision);
+  assert.notEqual(updated.membershipRevision, changed.membershipRevision);
+});
+
 test("theme counts include Unassigned without returning its tickers", async (t) => {
   const { fetchGlobalGroupRankings } = await server.ssrLoadModule("/src/features/ticker-lens/groupRankings.ts");
   const original = globalThis.fetch;
@@ -283,12 +311,14 @@ test("open ticker column renders a group-selection prompt instead of loading tic
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { TickerPanel } = await server.ssrLoadModule("/src/features/ticker-lens/TickerPanel.tsx");
+  const { TickerLensStateProvider } = await server.ssrLoadModule("/src/features/ticker-lens/TickerLensState.tsx");
+  const { createTickerLensStore } = await server.ssrLoadModule("/src/features/ticker-lens/tickerLensStore.ts");
   globalThis.localStorage = { getItem: () => null, setItem: () => {} };
-  const html = renderToStaticMarkup(createElement(TickerPanel, {
+  const html = renderToStaticMarkup(createElement(TickerLensStateProvider, { store: createTickerLensStore() }, createElement(TickerPanel, {
     tickerStream: {}, bounded: false, universeRevision: 0, metrics: [], mode: "industry",
     groupKeys: new Set(), setSelectedTicker: () => {}, providedWatchlists: [],
     resolveTickers: () => assert.fail("Open column requested symbols"),
-  }));
+  })));
   assert.match(html, /Select groups to view tickers/);
   assert.doesNotMatch(html, /Loading tickers|ticker-ranked-list/);
 });

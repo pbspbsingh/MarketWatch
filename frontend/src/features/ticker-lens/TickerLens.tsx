@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
@@ -12,21 +12,15 @@ import { Toast } from "../../components/Toast";
 import type { MarketChartDateMarker } from "../charts/MarketChart";
 import {
   emptyGroupKeys,
-  groupModeKey,
-  sectorGroupingKey,
-  unassignedGroupKey,
 } from "./constants";
 import { ChartPanel } from "./ChartPanel";
 import { fetchGlobalGroupRankings } from "./groupRankings";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
-import {
-  readTickerFilterPersisted,
-  readTickerFilters,
-  TickerLensFilters,
-  writeTickerFilterState,
-  writeTickerFilterValues,
-} from "./TickerLensFilters";
+import { TickerLensFilters } from "./TickerLensFilters";
+import { useIndustryData } from "../../api/industryData";
+import { createTickerLensStore } from "./tickerLensStore";
+import { TickerLensNavigation, TickerLensStateProvider, useTickerLensState } from "./TickerLensState";
 import { TickerLensSearch } from "./TickerLensSearch";
 import type {
   GroupMode,
@@ -36,20 +30,11 @@ import type {
   ResolveTickersRequest,
   SelectedTickerContext,
   TickerFilterCounts,
-  TickerFilters,
   TickerMetric,
-  TickerGroupSelection,
   TickerUniverse,
 } from "./types";
 import {
-  readGroupMode,
   industryMarketWatchUrl,
-  searchGroupMode,
-  searchIncludesUnassigned,
-  searchIndustryKeys,
-  searchTickerSymbol,
-  searchThemeIds,
-  searchThemeNames,
   themeMarketWatchIdUrl,
   tickerMarketWatchUrl,
 } from "./utils";
@@ -63,14 +48,7 @@ interface TickerLensProps {
   onBoundedResolution?: (failedSymbols: string[]) => void;
   accent?: "purple" | "yellow" | "blue" | "green" | "coral" | "indigo";
   metrics?: readonly TickerMetric[];
-  onGroupSelectionChange?: (selection: TickerGroupSelection) => void;
   defaultMetricSort?: DefaultMetricSort;
-}
-
-interface GroupSelectionState {
-  searchKey: string;
-  mode: GroupMode;
-  keys: Set<string>;
 }
 
 interface GroupsState {
@@ -99,7 +77,27 @@ const emptyGroups: GroupRanking[] = [];
 const emptySymbols: string[] = [];
 const emptySymbolsByGroup = new Map<string, string[]>();
 
-export function TickerLens({
+export function TickerLens(props: TickerLensProps) {
+  const [search] = useSearchParams();
+  const [store] = useState(() => {
+    let storage: Storage | undefined;
+    try { storage = localStorage; } catch { /* Preferences are optional when browser storage is unavailable. */ }
+    return createTickerLensStore({
+      search,
+      storage,
+      defaultMetricSort: props.metrics?.some(metric => metric.id === props.defaultMetricSort?.metricId)
+        ? props.defaultMetricSort : undefined,
+    });
+  });
+  return (
+    <TickerLensStateProvider store={store}>
+      <TickerLensNavigation store={store} />
+      <TickerLensContent {...props} />
+    </TickerLensStateProvider>
+  );
+}
+
+function TickerLensContent({
   universe,
   chartAnnotations,
   watchlists,
@@ -107,53 +105,29 @@ export function TickerLens({
   onBoundedResolution,
   accent,
   metrics = emptyMetrics,
-  onGroupSelectionChange,
-  defaultMetricSort,
 }: TickerLensProps) {
   const { showWeeklyChartOverlay, setShowWeeklyChartOverlay } = useAppSettings();
   const [lensElement, setLensElement] = useState<HTMLElement | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
   const tickerStream = useMemo(() => createTickerStreamClient(), []);
-  const searchKey = searchParams.toString();
-  const parsedSearchSelection = useMemo(
-    () => selectionFromSearch(searchParams, searchKey),
-    [searchKey, searchParams],
-  );
-  const [groupSelection, setGroupSelection] = useState<GroupSelectionState>(() =>
-    parsedSearchSelection ?? {
-      searchKey,
-      mode: readGroupMode(searchParams),
-      keys: initialGroupKeys(searchParams),
-    },
-  );
-  const activeGroupSelection = parsedSearchSelection !== undefined
-    && groupSelection.searchKey !== searchKey
-    ? parsedSearchSelection
-    : groupSelection;
-  const groupMode = activeGroupSelection.mode;
-  const [groupBySector, setGroupBySector] = useState(
-    () => localStorage.getItem(sectorGroupingKey) === "true",
-  );
+  const groupMode = useTickerLensState(state => state.preferences.groupMode);
+  const setMode = useTickerLensState(state => state.setMode);
+  const groupBySector = useTickerLensState(state => state.preferences.groupBySector);
+  const setGroupBySector = useTickerLensState(state => state.setGroupBySector);
+  const selectedGroupKeys = useTickerLensState(state => state.selectedGroupKeys);
+  const setSelectedGroupKeys = useTickerLensState(state => state.setSelectedGroupKeys);
+  const selectedTicker = useTickerLensState(state => state.selectedTicker);
+  const setSelectedTicker = useTickerLensState(state => state.setSelectedTicker);
+  const groupsCollapsed = useTickerLensState(state => state.groupsCollapsed);
+  const setGroupsCollapsed = useTickerLensState(state => state.setGroupsCollapsed);
+  const tickerFilters = useTickerLensState(state => state.preferences.filters);
+  const setTickerFilters = useTickerLensState(state => state.setFilters);
+  const tickerFiltersPersisted = useTickerLensState(state => state.preferences.filtersPinned);
+  const setTickerFiltersPersisted = useTickerLensState(state => state.setFiltersPinned);
   const sectorRankingsRequest = useMemo(
     () => groupMode === "industry" && groupBySector ? { mode: groupMode } as const : undefined,
     [groupBySector, groupMode],
   );
-  const selectedGroupKeys = activeGroupSelection.keys;
-  const setSelectedGroupKeys = useCallback<Dispatch<SetStateAction<Set<string>>>>((action) => {
-    setGroupSelection((current) => {
-      const base = parsedSearchSelection !== undefined && current.searchKey !== searchKey
-        ? parsedSearchSelection.keys
-        : current.keys;
-      const keys = typeof action === "function" ? action(base) : action;
-      return { searchKey, mode: groupMode, keys };
-    });
-  }, [groupMode, parsedSearchSelection, searchKey]);
-  const [selectedTicker, setSelectedTicker] = useState<string | undefined>(() =>
-    searchTickerSymbol(searchParams)
-  );
-  const [selectedTickerContext, setSelectedTickerContext] =
-    useState<SelectedTickerContext>();
-  const [groupsCollapsed, setGroupsCollapsed] = useState(false);
+  const [selectedTickerContext, setSelectedTickerContext] = useState<SelectedTickerContext>();
   const [globalRankingGroupsState, setGlobalRankingGroupsState] =
     useState<GlobalRankingGroupsState>({ key: "", groups: [] });
   const [sectorRankingsState, setSectorRankingsState] =
@@ -165,29 +139,27 @@ export function TickerLens({
   });
   const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
-  const [tickerFilters, setTickerFilters] = useState<TickerFilters>(readTickerFilters);
-  const [tickerFiltersPersisted, setTickerFiltersPersisted] = useState(readTickerFilterPersisted);
   const [revealGroup, setRevealGroup] = useState<RevealRequest<string> | undefined>(() => {
-    const keys = initialGroupKeys(searchParams);
+    const keys = selectedGroupKeys;
     const key = keys.size === 1 ? keys.values().next().value : undefined;
     return key === undefined ? undefined : { value: key, revision: 1 };
   });
   const [revealTicker, setRevealTicker] = useState<RevealRequest<string> | undefined>(() => {
-    const symbol = searchTickerSymbol(searchParams);
+    const symbol = selectedTicker;
     return symbol === undefined ? undefined : { value: symbol, revision: 1 };
   });
-  const requestedThemeNames = useMemo(() => searchThemeNames(searchParams), [searchParams]);
-  const requestedUnassigned = searchIncludesUnassigned(searchParams);
   const bounded = universe.type === "bounded";
+  const { catalogRevision, membershipRevision } = useIndustryData([...selectedGroupKeys], !bounded && groupMode === "industry");
   const sourceBoundedSymbols = bounded ? universe.symbols : [];
   const sourceBoundedSymbolsKey = sourceBoundedSymbols.join("\0");
   const marketResolveTickers =
     universe.type === "market-watch" ? universe.resolveTickers : undefined;
   const marketResolveGroups =
     universe.type === "market-watch" ? universe.resolveGroups : undefined;
-  const marketUniverseRevision = universe.type === "market-watch" ? universe.revision ?? 0 : 0;
-  const groupsRequestKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}\0${marketUniverseRevision}`;
-  const activeGroupsState = groupsState.key === groupsRequestKey ? groupsState : undefined;
+  const marketUniverseRevision = universe.type === "market-watch" ? membershipRevision : 0;
+  const groupsScopeKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
+  const groupsRequestKey = `${groupsScopeKey}\0${catalogRevision}`;
+  const activeGroupsState = groupsState.key === groupsScopeKey ? groupsState : undefined;
   const groups = activeGroupsState?.groups ?? emptyGroups;
   const groupsLoading = activeGroupsState === undefined;
   const groupsError = activeGroupsState?.error;
@@ -213,14 +185,7 @@ export function TickerLens({
     ? activeGroupsState?.resolvedBoundedSymbols ?? sourceBoundedSymbols
     : emptySymbols;
   const boundedSymbolsKey = boundedSymbols.join("\0");
-  const selectedGroupKey = [...selectedGroupKeys].sort().join("\0");
   const availableMetrics = useMemo(() => validatedMetrics(metrics), [metrics]);
-  useEffect(() => {
-    onGroupSelectionChange?.({
-      mode: groupMode,
-      groupKeys: selectedGroupKey === "" ? [] : selectedGroupKey.split("\0"),
-    });
-  }, [groupMode, onGroupSelectionChange, selectedGroupKey]);
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
   useEffect(() => () => tickerStream.close(), [tickerStream]);
@@ -245,31 +210,8 @@ export function TickerLens({
     };
     document.addEventListener("keydown", handleShortcut);
     return () => document.removeEventListener("keydown", handleShortcut);
-  }, [setShowWeeklyChartOverlay, showWeeklyChartOverlay]);
+  }, [setGroupsCollapsed, setShowWeeklyChartOverlay, showWeeklyChartOverlay]);
 
-  useEffect(() => {
-    writeTickerFilterValues(tickerFilters);
-  }, [tickerFilters]);
-
-  useEffect(() => {
-    writeTickerFilterState(tickerFilters, tickerFiltersPersisted);
-  }, [tickerFilters, tickerFiltersPersisted]);
-
-  useEffect(() => {
-    localStorage.setItem(sectorGroupingKey, String(groupBySector));
-  }, [groupBySector]);
-
-  useEffect(() => {
-    const mode = searchGroupMode(searchParams);
-    if (mode === undefined) return;
-    localStorage.setItem(groupModeKey, mode);
-  }, [searchParams]);
-
-  const setMode = (mode: GroupMode) => {
-    setSearchParams({}, { replace: true });
-    localStorage.setItem(groupModeKey, mode);
-    setGroupSelection({ searchKey: "", mode, keys: new Set() });
-  };
   const handleSelectedTickerContext = useCallback(
     (context: SelectedTickerContext | undefined) => setSelectedTickerContext(context),
     [],
@@ -289,14 +231,14 @@ export function TickerLens({
           ({ symbols, groups, failed_symbols }) => {
             if (controller.signal.aborted) {
               return {
-                key: groupsRequestKey,
+                key: groupsScopeKey,
                 groups: [],
                 boundedSymbolsByGroup: new Map(),
               } satisfies GroupsState;
             }
             onBoundedResolution?.(failed_symbols);
             return {
-              key: groupsRequestKey,
+              key: groupsScopeKey,
               resolvedBoundedSymbols: symbols,
               warning: failed_symbols.length === 0
                 ? undefined
@@ -315,7 +257,7 @@ export function TickerLens({
         )
       : (marketResolveGroups?.({ mode: groupMode, signal: controller.signal }) ??
         Promise.resolve([])).then((groups): GroupsState => ({
-          key: groupsRequestKey,
+          key: groupsScopeKey,
           groups,
           boundedSymbolsByGroup: new Map(),
         }));
@@ -325,9 +267,9 @@ export function TickerLens({
         if (!controller.signal.aborted) setGroupsState(state);
       })
       .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
+        if (!controller.signal.aborted && requestError instanceof Error && requestError.name !== "AbortError") {
           setGroupsState({
-            key: groupsRequestKey,
+            key: groupsScopeKey,
             groups: [],
             boundedSymbolsByGroup: new Map(),
             error: requestError.message,
@@ -335,7 +277,7 @@ export function TickerLens({
         }
       });
     return () => controller.abort();
-  }, [bounded, groupMode, groupsRequestKey, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
+  }, [bounded, groupMode, groupsRequestKey, groupsScopeKey, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
 
   useEffect(() => {
     if (!bounded) return;
@@ -431,8 +373,6 @@ export function TickerLens({
           selectedGroupKeys={selectedGroupKeys}
           setSelectedGroupKeys={setSelectedGroupKeys}
           selectedTickerContext={selectedTickerContext}
-          requestedThemeNames={requestedThemeNames}
-          requestedUnassigned={requestedUnassigned}
           countSortAvailable={bounded || (groups.length > 0 && groups.every(group => group.ticker_count !== undefined))}
           groups={groups}
           globalRankingGroups={globalRankingGroups}
@@ -464,7 +404,6 @@ export function TickerLens({
         bounded={bounded}
         universeRevision={marketUniverseRevision}
         metrics={availableMetrics}
-        defaultMetricSort={defaultMetricSort}
         mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}
@@ -538,33 +477,6 @@ export function TickerLens({
       />
     </section>
   );
-}
-
-function initialGroupKeys(searchParams: URLSearchParams) {
-  return readGroupMode(searchParams) === "industry"
-    ? searchIndustryKeys(searchParams)
-    : themeKeysFromSearch(searchParams);
-}
-
-function selectionFromSearch(
-  searchParams: URLSearchParams,
-  searchKey: string,
-): GroupSelectionState | undefined {
-  const mode = searchGroupMode(searchParams);
-  if (mode === undefined) return undefined;
-  return {
-    searchKey,
-    mode,
-    keys: mode === "industry"
-      ? searchIndustryKeys(searchParams)
-      : themeKeysFromSearch(searchParams),
-  };
-}
-
-function themeKeysFromSearch(searchParams: URLSearchParams) {
-  const keys = searchThemeIds(searchParams);
-  if (searchIncludesUnassigned(searchParams)) keys.add(unassignedGroupKey);
-  return keys;
 }
 
 function validatedMetrics(metrics: readonly TickerMetric[]) {
