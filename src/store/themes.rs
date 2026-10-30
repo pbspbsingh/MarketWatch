@@ -333,11 +333,15 @@ impl Store {
     }
 
     pub async fn delete_theme(&self, id: i64) -> anyhow::Result<bool> {
-        sqlx::query!("DELETE FROM themes WHERE id = ?", id)
+        let deleted = sqlx::query!("DELETE FROM themes WHERE id = ?", id)
             .execute(&self.pool)
             .await
             .context("failed to delete theme")
-            .map(|result| result.rows_affected() > 0)
+            .map(|result| result.rows_affected() > 0)?;
+        if deleted {
+            self.membership_changes.send_replace(());
+        }
+        Ok(deleted)
     }
 
     pub async fn theme_tickers(&self) -> anyhow::Result<Vec<ThemeTicker>> {
@@ -513,7 +517,9 @@ impl Store {
         transaction
             .commit()
             .await
-            .context("failed to commit assignment")
+            .context("failed to commit assignment")?;
+        self.membership_changes.send_replace(());
+        Ok(())
     }
 
     pub async fn theme_ids_by_names(&self, names: &[String]) -> anyhow::Result<Vec<i64>> {
@@ -576,7 +582,9 @@ impl Store {
         transaction
             .commit()
             .await
-            .context("failed to commit bulk assignment")
+            .context("failed to commit bulk assignment")?;
+        self.membership_changes.send_replace(());
+        Ok(())
     }
 
     pub async fn create_theme_ai_jobs(
@@ -799,7 +807,9 @@ impl Store {
         transaction
             .commit()
             .await
-            .context("failed to commit theme AI job application")
+            .context("failed to commit theme AI job application")?;
+        self.membership_changes.send_replace(());
+        Ok(())
     }
 
     pub async fn delete_theme_ai_job(&self, id: i64) -> anyhow::Result<bool> {

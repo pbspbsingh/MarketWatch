@@ -1,27 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
-import { resolveTickerMembership } from "../../api/tickers";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
-import { unassignedGroupKey } from "../ticker-lens/constants";
-import type {
-  ResolveTickersRequest,
-} from "../ticker-lens/types";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
 import { tradeIdFromSearch } from "../trade-logs/tradeLinks";
 import "./market-watch.css";
-
-const tickerSelection = (mode: ResolveTickersRequest["mode"], groupKeys: Set<string>) =>
-  mode === "industry"
-    ? ({ group_type: "industry", keys: [...groupKeys].sort() } as const)
-    : ({
-        group_type: "theme",
-        ids: [...groupKeys]
-          .filter((key) => key !== unassignedGroupKey)
-          .map(Number),
-        include_unassigned: groupKeys.has(unassignedGroupKey),
-      } as const);
 
 export function MarketWatchPage() {
   const [searchParams] = useSearchParams();
@@ -50,11 +34,6 @@ export function MarketWatchPage() {
   const chartAnnotations = useMemo(() => linkedTrade !== undefined && linkedTrade.id === tradeId
     ? { symbol: linkedTrade.symbol, markers: dailyExecutionMarkers(linkedTrade.executions) }
     : undefined, [linkedTrade, tradeId]);
-  const resolveTickers = useCallback(
-    ({ mode, groupKeys, signal }: ResolveTickersRequest) =>
-      resolveTickerMembership(tickerSelection(mode, groupKeys), signal),
-    [],
-  );
   return (
     <section className="market-watch-page" aria-label="Market Watch">
       <TickerLens
@@ -62,7 +41,6 @@ export function MarketWatchPage() {
         chartAnnotations={chartAnnotations}
         universe={{
           type: "market-watch",
-          resolveTickers,
         }}
       />
       <Toast

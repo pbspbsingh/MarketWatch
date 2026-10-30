@@ -129,7 +129,15 @@ async fn forward(
             industry::forward(services.industry.clone(), id, resource, sender, generation).await;
         }
         ApplicationResource::Tickers(resource) => {
-            tickers::forward(services.tickers.clone(), id, resource, sender, generation).await;
+            tickers::forward(
+                services.tickers.clone(),
+                services.industry.clone(),
+                id,
+                resource,
+                sender,
+                generation,
+            )
+            .await;
         }
     }
 }
@@ -137,6 +145,7 @@ async fn forward(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contracts::tickers::TickerFilters;
     use crate::{
         models::TickerSymbol,
         services::industry_data::tests::{client, fixture, seed_catalog},
@@ -179,15 +188,18 @@ mod tests {
         });
         let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
         for (id, resource) in [
-            ("catalog", json!({"type":"catalog"})),
             (
-                "members",
-                json!({"type":"membership","industry_key":"semiconductors"}),
+                "catalog",
+                json!({"domain":"industry","resource":{"type":"catalog"}}),
+            ),
+            (
+                "tickers",
+                json!({"domain":"tickers","resource":{"selection":{"type":"themes","ids":[],"include_unassigned":false},"filters":TickerFilters::default()}}),
             ),
         ] {
             socket
                 .send(ClientMessage::Text(
-                    json!({"type":"subscribe", "subscription_id":id, "resource":{"domain":"industry","resource":resource}})
+                    json!({"type":"subscribe", "subscription_id":id, "resource":resource})
                         .to_string()
                         .into(),
                 ))
@@ -203,12 +215,16 @@ mod tests {
                 .unwrap();
             if let ClientMessage::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
-                assert_eq!(value["payload"]["state"]["loading"], false);
+                if value["subscription_id"] == "tickers"
+                    && value["payload"]["state"]["type"] != "complete"
+                {
+                    continue;
+                }
                 received.push(value["subscription_id"].as_str().unwrap().to_owned());
             }
         }
         received.sort();
-        assert_eq!(received, ["catalog", "members"]);
+        assert_eq!(received, ["catalog", "tickers"]);
         // Ranking commits push a new catalog snapshot without polling or a
         // membership acquisition, including updated metric values.
         store
@@ -243,31 +259,7 @@ mod tests {
                 break;
             }
         }
-        store
-            .add_ticker_industry(
-                "semiconductors",
-                "Semiconductors",
-                &TickerSymbol::parse("NVDA").unwrap(),
-            )
-            .await
-            .unwrap();
-        loop {
-            let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
-            if let ClientMessage::Text(text) = message {
-                let value: Value = serde_json::from_str(&text).unwrap();
-                assert_eq!(value["subscription_id"], "members");
-                assert_eq!(
-                    value["payload"]["state"]["data"]["symbols"],
-                    json!(["AMD", "NVDA"])
-                );
-                break;
-            }
-        }
-        for id in ["members", "catalog"] {
+        for id in ["tickers", "catalog"] {
             socket
                 .send(ClientMessage::Text(
                     json!({"type":"unsubscribe", "subscription_id":id})

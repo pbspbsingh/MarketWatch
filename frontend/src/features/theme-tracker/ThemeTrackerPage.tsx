@@ -1,3 +1,4 @@
+import type { TickerSelection } from "../../api/generated/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
@@ -15,7 +16,6 @@ import {
   type SectorRanking,
   type ThemeRanking,
 } from "../../api/industries";
-import { resolveTickerMembership } from "../../api/tickers";
 import { fetchThemes } from "../../api/themes";
 import { addTickerToWatchlist, clearTickerWatchlists, fetchTickerWatchlists, fetchWatchlists, removeTickerFromWatchlist, type Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
@@ -123,7 +123,7 @@ export function ThemeTrackerPage() {
     sectorRange === "trading_day" ? "week" : sectorRange,
   );
   const userSelected = useRef(false);
-  const refreshedMembershipRevision = useRef(0);
+  const refreshedWatchlistsRevision = useRef(0);
   const ignoreTickerContext = useCallback(() => {}, []);
   const activeThemeKeys = useMemo(
     () => mode === "theme" && activeTheme !== undefined ? new Set([String(activeTheme.id)]) : new Set<string>(),
@@ -148,29 +148,12 @@ export function ThemeTrackerPage() {
     : mode === "sector"
       ? level === "overview" ? activeSector?.key : activeIndustry?.key
       : activeIndustry?.key;
-  const resolveGroupStocks = useCallback(
-    (signal: AbortSignal) => {
-      if (mode === "theme") {
-        return activeTheme === undefined
-          ? Promise.resolve([])
-          : resolveTickerMembership(
-              { group_type: "theme", ids: [activeTheme.id], include_unassigned: false },
-              signal,
-            );
-      }
-      return activeIndustryKeys.size === 0
-        ? Promise.resolve([])
-        : resolveTickerMembership(
-            { group_type: "industry", keys: [...activeIndustryKeys] },
-            signal,
-          );
-    },
-    [activeIndustryKeys, activeTheme, mode],
-  );
+  const stockSelection = useMemo<TickerSelection>(() => mode === "theme"
+    ? { type: "themes", ids: activeTheme === undefined ? [] : [activeTheme.id], include_unassigned: false }
+    : { type: "industries", keys: [...activeIndustryKeys].sort() }, [activeIndustryKeys, activeTheme, mode]);
   const stockStream = useTickerRankingStream({
     enabled: stockMode && activeGroupKey !== undefined,
-    requestKey: activeGroupKey === undefined ? "" : `${mode}:${activeGroupKey}`,
-    resolveSymbols: resolveGroupStocks,
+    selection: stockSelection,
   });
 
   useEffect(() => {
@@ -322,11 +305,11 @@ export function ThemeTrackerPage() {
   useEffect(() => {
     if (
       focusRevision === 0 ||
-      refreshedMembershipRevision.current === focusRevision ||
+      refreshedWatchlistsRevision.current === focusRevision ||
       !stockMode ||
       stockSymbolsKey === ""
     ) return;
-    refreshedMembershipRevision.current = focusRevision;
+    refreshedWatchlistsRevision.current = focusRevision;
     const controller = new AbortController();
     fetchTickerWatchlists(stockSymbolsKey.split("\0"), controller.signal)
       .then((memberships) => {

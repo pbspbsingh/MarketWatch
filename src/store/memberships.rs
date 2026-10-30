@@ -12,33 +12,6 @@ pub struct TickerIndustryMembership {
 }
 
 impl Store {
-    pub async fn industry_membership_snapshot(
-        &self,
-        industry_key: &str,
-    ) -> anyhow::Result<(Vec<TickerSymbol>, Option<DateTime<Utc>>)> {
-        let mut transaction = self.pool.begin().await?;
-        let fetched_at = sqlx::query_scalar!(
-            r#"SELECT fetched_at AS "fetched_at: NaiveDateTime"
-               FROM industry_memberships
-               WHERE industry_key = ?"#,
-            industry_key,
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-        let symbols = sqlx::query_scalar!(
-            "SELECT symbol FROM industry_membership_tickers WHERE industry_key = ? ORDER BY symbol",
-            industry_key,
-        )
-        .fetch_all(&mut *transaction)
-        .await?;
-        transaction.commit().await?;
-        let symbols = symbols
-            .into_iter()
-            .map(TickerSymbol::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((symbols, fetched_at.map(|value| value.and_utc())))
-    }
-
     pub async fn ticker_has_industry(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
         let symbol = symbol.as_str();
         sqlx::query_scalar!(

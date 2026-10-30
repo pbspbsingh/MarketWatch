@@ -1,4 +1,3 @@
-import { fetchIndustryMembers } from "./industryData";
 
 import type { TickerRanking } from "./generated/contracts";
 export type { TickerRanking } from "./generated/contracts";
@@ -12,31 +11,6 @@ export interface TickerGroupSummaryItem {
 export interface TickerGroupSummary {
   selected_groups: TickerGroupSummaryItem[];
   related_groups: TickerGroupSummaryItem[];
-}
-
-type TickerGroupSelection =
-  | { group_type: "industry"; keys: string[] }
-  | { group_type: "theme"; ids: number[]; include_unassigned: boolean };
-
-export async function resolveTickerMembership(
-  selection: TickerGroupSelection,
-  signal?: AbortSignal,
-): Promise<string[]> {
-  if ((selection.group_type === "industry" && selection.keys.length === 0)
-    || (selection.group_type === "theme" && selection.ids.length === 0 && !selection.include_unassigned)) return [];
-  if (selection.group_type === "industry" && selection.keys.length > 0) {
-    return fetchIndustryMembers(selection.keys, signal);
-  }
-  const response = await fetch("/api/ticker-membership", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(selection),
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to resolve ticker membership: HTTP ${response.status}`);
-  }
-  return response.json() as Promise<string[]>;
 }
 
 export async function fetchTickerRanking(

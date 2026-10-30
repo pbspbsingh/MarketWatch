@@ -50,6 +50,39 @@ pub enum ApplicationEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contracts::tickers::TickerFilters;
+    use serde_json::json;
+
+    #[test]
+    fn subscription_validation_rejects_unknown_fields_at_every_level() {
+        let valid = json!({
+            "type": "subscribe", "subscription_id": "test",
+            "resource": {"domain": "tickers", "resource": {
+                "selection": {"type": "themes", "ids": [1], "include_unassigned": false},
+                "filters": TickerFilters::default(),
+            }},
+        });
+        assert!(serde_json::from_value::<ApplicationCommand>(valid.clone()).is_ok());
+        for path in [
+            "",
+            "/resource",
+            "/resource/resource",
+            "/resource/resource/selection",
+            "/resource/resource/filters",
+        ] {
+            let mut invalid = valid.clone();
+            invalid
+                .pointer_mut(path)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("unexpected".into(), json!(true));
+            assert!(
+                serde_json::from_value::<ApplicationCommand>(invalid).is_err(),
+                "{path}"
+            );
+        }
+    }
 
     #[test]
     fn global_subscriptions_require_a_supported_domain_and_have_no_refresh_command() {

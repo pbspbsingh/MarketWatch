@@ -1,108 +1,199 @@
 use crate::contracts::events::{ApplicationEvent, ApplicationSnapshot};
-use crate::contracts::tickers::{TickerMetricsResource, TickerMetricsUpdate};
-use crate::models::TickerRanking;
-use crate::services::tickers::TickerCatalogService;
-use std::sync::Arc;
+use crate::contracts::tickers::{
+    TickerFilters, TickerMetricsResource, TickerMetricsUpdate, TickerSelection,
+};
+use crate::models::{TickerRanking, TickerSymbol};
+use crate::services::{industry_data::IndustryDataService, tickers::TickerCatalogService};
+use std::{fmt::Display, sync::Arc};
 use tokio::sync::{
     broadcast::error::RecvError,
     mpsc::{self, Sender},
 };
 
-pub(super) async fn forward(
-    service: Arc<TickerCatalogService>,
+struct Delivery {
     id: String,
-    resource: TickerMetricsResource,
+    filters: TickerFilters,
     sender: Sender<(u64, ApplicationEvent)>,
     generation: u64,
-) {
-    let mut symbols = resource.symbols;
-    let filters = resource.filters;
-    symbols.sort();
-    symbols.dedup();
-    if symbols.len() > 10_000 || filters.validate().is_err() {
-        let _ = sender
+}
+
+impl Delivery {
+    async fn update(&self, update: TickerMetricsUpdate) -> bool {
+        self.sender
             .send((
-                generation,
-                ApplicationEvent::Error {
-                    subscription_id: id,
-                    message: "Invalid ticker metrics subscription".into(),
+                self.generation,
+                ApplicationEvent::Snapshot {
+                    subscription_id: self.id.clone(),
+                    payload: ApplicationSnapshot::Tickers(update),
                 },
             ))
-            .await;
-        return;
+            .await
+            .is_ok()
     }
-    let mut changes = service.metric_changes();
-    let send = |update| {
-        sender.send((
-            generation,
-            ApplicationEvent::Snapshot {
-                subscription_id: id.clone(),
-                payload: ApplicationSnapshot::Tickers(update),
-            },
-        ))
-    };
-    let metric_update = |ticker: TickerRanking| {
-        if filters.includes(&ticker) {
+
+    async fn ticker(&self, ticker: TickerRanking) -> bool {
+        let update = if self.filters.includes(&ticker) {
             TickerMetricsUpdate::Ticker { ticker }
         } else {
             TickerMetricsUpdate::Remove {
                 symbol: ticker.symbol,
             }
-        }
-    };
-    if send(TickerMetricsUpdate::Reset {
-        total: symbols.len(),
-    })
-    .await
-    .is_err()
-    {
-        return;
+        };
+        self.update(update).await
     }
-    // Keep acquisition in this task so dropping the subscription cancels it.
+
+    async fn error(&self, error: impl Display) {
+        let _ = self
+            .sender
+            .send((
+                self.generation,
+                ApplicationEvent::Error {
+                    subscription_id: self.id.clone(),
+                    message: error.to_string(),
+                },
+            ))
+            .await;
+    }
+}
+
+async fn resolve_symbols(
+    service: &TickerCatalogService,
+    industry: &IndustryDataService,
+    selection: &TickerSelection,
+    acquire: bool,
+) -> anyhow::Result<Vec<TickerSymbol>> {
+    let mut symbols = match selection {
+        TickerSelection::Industries { keys } if acquire => {
+            industry.resolve_industry_symbols(keys).await?
+        }
+        _ => service.cached_selection_symbols(selection).await?,
+    };
+    symbols.sort();
+    symbols.dedup();
+    anyhow::ensure!(symbols.len() <= 10_000, "Too many selected tickers");
+    Ok(symbols)
+}
+
+async fn acquire_metrics(
+    service: &TickerCatalogService,
+    symbols: &[TickerSymbol],
+    delivery: &Delivery,
+) -> bool {
+    if !delivery
+        .update(TickerMetricsUpdate::Reset {
+            total: symbols.len(),
+        })
+        .await
+    {
+        return false;
+    }
     let (tickers, mut receiver) = mpsc::channel(1);
-    let acquisition = service.stream_ranked_symbols(generation, &symbols, &tickers);
+    let acquisition = service.stream_ranked_symbols(delivery.generation, symbols, &tickers);
     tokio::pin!(acquisition);
     loop {
         tokio::select! {
             result = &mut acquisition => {
                 if let Err(error) = result {
-                    let _ = sender.send((generation, ApplicationEvent::Error { subscription_id: id.clone(), message: error.to_string() })).await;
-                    return;
+                    delivery.error(error).await;
+                    return false;
                 }
                 break;
             }
-            Some(ticker) = receiver.recv() => if send(metric_update(ticker)).await.is_err() { return; },
-        }
-    }
-    // The producer may finish while its last item is still buffered.
-    while let Ok(ticker) = receiver.try_recv() {
-        if send(metric_update(ticker)).await.is_err() {
-            return;
-        }
-    }
-    if send(TickerMetricsUpdate::Complete).await.is_err() {
-        return;
-    }
-    loop {
-        let affected = match changes.recv().await {
-            Ok(symbol) => {
-                if symbols.binary_search(&symbol).is_ok() {
-                    vec![symbol]
-                } else {
-                    continue;
+            Some(ticker) = receiver.recv() => {
+                if !delivery.ticker(ticker).await {
+                    return false;
                 }
             }
-            Err(RecvError::Lagged(_)) => symbols.clone(),
-            Err(RecvError::Closed) => return,
-        };
-        for symbol in affected {
-            match service.cached_ticker_ranking(&symbol).await {
-                Ok(ticker) => {
-                    if send(metric_update(ticker)).await.is_err() {
+        }
+    }
+    while let Ok(ticker) = receiver.try_recv() {
+        if !delivery.ticker(ticker).await {
+            return false;
+        }
+    }
+    delivery.update(TickerMetricsUpdate::Complete).await
+}
+
+pub(super) async fn forward(
+    service: Arc<TickerCatalogService>,
+    industry: Arc<IndustryDataService>,
+    id: String,
+    resource: TickerMetricsResource,
+    sender: Sender<(u64, ApplicationEvent)>,
+    generation: u64,
+) {
+    let selection = resource.selection;
+    let dynamic = !matches!(selection, TickerSelection::Symbols { .. });
+    let delivery = Delivery {
+        id,
+        filters: resource.filters,
+        sender,
+        generation,
+    };
+    if let Err(error) = delivery.filters.validate() {
+        delivery.error(error).await;
+        return;
+    }
+    // Subscribe before lazy acquisition so changes made while resolving groups
+    // cannot be lost between the initial snapshot and live delivery.
+    let mut changes = service.metric_changes();
+    let mut memberships = service.membership_changes();
+    let mut symbols = match resolve_symbols(&service, &industry, &selection, true).await {
+        Ok(symbols) => symbols,
+        Err(error) => {
+            delivery.error(error).await;
+            return;
+        }
+    };
+    loop {
+        if !acquire_metrics(&service, &symbols, &delivery).await {
+            return;
+        }
+        loop {
+            let affected = tokio::select! {
+                changed = memberships.changed(), if dynamic => {
+                    if changed.is_err() {
                         return;
                     }
+                    let next = match resolve_symbols(&service, &industry, &selection, false).await {
+                        Ok(next) => next,
+                        Err(error) => {
+                            delivery.error(error).await;
+                            continue;
+                        }
+                    };
+                    if next == symbols {
+                        continue;
+                    }
+                    for removed in symbols.iter().filter(|symbol| next.binary_search(symbol).is_err()) {
+                        if !delivery.update(TickerMetricsUpdate::Remove { symbol: removed.clone() }).await {
+                            return;
+                        }
+                    }
+                    symbols = next;
+                    break;
                 }
-                Err(error) => tracing::warn!(%symbol, %error, "Ticker metric update failed"),
+                changed = changes.recv() => match changed {
+                    Ok(symbol) => {
+                        if symbols.binary_search(&symbol).is_ok() {
+                            vec![symbol]
+                        } else {
+                            continue;
+                        }
+                    }
+                    Err(RecvError::Lagged(_)) => symbols.clone(),
+                    Err(RecvError::Closed) => return,
+                },
+            };
+            for symbol in affected {
+                match service.cached_ticker_ranking(&symbol).await {
+                    Ok(ticker) => {
+                        if !delivery.ticker(ticker).await {
+                            return;
+                        }
+                    }
+                    Err(error) => tracing::warn!(%symbol, %error, "Ticker metric update failed"),
+                }
             }
         }
     }
@@ -111,14 +202,248 @@ pub(super) async fn forward(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::tickers::{MinimumFilter, TickerFilters};
+    use crate::contracts::tickers::MinimumFilter;
+    use crate::models::AssignmentSource;
+    use crate::services::industry_data::tests::seed_catalog;
     use crate::{
         models::{CompanyProfile, DailyCandle, Exchange, TickerSymbol},
         services::industry_data::tests::{client, fixture},
         store::Store,
     };
     use chrono::{TimeDelta, Utc};
+    use std::collections::BTreeSet;
     use std::time::Duration;
+    use tokio::sync::mpsc::Receiver;
+
+    async fn selected_rows(
+        receiver: &mut Receiver<(u64, ApplicationEvent)>,
+        visible: &mut BTreeSet<String>,
+    ) -> usize {
+        let mut total = None;
+        loop {
+            let (_, event) = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            match event {
+                ApplicationEvent::Snapshot {
+                    payload: ApplicationSnapshot::Tickers(update),
+                    ..
+                } => match update {
+                    TickerMetricsUpdate::Reset { total: count } => total = Some(count),
+                    TickerMetricsUpdate::Ticker { ticker } => {
+                        visible.insert(ticker.symbol.to_string());
+                    }
+                    TickerMetricsUpdate::Remove { symbol } => {
+                        visible.remove(symbol.as_str());
+                    }
+                    TickerMetricsUpdate::Complete => {
+                        return total.expect("Reset must precede completion");
+                    }
+                },
+                ApplicationEvent::Error { message, .. } => panic!("{message}"),
+                _ => panic!("Unexpected domain"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn industry_theme_and_unassigned_selections_reconcile_membership_and_counts() {
+        for kind in ["industries", "themes", "unassigned"] {
+            let store = Store::connect("sqlite::memory:").await.unwrap();
+            seed_catalog(&store).await;
+            let (industry, service, yahoo) = fixture(store.clone(), client("http://127.0.0.1:1/"));
+            let date = yahoo.latest_completed_candle_date();
+            let nvda = TickerSymbol::parse("NVDA").unwrap();
+            let amd = TickerSymbol::parse("AMD").unwrap();
+            for symbol in [&nvda, &amd] {
+                store
+                    .add_ticker_industry("semiconductors", "Semiconductors", symbol)
+                    .await
+                    .unwrap();
+                store
+                    .upsert_company_profile(&CompanyProfile {
+                        symbol: symbol.clone(),
+                        name: Some(symbol.to_string()),
+                        exchange: Exchange::Nasdaq,
+                        description: None,
+                        fetched_at: Utc::now(),
+                    })
+                    .await
+                    .unwrap();
+                let candle = |market_date| DailyCandle {
+                    market_date,
+                    open: 100.0,
+                    high: 110.0,
+                    low: 90.0,
+                    close: 100.0,
+                    volume: 100,
+                };
+                store
+                    .upsert_daily_candles(
+                        symbol,
+                        &[candle(date - TimeDelta::days(800)), candle(date)],
+                    )
+                    .await
+                    .unwrap();
+            }
+            let theme = store
+                .create_theme("AI", &TickerSymbol::parse("AIQ").unwrap(), None)
+                .await
+                .unwrap();
+            let other = store
+                .create_theme("Chips", &TickerSymbol::parse("SMH").unwrap(), None)
+                .await
+                .unwrap();
+            let selection = match kind {
+                "industries" => {
+                    store
+                        .replace_industry_membership(
+                            "semiconductors",
+                            Utc::now(),
+                            std::slice::from_ref(&nvda),
+                        )
+                        .await
+                        .unwrap();
+                    TickerSelection::Industries {
+                        keys: vec!["semiconductors".into(), "semiconductors".into()],
+                    }
+                }
+                "themes" => {
+                    store
+                        .replace_theme_assignments(
+                            &nvda,
+                            &[theme, other],
+                            AssignmentSource::Manual,
+                            None,
+                            None,
+                        )
+                        .await
+                        .unwrap();
+                    TickerSelection::Themes {
+                        ids: vec![theme, other, theme],
+                        include_unassigned: false,
+                    }
+                }
+                _ => {
+                    store
+                        .replace_theme_assignments(
+                            &amd,
+                            &[theme],
+                            AssignmentSource::Manual,
+                            None,
+                            None,
+                        )
+                        .await
+                        .unwrap();
+                    TickerSelection::Themes {
+                        ids: vec![],
+                        include_unassigned: true,
+                    }
+                }
+            };
+            let (sender, mut receiver) = mpsc::channel(32);
+            let worker = tokio::spawn(forward(
+                service,
+                Arc::new(industry),
+                kind.into(),
+                TickerMetricsResource {
+                    selection,
+                    filters: TickerFilters::default(),
+                },
+                sender,
+                1,
+            ));
+            let mut visible = BTreeSet::new();
+            assert_eq!(
+                selected_rows(&mut receiver, &mut visible).await,
+                1,
+                "{kind}"
+            );
+            assert_eq!(visible, BTreeSet::from(["NVDA".into()]), "{kind}");
+            match kind {
+                "industries" => store
+                    .replace_industry_membership(
+                        "semiconductors",
+                        Utc::now(),
+                        &[nvda.clone(), amd.clone()],
+                    )
+                    .await
+                    .unwrap(),
+                "themes" => store
+                    .replace_theme_assignments(&amd, &[other], AssignmentSource::Manual, None, None)
+                    .await
+                    .unwrap(),
+                _ => store
+                    .replace_theme_assignments(&amd, &[], AssignmentSource::Manual, None, None)
+                    .await
+                    .unwrap(),
+            }
+            assert_eq!(
+                selected_rows(&mut receiver, &mut visible).await,
+                2,
+                "{kind}"
+            );
+            assert_eq!(
+                visible,
+                BTreeSet::from(["AMD".into(), "NVDA".into()]),
+                "{kind}"
+            );
+            match kind {
+                "industries" => store
+                    .replace_industry_membership(
+                        "semiconductors",
+                        Utc::now(),
+                        std::slice::from_ref(&amd),
+                    )
+                    .await
+                    .unwrap(),
+                "themes" => store
+                    .replace_theme_assignments(&nvda, &[], AssignmentSource::Manual, None, None)
+                    .await
+                    .unwrap(),
+                _ => store
+                    .replace_theme_assignments(
+                        &nvda,
+                        &[theme],
+                        AssignmentSource::Manual,
+                        None,
+                        None,
+                    )
+                    .await
+                    .unwrap(),
+            }
+            assert_eq!(
+                selected_rows(&mut receiver, &mut visible).await,
+                1,
+                "{kind}"
+            );
+            assert_eq!(visible, BTreeSet::from(["AMD".into()]), "{kind}");
+            if kind == "unassigned" {
+                store.delete_theme(theme).await.unwrap();
+                assert_eq!(selected_rows(&mut receiver, &mut visible).await, 2);
+                assert_eq!(visible, BTreeSet::from(["AMD".into(), "NVDA".into()]));
+            }
+            let notifications = store.subscribe_memberships();
+            assert!(
+                store
+                    .replace_theme_assignments(
+                        &amd,
+                        &[i64::MAX],
+                        AssignmentSource::Manual,
+                        None,
+                        None
+                    )
+                    .await
+                    .is_err()
+            );
+            assert!(
+                !notifications.has_changed().unwrap(),
+                "Rolled-back assignments must not notify subscribers"
+            );
+            worker.abort();
+        }
+    }
 
     #[tokio::test]
     async fn metrics_remain_subscribed_after_completion_and_push_committed_candles() {
@@ -138,7 +463,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let (_, service, yahoo) = fixture(store.clone(), client("http://127.0.0.1:1/"));
+        let (industry, service, yahoo) = fixture(store.clone(), client("http://127.0.0.1:1/"));
         let date = yahoo.latest_completed_candle_date();
         let candle = |date, close| DailyCandle {
             market_date: date,
@@ -175,9 +500,12 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(32);
         let worker = tokio::spawn(forward(
             service,
+            Arc::new(industry),
             "metrics".into(),
             TickerMetricsResource {
-                symbols: vec![symbol.clone()],
+                selection: TickerSelection::Symbols {
+                    symbols: vec![symbol.clone()],
+                },
                 filters: TickerFilters {
                     dollar_volume: MinimumFilter {
                         enabled: true,

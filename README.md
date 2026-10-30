@@ -131,6 +131,12 @@ the client; changing a sort does not send a subscription command. Filter-only
 dedicated ticker WebSocket has been removed. Yahoo chart/live-price transports
 remain separate while their migration continues.
 
+Ticker subscriptions accept industry keys, theme IDs (including Unassigned), or
+explicit symbols for bounded lists. The backend resolves group membership, applies
+filters, and streams rows and totals. Committed membership changes update active
+subscriptions; reconnect snapshots remove rows that no longer belong. The client
+does not fetch group members or maintain membership revision keys.
+
 ## Institutional ownership
 
 The Institutions tab loads only when opened. Enable SEC access with

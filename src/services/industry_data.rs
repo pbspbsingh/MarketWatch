@@ -2,12 +2,12 @@ use crate::contracts::industry::{
     ETF_INDUSTRY_KEY, IndustryCatalogEntry, IndustryData, IndustryResource, IndustryState,
     MEMBERSHIP_FRESH_DAYS,
 };
-use crate::models::PerformancePeriods;
+use crate::models::{PerformancePeriods, TickerSymbol};
 use crate::services::industries::IndustryRefreshService;
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
-use chrono::{DateTime, TimeDelta, Utc};
-use std::collections::HashMap;
+use chrono::TimeDelta;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::watch::Receiver;
 
@@ -30,15 +30,41 @@ impl IndustryDataService {
         }
     }
 
-    pub fn changes(&self) -> (Receiver<()>, Receiver<()>) {
-        (
-            self.store.subscribe_industry_catalog(),
-            self.store.subscribe_memberships(),
-        )
+    pub async fn resolve_industry_symbols(
+        &self,
+        keys: &[String],
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        anyhow::ensure!(
+            keys.iter().all(
+                |key| !key.is_empty() && key.bytes().all(|value| value.is_ascii_alphanumeric())
+            ),
+            "Invalid industry key"
+        );
+        self.catalog.refresh_classifications_if_stale().await?;
+        let known = self
+            .store
+            .industry_classifications()
+            .await?
+            .into_iter()
+            .map(|item| item.industry_key)
+            .collect::<HashSet<_>>();
+        anyhow::ensure!(
+            keys.iter()
+                .all(|key| key == ETF_INDUSTRY_KEY || known.contains(key)),
+            "Unknown industry key"
+        );
+        self.tickers.industry_tickers(keys).await
+    }
+
+    pub fn changes(&self) -> Receiver<()> {
+        self.store.subscribe_industry_catalog()
     }
 
     pub async fn cached(&self, resource: &IndustryResource) -> anyhow::Result<IndustryState> {
-        let (data, fetched_at, permanent) = match resource {
+        let (data, fetched_at) = match resource {
             IndustryResource::Catalog => {
                 let (industries, fetched_at) =
                     self.store.industry_classification_snapshot().await?;
@@ -77,34 +103,13 @@ impl IndustryDataService {
                         ticker_count: item.ticker_count,
                     })
                     .collect::<Vec<_>>();
-                (IndustryData::Catalog { industries }, fetched_at, false)
-            }
-            IndustryResource::Membership { industry_key } => {
-                let (symbols, fetched_at) = self
-                    .store
-                    .industry_membership_snapshot(industry_key)
-                    .await?;
-                let fetched_at = fetched_at.filter(|value| *value != DateTime::<Utc>::UNIX_EPOCH);
-                let symbols = symbols
-                    .into_iter()
-                    .map(|symbol| symbol.to_string())
-                    .collect();
-                (
-                    IndustryData::Membership {
-                        industry_key: industry_key.clone(),
-                        symbols,
-                    },
-                    fetched_at,
-                    industry_key == ETF_INDUSTRY_KEY,
-                )
+                (IndustryData::Catalog { industries }, fetched_at)
             }
         };
         Ok(IndustryState {
             data,
             fetched_at,
-            expires_at: fetched_at
-                .filter(|_| !permanent)
-                .map(|value| value + TimeDelta::days(MEMBERSHIP_FRESH_DAYS)),
+            expires_at: fetched_at.map(|value| value + TimeDelta::days(MEMBERSHIP_FRESH_DAYS)),
             loading: false,
             error: None,
         })
@@ -113,28 +118,6 @@ impl IndustryDataService {
     pub async fn load(&self, resource: &IndustryResource) -> anyhow::Result<()> {
         match resource {
             IndustryResource::Catalog => self.catalog.refresh_classifications_if_stale().await,
-            IndustryResource::Membership { industry_key } => {
-                anyhow::ensure!(
-                    !industry_key.is_empty()
-                        && industry_key
-                            .bytes()
-                            .all(|value| value.is_ascii_alphanumeric()),
-                    "Invalid industry key"
-                );
-                self.catalog.refresh_classifications_if_stale().await?;
-                let known = industry_key == ETF_INDUSTRY_KEY
-                    || self
-                        .store
-                        .industry_classifications()
-                        .await?
-                        .iter()
-                        .any(|item| item.industry_key == *industry_key);
-                anyhow::ensure!(known, "Unknown industry key");
-                self.tickers
-                    .industry_tickers(std::slice::from_ref(industry_key))
-                    .await?;
-                Ok(())
-            }
         }
     }
 }
@@ -149,6 +132,7 @@ pub(crate) mod tests {
         services::yahoo::YahooService,
         store::IndustryClassification,
     };
+    use chrono::Utc;
 
     use tokio::net::TcpListener;
 
@@ -263,16 +247,23 @@ pub(crate) mod tests {
             .await
             .unwrap();
         let (service, _, _) = fixture(store.clone(), client(&url));
-        let resource = IndustryResource::Membership {
-            industry_key: "semiconductors".into(),
-        };
-        assert!(service.cached(&resource).await.unwrap().expires_at.unwrap() < Utc::now());
+        let keys = [String::from("semiconductors")];
+        assert_eq!(
+            store
+                .industry_membership_fetched_at(&keys[0])
+                .await
+                .unwrap(),
+            Some(old)
+        );
         assert_eq!(
             requests.load(Ordering::SeqCst),
             0,
             "Reading the cache must not acquire data"
         );
-        let (a, b) = tokio::join!(service.load(&resource), service.load(&resource));
+        let (a, b) = tokio::join!(
+            service.resolve_industry_symbols(&keys),
+            service.resolve_industry_symbols(&keys)
+        );
         a.unwrap();
         b.unwrap();
         assert_eq!(
@@ -287,11 +278,10 @@ pub(crate) mod tests {
                 .unwrap(),
             ["NVDA"]
         );
-        let etf = IndustryResource::Membership {
-            industry_key: ETF_INDUSTRY_KEY.into(),
-        };
-        service.load(&etf).await.unwrap();
-        assert!(service.cached(&etf).await.unwrap().expires_at.is_none());
+        service
+            .resolve_industry_symbols(&[ETF_INDUSTRY_KEY.into()])
+            .await
+            .unwrap();
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert_eq!(
             store
@@ -328,9 +318,7 @@ pub(crate) mod tests {
         let (service, _, _) = fixture(store.clone(), client(&url));
         assert!(
             service
-                .load(&IndustryResource::Membership {
-                    industry_key: "semiconductors".into()
-                })
+                .resolve_industry_symbols(&["semiconductors".into()])
                 .await
                 .is_err()
         );

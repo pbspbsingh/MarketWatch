@@ -53,10 +53,25 @@ impl TickerFilters {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TickerSelection {
+    Symbols {
+        #[serde(deserialize_with = "deserialize_valid_ticker_symbols")]
+        symbols: Vec<TickerSymbol>,
+    },
+    Industries {
+        keys: Vec<String>,
+    },
+    Themes {
+        ids: Vec<i64>,
+        include_unassigned: bool,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct TickerMetricsResource {
-    #[serde(deserialize_with = "deserialize_valid_ticker_symbols")]
-    pub symbols: Vec<TickerSymbol>,
+    pub selection: TickerSelection,
     pub filters: TickerFilters,
 }
 
@@ -111,15 +126,27 @@ mod tests {
 
     #[test]
     fn symbol_subscriptions_keep_valid_tickers_when_one_is_invalid() {
-        let resource: TickerMetricsResource =
-            serde_json::from_str(&serde_json::json!({"symbols":["AAPL","bad symbol","msft"], "filters":TickerFilters::default()}).to_string()).unwrap();
+        let resource: TickerMetricsResource = serde_json::from_value(serde_json::json!({
+            "selection": {"type": "symbols", "symbols": ["AAPL", "bad symbol", "msft"]},
+            "filters": TickerFilters::default(),
+        }))
+        .unwrap();
+        let TickerSelection::Symbols { symbols } = resource.selection else {
+            panic!("Expected symbols")
+        };
         assert_eq!(
-            resource.symbols,
+            symbols,
             [
                 TickerSymbol::parse("AAPL").unwrap(),
                 TickerSymbol::parse("MSFT").unwrap()
             ]
         );
-        assert!(serde_json::from_str::<TickerMetricsResource>(r#"{"symbols":[42]}"#).is_err());
+        assert!(
+            serde_json::from_value::<TickerMetricsResource>(serde_json::json!({
+                "selection": {"type": "symbols", "symbols": [42]},
+                "filters": TickerFilters::default(),
+            }))
+            .is_err()
+        );
     }
 }

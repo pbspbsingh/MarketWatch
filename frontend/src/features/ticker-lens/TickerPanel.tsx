@@ -1,3 +1,4 @@
+import type { TickerSelection } from "../../api/generated/contracts";
 import {
   useCallback,
   useEffect,
@@ -49,8 +50,6 @@ import {
   tickerSortOptions,
 } from "./constants";
 import type {
-  GroupMode,
-  ResolveTickersRequest,
   RevealRequest,
   TickerFilterCounts,
   TickerFilters,
@@ -74,13 +73,11 @@ const emptyTickers: TickerRanking[] = [];
 
 interface TickerPanelProps {
   bounded: boolean;
-  universeRevision: number | string;
+  metricSelection: TickerSelection;
   metrics: readonly TickerMetric[];
-  mode: GroupMode;
   groupKeys: Set<string>;
   selectedTicker: string | undefined;
   setSelectedTicker: Dispatch<SetStateAction<string | undefined>>;
-  resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
   providedWatchlists?: Watchlist[];
   onWatchlistsChange?: (symbol: string, watchlistIds: number[]) => void;
   onTickersChange?: (symbols: string[]) => void;
@@ -190,13 +187,11 @@ function TickerRow({
 
 export function TickerPanel({
   bounded,
-  universeRevision,
+  metricSelection,
   metrics,
-  mode,
   groupKeys,
   selectedTicker,
   setSelectedTicker,
-  resolveTickers,
   providedWatchlists,
   onWatchlistsChange,
   onTickersChange,
@@ -221,7 +216,6 @@ export function TickerPanel({
   const sortSetting = useTickerLensState(state => state.metricSort ?? state.preferences.tickerSort);
   const setSortSetting = useTickerLensState(state => state.setTickerSort);
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
-  const groupKey = [...groupKeys].sort().join("\0");
   const awaitingGroupSelection = !bounded && groupKeys.size === 0;
   const filtersActive = tickerFilters !== undefined && (tickerFilters.adr.enabled || tickerFilters.dollarVolume.enabled || tickerFilters.above200Sma.enabled);
   const metricsActive = !awaitingGroupSelection && (groupKeys.size > 0 || filtersActive);
@@ -230,21 +224,12 @@ export function TickerPanel({
   useEffect(() => {
     if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) setSortSetting(defaultTickerSortSetting);
   }, [activeMetric, setSortSetting, sortSetting.key]);
-  const resolveRankedSymbols = useCallback(
-    (signal: AbortSignal) => resolveTickers({
-      mode,
-      groupKeys: new Set(groupKey === "" ? [] : groupKey.split("\0")),
-      signal,
-    }),
-    [groupKey, mode, resolveTickers],
-  );
   const rankingStream = useTickerRankingStream({
     filters: tickerFilters,
     enabled: metricsActive,
-    requestKey: `${mode}:${groupKey}:${universeRevision}`,
-    resolveSymbols: resolveRankedSymbols,
+    selection: metricSelection,
   });
-  const resolvedTickerRequestKey = `${mode}\0${groupKey}\0${universeRevision}`;
+  const resolvedTickerRequestKey = JSON.stringify(metricSelection);
   const panelRequestKey = `${metricsActive ? "ranked" : "resolved"}\0${resolvedTickerRequestKey}`;
   const reportError = useCallback((message: string) => {
     setErrorState({ key: panelRequestKey, message });
@@ -285,11 +270,7 @@ export function TickerPanel({
     if (metricsActive || awaitingGroupSelection) return;
     const controller = new AbortController();
 
-    resolveTickers({
-      mode,
-      groupKeys: new Set(groupKey === "" ? [] : groupKey.split("\0")),
-      signal: controller.signal,
-    })
+    Promise.resolve(metricSelection.type === "symbols" ? metricSelection.symbols : [])
       .then(async (symbols) => {
         if (controller.signal.aborted) return;
         let memberships = new Map<string, number[]>();
@@ -318,7 +299,7 @@ export function TickerPanel({
         }
       });
     return () => controller.abort();
-  }, [awaitingGroupSelection, groupKey, metricsActive, mode, reportError, resolveTickers, resolvedTickerRequestKey]);
+  }, [awaitingGroupSelection, metricSelection, metricsActive, reportError, resolvedTickerRequestKey]);
 
   const tickerDataSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
   const setStreamTickerWatchlists = rankingStream.setTickerWatchlists;

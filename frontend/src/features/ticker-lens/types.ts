@@ -49,16 +49,9 @@ export type SelectedTickerContext = {
   themeNames: string[];
 };
 
-export type ResolveTickersRequest = {
-  mode: GroupMode;
-  groupKeys: Set<string>;
-  signal: AbortSignal;
-};
-
 export type TickerUniverse =
   | {
       type: "market-watch";
-      resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
     }
   | {
       type: "bounded";

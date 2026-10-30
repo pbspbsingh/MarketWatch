@@ -29,7 +29,6 @@ pub struct IndustryCatalogEntry {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum IndustryResource {
     Catalog,
-    Membership { industry_key: String },
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -37,10 +36,6 @@ pub enum IndustryResource {
 pub enum IndustryData {
     Catalog {
         industries: Vec<IndustryCatalogEntry>,
-    },
-    Membership {
-        industry_key: String,
-        symbols: Vec<String>,
     },
 }
 

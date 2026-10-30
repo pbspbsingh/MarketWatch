@@ -11,7 +11,7 @@ pub(super) async fn forward(
     sender: mpsc::Sender<(u64, ApplicationEvent)>,
     generation: u64,
 ) {
-    let (mut catalog, mut memberships) = service.changes();
+    let mut catalog = service.changes();
     let mut state = match service.cached(&resource).await {
         Ok(state) => state,
         Err(error) => {
@@ -75,10 +75,7 @@ pub(super) async fn forward(
         }
     }
     loop {
-        let changed = match resource {
-            IndustryResource::Catalog => catalog.changed().await,
-            IndustryResource::Membership { .. } => memberships.changed().await,
-        };
+        let changed = catalog.changed().await;
         if changed.is_err() {
             return;
         }

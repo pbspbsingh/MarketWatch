@@ -14,6 +14,7 @@ use industry::{
 use std::path::Path;
 use tickers::{
     EnabledFilter, MinimumFilter, TickerFilters, TickerMetricsResource, TickerMetricsUpdate,
+    TickerSelection,
 };
 use ts_rs::{Config, TS};
 
@@ -32,6 +33,7 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         MinimumFilter::decl(&config),
         EnabledFilter::decl(&config),
         TickerFilters::decl(&config),
+        TickerSelection::decl(&config),
         TickerMetricsResource::decl(&config),
         TickerMetricsUpdate::decl(&config),
         IndustryClassification::decl(&config),

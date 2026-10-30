@@ -290,6 +290,7 @@ impl Store {
             .commit()
             .await
             .context("failed to commit theme audit acceptance")?;
+        self.membership_changes.send_replace(());
         Ok(true)
     }
 

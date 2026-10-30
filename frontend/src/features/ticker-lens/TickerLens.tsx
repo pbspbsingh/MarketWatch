@@ -1,3 +1,4 @@
+import type { TickerSelection } from "../../api/generated/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { IconButton, Tooltip } from "@mui/material";
@@ -10,7 +11,7 @@ import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
 import type { MarketChartDateMarker } from "../charts/MarketChart";
 import {
-  emptyGroupKeys,
+  emptyGroupKeys, unassignedGroupKey,
 } from "./constants";
 import { ChartPanel } from "./ChartPanel";
 import { fetchThemeGroupRankings } from "./groupRankings";
@@ -26,7 +27,6 @@ import type {
   GroupRanking,
   DefaultMetricSort,
   RevealRequest,
-  ResolveTickersRequest,
   SelectedTickerContext,
   TickerFilterCounts,
   TickerMetric,
@@ -147,7 +147,7 @@ function TickerLensContent({
     return symbol === undefined ? undefined : { value: symbol, revision: 1 };
   });
   const bounded = universe.type === "bounded";
-  const { catalog, catalogError, membershipRevision } = useIndustryData(bounded ? [] : [...selectedGroupKeys], groupMode === "industry");
+  const { catalog, catalogError } = useIndustryData(groupMode === "industry");
   const industryGroups = useMemo<GroupRanking[]>(() => catalog?.data.type === "catalog"
     ? catalog.data.industries.map(item => ({
         key: item.industry_key, name: item.industry_name,
@@ -156,9 +156,6 @@ function TickerLensContent({
       })) : emptyGroups, [catalog]);
   const sourceBoundedSymbols = bounded ? universe.symbols : [];
   const sourceBoundedSymbolsKey = sourceBoundedSymbols.join("\0");
-  const marketResolveTickers =
-    universe.type === "market-watch" ? universe.resolveTickers : undefined;
-  const marketUniverseRevision = universe.type === "market-watch" ? membershipRevision : 0;
   const groupsScopeKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
   const activeGroupsState = groupsState.key === groupsScopeKey ? groupsState : undefined;
   const streamedIndustry = !bounded && groupMode === "industry";
@@ -187,7 +184,6 @@ function TickerLensContent({
   const boundedSymbols = bounded
     ? activeGroupsState?.resolvedBoundedSymbols ?? sourceBoundedSymbols
     : emptySymbols;
-  const boundedSymbolsKey = boundedSymbols.join("\0");
   const availableMetrics = useMemo(() => validatedMetrics(metrics), [metrics]);
   const hasGroupSelection = selectedGroupKeys.size > 0;
 
@@ -322,22 +318,18 @@ function TickerLensContent({
     return () => controller.abort();
   }, [sectorRankingsRequest]);
 
-  const resolveTickers = useCallback(
-    (request: ResolveTickersRequest) => {
-      if (!bounded) {
-        if (request.groupKeys.size === 0) return Promise.resolve([]);
-        return marketResolveTickers?.(request) ?? Promise.resolve([]);
-      }
-      if (request.groupKeys.size === 0) {
-        return Promise.resolve(boundedSymbolsKey === "" ? [] : boundedSymbolsKey.split("\0"));
-      }
-      const symbols = [...request.groupKeys].flatMap(
-        (key) => boundedSymbolsByGroup.get(key) ?? [],
-      );
-      return Promise.resolve([...new Set(symbols)].sort());
-    },
-    [bounded, boundedSymbolsByGroup, boundedSymbolsKey, marketResolveTickers],
-  );
+  const metricSelection = useMemo<TickerSelection>(() => {
+    const keys = [...selectedGroupKeys].sort();
+    if (bounded) {
+      const symbols = keys.length === 0 ? boundedSymbols
+        : keys.flatMap(key => boundedSymbolsByGroup.get(key) ?? []);
+      return { type: "symbols", symbols: [...new Set(symbols)].sort() };
+    }
+    return groupMode === "industry" ? { type: "industries", keys } : {
+      type: "themes", ids: keys.filter(key => key !== unassignedGroupKey).map(Number).sort((a, b) => a - b),
+      include_unassigned: selectedGroupKeys.has(unassignedGroupKey),
+    };
+  }, [bounded, boundedSymbols, boundedSymbolsByGroup, groupMode, selectedGroupKeys]);
 
   return (
     <section
@@ -402,13 +394,11 @@ function TickerLensContent({
       </Tooltip>
       <TickerPanel
         bounded={bounded}
-        universeRevision={bounded ? boundedSymbolsKey : marketUniverseRevision}
+        metricSelection={metricSelection}
         metrics={availableMetrics}
-        mode={groupMode}
         groupKeys={selectedGroupKeys}
         selectedTicker={selectedTicker}
         setSelectedTicker={setSelectedTicker}
-        resolveTickers={resolveTickers}
         providedWatchlists={watchlists}
         onWatchlistsChange={onWatchlistsChange}
         onTickersChange={setSearchTickerSymbols}

@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::models::{TickerRanking, TickerSymbol};
 use crate::services::tickers::TickerCatalogService;
+use crate::store::{TickerIndustryMembership, TickerThemeMembership};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -8,18 +9,6 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use tracing::error;
-
-#[derive(Deserialize)]
-#[serde(tag = "group_type", rename_all = "snake_case")]
-enum MembershipRequest {
-    Industry {
-        keys: Vec<String>,
-    },
-    Theme {
-        ids: Vec<i64>,
-        include_unassigned: bool,
-    },
-}
 
 #[derive(Deserialize)]
 struct TickerRankingRequest {
@@ -60,30 +49,7 @@ struct GroupSummaryItem {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/ticker-ranking", post(ticker_ranking))
-        .route("/ticker-membership", post(membership))
         .route("/ticker-group-summary", post(group_summary))
-}
-
-async fn membership(
-    State(state): State<AppState>,
-    Json(request): Json<MembershipRequest>,
-) -> Result<Json<Vec<TickerSymbol>>, StatusCode> {
-    let result = match request {
-        MembershipRequest::Industry { keys } => state.ticker_catalog.industry_tickers(&keys).await,
-        MembershipRequest::Theme {
-            ids,
-            include_unassigned,
-        } => {
-            state
-                .ticker_catalog
-                .theme_tickers(&ids, include_unassigned)
-                .await
-        }
-    };
-    result.map(Json).map_err(|error| {
-        error!(%error, "failed to resolve ticker membership");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
 }
 
 async fn ticker_ranking(
@@ -232,9 +198,7 @@ async fn theme_summary(state: &AppState, symbols: &[TickerSymbol]) -> anyhow::Re
     })
 }
 
-fn industry_counts(
-    memberships: Vec<crate::store::TickerIndustryMembership>,
-) -> Vec<GroupSummaryItem> {
+fn industry_counts(memberships: Vec<TickerIndustryMembership>) -> Vec<GroupSummaryItem> {
     let mut counts = HashMap::<String, (String, HashSet<TickerSymbol>)>::new();
     for membership in memberships {
         counts
@@ -248,7 +212,7 @@ fn industry_counts(
 
 fn theme_counts(
     symbols: &[TickerSymbol],
-    memberships: Vec<crate::store::TickerThemeMembership>,
+    memberships: Vec<TickerThemeMembership>,
 ) -> Vec<GroupSummaryItem> {
     let mut assigned_symbols = HashSet::new();
     let mut counts = HashMap::<String, (String, HashSet<TickerSymbol>)>::new();

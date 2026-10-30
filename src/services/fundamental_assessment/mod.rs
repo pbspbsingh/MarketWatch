@@ -581,7 +581,7 @@ const CRITERIA: &[(&str, &str, f64)] = &[
 ];
 
 fn build_prompt(data: &Fundamentals, context: &AssessmentContext) -> anyhow::Result<String> {
-    Ok(include_str!("fundamental_assessment/prompt.md")
+    Ok(include_str!("prompt.md")
         .replace("<<FINANCIAL_SNAPSHOT>>", &serde_json::to_string(data)?)
         .replace("<<COMPANY_CONTEXT>>", &serde_json::to_string(context)?))
 }

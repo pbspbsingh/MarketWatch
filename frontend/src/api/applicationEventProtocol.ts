@@ -42,8 +42,6 @@ function validIndustryState(value: unknown): boolean {
   const timestamp = (item: unknown) => item === null || (typeof item === "string" && Number.isFinite(Date.parse(item)));
   if (!timestamp(fetched_at) || !timestamp(expires_at) || typeof loading !== "boolean"
     || !(error === null || typeof error === "string") || !record(data)) return false;
-  if (data.type === "membership") return typeof data.industry_key === "string"
-    && Array.isArray(data.symbols) && data.symbols.every(item => typeof item === "string");
   return data.type === "catalog" && Array.isArray(data.industries) && data.industries.every(item =>
     record(item) && ["industry_key", "industry_name", "sector_key", "sector_name"].every(key => typeof item[key] === "string")
       && typeof item.ticker_count === "number" && Number.isSafeInteger(item.ticker_count) && item.ticker_count >= 0
@@ -55,18 +53,14 @@ export function snapshotMatchesResource(resource: ApplicationResource, payload: 
   switch (resource.domain) {
     case "tickers": {
       if (payload.domain !== "tickers") return false;
-      if (payload.state.type === "ticker") return resource.resource.symbols.includes(payload.state.ticker.symbol);
-      if (payload.state.type === "remove") return resource.resource.symbols.includes(payload.state.symbol);
+      if (resource.resource.selection.type !== "symbols") return true;
+      if (payload.state.type === "ticker") return resource.resource.selection.symbols.includes(payload.state.ticker.symbol);
+      if (payload.state.type === "remove") return resource.resource.selection.symbols.includes(payload.state.symbol);
       return true;
     }
     case "industry": {
       if (payload.domain !== "industry") return false;
-      const expected = resource.resource;
-      const data = payload.state.data;
-      if (data.type === "catalog" && expected.type === "catalog") {
-        return true;
-      }
-      return data.type === "membership" && expected.type === "membership" && data.industry_key === expected.industry_key;
+      return payload.state.data.type === resource.resource.type;
     }
   }
 }

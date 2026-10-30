@@ -1,5 +1,6 @@
 use crate::config::MarketConfig;
 use crate::contracts::industry::{ETF_INDUSTRY_KEY, MEMBERSHIP_FRESH_DAYS};
+use crate::contracts::tickers::TickerSelection;
 use crate::models::{
     DailyCandle, TickerRanking, TickerSymbol, average_daily_range_percent, average_volume,
     candle_performance, close_above_sma,
@@ -13,6 +14,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 use tokio::sync::{broadcast::Receiver, mpsc::Sender};
 use tracing::{info, warn};
 
@@ -30,6 +32,30 @@ pub struct TickerCatalogService {
 }
 
 impl TickerCatalogService {
+    pub fn membership_changes(&self) -> watch::Receiver<()> {
+        self.store.subscribe_memberships()
+    }
+
+    pub async fn cached_selection_symbols(
+        &self,
+        selection: &TickerSelection,
+    ) -> anyhow::Result<Vec<TickerSymbol>> {
+        match selection {
+            TickerSelection::Symbols { symbols } => Ok(symbols.clone()),
+            TickerSelection::Industries { keys } => {
+                validate_industry_keys(keys)?;
+                if keys.is_empty() {
+                    return Ok(Vec::new());
+                }
+                self.store.tickers_for_industries(keys).await
+            }
+            TickerSelection::Themes {
+                ids,
+                include_unassigned,
+            } => self.theme_tickers(ids, *include_unassigned).await,
+        }
+    }
+
     pub fn metric_changes(&self) -> Receiver<TickerSymbol> {
         self.store.subscribe_market_data()
     }

@@ -22,7 +22,9 @@ export type EnabledFilter = { enabled: boolean, };
 
 export type TickerFilters = { adr: MinimumFilter, dollarVolume: MinimumFilter, above200Sma: EnabledFilter, };
 
-export type TickerMetricsResource = { symbols: Array<TickerSymbol>, filters: TickerFilters, };
+export type TickerSelection = { "type": "symbols", symbols: Array<TickerSymbol>, } | { "type": "industries", keys: Array<string>, } | { "type": "themes", ids: Array<number>, include_unassigned: boolean, };
+
+export type TickerMetricsResource = { selection: TickerSelection, filters: TickerFilters, };
 
 export type TickerMetricsUpdate = { "type": "reset", total: number, } | { "type": "ticker", ticker: TickerRanking, } | { "type": "remove", symbol: TickerSymbol, } | { "type": "complete" };
 
@@ -30,9 +32,9 @@ export type IndustryClassification = { industry_key: string, industry_name: stri
 
 export type IndustryCatalogEntry = { industry_key: string, industry_name: string, sector_key: string, sector_name: string, ticker_count: number, performance: PerformancePeriods | null, };
 
-export type IndustryResource = { "type": "catalog" } | { "type": "membership", industry_key: string, };
+export type IndustryResource = { "type": "catalog" };
 
-export type IndustryData = { "type": "catalog", industries: Array<IndustryCatalogEntry>, } | { "type": "membership", industry_key: string, symbols: Array<string>, };
+export type IndustryData = { "type": "catalog", industries: Array<IndustryCatalogEntry>, };
 
 export type IndustryState = { data: IndustryData, fetched_at: string | null, expires_at: string | null, loading: boolean, error: string | null, };
 
