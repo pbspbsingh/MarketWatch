@@ -4,6 +4,11 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function validPerformance(value: unknown) {
+  return value === null || (record(value) && ["day", "week", "month", "quarter", "half_year", "year"]
+    .every(key => typeof value[key] === "number" && Number.isFinite(value[key])));
+}
+
 // Validate the generated wire union at the network boundary. Each domain owns
 // its payload shape; the connection itself only routes validated envelopes.
 export function isApplicationEvent(value: unknown): value is ApplicationEvent {
@@ -12,8 +17,23 @@ export function isApplicationEvent(value: unknown): value is ApplicationEvent {
   if (value.type !== "snapshot" || !record(value.payload)) return false;
   switch (value.payload.domain) {
     case "industry": return validIndustryState(value.payload.state);
+    case "tickers": return validTickerUpdate(value.payload.state);
     default: return false;
   }
+}
+
+function validTickerUpdate(value: unknown) {
+  if (!record(value)) return false;
+  if (value.type === "complete") return true;
+  if (value.type === "reset") return typeof value.total === "number" && Number.isSafeInteger(value.total) && value.total >= 0;
+  if (value.type === "remove") return typeof value.symbol === "string";
+  const ticker = value.ticker;
+  if (value.type !== "ticker" || !record(ticker)) return false;
+  return typeof ticker.symbol === "string" && Array.isArray(ticker.watchlist_ids)
+    && ticker.watchlist_ids.every(id => typeof id === "number" && Number.isSafeInteger(id) && id > 0)
+    && validPerformance(ticker.performance)
+    && ["adr_percent", "dollar_volume"].every(key => ticker[key] === null
+      || (typeof ticker[key] === "number" && Number.isFinite(ticker[key])));
 }
 
 function validIndustryState(value: unknown): boolean {
@@ -26,17 +46,27 @@ function validIndustryState(value: unknown): boolean {
     && Array.isArray(data.symbols) && data.symbols.every(item => typeof item === "string");
   return data.type === "catalog" && Array.isArray(data.industries) && data.industries.every(item =>
     record(item) && ["industry_key", "industry_name", "sector_key", "sector_name"].every(key => typeof item[key] === "string")
-      && typeof item.ticker_count === "number" && Number.isSafeInteger(item.ticker_count) && item.ticker_count >= 0);
+      && typeof item.ticker_count === "number" && Number.isSafeInteger(item.ticker_count) && item.ticker_count >= 0
+      && validPerformance(item.performance));
 }
 
 export function snapshotMatchesResource(resource: ApplicationResource, payload: ApplicationSnapshot): boolean {
   if (resource.domain !== payload.domain) return false;
   switch (resource.domain) {
+    case "tickers": {
+      if (payload.domain !== "tickers") return false;
+      if (payload.state.type === "ticker") return resource.resource.symbols.includes(payload.state.ticker.symbol);
+      if (payload.state.type === "remove") return resource.resource.symbols.includes(payload.state.symbol);
+      return true;
+    }
     case "industry": {
+      if (payload.domain !== "industry") return false;
       const expected = resource.resource;
       const data = payload.state.data;
-      return data.type === expected.type && (data.type !== "membership"
-        || (expected.type === "membership" && data.industry_key === expected.industry_key));
+      if (data.type === "catalog" && expected.type === "catalog") {
+        return true;
+      }
+      return data.type === "membership" && expected.type === "membership" && data.industry_key === expected.industry_key;
     }
   }
 }

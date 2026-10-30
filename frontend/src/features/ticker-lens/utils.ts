@@ -36,7 +36,7 @@ export function tickerSortValue(
 ) {
   if (isMetricSortKey(key)) return metric?.values.get(ticker.symbol);
   if (key === "adr_percent") return ticker[key] ?? undefined;
-  if (key === "dollar_volume") return dollarVolume(ticker);
+  if (key === "dollar_volume") return ticker.dollar_volume ?? undefined;
   return ticker.performance?.[key] ?? undefined;
 }
 
@@ -127,10 +127,6 @@ export function metricColor(
   return performanceColor(value, key);
 }
 
-function dollarVolume(ticker: TickerRanking) {
-  if (ticker.latest_close === null || ticker.average_volume === null) return undefined;
-  return ticker.latest_close * ticker.average_volume;
-}
 
 function adrColor(adr: number) {
   if (adr >= 5) return "var(--color-positive)";

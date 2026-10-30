@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::contracts::events::{ApplicationCommand, ApplicationEvent, ApplicationResource};
 use crate::services::industry_data::IndustryDataService;
+use crate::services::tickers::TickerCatalogService;
 use axum::{
     Router,
     extract::{
@@ -12,15 +13,17 @@ use axum::{
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
-    sync::mpsc,
+    sync::mpsc::{self, Sender},
     task::AbortHandle,
     time::{Instant, MissedTickBehavior},
 };
 
 mod industry;
+mod tickers;
 
 struct EventServices {
     industry: Arc<IndustryDataService>,
+    tickers: Arc<TickerCatalogService>,
 }
 
 const SUBSCRIPTION_LIMIT: usize = 256;
@@ -41,13 +44,14 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.max_message_size(16 * 1024)
-        .max_frame_size(16 * 1024)
+    ws.max_message_size(128 * 1024)
+        .max_frame_size(128 * 1024)
         .on_upgrade(move |socket| {
             serve(
                 socket,
                 Arc::new(EventServices {
                     industry: state.industry_data,
+                    tickers: state.ticker_catalog,
                 }),
             )
         })
@@ -117,12 +121,15 @@ async fn forward(
     services: Arc<EventServices>,
     id: String,
     resource: ApplicationResource,
-    sender: mpsc::Sender<(u64, ApplicationEvent)>,
+    sender: Sender<(u64, ApplicationEvent)>,
     generation: u64,
 ) {
     match resource {
         ApplicationResource::Industry(resource) => {
             industry::forward(services.industry.clone(), id, resource, sender, generation).await;
+        }
+        ApplicationResource::Tickers(resource) => {
+            tickers::forward(services.tickers.clone(), id, resource, sender, generation).await;
         }
     }
 }
@@ -133,10 +140,13 @@ mod tests {
     use crate::{
         models::TickerSymbol,
         services::industry_data::tests::{client, fixture, seed_catalog},
-        store::Store,
+        store::{IndustryRankingRow, IndustryRankings, Store},
     };
+    use chrono::Utc;
     use futures_util::{SinkExt, StreamExt};
     use serde_json::{Value, json};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::tungstenite::Message as ClientMessage;
 
     #[tokio::test]
     async fn connection_multiplexes_updates_and_survives_unsubscription() {
@@ -145,14 +155,15 @@ mod tests {
         store
             .replace_industry_membership(
                 "semiconductors",
-                chrono::Utc::now(),
+                Utc::now(),
                 &[TickerSymbol::parse("AMD").unwrap()],
             )
             .await
             .unwrap();
-        let (service, _, _) = fixture(store.clone(), client("http://127.0.0.1:1/"));
+        let (service, tickers, _) = fixture(store.clone(), client("http://127.0.0.1:1/"));
         let service = Arc::new(EventServices {
             industry: Arc::new(service),
+            tickers,
         });
         let app = Router::new().route(
             "/events",
@@ -161,7 +172,7 @@ mod tests {
                 async move { ws.on_upgrade(move |socket| serve(socket, service)) }
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}/events", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -175,7 +186,7 @@ mod tests {
             ),
         ] {
             socket
-                .send(tokio_tungstenite::tungstenite::Message::Text(
+                .send(ClientMessage::Text(
                     json!({"type":"subscribe", "subscription_id":id, "resource":{"domain":"industry","resource":resource}})
                         .to_string()
                         .into(),
@@ -190,7 +201,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .unwrap();
-            if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+            if let ClientMessage::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
                 assert_eq!(value["payload"]["state"]["loading"], false);
                 received.push(value["subscription_id"].as_str().unwrap().to_owned());
@@ -198,6 +209,40 @@ mod tests {
         }
         received.sort();
         assert_eq!(received, ["catalog", "members"]);
+        // Ranking commits push a new catalog snapshot without polling or a
+        // membership acquisition, including updated metric values.
+        store
+            .replace_industry_rankings_if_newer(&IndustryRankings {
+                market_date: Utc::now().date_naive(),
+                fetched_at: Utc::now(),
+                rows: vec![IndustryRankingRow {
+                    key: "semiconductors".into(),
+                    name: "Semiconductors".into(),
+                    performance_day: 0.03,
+                    performance_week: 0.04,
+                    performance_month: 0.05,
+                    performance_quarter: 0.06,
+                    performance_half_year: 0.07,
+                    performance_year: 0.08,
+                    performance_year_to_date: 0.09,
+                }],
+            })
+            .await
+            .unwrap();
+        loop {
+            let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            if let ClientMessage::Text(text) = message {
+                let value: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(value["subscription_id"], "catalog");
+                let data = &value["payload"]["state"]["data"];
+                assert_eq!(data["industries"][0]["performance"]["day"], 0.03);
+                break;
+            }
+        }
         store
             .add_ticker_industry(
                 "semiconductors",
@@ -212,7 +257,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .unwrap();
-            if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+            if let ClientMessage::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
                 assert_eq!(value["subscription_id"], "members");
                 assert_eq!(
@@ -224,7 +269,7 @@ mod tests {
         }
         for id in ["members", "catalog"] {
             socket
-                .send(tokio_tungstenite::tungstenite::Message::Text(
+                .send(ClientMessage::Text(
                     json!({"type":"unsubscribe", "subscription_id":id})
                         .to_string()
                         .into(),
@@ -232,14 +277,14 @@ mod tests {
                 .await
                 .unwrap();
         }
-        socket.send(tokio_tungstenite::tungstenite::Message::Text(json!({"type":"subscribe", "subscription_id":"again", "resource":{"domain":"industry","resource":{"type":"catalog"}}}).to_string().into())).await.unwrap();
+        socket.send(ClientMessage::Text(json!({"type":"subscribe", "subscription_id":"again", "resource":{"domain":"industry","resource":{"type":"catalog"}}}).to_string().into())).await.unwrap();
         loop {
             let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
                 .await
                 .unwrap()
                 .unwrap()
                 .unwrap();
-            if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+            if let ClientMessage::Text(text) = message {
                 assert_eq!(
                     serde_json::from_str::<Value>(&text).unwrap()["subscription_id"],
                     "again"

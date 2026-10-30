@@ -5,7 +5,6 @@ import { useSearchParams } from "react-router-dom";
 import { useAppSettings } from "../../app/AppSettings";
 import { fetchSectorRankings, type SectorRanking } from "../../api/industries";
 import { fetchBoundedTickerGroups } from "../../api/tickerCollections";
-import { createTickerStreamClient } from "../../api/tickerStream";
 import type { Watchlist } from "../../api/watchlists";
 import type { GlobalSearchResult } from "../../api/globalSearch";
 import { Toast } from "../../components/Toast";
@@ -14,7 +13,7 @@ import {
   emptyGroupKeys,
 } from "./constants";
 import { ChartPanel } from "./ChartPanel";
-import { fetchGlobalGroupRankings } from "./groupRankings";
+import { fetchThemeGroupRankings } from "./groupRankings";
 import { GroupPanel } from "./GroupPanel";
 import { TickerPanel } from "./TickerPanel";
 import { TickerLensFilters } from "./TickerLensFilters";
@@ -108,7 +107,6 @@ function TickerLensContent({
 }: TickerLensProps) {
   const { showWeeklyChartOverlay, setShowWeeklyChartOverlay } = useAppSettings();
   const [lensElement, setLensElement] = useState<HTMLElement | null>(null);
-  const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const groupMode = useTickerLensState(state => state.preferences.groupMode);
   const setMode = useTickerLensState(state => state.setMode);
   const groupBySector = useTickerLensState(state => state.preferences.groupBySector);
@@ -149,27 +147,32 @@ function TickerLensContent({
     return symbol === undefined ? undefined : { value: symbol, revision: 1 };
   });
   const bounded = universe.type === "bounded";
-  const { catalogRevision, membershipRevision } = useIndustryData([...selectedGroupKeys], !bounded && groupMode === "industry");
+  const { catalog, catalogError, membershipRevision } = useIndustryData(bounded ? [] : [...selectedGroupKeys], groupMode === "industry");
+  const industryGroups = useMemo<GroupRanking[]>(() => catalog?.data.type === "catalog"
+    ? catalog.data.industries.map(item => ({
+        key: item.industry_key, name: item.industry_name,
+        sector_key: item.sector_key, sector_name: item.sector_name,
+        ticker_count: item.ticker_count, performance: item.performance,
+      })) : emptyGroups, [catalog]);
   const sourceBoundedSymbols = bounded ? universe.symbols : [];
   const sourceBoundedSymbolsKey = sourceBoundedSymbols.join("\0");
   const marketResolveTickers =
     universe.type === "market-watch" ? universe.resolveTickers : undefined;
-  const marketResolveGroups =
-    universe.type === "market-watch" ? universe.resolveGroups : undefined;
   const marketUniverseRevision = universe.type === "market-watch" ? membershipRevision : 0;
   const groupsScopeKey = `${bounded ? "bounded" : "market"}\0${groupMode}\0${sourceBoundedSymbolsKey}`;
-  const groupsRequestKey = `${groupsScopeKey}\0${catalogRevision}`;
   const activeGroupsState = groupsState.key === groupsScopeKey ? groupsState : undefined;
-  const groups = activeGroupsState?.groups ?? emptyGroups;
-  const groupsLoading = activeGroupsState === undefined;
-  const groupsError = activeGroupsState?.error;
-  const groupsWarning = activeGroupsState?.warning;
-  const globalRankingGroups = bounded
+  const streamedIndustry = !bounded && groupMode === "industry";
+  const groups = streamedIndustry ? industryGroups : activeGroupsState?.groups ?? emptyGroups;
+  const groupsLoading = streamedIndustry ? catalog === undefined && catalogError === undefined : activeGroupsState === undefined;
+  const industryError = catalog?.error ?? catalogError;
+  const groupsError = streamedIndustry ? (industryGroups.length === 0 ? industryError : undefined) : activeGroupsState?.error;
+  const groupsWarning = streamedIndustry ? (industryGroups.length > 0 ? industryError : undefined) : activeGroupsState?.warning;
+  const globalRankingGroups = groupMode === "industry" ? industryGroups : bounded
     ? globalRankingGroupsState.key === groupMode
       ? globalRankingGroupsState.groups
       : emptyGroups
     : groups;
-  const globalRankingError = bounded && globalRankingGroupsState.key === groupMode
+  const globalRankingError = groupMode === "industry" ? catalogError : bounded && globalRankingGroupsState.key === groupMode
     ? globalRankingGroupsState.error
     : undefined;
   const sectorRankings = sectorRankingsState.request === sectorRankingsRequest
@@ -187,8 +190,6 @@ function TickerLensContent({
   const boundedSymbolsKey = boundedSymbols.join("\0");
   const availableMetrics = useMemo(() => validatedMetrics(metrics), [metrics]);
   const hasGroupSelection = selectedGroupKeys.size > 0;
-
-  useEffect(() => () => tickerStream.close(), [tickerStream]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -221,6 +222,7 @@ function TickerLensContent({
   }, []);
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
   useEffect(() => {
+    if (!bounded && groupMode === "industry") return;
     const controller = new AbortController();
     const request = bounded
       ? fetchBoundedTickerGroups(
@@ -255,8 +257,7 @@ function TickerLensContent({
             } satisfies GroupsState;
           },
         )
-      : (marketResolveGroups?.({ mode: groupMode, signal: controller.signal }) ??
-        Promise.resolve([])).then((groups): GroupsState => ({
+      : fetchThemeGroupRankings(controller.signal).then((groups): GroupsState => ({
           key: groupsScopeKey,
           groups,
           boundedSymbolsByGroup: new Map(),
@@ -277,12 +278,12 @@ function TickerLensContent({
         }
       });
     return () => controller.abort();
-  }, [bounded, groupMode, groupsRequestKey, groupsScopeKey, marketResolveGroups, onBoundedResolution, sourceBoundedSymbolsKey]);
+  }, [bounded, groupMode, groupsScopeKey, onBoundedResolution, sourceBoundedSymbolsKey]);
 
   useEffect(() => {
-    if (!bounded) return;
+    if (!bounded || groupMode !== "theme") return;
     const controller = new AbortController();
-    fetchGlobalGroupRankings(groupMode, controller.signal)
+    fetchThemeGroupRankings(controller.signal)
       .then((rankingGroups) => {
         if (!controller.signal.aborted) {
           setGlobalRankingGroupsState({ key: groupMode, groups: rankingGroups });
@@ -400,9 +401,8 @@ function TickerLensContent({
         </IconButton>
       </Tooltip>
       <TickerPanel
-        tickerStream={tickerStream}
         bounded={bounded}
-        universeRevision={marketUniverseRevision}
+        universeRevision={bounded ? boundedSymbolsKey : marketUniverseRevision}
         metrics={availableMetrics}
         mode={groupMode}
         groupKeys={selectedGroupKeys}

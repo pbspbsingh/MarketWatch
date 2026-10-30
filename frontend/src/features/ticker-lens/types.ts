@@ -1,4 +1,4 @@
-import type { PerformancePeriods } from "../../api/industries";
+import type { PerformancePeriods } from "../../api/generated/contracts";
 
 type GroupSortKey = "count";
 export type SortKey = GroupSortKey | keyof PerformancePeriods;
@@ -28,19 +28,7 @@ export type DefaultMetricSort = {
   direction: SortDirection;
 };
 
-export type TickerFilters = {
-  adr: {
-    enabled: boolean;
-    min: number;
-  };
-  dollarVolume: {
-    enabled: boolean;
-    min: number;
-  };
-  above200Sma: {
-    enabled: boolean;
-  };
-};
+export type { TickerFilters } from "../../api/generated/contracts";
 
 export type TickerFilterCounts = {
   total: number;
@@ -67,15 +55,9 @@ export type ResolveTickersRequest = {
   signal: AbortSignal;
 };
 
-export type ResolveGroupsRequest = {
-  mode: GroupMode;
-  signal: AbortSignal;
-};
-
 export type TickerUniverse =
   | {
       type: "market-watch";
-      resolveGroups: (request: ResolveGroupsRequest) => Promise<GroupRanking[]>;
       resolveTickers: (request: ResolveTickersRequest) => Promise<string[]>;
     }
   | {

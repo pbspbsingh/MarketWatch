@@ -127,6 +127,18 @@ impl Visitor<'_> for TickerSymbolVisitor {
     }
 }
 
+pub fn deserialize_valid_ticker_symbols<'de, D>(
+    deserializer: D,
+) -> Result<Vec<TickerSymbol>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .filter_map(|symbol| TickerSymbol::try_from(symbol).ok())
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -32,6 +32,7 @@ const { ApplicationEvents } = await server.ssrLoadModule("/src/api/applicationEv
 const { IndustrySubscriptions, industryQueryKey } = await server.ssrLoadModule("/src/api/industrySubscriptions.ts");
 const { createApplicationConnectionStore } = await server.ssrLoadModule("/src/shared/applicationConnection.ts");
 const { queryClient } = await server.ssrLoadModule("/src/shared/queryClient.ts");
+const { TickerMetricsSubscriptions, tickerMetricsKey, disabledTickerFilters } = await server.ssrLoadModule("/src/api/tickerMetrics.ts");
 after(async () => { queryClient.clear(); await server.close(); });
 
 const resource = { type: "membership", industry_key: "semiconductors" };
@@ -48,6 +49,40 @@ function setup() {
   return { events, socket, industry: new IndustrySubscriptions(events), connection };
 }
 function snapshot(socket, id, value) { socket.receive({ type: "snapshot", subscription_id: id, payload: { domain: "industry", state: value } }); }
+
+test("ticker metrics share the global channel, survive completion, and restore delivery after reconnect", () => {
+  const { events, socket } = setup();
+  const metrics = new TickerMetricsSubscriptions(events);
+  const resource = { symbols: ["NVDA"], filters: disabledTickerFilters };
+  const release = metrics.observe(resource);
+  const command = socket.sent.at(-1);
+  assert.deepEqual(command.resource, { domain: "tickers", resource });
+  const update = (connection, value) => connection.receive({ type: "snapshot", subscription_id: command.subscription_id,
+    payload: { domain: "tickers", state: value } });
+  const ticker = { symbol: "NVDA", watchlist_ids: [], performance: null, adr_percent: 4,
+    dollar_volume: 1_000_000 };
+  update(socket, { type: "reset", total: 1 });
+  update(socket, { type: "ticker", ticker });
+  update(socket, { type: "complete" });
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).loading, false);
+  update(socket, { type: "ticker", ticker: { ...ticker, dollar_volume: 2_000_000 } });
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).tickers[0].dollar_volume, 2_000_000);
+  socket.close();
+  [...reconnects.values()].at(-1)();
+  const replacement = Socket.instances.at(-1); replacement.open();
+  assert.deepEqual(replacement.sent[0].resource, command.resource);
+  update(replacement, { type: "reset", total: 1 });
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).tickers.length, 1, "Reconnect retains cached rows");
+  update(replacement, { type: "ticker", ticker: { ...ticker, dollar_volume: 3_000_000 } });
+  update(replacement, { type: "complete" });
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).tickers[0].dollar_volume, 3_000_000);
+  update(replacement, { type: "remove", symbol: "NVDA" });
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).tickers.length, 0);
+  assert.equal(queryClient.getQueryData(tickerMetricsKey(resource)).total, 1);
+  update(replacement, { type: "ticker", ticker: { ...ticker, symbol: "MSFT" } });
+  assert.equal(replacement.code, 1002, "Unrequested symbols are rejected at the boundary");
+  release(); events.stop();
+});
 
 test("stale cache remains readable while acquisition waits for its settled snapshot", async () => {
   const { events, socket, industry } = setup();
@@ -220,26 +255,22 @@ test("synchronous connection failures enter reconnecting state and stop cancels 
   assert.deepEqual(connection.getState(), { status: "disconnected", retryAttempt: 0 });
 });
 
-test("industry CNT ordering uses catalog totals without acquiring membership", async (t) => {
-  const { fetchGlobalGroupRankings } = await server.ssrLoadModule("/src/features/ticker-lens/groupRankings.ts");
+test("catalog pushes counts and performance while the client owns ordering", async () => {
+  const { events, socket, industry } = setup();
+  const catalog = { type: "catalog" };
+  const entry = (key, count, day) => ({ industry_key: key, industry_name: key, sector_key: "technology",
+    sector_name: "Technology", ticker_count: count,
+    performance: { day, week: day, month: day, quarter: day, half_year: day, year: day } });
+  const release = industry.observe(catalog, () => {});
+  const id = socket.sent.at(-1).subscription_id;
+  snapshot(socket, id, { ...state(false), data: { type: "catalog", industries: [entry("small", 0, 0.02), entry("large", 170, 0.01)] } });
+  const cached = queryClient.getQueryData(industryQueryKey(catalog));
+  assert.deepEqual(cached.data.industries.map(item => item.ticker_count), [0, 170]);
   const { sortGroups } = await server.ssrLoadModule("/src/features/ticker-lens/utils.ts");
-  queryClient.setQueryData(industryQueryKey({ type: "catalog" }), {
-    data: { type: "catalog", industries: [
-      { industry_key: "semiconductors", industry_name: "Semiconductors", sector_key: "technology", sector_name: "Technology", ticker_count: 69 },
-      { industry_key: "shellcompanies", industry_name: "Shell Companies", sector_key: "financial", sector_name: "Financial", ticker_count: 170 },
-      { industry_key: "empty", industry_name: "Empty", sector_key: "financial", sector_name: "Financial", ticker_count: 0 },
-    ] }, fetched_at: "2026-10-29T00:00:00Z", expires_at: "2099-01-01T00:00:00Z", loading: false, error: null,
-  });
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  globalThis.fetch = async (url) => {
-    assert.equal(url, "/api/industries", "Counts must not require ticker-membership requests");
-    return Response.json([{ key: "semiconductors", performance: { week: 0.1 } }]);
-  };
-  const groups = await fetchGlobalGroupRankings("industry");
-  assert.deepEqual(sortGroups(groups, { key: "count", direction: "desc" }).map(group => group.key), ["shellcompanies", "semiconductors", "empty"]);
-  assert.deepEqual(sortGroups(groups, { key: "count", direction: "asc" }).map(group => group.key), ["empty", "semiconductors", "shellcompanies"]);
-  assert.equal(groups.find(group => group.key === "shellcompanies").performance, null, "An industry without performance still has a count");
+  const groups = cached.data.industries.map(item => ({ key: item.industry_key, name: item.industry_name, ticker_count: item.ticker_count, performance: item.performance }));
+  assert.equal(sortGroups(groups, { key: "count", direction: "desc" })[0].key, "large");
+  assert.equal(sortGroups(groups, { key: "day", direction: "desc" })[0].key, "small");
+  release(); events.stop();
 });
 
 test("1D sorts groups and tickers by daily return, with unavailable returns last", async () => {
@@ -256,7 +287,7 @@ test("1D sorts groups and tickers by daily return, with unavailable returns last
   }
 });
 
-test("membership selection and updates do not change the catalog revision", async () => {
+test("membership selection and updates leave the catalog snapshot unchanged", async () => {
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { QueryClientProvider } = await import("@tanstack/react-query");
@@ -275,17 +306,17 @@ test("membership selection and updates do not change the catalog revision", asyn
   const initial = revision([]);
   const selected = revision(["semiconductors"]);
   const changed = revision(["semiconductors", "software"]);
-  assert.equal(selected.catalogRevision, initial.catalogRevision);
-  assert.equal(changed.catalogRevision, initial.catalogRevision);
+  assert.equal(selected.catalog, initial.catalog);
+  assert.equal(changed.catalog, initial.catalog);
   assert.notEqual(selected.membershipRevision, changed.membershipRevision);
   queryClient.setQueryData(industryQueryKey(resource), state(false, ["AMD", "NVDA"]));
   const updated = revision(["semiconductors", "software"]);
-  assert.equal(updated.catalogRevision, initial.catalogRevision);
+  assert.equal(updated.catalog, initial.catalog);
   assert.notEqual(updated.membershipRevision, changed.membershipRevision);
 });
 
 test("theme counts include Unassigned without returning its tickers", async (t) => {
-  const { fetchGlobalGroupRankings } = await server.ssrLoadModule("/src/features/ticker-lens/groupRankings.ts");
+  const { fetchThemeGroupRankings } = await server.ssrLoadModule("/src/features/ticker-lens/groupRankings.ts");
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
   globalThis.fetch = async (url, options) => {
@@ -294,7 +325,7 @@ test("theme counts include Unassigned without returning its tickers", async (t) 
     assert.deepEqual(JSON.parse(options.body), { mode: "theme", group_keys: ["unassigned"] });
     return Response.json({ selected_groups: [{ key: "unassigned", ticker_count: 30 }], related_groups: [] });
   };
-  const groups = await fetchGlobalGroupRankings("theme");
+  const groups = await fetchThemeGroupRankings();
   assert.deepEqual(groups.map(({ key, ticker_count }) => [key, ticker_count]), [["1", 12], ["unassigned", 30]]);
 });
 
@@ -310,15 +341,16 @@ test("empty group selection never requests the open ticker universe", async (t) 
 test("open ticker column renders a group-selection prompt instead of loading tickers", async () => {
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
+  const { QueryClientProvider } = await import("@tanstack/react-query");
   const { TickerPanel } = await server.ssrLoadModule("/src/features/ticker-lens/TickerPanel.tsx");
   const { TickerLensStateProvider } = await server.ssrLoadModule("/src/features/ticker-lens/TickerLensState.tsx");
   const { createTickerLensStore } = await server.ssrLoadModule("/src/features/ticker-lens/tickerLensStore.ts");
   globalThis.localStorage = { getItem: () => null, setItem: () => {} };
-  const html = renderToStaticMarkup(createElement(TickerLensStateProvider, { store: createTickerLensStore() }, createElement(TickerPanel, {
-    tickerStream: {}, bounded: false, universeRevision: 0, metrics: [], mode: "industry",
+  const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: queryClient }, createElement(TickerLensStateProvider, { store: createTickerLensStore() }, createElement(TickerPanel, {
+    bounded: false, universeRevision: 0, metrics: [], mode: "industry",
     groupKeys: new Set(), setSelectedTicker: () => {}, providedWatchlists: [],
     resolveTickers: () => assert.fail("Open column requested symbols"),
-  })));
+  }))));
   assert.match(html, /Select groups to view tickers/);
   assert.doesNotMatch(html, /Loading tickers|ticker-ranked-list/);
 });

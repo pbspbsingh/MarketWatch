@@ -284,6 +284,7 @@ impl Store {
             .commit()
             .await
             .context("failed to commit daily candles")?;
+        let _ = self.market_data_changes.send(symbol.clone());
         Ok(())
     }
 
@@ -328,7 +329,9 @@ impl Store {
         transaction
             .commit()
             .await
-            .context("failed to commit daily candle replacement")
+            .context("failed to commit daily candle replacement")?;
+        let _ = self.market_data_changes.send(symbol.clone());
+        Ok(())
     }
 }
 

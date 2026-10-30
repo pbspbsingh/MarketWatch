@@ -1,4 +1,5 @@
 use super::industry::{IndustryResource, IndustryState};
+use super::tickers::{TickerMetricsResource, TickerMetricsUpdate};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -11,6 +12,7 @@ use ts_rs::TS;
 )]
 pub enum ApplicationResource {
     Industry(IndustryResource),
+    Tickers(TickerMetricsResource),
 }
 
 #[derive(Deserialize, TS)]
@@ -29,6 +31,7 @@ pub enum ApplicationCommand {
 #[serde(tag = "domain", content = "state", rename_all = "snake_case")]
 pub enum ApplicationSnapshot {
     Industry(IndustryState),
+    Tickers(TickerMetricsUpdate),
 }
 
 #[derive(Serialize, TS)]

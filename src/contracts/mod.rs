@@ -1,28 +1,48 @@
 pub mod events;
 pub mod industry;
+pub mod tickers;
 
+use crate::models::ticker_collection::RejectedTicker;
+use crate::models::{
+    PerformancePeriods, ThemeRanking, TickerCollection, TickerCollectionFile,
+    TickerCollectionSource, TickerRanking, TickerSymbol,
+};
+use events::{ApplicationCommand, ApplicationEvent, ApplicationResource, ApplicationSnapshot};
+use industry::{
+    IndustryCatalogEntry, IndustryClassification, IndustryData, IndustryResource, IndustryState,
+};
 use std::path::Path;
+use tickers::{
+    EnabledFilter, MinimumFilter, TickerFilters, TickerMetricsResource, TickerMetricsUpdate,
+};
 use ts_rs::{Config, TS};
 
 pub fn export(check: bool) -> anyhow::Result<()> {
     // serde_json sends integer IDs and counts as JSON numbers.
     let config = Config::default().with_large_int("number");
     let declarations = [
-        crate::models::TickerSymbol::decl(&config),
-        crate::models::ticker_collection::RejectedTicker::decl(&config),
-        crate::models::TickerCollectionFile::decl(&config),
-        crate::models::TickerCollectionSource::decl(&config),
-        crate::models::TickerCollection::decl(&config),
-        crate::models::PerformancePeriods::decl(&config),
-        crate::models::ThemeRanking::decl(&config),
-        industry::IndustryClassification::decl(&config),
-        industry::IndustryResource::decl(&config),
-        industry::IndustryData::decl(&config),
-        industry::IndustryState::decl(&config),
-        events::ApplicationResource::decl(&config),
-        events::ApplicationCommand::decl(&config),
-        events::ApplicationSnapshot::decl(&config),
-        events::ApplicationEvent::decl(&config),
+        TickerSymbol::decl(&config),
+        RejectedTicker::decl(&config),
+        TickerCollectionFile::decl(&config),
+        TickerCollectionSource::decl(&config),
+        TickerCollection::decl(&config),
+        PerformancePeriods::decl(&config),
+        ThemeRanking::decl(&config),
+        TickerRanking::decl(&config),
+        MinimumFilter::decl(&config),
+        EnabledFilter::decl(&config),
+        TickerFilters::decl(&config),
+        TickerMetricsResource::decl(&config),
+        TickerMetricsUpdate::decl(&config),
+        IndustryClassification::decl(&config),
+        IndustryCatalogEntry::decl(&config),
+        IndustryResource::decl(&config),
+        IndustryData::decl(&config),
+        IndustryState::decl(&config),
+        ApplicationResource::decl(&config),
+        ApplicationCommand::decl(&config),
+        ApplicationSnapshot::decl(&config),
+        ApplicationEvent::decl(&config),
     ];
     let source = format!(
         "// Generated from Rust. Run cargo run -- --export-contracts.\n\n{}\n",

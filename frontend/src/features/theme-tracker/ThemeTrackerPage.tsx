@@ -16,7 +16,6 @@ import {
   type ThemeRanking,
 } from "../../api/industries";
 import { resolveTickerMembership } from "../../api/tickers";
-import { createTickerStreamClient } from "../../api/tickerStream";
 import { fetchThemes } from "../../api/themes";
 import { addTickerToWatchlist, clearTickerWatchlists, fetchTickerWatchlists, fetchWatchlists, removeTickerFromWatchlist, type Watchlist } from "../../api/watchlists";
 import { Toast } from "../../components/Toast";
@@ -83,7 +82,6 @@ function initialRange(storageKey: string, fallback: HistoricalRange): Historical
 
 export function ThemeTrackerPage() {
   const focusRevision = useFocusRefresh();
-  const tickerStream = useMemo(() => createTickerStreamClient(), []);
   const stockListRef = useListRef(null);
   const [themeRange, setThemeRange] = useState<Range>(() =>
     initialRange(themeRangeStorageKey, "week"),
@@ -170,13 +168,11 @@ export function ThemeTrackerPage() {
     [activeIndustryKeys, activeTheme, mode],
   );
   const stockStream = useTickerRankingStream({
-    client: tickerStream,
     enabled: stockMode && activeGroupKey !== undefined,
     requestKey: activeGroupKey === undefined ? "" : `${mode}:${activeGroupKey}`,
     resolveSymbols: resolveGroupStocks,
   });
 
-  useEffect(() => () => tickerStream.close(), [tickerStream]);
   useEffect(() => {
     const controller = new AbortController();
     fetchWatchlists(controller.signal)

@@ -1,12 +1,15 @@
 use crate::contracts::industry::{
-    ETF_INDUSTRY_KEY, IndustryData, IndustryResource, IndustryState, MEMBERSHIP_FRESH_DAYS,
+    ETF_INDUSTRY_KEY, IndustryCatalogEntry, IndustryData, IndustryResource, IndustryState,
+    MEMBERSHIP_FRESH_DAYS,
 };
+use crate::models::PerformancePeriods;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::watch;
+use tokio::sync::watch::Receiver;
 
 pub struct IndustryDataService {
     store: Store,
@@ -27,9 +30,9 @@ impl IndustryDataService {
         }
     }
 
-    pub fn changes(&self) -> (watch::Receiver<()>, watch::Receiver<()>) {
+    pub fn changes(&self) -> (Receiver<()>, Receiver<()>) {
         (
-            self.store.subscribe_classifications(),
+            self.store.subscribe_industry_catalog(),
             self.store.subscribe_memberships(),
         )
     }
@@ -39,6 +42,41 @@ impl IndustryDataService {
             IndustryResource::Catalog => {
                 let (industries, fetched_at) =
                     self.store.industry_classification_snapshot().await?;
+                let rankings = self
+                    .store
+                    .current_industry_rankings()
+                    .await?
+                    .map(|snapshot| {
+                        snapshot
+                            .rows
+                            .into_iter()
+                            .map(|row| {
+                                (
+                                    row.key,
+                                    PerformancePeriods {
+                                        day: row.performance_day,
+                                        week: row.performance_week,
+                                        month: row.performance_month,
+                                        quarter: row.performance_quarter,
+                                        half_year: row.performance_half_year,
+                                        year: row.performance_year,
+                                    },
+                                )
+                            })
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .unwrap_or_default();
+                let industries = industries
+                    .into_iter()
+                    .map(|item| IndustryCatalogEntry {
+                        performance: rankings.get(&item.industry_key).copied(),
+                        industry_key: item.industry_key,
+                        industry_name: item.industry_name,
+                        sector_key: item.sector_key,
+                        sector_name: item.sector_name,
+                        ticker_count: item.ticker_count,
+                    })
+                    .collect::<Vec<_>>();
                 (IndustryData::Catalog { industries }, fetched_at, false)
             }
             IndustryResource::Membership { industry_key } => {
@@ -46,8 +84,7 @@ impl IndustryDataService {
                     .store
                     .industry_membership_snapshot(industry_key)
                     .await?;
-                let fetched_at =
-                    fetched_at.filter(|value| *value != chrono::DateTime::<Utc>::UNIX_EPOCH);
+                let fetched_at = fetched_at.filter(|value| *value != DateTime::<Utc>::UNIX_EPOCH);
                 let symbols = symbols
                     .into_iter()
                     .map(|symbol| symbol.to_string())
@@ -107,10 +144,13 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         config::Config,
+        models::TickerSymbol,
         providers::{FinvizClient, YahooClient},
         services::yahoo::YahooService,
         store::IndustryClassification,
     };
+
+    use tokio::net::TcpListener;
 
     pub(crate) fn fixture(
         store: Store,
@@ -179,23 +219,13 @@ pub(crate) mod tests {
             .add_ticker_industry(
                 "semiconductors",
                 "Semiconductors",
-                &crate::models::TickerSymbol::parse("NVDA").unwrap(),
+                &TickerSymbol::parse("NVDA").unwrap(),
             )
             .await
             .unwrap();
         let (_, catalog, _) = fixture(store, client("http://127.0.0.1:1/"));
         assert!(catalog.industry_tickers(&[]).await.unwrap().is_empty());
         assert!(catalog.theme_tickers(&[], false).await.unwrap().is_empty());
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
-        catalog
-            .stream_industry_tickers(1, &[], &sender)
-            .await
-            .unwrap();
-        catalog
-            .stream_theme_tickers(2, &[], false, &sender)
-            .await
-            .unwrap();
-        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -208,7 +238,7 @@ pub(crate) mod tests {
             counter.fetch_add(1, Ordering::SeqCst);
             async { r#"<script type="application/json" data-ssr-props="screener-island">{"screenerType":"stocks","filters":{"filters":[]},"data":{"firstRow":0,"totalCount":1,"pageSize":20,"rows":[{"text":{"ticker":"NVDA"}}]}}</script>"# }
         }));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -220,7 +250,7 @@ pub(crate) mod tests {
             .replace_industry_membership(
                 "semiconductors",
                 old,
-                &[crate::models::TickerSymbol::parse("AMD").unwrap()],
+                &[TickerSymbol::parse("AMD").unwrap()],
             )
             .await
             .unwrap();
@@ -228,7 +258,7 @@ pub(crate) mod tests {
             .replace_industry_membership(
                 ETF_INDUSTRY_KEY,
                 old,
-                &[crate::models::TickerSymbol::parse("SPY").unwrap()],
+                &[TickerSymbol::parse("SPY").unwrap()],
             )
             .await
             .unwrap();
@@ -279,7 +309,7 @@ pub(crate) mod tests {
             "/",
             axum::routing::get(|| async { axum::http::StatusCode::SERVICE_UNAVAILABLE }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -291,7 +321,7 @@ pub(crate) mod tests {
             .replace_industry_membership(
                 "semiconductors",
                 old,
-                &[crate::models::TickerSymbol::parse("AMD").unwrap()],
+                &[TickerSymbol::parse("AMD").unwrap()],
             )
             .await
             .unwrap();

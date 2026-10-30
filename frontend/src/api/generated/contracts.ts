@@ -14,18 +14,32 @@ export type PerformancePeriods = { day: number, week: number, month: number, qua
 
 export type ThemeRanking = { id: number, name: string, etf_symbol: TickerSymbol, ticker_count: number, performance: PerformancePeriods | null, previous_close: number | null, };
 
+export type TickerRanking = { symbol: TickerSymbol, watchlist_ids: Array<number>, performance: PerformancePeriods | null, adr_percent: number | null, dollar_volume: number | null, };
+
+export type MinimumFilter = { enabled: boolean, min: number, };
+
+export type EnabledFilter = { enabled: boolean, };
+
+export type TickerFilters = { adr: MinimumFilter, dollarVolume: MinimumFilter, above200Sma: EnabledFilter, };
+
+export type TickerMetricsResource = { symbols: Array<TickerSymbol>, filters: TickerFilters, };
+
+export type TickerMetricsUpdate = { "type": "reset", total: number, } | { "type": "ticker", ticker: TickerRanking, } | { "type": "remove", symbol: TickerSymbol, } | { "type": "complete" };
+
 export type IndustryClassification = { industry_key: string, industry_name: string, sector_key: string, sector_name: string, ticker_count: number, };
+
+export type IndustryCatalogEntry = { industry_key: string, industry_name: string, sector_key: string, sector_name: string, ticker_count: number, performance: PerformancePeriods | null, };
 
 export type IndustryResource = { "type": "catalog" } | { "type": "membership", industry_key: string, };
 
-export type IndustryData = { "type": "catalog", industries: Array<IndustryClassification>, } | { "type": "membership", industry_key: string, symbols: Array<string>, };
+export type IndustryData = { "type": "catalog", industries: Array<IndustryCatalogEntry>, } | { "type": "membership", industry_key: string, symbols: Array<string>, };
 
 export type IndustryState = { data: IndustryData, fetched_at: string | null, expires_at: string | null, loading: boolean, error: string | null, };
 
-export type ApplicationResource = { "domain": "industry", "resource": IndustryResource };
+export type ApplicationResource = { "domain": "industry", "resource": IndustryResource } | { "domain": "tickers", "resource": TickerMetricsResource };
 
 export type ApplicationCommand = { "type": "subscribe", subscription_id: string, resource: ApplicationResource, } | { "type": "unsubscribe", subscription_id: string, };
 
-export type ApplicationSnapshot = { "domain": "industry", "state": IndustryState };
+export type ApplicationSnapshot = { "domain": "industry", "state": IndustryState } | { "domain": "tickers", "state": TickerMetricsUpdate };
 
 export type ApplicationEvent = { "type": "snapshot", subscription_id: string, payload: ApplicationSnapshot, } | { "type": "error", subscription_id: string, message: string, };

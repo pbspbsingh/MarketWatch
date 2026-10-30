@@ -41,14 +41,15 @@ pub struct SectorRanking {
     pub previous_close: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct TickerRanking {
     pub symbol: TickerSymbol,
     pub watchlist_ids: Vec<i64>,
     pub performance: Option<PerformancePeriods>,
     pub adr_percent: Option<f64>,
-    pub latest_close: Option<f64>,
-    pub average_volume: Option<i64>,
+    pub dollar_volume: Option<f64>,
+    #[serde(skip)]
+    #[ts(skip)]
     pub above_200_sma: Option<bool>,
 }
 

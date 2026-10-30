@@ -5,9 +5,9 @@ use sqlx::sqlite::{
 };
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
-use crate::models::DailyNote;
+use crate::models::{DailyNote, TickerSymbol};
 use chrono::NaiveDate;
 
 const MAX_CONNECTIONS: u32 = 8;
@@ -58,16 +58,21 @@ pub struct DailyNoteImage {
 pub struct Store {
     pool: SqlitePool,
     membership_changes: watch::Sender<()>,
-    classification_changes: watch::Sender<()>,
+    market_data_changes: broadcast::Sender<TickerSymbol>,
+    industry_catalog_changes: watch::Sender<()>,
 }
 
 impl Store {
+    pub fn subscribe_market_data(&self) -> broadcast::Receiver<TickerSymbol> {
+        self.market_data_changes.subscribe()
+    }
+
     pub fn subscribe_memberships(&self) -> watch::Receiver<()> {
         self.membership_changes.subscribe()
     }
 
-    pub fn subscribe_classifications(&self) -> watch::Receiver<()> {
-        self.classification_changes.subscribe()
+    pub fn subscribe_industry_catalog(&self) -> watch::Receiver<()> {
+        self.industry_catalog_changes.subscribe()
     }
 
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
@@ -92,7 +97,8 @@ impl Store {
         Ok(Self {
             pool,
             membership_changes: watch::channel(()).0,
-            classification_changes: watch::channel(()).0,
+            market_data_changes: broadcast::channel(256).0,
+            industry_catalog_changes: watch::channel(()).0,
         })
     }
 }

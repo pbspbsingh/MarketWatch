@@ -3,11 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
 import { resolveTickerMembership } from "../../api/tickers";
 import { Toast } from "../../components/Toast";
-import { fetchGlobalGroupRankings } from "../ticker-lens/groupRankings";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import { unassignedGroupKey } from "../ticker-lens/constants";
 import type {
-  ResolveGroupsRequest,
   ResolveTickersRequest,
 } from "../ticker-lens/types";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
@@ -52,9 +50,6 @@ export function MarketWatchPage() {
   const chartAnnotations = useMemo(() => linkedTrade !== undefined && linkedTrade.id === tradeId
     ? { symbol: linkedTrade.symbol, markers: dailyExecutionMarkers(linkedTrade.executions) }
     : undefined, [linkedTrade, tradeId]);
-  const resolveGroups = useCallback(({ mode, signal }: ResolveGroupsRequest) => {
-    return fetchGlobalGroupRankings(mode, signal);
-  }, []);
   const resolveTickers = useCallback(
     ({ mode, groupKeys, signal }: ResolveTickersRequest) =>
       resolveTickerMembership(tickerSelection(mode, groupKeys), signal),
@@ -67,7 +62,6 @@ export function MarketWatchPage() {
         chartAnnotations={chartAnnotations}
         universe={{
           type: "market-watch",
-          resolveGroups,
           resolveTickers,
         }}
       />

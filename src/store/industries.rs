@@ -114,7 +114,7 @@ impl Store {
             .commit()
             .await
             .context("failed to commit industry classifications")?;
-        self.classification_changes.send_replace(());
+        self.industry_catalog_changes.send_replace(());
         Ok(())
     }
 
@@ -233,6 +233,7 @@ impl Store {
             .commit()
             .await
             .context("failed to commit industry rankings")?;
+        self.industry_catalog_changes.send_replace(());
         Ok(true)
     }
 

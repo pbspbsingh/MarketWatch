@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { queryOptions, useQueries } from "@tanstack/react-query";
+import { queryOptions, useQueries, useQuery } from "@tanstack/react-query";
 import { industrySubscriptions, industryQueryKey } from "./industrySubscriptions";
 import type { IndustryResource, IndustryState } from "./generated/contracts";
 import { queryClient } from "../shared/queryClient";
@@ -30,18 +30,10 @@ export async function fetchIndustryMembers(keys: string[], signal?: AbortSignal)
   return [...new Set(memberships.flat())].sort();
 }
 
-export async function fetchIndustryCatalog(signal?: AbortSignal) {
-  const state = await load({ type: "catalog" }, signal);
-  if (state.data.type !== "catalog") throw new Error("Unexpected industry catalog response");
-  return state.data.industries;
-}
-
 export function useIndustryData(keys: string[], enabled: boolean) {
   const key = [...new Set(keys)].sort().join(",");
-  const resources: IndustryResource[] = !enabled ? [] : [
-    { type: "catalog" },
-    ...key.split(",").filter(Boolean).map(industry_key => ({ type: "membership" as const, industry_key })),
-  ];
+  const resources: IndustryResource[] = !enabled ? [] : key.split(",").filter(Boolean)
+    .map(industry_key => ({ type: "membership", industry_key }));
   useEffect(() => {
     if (!enabled) return;
     return industrySubscriptions.observe({ type: "catalog" }, () => {});
@@ -52,11 +44,11 @@ export function useIndustryData(keys: string[], enabled: boolean) {
       industrySubscriptions.observe({ type: "membership", industry_key }, () => {}));
     return () => subscriptions.forEach(release => release());
   }, [enabled, key]);
+  const catalogQuery = useQuery({ ...options({ type: "catalog" }), enabled });
   const queries = useQueries({ queries: resources.map(options) });
-  // Selection/membership updates must not invalidate the group catalog. Status
-  // notifications also leave both data revisions unchanged.
   return {
-    catalogRevision: queries[0]?.data ? JSON.stringify(queries[0].data.data) : "",
-    membershipRevision: queries.slice(1).map(query => query.data ? JSON.stringify(query.data.data) : "").join("\0"),
+    catalog: enabled ? catalogQuery.data : undefined,
+    catalogError: enabled ? catalogQuery.error?.message : undefined,
+    membershipRevision: queries.map(query => query.data ? JSON.stringify(query.data.data) : "").join("\0"),
   };
 }

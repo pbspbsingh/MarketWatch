@@ -31,9 +31,6 @@ import {
   type TickerRanking,
 } from "../../api/tickers";
 import {
-  type TickerStreamClient,
-} from "../../api/tickerStream";
-import {
   addTickerToWatchlist,
   clearTickerWatchlists,
   fetchTickerWatchlists,
@@ -76,7 +73,6 @@ const tickerRowHeight = 28;
 const emptyTickers: TickerRanking[] = [];
 
 interface TickerPanelProps {
-  tickerStream: TickerStreamClient;
   bounded: boolean;
   universeRevision: number | string;
   metrics: readonly TickerMetric[];
@@ -193,7 +189,6 @@ function TickerRow({
 }
 
 export function TickerPanel({
-  tickerStream,
   bounded,
   universeRevision,
   metrics,
@@ -244,7 +239,7 @@ export function TickerPanel({
     [groupKey, mode, resolveTickers],
   );
   const rankingStream = useTickerRankingStream({
-    client: tickerStream,
+    filters: tickerFilters,
     enabled: metricsActive,
     requestKey: `${mode}:${groupKey}:${universeRevision}`,
     resolveSymbols: resolveRankedSymbols,
@@ -313,9 +308,7 @@ export function TickerPanel({
             watchlist_ids: memberships.get(symbol) ?? [],
             performance: null,
             adr_percent: null,
-            latest_close: null,
-            average_volume: null,
-            above_200_sma: null,
+            dollar_volume: null,
           })),
         });
       })
@@ -362,15 +355,11 @@ export function TickerPanel({
     return () => controller.abort();
   }, [focusRevision, metricsActive, reportError, resolvedTickerRequestKey, setStreamTickerWatchlists, tickerDataSymbolsKey]);
 
-  const filteredTickers = useMemo(
-    () => filterTickers(tickers, tickerFilters),
-    [tickerFilters, tickers],
-  );
   const sortedTickers = useMemo(
-    () => sortTickers(filteredTickers, sortSetting, sortActive, activeMetric),
-    [activeMetric, filteredTickers, sortActive, sortSetting],
+    () => sortTickers(tickers, sortSetting, sortActive, activeMetric),
+    [activeMetric, tickers, sortActive, sortSetting],
   );
-  const tickerSymbolsKey = filteredTickers.map((ticker) => ticker.symbol).join("\0");
+  const tickerSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
 
   useEffect(() => {
     if (panelLoading || awaitingGroupSelection) return;
@@ -383,9 +372,10 @@ export function TickerPanel({
   useEffect(() => {
     const symbols = tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0");
     onTickersChange?.(symbols);
-    onFilterCountsChange?.({ total: tickers.length, filtered: filteredTickers.length });
+    onFilterCountsChange?.({ total: metricsActive ? rankingStream.total : tickers.length, filtered: tickers.length });
   }, [
-    filteredTickers.length,
+    metricsActive,
+    rankingStream.total,
     onFilterCountsChange,
     onTickersChange,
     tickerSymbolsKey,
@@ -574,7 +564,7 @@ export function TickerPanel({
       <header className="panel-header panel-list-header">
         <div className="panel-header-title">
           <Typography component="h2">Tickers</Typography>
-          <Tooltip title={`Total ${tickers.length} · Filtered ${filteredTickers.length}`}>
+          <Tooltip title={`Total ${metricsActive ? rankingStream.total : tickers.length} · Filtered ${tickers.length}`}>
             <Typography className="panel-position" color="text.secondary">
               {selectedTickerPosition}/{sortedTickers.length}
             </Typography>
@@ -691,25 +681,4 @@ export function TickerPanel({
       }} />
     </section>
   );
-}
-
-function filterTickers(tickers: TickerRanking[], filters: TickerFilters | undefined) {
-  if (filters === undefined || (!filters.adr.enabled && !filters.dollarVolume.enabled && !filters.above200Sma.enabled)) return tickers;
-  const adrMin = clamp(filters.adr.min, 0, 20);
-  const dollarVolumeMin = clamp(filters.dollarVolume.min, 0, 1_000_000_000);
-  return tickers.filter((ticker) => {
-    if (filters.adr.enabled && (ticker.adr_percent ?? -Infinity) < adrMin) return false;
-    if (filters.dollarVolume.enabled && dollarVolume(ticker) < dollarVolumeMin) return false;
-    if (filters.above200Sma.enabled && ticker.above_200_sma === false) return false;
-    return true;
-  });
-}
-
-function dollarVolume(ticker: TickerRanking) {
-  if (ticker.latest_close === null || ticker.average_volume === null) return -Infinity;
-  return ticker.latest_close * ticker.average_volume;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
 }

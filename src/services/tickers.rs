@@ -9,11 +9,11 @@ use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use anyhow::Context;
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast::Receiver, mpsc::Sender};
 use tracing::{info, warn};
 
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
@@ -30,6 +30,57 @@ pub struct TickerCatalogService {
 }
 
 impl TickerCatalogService {
+    pub fn metric_changes(&self) -> Receiver<TickerSymbol> {
+        self.store.subscribe_market_data()
+    }
+
+    pub async fn cached_ticker_ranking(
+        &self,
+        symbol: &TickerSymbol,
+    ) -> anyhow::Result<TickerRanking> {
+        let candles = self.cached_candles(symbol).await?;
+        let watchlist_ids = self
+            .store
+            .ticker_watchlists(std::slice::from_ref(symbol))
+            .await?
+            .into_iter()
+            .next()
+            .map_or_else(Vec::new, |membership| membership.watchlist_ids);
+        Ok(self.rank_candles(symbol.clone(), watchlist_ids, &candles))
+    }
+
+    async fn cached_candles(&self, symbol: &TickerSymbol) -> anyhow::Result<Vec<DailyCandle>> {
+        let as_of = self.market_schedule.recent_trading_day(Utc::now());
+        self.store
+            .daily_candles(
+                symbol,
+                as_of - crate::constants::DAILY_CANDLE_HISTORY,
+                as_of.succ_opt().context("invalid candle date")?,
+            )
+            .await
+    }
+
+    fn rank_candles(
+        &self,
+        symbol: TickerSymbol,
+        watchlist_ids: Vec<i64>,
+        candles: &[DailyCandle],
+    ) -> TickerRanking {
+        let as_of = self.market_schedule.recent_trading_day(Utc::now());
+        TickerRanking {
+            symbol,
+            watchlist_ids,
+            performance: (!candles.is_empty()).then(|| candle_performance(candles, as_of)),
+            adr_percent: (!candles.is_empty())
+                .then(|| average_daily_range_percent(latest_sessions(candles, self.adr_sessions))),
+            dollar_volume: candles.last().map(|candle| {
+                candle.close
+                    * average_volume(latest_sessions(candles, self.average_volume_sessions)) as f64
+            }),
+            above_200_sma: close_above_sma(candles, TWO_HUNDRED_SESSION_SMA),
+        }
+    }
+
     pub fn new(
         store: Store,
         finviz: Arc<FinvizClient>,
@@ -47,42 +98,14 @@ impl TickerCatalogService {
         })
     }
 
-    pub async fn stream_industry_tickers(
-        &self,
-        stream_id: u64,
-        industry_keys: &[String],
-        sender: &mpsc::Sender<TickerRanking>,
-    ) -> anyhow::Result<()> {
-        let symbols = self.industry_tickers(industry_keys).await?;
-        self.stream_symbols(stream_id, symbols, !industry_keys.is_empty(), sender)
-            .await
-    }
-
-    pub async fn stream_theme_tickers(
-        &self,
-        stream_id: u64,
-        theme_ids: &[i64],
-        include_unassigned: bool,
-        sender: &mpsc::Sender<TickerRanking>,
-    ) -> anyhow::Result<()> {
-        let symbols = self.theme_tickers(theme_ids, include_unassigned).await?;
-        self.stream_symbols(
-            stream_id,
-            symbols,
-            !theme_ids.is_empty() || include_unassigned,
-            sender,
-        )
-        .await
-    }
-
     pub async fn stream_ranked_symbols(
         &self,
         stream_id: u64,
         symbols: &[TickerSymbol],
-        sender: &mpsc::Sender<TickerRanking>,
+        sender: &Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
         let symbols = deduplicate_symbols(symbols);
-        self.stream_symbols(stream_id, symbols, true, sender).await
+        self.stream_symbols(stream_id, symbols, sender).await
     }
 
     pub async fn ticker_ranking(&self, symbol: &TickerSymbol) -> anyhow::Result<TickerRanking> {
@@ -93,22 +116,8 @@ impl TickerCatalogService {
             .into_iter()
             .next()
             .map_or_else(Vec::new, |membership| membership.watchlist_ids);
-        let as_of = self.market_schedule.recent_trading_day(Utc::now());
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
-        let performance = candle_performance(&candles, as_of);
-        let adr_percent = average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
-        let latest_close = candles.last().map(|candle| candle.close);
-        let average_volume =
-            average_volume(latest_sessions(&candles, self.average_volume_sessions));
-        Ok(TickerRanking {
-            symbol: symbol.clone(),
-            watchlist_ids,
-            performance: Some(performance),
-            adr_percent: Some(adr_percent),
-            latest_close,
-            average_volume: Some(average_volume),
-            above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
-        })
+        Ok(self.rank_candles(symbol.clone(), watchlist_ids, &candles))
     }
 
     pub async fn industry_tickers(
@@ -160,8 +169,7 @@ impl TickerCatalogService {
         &self,
         stream_id: u64,
         symbols: Vec<TickerSymbol>,
-        metrics_active: bool,
-        sender: &mpsc::Sender<TickerRanking>,
+        sender: &Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
         let watchlists_by_symbol = self
             .store
@@ -171,61 +179,39 @@ impl TickerCatalogService {
             .map(|membership| (membership.symbol, membership.watchlist_ids))
             .collect::<HashMap<_, _>>();
         for symbol in &symbols {
+            let candles = self.cached_candles(symbol).await?;
             if sender
-                .send(TickerRanking {
-                    symbol: symbol.clone(),
-                    watchlist_ids: watchlists_by_symbol
-                        .get(symbol)
-                        .cloned()
-                        .unwrap_or_default(),
-                    performance: None,
-                    adr_percent: None,
-                    latest_close: None,
-                    average_volume: None,
-                    above_200_sma: None,
-                })
+                .send(
+                    self.rank_candles(
+                        symbol.clone(),
+                        watchlists_by_symbol
+                            .get(symbol)
+                            .cloned()
+                            .unwrap_or_default(),
+                        &candles,
+                    ),
+                )
                 .await
                 .is_err()
             {
                 return Ok(());
             }
         }
-        if !metrics_active {
-            info!(
-                stream_id,
-                symbol_count = symbols.len(),
-                "ticker stream completed"
-            );
-            return Ok(());
-        }
         if symbols.is_empty() {
             info!(stream_id, "ticker stream completed with no symbols");
             return Ok(());
         }
 
-        let as_of = self.market_schedule.recent_trading_day(Utc::now());
         for symbol in symbols {
             let ranking = match self.yahoo.daily_candles_for_year(&symbol).await {
-                Ok(candles) => {
-                    let performance = candle_performance(&candles, as_of);
-                    let adr_percent =
-                        average_daily_range_percent(latest_sessions(&candles, self.adr_sessions));
-                    let latest_close = candles.last().map(|candle| candle.close);
-                    let average_volume =
-                        average_volume(latest_sessions(&candles, self.average_volume_sessions));
-                    TickerRanking {
-                        watchlist_ids: watchlists_by_symbol
-                            .get(&symbol)
-                            .cloned()
-                            .unwrap_or_default(),
-                        symbol,
-                        performance: Some(performance),
-                        adr_percent: Some(adr_percent),
-                        latest_close,
-                        average_volume: Some(average_volume),
-                        above_200_sma: close_above_sma(&candles, TWO_HUNDRED_SESSION_SMA),
-                    }
-                }
+                Ok(candles) => self.rank_candles(
+                    symbol.clone(),
+                    watchlists_by_symbol
+                        .get(&symbol)
+                        .cloned()
+                        .unwrap_or_default(),
+                    &candles,
+                ),
                 Err(error) => {
                     warn!(stream_id, %symbol, %error, "failed to load Yahoo ticker performance");
                     TickerRanking {
@@ -236,8 +222,7 @@ impl TickerCatalogService {
                         symbol,
                         performance: None,
                         adr_percent: None,
-                        latest_close: None,
-                        average_volume: None,
+                        dollar_volume: None,
                         above_200_sma: None,
                     }
                 }
@@ -282,8 +267,7 @@ impl TickerCatalogService {
                 .await?;
             let stale_before = Utc::now() - TimeDelta::days(MEMBERSHIP_FRESH_DAYS);
             if fetched_at.is_some_and(|fetched_at| {
-                (industry_key == ETF_INDUSTRY_KEY
-                    && fetched_at != chrono::DateTime::<Utc>::UNIX_EPOCH)
+                (industry_key == ETF_INDUSTRY_KEY && fetched_at != DateTime::<Utc>::UNIX_EPOCH)
                     || fetched_at >= stale_before
             }) {
                 return Ok(());

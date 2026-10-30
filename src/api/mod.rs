@@ -1,3 +1,4 @@
+use crate::models::ticker_symbol::deserialize_valid_ticker_symbols;
 mod chart;
 mod daily_notes;
 mod details;
@@ -50,15 +51,6 @@ pub fn router() -> Router<AppState> {
         .merge(top_stocks::router())
         .merge(watchlists::router())
         .merge(trade_logs::router())
-}
-
-fn deserialize_valid_ticker_symbols<'de, D>(deserializer: D) -> Result<Vec<TickerSymbol>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(valid_ticker_symbols(Vec::<String>::deserialize(
-        deserializer,
-    )?))
 }
 
 fn deserialize_optional_valid_ticker_symbols<'de, D>(

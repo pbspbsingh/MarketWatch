@@ -1,121 +1,50 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TickerRanking } from "../api/tickers";
-import type { TickerStreamClient } from "../api/tickerStream";
+import type { TickerFilters } from "../api/generated/contracts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { skipToken, useQuery } from "@tanstack/react-query";
+import { disabledTickerFilters, tickerMetricsKey, tickerMetricsSubscriptions, type TickerMetricsState } from "../api/tickerMetrics";
+import { queryClient } from "./queryClient";
 
-const batchIntervalMs = 1_000;
+const emptyTickers: TickerMetricsState["tickers"] = [];
 
-export function useTickerRankingStream({
-  client,
-  enabled,
-  requestKey,
-  resolveSymbols,
-}: {
-  client: TickerStreamClient;
+export function useTickerRankingStream({ enabled, requestKey, resolveSymbols, filters = disabledTickerFilters }: {
+  filters?: TickerFilters;
   enabled: boolean;
   requestKey: string;
   resolveSymbols: (signal: AbortSignal) => Promise<string[]>;
 }) {
-  const request = useMemo(
-    () => ({ client, enabled, requestKey, resolveSymbols }),
-    [client, enabled, requestKey, resolveSymbols],
-  );
-  const [state, setState] = useState<{
-    request: typeof request;
-    tickers: TickerRanking[];
-    loading: boolean;
-    error?: string;
-  }>(() => ({ request, tickers: [], loading: enabled }));
-  const latestState = useRef(state);
-  const watchlistOverrides = useRef(new Map<string, number[]>());
-
+  const symbolsQuery = useQuery({
+    queryKey: ["ticker-metric-symbols", requestKey],
+    queryFn: ({ signal }) => resolveSymbols(signal), enabled,
+    staleTime: Infinity, retry: false, refetchOnWindowFocus: false,
+  });
+  const symbolsKey = enabled ? [...new Set(symbolsQuery.data ?? [])].sort().join("\0") : "";
+  const resource = useMemo(() => ({ symbols: symbolsKey === "" ? [] : symbolsKey.split("\0"), filters }), [filters, symbolsKey]);
   useEffect(() => {
-    latestState.current = state;
-  }, [state]);
-
-  useEffect(() => {
-    if (!request.enabled) return;
-
-    const controller = new AbortController();
-    const previousState = latestState.current;
-    const sameRequest = previousState.request.requestKey === request.requestKey;
-    const tickerBySymbol = new Map(
-      (sameRequest ? previousState.tickers : []).map((ticker) => [ticker.symbol, ticker]),
-    );
-    const receivedSymbols = new Set<string>();
-    let flushTimer: number | undefined;
-    const flush = (complete = false) => {
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-      flushTimer = undefined;
-      if (!controller.signal.aborted) {
-        setState((current) => ({
-          request,
-          tickers: complete
-            ? [...tickerBySymbol.values()].filter((ticker) => receivedSymbols.has(ticker.symbol))
-            : [...tickerBySymbol.values()],
-          loading: current.request === request ? current.loading : true,
-          error: current.request === request ? current.error : undefined,
-        }));
-      }
-    };
-    const queue = (ticker: TickerRanking) => {
-      receivedSymbols.add(ticker.symbol);
-      const watchlistIds = watchlistOverrides.current.get(ticker.symbol);
-      tickerBySymbol.set(
-        ticker.symbol,
-        watchlistIds === undefined ? ticker : { ...ticker, watchlist_ids: watchlistIds },
-      );
-      flushTimer ??= window.setTimeout(flush, batchIntervalMs);
-    };
-
-    request.resolveSymbols(controller.signal)
-      .then((symbols) => request.client.streamSymbols(symbols, queue, controller.signal))
-      .then(() => flush(true))
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setState({
-            request,
-            tickers: [...tickerBySymbol.values()],
-            loading: true,
-            error: requestError.message,
-          });
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setState((current) => ({
-            request,
-            tickers: current.request === request ? current.tickers : [],
-            loading: false,
-            error: current.request === request ? current.error : undefined,
-          }));
-        }
-      });
-
-    return () => {
-      controller.abort();
-      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
-    };
-  }, [request]);
-
-  const setTickerWatchlists = useCallback((symbol: string, watchlistIds: number[]) => {
-    watchlistOverrides.current.set(symbol, watchlistIds);
-    setState((current) => ({
-      ...current,
-      tickers: current.tickers.map((ticker) =>
-        ticker.symbol === symbol ? { ...ticker, watchlist_ids: watchlistIds } : ticker,
-      ),
-    }));
+    if (!enabled || resource.symbols.length === 0) return;
+    return tickerMetricsSubscriptions.observe(resource);
+  }, [enabled, resource]);
+  const metrics = useQuery<TickerMetricsState>({ queryKey: tickerMetricsKey(resource), queryFn: skipToken });
+  const [watchlistOverrides, setWatchlistOverrides] = useState(new Map<string, number[]>());
+  const baseTickers = enabled && symbolsKey !== "" ? metrics.data?.tickers ?? emptyTickers : emptyTickers;
+  const tickers = useMemo(() => baseTickers.map(ticker => {
+    const ids = watchlistOverrides.get(ticker.symbol);
+    return ids === undefined ? ticker : { ...ticker, watchlist_ids: ids };
+  }), [baseTickers, watchlistOverrides]);
+  const setTickerWatchlists = useCallback((symbol: string, ids: number[]) => {
+    setWatchlistOverrides(previous => new Map(previous).set(symbol, ids));
   }, []);
-
-  const current = enabled && state.request.requestKey === request.requestKey ? state : undefined;
-
+  const error = enabled ? symbolsQuery.error?.message ?? metrics.data?.error : undefined;
+  const [dismissedError, setDismissedError] = useState<{ resource: typeof resource; requestKey: string; message?: string }>();
   return {
-    tickers: current?.tickers ?? [],
-    loading: enabled && (state.request === request ? current?.loading ?? true : true),
-    error: state.request === request ? current?.error : undefined,
-    clearError: () => setState((value) =>
-      value.request === request ? { ...value, error: undefined } : value,
-    ),
+    tickers,
+    total: metrics.data?.total ?? resource.symbols.length,
+    loading: enabled && (symbolsQuery.isPending || (symbolsKey !== "" && (metrics.data?.loading ?? true))),
+    error: dismissedError?.resource === resource && dismissedError.requestKey === requestKey && dismissedError.message === error ? undefined : error,
+    clearError: () => {
+      setDismissedError({ resource, requestKey, message: error });
+      queryClient.setQueryData<TickerMetricsState>(tickerMetricsKey(resource), previous =>
+        previous ? { ...previous, error: undefined } : previous);
+    },
     setTickerWatchlists,
   };
 }

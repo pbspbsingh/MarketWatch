@@ -122,6 +122,15 @@ under `market-watch.ticker-lens-preferences`; filter enablement survives reload 
 when pinned. Custom metric sorts belong to their current view. Server snapshots
 stay in TanStack Query.
 
+The global `/api/events` connection carries industry counts and performance plus
+ticker performance, ADR, and dollar volume. Ranking and candle
+commits push updated metrics to active subscriptions. The server applies
+ticker filters and pushes additions/removals as metrics change. Sorting stays in
+the client; changing a sort does not send a subscription command. Filter-only
+200SMA status is evaluated on the server and omitted from metric payloads. The older
+dedicated ticker WebSocket has been removed. Yahoo chart/live-price transports
+remain separate while their migration continues.
+
 ## Institutional ownership
 
 The Institutions tab loads only when opened. Enable SEC access with

@@ -1,15 +1,7 @@
 import { fetchIndustryMembers } from "./industryData";
-import type { PerformancePeriods } from "./industries";
 
-export interface TickerRanking {
-  symbol: string;
-  watchlist_ids: number[];
-  performance: PerformancePeriods | null;
-  adr_percent: number | null;
-  latest_close: number | null;
-  average_volume: number | null;
-  above_200_sma: boolean | null;
-}
+import type { TickerRanking } from "./generated/contracts";
+export type { TickerRanking } from "./generated/contracts";
 
 export interface TickerGroupSummaryItem {
   key: string;
