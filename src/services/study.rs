@@ -19,8 +19,9 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::warn;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct StudyCandle {
     pub date: NaiveDate,
     pub open: f64,
@@ -29,10 +30,11 @@ pub struct StudyCandle {
     pub close: f64,
     pub volume: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub volume_event: Option<VolumeEventKind>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct StudySeries {
     pub symbol: TickerSymbol,
     pub company_name: Option<String>,
@@ -42,19 +44,19 @@ pub struct StudySeries {
     pub indicators: Vec<MarketChartIndicators>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct StudyMovingAverage {
     pub period: usize,
     pub points: Vec<StudyMovingAveragePoint>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct StudyMovingAveragePoint {
     pub date: NaiveDate,
     pub value: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct StudyResult {
     pub date: NaiveDate,
     pub interval: MarketChartInterval,

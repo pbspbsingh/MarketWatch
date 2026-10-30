@@ -1,37 +1,5 @@
-import type {
-  MarketChartInterval,
-  MarketChartIndicators,
-  MarketChartRelativeStrength,
-  MarketChartSeries,
-} from "./marketChart";
-
-export interface StudyCandle {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  volume_event?: "history_high" | "year_high";
-}
-
-export interface StudyResult {
-  date: string;
-  interval: MarketChartInterval;
-  range_start: string;
-  range_end: string;
-  has_more_before: boolean;
-  has_more_after: boolean;
-  relative_strength: MarketChartRelativeStrength | null;
-  series: Array<{
-    symbol: string;
-    company_name: string | null;
-    candles: StudyCandle[];
-    moving_averages: MarketChartSeries[];
-    volume_average: MarketChartSeries;
-    indicators: MarketChartIndicators[];
-  }>;
-}
+import type { MarketChartInterval, StudyResult } from "./generated/contracts";
+export type { StudyCandle, StudyResult } from "./generated/contracts";
 
 interface StudyRange {
   start: string;

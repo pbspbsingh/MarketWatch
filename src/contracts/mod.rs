@@ -11,6 +11,9 @@ use crate::models::{
     RelativeStrengthCalculation, RelativeStrengthCalculationPoint, RelativeStrengthStructure,
     RelativeStrengthSwing, RelativeStrengthSwingKind, RelativeStrengthTrend, YahooSymbol,
 };
+use crate::services::study::{
+    StudyCandle, StudyMovingAverage, StudyMovingAveragePoint, StudyResult, StudySeries,
+};
 use crate::services::volume_run_rate::VolumeRunRate;
 use live::{
     LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
@@ -52,6 +55,11 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         RelativeStrengthTrend::decl(&config),
         RelativeStrengthSwing::decl(&config),
         RelativeStrengthStructure::decl(&config),
+        StudyCandle::decl(&config),
+        StudyMovingAveragePoint::decl(&config),
+        StudyMovingAverage::decl(&config),
+        StudySeries::decl(&config),
+        StudyResult::decl(&config),
         VolumeRunRate::decl(&config),
         LiveCommand::decl(&config),
         RawLiveChartRequest::decl(&config),

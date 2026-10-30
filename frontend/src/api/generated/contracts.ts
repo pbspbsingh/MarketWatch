@@ -32,6 +32,16 @@ export type RelativeStrengthSwing = { date: string, value: number, kind: Relativ
 
 export type RelativeStrengthStructure = { confirmed: Array<RelativeStrengthSwing>, provisional: RelativeStrengthSwing | null, trend: RelativeStrengthTrend, };
 
+export type StudyCandle = { date: string, open: number, high: number, low: number, close: number, volume: number, volume_event?: VolumeEventKind, };
+
+export type StudyMovingAveragePoint = { date: string, value: number, };
+
+export type StudyMovingAverage = { period: number, points: Array<StudyMovingAveragePoint>, };
+
+export type StudySeries = { symbol: TickerSymbol, company_name: string | null, candles: Array<StudyCandle>, moving_averages: Array<StudyMovingAverage>, volume_average: StudyMovingAverage, indicators: Array<MarketChartIndicators>, };
+
+export type StudyResult = { date: string, interval: MarketChartInterval, range_start: string, range_end: string, has_more_before: boolean, has_more_after: boolean, series: Array<StudySeries>, relative_strength: MarketChartRelativeStrength | null, };
+
 export type VolumeRunRate = { symbol: YahooSymbol, market_date: string, visible: boolean, cached: boolean, ratio: number | null, sample_days: number, updated_at: string | null, calculated_at: string, };
 
 export type LiveCommand = { "type": "set_subscriptions", request_id: number, charts: Array<RawLiveChartRequest>, symbols: Array<string>, };
