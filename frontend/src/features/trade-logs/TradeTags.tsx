@@ -1,28 +1,31 @@
 import { memo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
-import { deleteTradeLogTag, saveTradeLogTag, type TradeLogTag } from "../../api/tradeLogs";
+import type { TradeLogTag } from "../../api/tradeLogs";
+import { deleteTradeLogTagMutationOptions, saveTradeLogTagMutationOptions } from "./tradeLogQuery";
 import { errorMessage } from "./format";
 
-export const TradeTags = memo(function TradeTags({ tags, onRefresh }: { tags: TradeLogTag[]; onRefresh: () => void }) {
+export const TradeTags = memo(function TradeTags({ tags }: { tags: TradeLogTag[] }) {
   const [editing, setEditing] = useState<{ tag: TradeLogTag | null; name: string; description: string } | null>(null);
   const [deleting, setDeleting] = useState<TradeLogTag | null>(null);
-  const [busy, setBusy] = useState(false);
+  const client = useQueryClient();
+  const saveMutation = useMutation(saveTradeLogTagMutationOptions(client));
+  const deleteMutation = useMutation(deleteTradeLogTagMutationOptions(client));
+  const busy = saveMutation.isPending || deleteMutation.isPending;
   const [error, setError] = useState("");
   const save = async () => {
     if (!editing || busy) return;
-    setBusy(true); setError("");
-    try { await saveTradeLogTag(editing.tag, editing.name, editing.description); setEditing(null); onRefresh(); }
+    setError("");
+    try { await saveMutation.mutateAsync(editing); setEditing(null); }
     catch (cause) { setError(errorMessage(cause)); }
-    finally { setBusy(false); }
   };
   const remove = async () => {
     if (!deleting || busy) return;
-    setBusy(true); setError("");
-    try { await deleteTradeLogTag(deleting); setDeleting(null); onRefresh(); }
+    setError("");
+    try { await deleteMutation.mutateAsync(deleting); setDeleting(null); }
     catch (cause) { setError(errorMessage(cause)); }
-    finally { setBusy(false); }
   };
   return <div className="tl-tags">
     <div className="tl-section-heading"><div><h2>Your tag library</h2><p className="tl-caption">One flat library for trades and executions. Use names such as Entry:Good, EntryType:Breakout, Sale:Early, or Stop:Ignored.</p></div><Button variant="contained" size="small" onClick={() => { setError(""); setEditing({ tag: null, name: "", description: "" }); }}>Create tag</Button></div>

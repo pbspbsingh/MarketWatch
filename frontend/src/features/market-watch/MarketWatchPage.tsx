@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { fetchTradeLog, type TradeLog } from "../../api/tradeLogs";
+import { tradeLogQueryOptions } from "../trade-logs/tradeLogQuery";
 import { Toast } from "../../components/Toast";
 import { TickerLens } from "../ticker-lens/TickerLens";
 import { dailyExecutionMarkers } from "../trade-logs/executionMarkers";
@@ -10,27 +11,11 @@ import "./market-watch.css";
 export function MarketWatchPage() {
   const [searchParams] = useSearchParams();
   const tradeId = tradeIdFromSearch(searchParams);
-  const [linkedTrade, setLinkedTrade] = useState<TradeLog>();
-  const [notice, setNotice] = useState<{
-    text: string;
-    severity: "success" | "error";
-  }>();
-  useEffect(() => {
-    if (tradeId === undefined) return;
-    const controller = new AbortController();
-    void fetchTradeLog(tradeId, controller.signal)
-      .then((trade) => { if (!controller.signal.aborted) setLinkedTrade(trade); })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setLinkedTrade(undefined);
-          setNotice({
-            severity: "error",
-            text: `Trade markers unavailable: ${error instanceof Error ? error.message : "Failed to load trade"}`,
-          });
-        }
-      });
-    return () => controller.abort();
-  }, [tradeId]);
+  const query = useQuery(tradeLogQueryOptions(tradeId));
+  const linkedTrade = query.data;
+  const [dismissedError, setDismissedError] = useState<unknown>();
+  const error = query.error !== null && query.error !== dismissedError
+    ? `Trade markers unavailable: ${query.error.message}` : undefined;
   const chartAnnotations = useMemo(() => linkedTrade !== undefined && linkedTrade.id === tradeId
     ? { symbol: linkedTrade.symbol, markers: dailyExecutionMarkers(linkedTrade.executions) }
     : undefined, [linkedTrade, tradeId]);
@@ -44,9 +29,9 @@ export function MarketWatchPage() {
         }}
       />
       <Toast
-        message={notice?.text}
-        severity={notice?.severity}
-        onClose={() => setNotice(undefined)}
+        message={error}
+        severity="error"
+        onClose={() => setDismissedError(query.error)}
       />
     </section>
   );

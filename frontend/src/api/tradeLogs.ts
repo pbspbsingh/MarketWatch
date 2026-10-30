@@ -17,7 +17,7 @@ export interface TradeLogFilters {
   start: string;
   end: string;
 }
-class TradeLogRequestError extends Error {
+export class TradeLogRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

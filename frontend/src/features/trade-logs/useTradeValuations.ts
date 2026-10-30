@@ -1,26 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchTradeLogValuations, type TradeLog, type TradeLogValuation } from "../../api/tradeLogs";
+import { useMemo } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { TradeLog } from "../../api/tradeLogs";
 import { errorMessage } from "./format";
+import { previousTradeValuations, tradeValuationsQueryOptions } from "./tradeLogQuery";
 
-export function useTradeValuations(trades: TradeLog[], refresh: number, enabled: boolean) {
-  const key = trades.filter(trade => trade.summary.status === "open").map(trade => `${trade.id}:${trade.revision}`).sort().join(",");
-  const [marks, setMarks] = useState<TradeLogValuation[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (!enabled || !key) return;
-    const controller = new AbortController();
-    const load = () => {
-      setLoading(true);
-      void fetchTradeLogValuations(controller.signal)
-        .then(value => { if (!controller.signal.aborted) { setMarks(value); setError(""); } })
-        .catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
-        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    };
-    load();
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 15 * 60_000);
-    return () => { controller.abort(); window.clearInterval(timer); };
-  }, [key, refresh, enabled]);
-  const byId = useMemo(() => new Map(marks.map(mark => [mark.trade_id, mark])), [marks]);
-  return { marks: byId, error: enabled && key ? error : "", loading: enabled && !!key && loading };
+export function useTradeValuations(trades: TradeLog[], enabled: boolean) {
+  const client = useQueryClient();
+  const options = tradeValuationsQueryOptions(trades);
+  const active = enabled && options.enabled === true;
+  const query = useQuery({ ...options, enabled: active, placeholderData: keepPreviousData });
+  const marks = query.data ?? previousTradeValuations(client);
+  const byId = useMemo(() => new Map((marks ?? []).map(mark => [mark.trade_id, mark])), [marks]);
+  return { marks: byId, error: active && query.error ? errorMessage(query.error) : "", loading: active && query.isFetching };
 }
