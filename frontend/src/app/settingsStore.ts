@@ -15,6 +15,7 @@ export type RelativeStrengthLineStyle =
 
 type StoredSettings = {
   theme: AppThemeMode;
+  livePricesEnabled: boolean;
   logarithmicScale: boolean;
   showCandleReadout: boolean;
   showWeeklyChartOverlay: boolean;
@@ -30,6 +31,7 @@ type StoredSettings = {
 };
 
 type AppSettingsValue = StoredSettings & {
+  setLivePricesEnabled: (enabled: boolean) => void;
   setTheme: (theme: AppThemeMode) => void;
   setLogarithmicScale: (logarithmicScale: boolean) => void;
   setShowCandleReadout: (show: boolean) => void;
@@ -52,6 +54,7 @@ function readSettings(): StoredSettings {
     const weeklyRsPeriod = value.relativeStrengthPeriods?.weekly;
     return {
       theme: value.theme === "light" ? "light" : "dark",
+      livePricesEnabled: value.livePricesEnabled !== false,
       logarithmicScale: typeof value.logarithmicScale === "boolean"
         ? value.logarithmicScale
         : false,
@@ -77,6 +80,7 @@ function readSettings(): StoredSettings {
   } catch {
     return {
       theme: "dark",
+      livePricesEnabled: true,
       logarithmicScale: false,
       showWeeklyChartOverlay: false,
       showCandleReadout: true,
@@ -131,6 +135,7 @@ export const useSettingsStore = create<SettingsState>()(persist((set) => {
   return {
     settings: readSettings(),
     actions: {
+      setLivePricesEnabled: (livePricesEnabled) => update(current => ({ ...current, livePricesEnabled })),
       setTheme: (nextTheme) => update((current) => ({ ...current, theme: nextTheme })),
       setLogarithmicScale: (logarithmicScale) =>
         update((current) => ({ ...current, logarithmicScale })),

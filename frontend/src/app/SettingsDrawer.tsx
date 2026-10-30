@@ -33,6 +33,7 @@ const lineStyles: Array<{
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const {
     theme, setTheme,
+    livePricesEnabled, setLivePricesEnabled,
     logarithmicScale, setLogarithmicScale,
     showCandleReadout, setShowCandleReadout,
     candlePalette, setCandlePalette,
@@ -74,6 +75,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         </SettingsSection>
 
         <SettingsSection title="Charts">
+          <SettingsSwitch label="Enable live price" checked={livePricesEnabled} onChange={setLivePricesEnabled} />
           <div className="settings-choice-row">
             <span id={scaleLabelId} className="settings-control-label">Price scale</span>
             <ToggleButtonGroup

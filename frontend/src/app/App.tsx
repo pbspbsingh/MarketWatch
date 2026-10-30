@@ -6,6 +6,7 @@ import { AppShell } from "./AppShell";
 import { livePrices } from "../api/livePrices";
 import { applicationEvents } from "../api/applicationEvents";
 import { applicationConnection } from "../shared/applicationConnection";
+import { useSettingsStore } from "./settingsStore";
 
 const CsvAnalyzerPage = lazy(() =>
   import("../features/csv-analyzer/CsvAnalyzerPage").then(({ CsvAnalyzerPage }) => ({
@@ -56,13 +57,18 @@ const TradeLogsPage = lazy(() =>
 );
 
 export function App() {
+  const livePricesEnabled = useSettingsStore(state => state.settings.livePricesEnabled);
   const connectionStatus = useStore(applicationConnection, state => state.status);
   const liveStatus = useStore(livePrices.store, state => state.status);
   useEffect(() => {
     applicationEvents.start();
-    livePrices.start();
-    return () => { applicationEvents.stop(); livePrices.stop(); };
+    return () => applicationEvents.stop();
   }, []);
+  useEffect(() => {
+    if (!livePricesEnabled) return;
+    livePrices.start();
+    return () => livePrices.stop();
+  }, [livePricesEnabled]);
   return (
     <>
       <Snackbar open={connectionStatus === "reconnecting" || liveStatus === "reconnecting"} message="Connection lost. Reconnecting…" />

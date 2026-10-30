@@ -64,6 +64,7 @@ export class GlobalLivePrices {
   }
   stop() {
     this.started = false;
+    this.retryDelay = 1_000;
     window.clearTimeout(this.reconnectTimer);
     window.clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
@@ -191,11 +192,17 @@ export class GlobalLivePrices {
     }
     if (event.type === "availability") {
       if (typeof event.available !== "boolean" || !/^\d{4}-\d{2}-\d{2}$/.test(event.market_date)) return;
+      const currentDate = this.store.getState().availability?.marketDate;
+      const dayChanged = currentDate !== undefined && currentDate !== event.market_date;
       this.store.setState(state => ({
         availability: { available: event.available, marketDate: event.market_date },
+        charts: dayChanged ? {} : state.charts,
         prices: state.availability?.marketDate === event.market_date && event.available ? state.prices : new Map(),
       }));
       this.pendingPrices.clear();
+      window.clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+      if (dayChanged) this.changed();
       return;
     }
     if (event.request_id !== this.requestId) return;

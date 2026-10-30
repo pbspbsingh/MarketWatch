@@ -71,6 +71,60 @@ test("one application socket multiplexes daily, weekly, benchmark, and raw price
   } finally { env.cleanup(); }
 });
 
+test("stopping live prices closes the socket, clears pending data, and restarting restores active chart resources", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    client.observeChart(chart("AAPL")); client.observeChart(chart("SPY", "weekly")); client.observePrices(["AAPL"]);
+    client.start(); const first = Socket.sockets[0]; first.open(); const request = first.sent.at(-1);
+    first.emit({ type: "availability", available: true, market_date: "2026-10-30" });
+    first.emit(delta(request));
+    first.emit({ type: "price", request_id: request.request_id, symbol: "AAPL", price: 11, updated_at: "2026-10-30T22:00:00Z" });
+    client.stop();
+    assert.equal(first.readyState, 3); assert.equal(client.store.getState().status, "disconnected");
+    assert.deepEqual(client.store.getState().charts, {}); assert.equal(client.store.getState().prices.size, 0);
+    assert.equal(env.timers.size, 0); flush(250); flush(1000);
+    first.emit(delta(request)); assert.deepEqual(client.store.getState().charts, {});
+    assert.equal(Socket.sockets.length, 1);
+    client.start(); client.start();
+    assert.equal(Socket.sockets.length, 2);
+    const next = Socket.sockets[1]; next.open(); const restored = next.sent.at(-1);
+    assert.deepEqual(restored.charts, request.charts); assert.deepEqual(restored.symbols, ["AAPL"]);
+    next.emit(delta(restored)); assert.equal(client.store.getState().charts[liveChartKey(chart())].delta.candle.close, 11);
+  } finally { env.cleanup(); }
+});
+
+test("stopping during reconnect cancels retries until live prices are explicitly restarted", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    client.start(); Socket.sockets[0].open(); Socket.sockets[0].close();
+    assert.equal(client.store.getState().status, "reconnecting");
+    client.stop(); flush(1000); flush(2000);
+    assert.equal(Socket.sockets.length, 1); assert.equal(env.timers.size, 0);
+    client.start(); assert.equal(client.store.getState().status, "connecting");
+    assert.equal(Socket.sockets.length, 2);
+  } finally { env.cleanup(); }
+});
+
+test("a market-local day change clears live state and renews delivery without replacing the shared socket", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    client.observeChart(chart()); client.observePrices(["AAPL"]);
+    client.start(); const socket = Socket.sockets[0]; socket.open(); const before = socket.sent.at(-1);
+    socket.emit({ type: "availability", available: true, market_date: "2026-10-30" });
+    socket.emit(delta(before));
+    socket.emit({ type: "price", request_id: before.request_id, symbol: "AAPL", price: 11, updated_at: "2026-10-31T06:59:59Z" });
+    socket.emit({ type: "availability", available: false, market_date: "2026-10-31" });
+    const after = socket.sent.at(-1);
+    assert.ok(after.request_id > before.request_id); assert.deepEqual(after.charts, before.charts);
+    assert.deepEqual(client.store.getState().charts, {}); assert.equal(client.store.getState().prices.size, 0);
+    flush(250); socket.emit(delta(before));
+    assert.deepEqual(client.store.getState().charts, {}); assert.equal(client.store.getState().prices.size, 0);
+    const count = socket.sent.length;
+    socket.emit({ type: "availability", available: false, market_date: "2026-10-31" });
+    assert.equal(socket.sent.length, count); assert.equal(Socket.sockets.length, 1);
+  } finally { env.cleanup(); }
+});
+
 test("routing rejects old generations, released IDs, wrong symbols, and mismatched RS periods", () => {
   const env = setup(); const { client } = env;
   try {

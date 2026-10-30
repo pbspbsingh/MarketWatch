@@ -2,7 +2,7 @@ use crate::models::{DailyCandle, YahooSymbol};
 use crate::providers::{PricingData, spawn_transport};
 use crate::services::yahoo::{IntradayCandle, IntradaySessionSeed, YahooService};
 use crate::utils::{MarketSchedule, MarketSession};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use std::collections::{HashMap, VecDeque};
 use std::future::pending;
 use std::sync::Arc;
@@ -114,6 +114,7 @@ enum Command {
     },
     Seeded {
         symbol: YahooSymbol,
+        market_date: NaiveDate,
         result: Box<Result<IntradaySessionSeed, String>>,
     },
     RecoverRegular {
@@ -137,6 +138,7 @@ struct YahooLiveActor {
     post_market_cache: HashMap<YahooSymbol, YahooLivePrice>,
     latest_frame_at: HashMap<YahooSymbol, DateTime<Utc>>,
     market_session: MarketSession,
+    market_date: NaiveDate,
     live_enabled: bool,
     lru_clock: u64,
 }
@@ -172,7 +174,9 @@ impl YahooLiveHandle {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (pricing_sender, pricing) = mpsc::channel(PRICING_BUFFER_SIZE);
         let (desired, desired_receiver) = watch::channel(Vec::new());
-        let market_session = schedule.session(Utc::now());
+        let now = Utc::now();
+        let market_session = schedule.session(now);
+        let market_date = schedule.market_date(now);
         let live_enabled = market_session != MarketSession::Closed;
         spawn_transport(desired_receiver, pricing_sender);
         tokio::spawn(
@@ -192,6 +196,7 @@ impl YahooLiveHandle {
                 post_market_cache: HashMap::new(),
                 latest_frame_at: HashMap::new(),
                 market_session,
+                market_date,
                 live_enabled,
                 lru_clock: 0,
             }
@@ -320,7 +325,7 @@ impl YahooLiveActor {
             let idle_expiry = self.idle_subscriptions.values().min().copied();
             tokio::select! {
                 biased;
-                _ = market_session_check.tick() => self.refresh_live_state(),
+                _ = market_session_check.tick() => self.refresh_live_state(Utc::now()),
                 command = self.commands.recv() => {
                     let Some(command) = command else { return };
                     self.handle_command(command);
@@ -359,7 +364,14 @@ impl YahooLiveActor {
                     .and_then(|cached| cached.live_candle(&symbol));
                 let _ = reply.send(latest);
             }
-            Command::Seeded { symbol, result } => {
+            Command::Seeded {
+                symbol,
+                market_date,
+                result,
+            } => {
+                if market_date != self.market_date {
+                    return;
+                }
                 self.seed_tasks.remove(&symbol);
                 match *result {
                     Ok(seed) if self.live_enabled && self.is_watched(&symbol) => {
@@ -395,6 +407,7 @@ impl YahooLiveActor {
         &mut self,
         symbol: &YahooSymbol,
     ) -> Result<watch::Receiver<YahooLiveState>, YahooLiveError> {
+        let reconnecting = self.subscriptions.is_empty();
         let retained = retain_subscription(
             &mut self.subscriptions,
             &mut self.idle_subscriptions,
@@ -409,20 +422,21 @@ impl YahooLiveActor {
         match retained {
             RetainResult::Existing => return Ok(updates),
             RetainResult::Resumed => {
-                if !self.has_current_candle(symbol) {
-                    self.start_seed(symbol);
+                self.publish_desired();
+                if reconnecting || !self.has_current_candle(symbol) {
+                    self.start_seed(symbol, Utc::now());
                 }
                 return Ok(updates);
             }
             RetainResult::Added => {}
         }
         self.publish_desired();
-        self.start_seed(symbol);
+        self.start_seed(symbol, Utc::now());
         Ok(updates)
     }
 
-    fn start_seed(&mut self, symbol: &YahooSymbol) {
-        if !self.live_enabled || self.schedule.session(Utc::now()) == MarketSession::Closed {
+    fn start_seed(&mut self, symbol: &YahooSymbol, now: DateTime<Utc>) {
+        if !self.live_enabled || self.schedule.session(now) == MarketSession::Closed {
             return;
         }
         if let Some(task) = self.seed_tasks.remove(symbol) {
@@ -430,7 +444,7 @@ impl YahooLiveActor {
         }
         let yahoo = self.yahoo.clone();
         let commands = self.command_sender.clone();
-        let market_date = self.schedule.market_date(Utc::now());
+        let market_date = self.schedule.market_date(now);
         let symbol = symbol.to_owned();
         let task_symbol = symbol.clone();
         let task = tokio::spawn(async move {
@@ -440,6 +454,7 @@ impl YahooLiveActor {
                 .map_err(|error| error.to_string());
             let _ = commands.send(Command::Seeded {
                 symbol: task_symbol,
+                market_date,
                 result: Box::new(result),
             });
         });
@@ -453,10 +468,16 @@ impl YahooLiveActor {
             symbol,
             Instant::now() + IDLE_GRACE_PERIOD,
         );
+        if self.subscriptions.is_empty() {
+            for (_, task) in self.seed_tasks.drain() {
+                task.abort();
+            }
+        }
+        self.publish_desired();
     }
 
     fn publish_desired(&self) {
-        let mut symbols = if self.live_enabled {
+        let mut symbols = if self.live_enabled && !self.subscriptions.is_empty() {
             self.subscriptions
                 .keys()
                 .chain(self.idle_subscriptions.keys())
@@ -469,25 +490,27 @@ impl YahooLiveActor {
         self.desired.send_replace(symbols);
     }
 
-    fn refresh_live_state(&mut self) {
-        let now = Utc::now();
+    fn refresh_live_state(&mut self, now: DateTime<Utc>) {
         let previous_session = self.market_session;
         let market_session = self.schedule.session(now);
-        if market_session == previous_session {
+        let market_date = self.schedule.market_date(now);
+        let day_changed = market_date != self.market_date;
+        if market_session == previous_session && !day_changed {
             return;
         }
         self.market_session = market_session;
+        self.market_date = market_date;
         if previous_session == MarketSession::PreMarket && market_session == MarketSession::Regular
         {
             self.schedule_regular_recovery(self.schedule.market_date(now));
         }
 
         let live_enabled = market_session != MarketSession::Closed;
-        if live_enabled == self.live_enabled {
+        if live_enabled == self.live_enabled && !day_changed {
             return;
         }
         self.live_enabled = live_enabled;
-        if !live_enabled {
+        if !live_enabled || day_changed {
             for (_, task) in self.seed_tasks.drain() {
                 task.abort();
             }
@@ -500,8 +523,10 @@ impl YahooLiveActor {
                 stream.send_replace(YahooLiveState::default());
             }
             self.prune_unwatched_caches();
-            self.publish_desired();
-            return;
+            if !live_enabled {
+                self.publish_desired();
+                return;
+            }
         }
         self.publish_desired();
         let symbols = self
@@ -511,7 +536,7 @@ impl YahooLiveActor {
             .cloned()
             .collect::<Vec<_>>();
         for symbol in symbols {
-            self.start_seed(&symbol);
+            self.start_seed(&symbol, now);
         }
     }
 
@@ -544,7 +569,7 @@ impl YahooLiveActor {
             .cloned()
             .collect::<Vec<_>>();
         for symbol in symbols {
-            self.start_seed(&symbol);
+            self.start_seed(&symbol, now);
         }
     }
 
@@ -996,8 +1021,10 @@ fn normalize_symbol(symbol: &str) -> Result<YahooSymbol, YahooLiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::MarketConfig;
-    use chrono::NaiveTime;
+    use crate::config::{Config, MarketConfig};
+    use crate::providers::{FinvizClient, YahooClient};
+    use crate::store::Store;
+    use chrono::{NaiveTime, TimeDelta};
 
     fn yahoo(value: &str) -> YahooSymbol {
         YahooSymbol::parse(value).unwrap()
@@ -1008,6 +1035,128 @@ mod tests {
         assert_eq!(normalize_symbol(" brk-b ").unwrap(), "BRK-B");
         assert_eq!(normalize_symbol("^gspc").unwrap(), "^GSPC");
         assert!(normalize_symbol("AAPL,MSFT").is_err());
+    }
+
+    #[tokio::test]
+    async fn local_midnight_clears_yahoo_state_and_reseeds_active_subscriptions() {
+        let config: Config = toml::from_str(include_str!("../../config.example.toml")).unwrap();
+        let schedule = MarketSchedule::new(&config.market, Duration::ZERO).unwrap();
+        let before = DateTime::parse_from_rfc3339("2026-07-17T06:59:59Z")
+            .unwrap()
+            .to_utc();
+        let midnight = before + TimeDelta::seconds(1);
+        let active = yahoo("AAPL");
+        let idle = yahoo("MSFT");
+        let date = schedule.market_date(before);
+        let service = Arc::new(
+            YahooService::new(
+                Store::connect("sqlite::memory:").await.unwrap(),
+                Arc::new(YahooClient::new(&config.providers)),
+                Arc::new(FinvizClient::new(&config.finviz, &config.providers).unwrap()),
+                &config.market,
+                Default::default(),
+            )
+            .unwrap(),
+        );
+        let (command_sender, commands) = mpsc::unbounded_channel();
+        let (_, pricing) = mpsc::channel(1);
+        let (desired, desired_receiver) = watch::channel(vec![active.clone(), idle.clone()]);
+        let (stream, state) = watch::channel(YahooLiveState {
+            volume: Some(YahooLiveVolume {
+                symbol: active.clone(),
+                market_date: date,
+                volume: 100,
+                updated_at: before,
+            }),
+            ..Default::default()
+        });
+        let cache = HashMap::from([(active.clone(), CachedCandle::new(date, before, 1))]);
+        let mut actor = YahooLiveActor {
+            yahoo: service,
+            schedule,
+            commands,
+            command_sender,
+            pricing,
+            desired,
+            streams: HashMap::from([(active.clone(), stream)]),
+            subscriptions: HashMap::from([(active.clone(), 1)]),
+            idle_subscriptions: HashMap::from([(idle, Instant::now() + IDLE_GRACE_PERIOD)]),
+            seed_tasks: HashMap::new(),
+            cache: cache.clone(),
+            pre_market_cache: cache,
+            post_market_cache: HashMap::from([(
+                active.clone(),
+                YahooLivePrice {
+                    symbol: active.clone(),
+                    market_date: date,
+                    price: 10.0,
+                    updated_at: before,
+                },
+            )]),
+            latest_frame_at: HashMap::from([(active.clone(), before)]),
+            market_session: MarketSession::PostMarket,
+            market_date: date,
+            live_enabled: true,
+            lru_clock: 1,
+        };
+        // UTC is already the next day; cleanup waits for local midnight.
+        actor.refresh_live_state(before);
+        assert!(!actor.cache.is_empty());
+        assert_eq!(actor.idle_subscriptions.len(), 1);
+        actor.refresh_live_state(midnight);
+        assert_eq!(actor.market_date, date.succ_opt().unwrap());
+        assert!(actor.cache.is_empty());
+        assert!(actor.pre_market_cache.is_empty());
+        assert!(actor.post_market_cache.is_empty());
+        assert!(actor.latest_frame_at.is_empty());
+        assert!(actor.idle_subscriptions.is_empty());
+        assert_eq!(*state.borrow(), YahooLiveState::default());
+        assert_eq!(actor.subscriptions.get(&active), Some(&1));
+        assert_eq!(*desired_receiver.borrow(), vec![active.clone()]);
+        assert!(actor.seed_tasks.contains_key(&active));
+        actor.handle_command(Command::Seeded {
+            symbol: active.clone(),
+            market_date: date,
+            result: Box::new(Ok(IntradaySessionSeed {
+                pre_market: None,
+                post_market: None,
+                regular: Some(IntradayCandle {
+                    candle: DailyCandle {
+                        market_date: date,
+                        open: 10.0,
+                        high: 12.0,
+                        low: 9.0,
+                        close: 11.0,
+                        volume: 100,
+                    },
+                    updated_at: before - TimeDelta::hours(12),
+                }),
+            })),
+        });
+        assert!(
+            actor.cache.is_empty(),
+            "previous-day seed replies cannot restore cleared candles"
+        );
+        assert!(
+            actor.seed_tasks.contains_key(&active),
+            "previous-day replies cannot detach the new seed task"
+        );
+        actor.remove_subscription(&active);
+        assert!(actor.subscriptions.is_empty());
+        assert!(
+            desired_receiver.borrow().is_empty(),
+            "the last consumer releases the Yahoo connection"
+        );
+        assert!(
+            actor.seed_tasks.is_empty(),
+            "pending seed requests stop with the last consumer"
+        );
+        // Cached idle subscriptions can resume while active consumers exist again.
+        let _resumed = actor.add_subscription(&active).unwrap();
+        assert!(desired_receiver.borrow().contains(&active));
+        for (_, task) in actor.seed_tasks.drain() {
+            task.abort();
+        }
     }
 
     #[test]
@@ -1030,6 +1179,17 @@ mod tests {
         .unwrap();
         let timestamp = |value| DateTime::parse_from_rfc3339(value).unwrap().to_utc();
         let pre_market_now = timestamp("2026-07-16T13:00:00Z");
+
+        let late = timestamp("2026-07-17T06:59:59Z");
+        assert_eq!(
+            valid_frame_session(&schedule, Some(2), late, late),
+            Some(MarketSession::PostMarket)
+        );
+        let weekend = timestamp("2026-07-18T07:00:00Z");
+        assert_eq!(
+            valid_frame_session(&schedule, Some(2), weekend, weekend),
+            None
+        );
 
         assert_eq!(
             valid_frame_session(&schedule, Some(0), pre_market_now, pre_market_now),

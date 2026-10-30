@@ -12,7 +12,6 @@ pub struct MarketSchedule {
     timezone: Tz,
     market_open: NaiveTime,
     market_close: NaiveTime,
-    post_market_duration: TimeDelta,
     refresh_time: NaiveTime,
     holidays: HashSet<NaiveDate>,
 }
@@ -52,7 +51,6 @@ impl MarketSchedule {
                 .context("market.timezone must be a valid IANA timezone")?,
             market_open: config.market_hours.0,
             market_close: config.market_hours.1,
-            post_market_duration: TimeDelta::hours(4),
             refresh_time: config.market_hours.1 + post_close_delay,
             holidays,
         })
@@ -90,10 +88,8 @@ impl MarketSchedule {
             MarketSession::PreMarket
         } else if market_time.time() <= self.market_close {
             MarketSession::Regular
-        } else if market_time.time() - self.market_close <= self.post_market_duration {
-            MarketSession::PostMarket
         } else {
-            MarketSession::Closed
+            MarketSession::PostMarket
         }
     }
 
@@ -217,7 +213,7 @@ impl<D: Datelike> TradingDay for D {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::MarketConfig;
+    use crate::config::{Config, MarketConfig};
     use chrono::NaiveDate;
     use tokio::time::timeout;
 
@@ -312,11 +308,49 @@ mod tests {
         );
         assert_eq!(
             schedule.session(timestamp("2026-07-17T00:00:01Z")),
-            MarketSession::Closed,
+            MarketSession::PostMarket,
         );
         assert_eq!(
             schedule.session(timestamp("2026-07-18T17:00:00Z")),
             MarketSession::Closed,
+        );
+    }
+
+    #[test]
+    fn live_sessions_cover_the_entire_local_trading_day() {
+        use chrono::TimeZone;
+        let config: Config = toml::from_str(include_str!("../config.example.toml")).unwrap();
+        let holiday = NaiveDate::from_ymd_opt(2026, 7, 3).unwrap();
+        let schedule =
+            MarketSchedule::with_holidays(&config.market, Duration::ZERO, HashSet::from([holiday]))
+                .unwrap();
+        for hour in 0..24 {
+            let local = schedule
+                .timezone()
+                .with_ymd_and_hms(2026, 7, 16, hour, 0, 0)
+                .unwrap();
+            assert_ne!(
+                schedule.session(local.to_utc()),
+                MarketSession::Closed,
+                "hour {hour}"
+            );
+        }
+        for (month, day) in [(7, 3), (7, 18), (7, 19)] {
+            for hour in 0..24 {
+                let local = schedule
+                    .timezone()
+                    .with_ymd_and_hms(2026, month, day, hour, 0, 0)
+                    .unwrap();
+                assert_eq!(schedule.session(local.to_utc()), MarketSession::Closed);
+            }
+        }
+        let friday = DateTime::parse_from_rfc3339("2026-07-18T06:59:59Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(schedule.session(friday), MarketSession::PostMarket);
+        assert_eq!(
+            schedule.session(friday + TimeDelta::seconds(1)),
+            MarketSession::Closed
         );
     }
 

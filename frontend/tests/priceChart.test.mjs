@@ -115,6 +115,8 @@ test("chart preferences use one persisted store and restore validated settings w
     const { actions } = useSettingsStore.getState();
     assert.equal(useSettingsStore.getState().settings.theme, "light");
     assert.equal(useSettingsStore.getState().settings.candlePalette, "hollow");
+    assert.equal(useSettingsStore.getState().settings.livePricesEnabled, true);
+    actions.setLivePricesEnabled(false);
     actions.setCandlePalette("monochrome");
     actions.setLogarithmicScale(false);
     assert.equal(useSettingsStore.getState().settings.showWeeklyOverlayRelativeStrength, true);
@@ -124,6 +126,7 @@ test("chart preferences use one persisted store and restore validated settings w
     assert.equal(useSettingsStore.getState().settings.relativeStrengthPeriods.daily, 50);
     const saved = JSON.parse(values.get("market-watch.settings.v1"));
     assert.equal(saved.candlePalette, "monochrome");
+    assert.equal(saved.livePricesEnabled, false);
     assert.equal(saved.logarithmicScale, false);
     assert.equal(saved.showRelativeStrength, false);
     assert.equal(saved.showWeeklyOverlayRelativeStrength, false);
@@ -133,6 +136,7 @@ test("chart preferences use one persisted store and restore validated settings w
     assert.equal(useSettingsStore.getState().actions, actions, "Restoring preferences keeps action identities stable");
     assert.equal(useSettingsStore.getState().settings.candlePalette, "monochrome");
     assert.equal(useSettingsStore.getState().settings.showRelativeStrength, false);
+    assert.equal(useSettingsStore.getState().settings.livePricesEnabled, false);
   } finally {
     globalThis.localStorage = previousStorage;
   }

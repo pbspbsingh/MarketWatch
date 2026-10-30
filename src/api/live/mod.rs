@@ -19,7 +19,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::get;
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use std::collections::{HashMap, HashSet};
 use std::future::pending;
 use std::sync::Arc;
@@ -122,6 +122,15 @@ async fn serve(
             _ = session_check.tick() => {
                 let next = availability_event(&market_schedule);
                 if next != availability {
+                    if matches!((&availability, &next),
+                        (LiveEvent::Availability { market_date: previous, .. }, LiveEvent::Availability { market_date: current, .. })
+                            if previous != current)
+                    {
+                        dirty_symbols.clear();
+                        session_updates.clear();
+                        latest_sessions.clear();
+                        delta_deadline = None;
+                    }
                     availability = next;
                     if !send_live_event(&mut socket, availability.clone()).await { return; }
                 }
@@ -546,12 +555,13 @@ fn normalize_subscriptions(
 }
 
 fn availability_event(schedule: &MarketSchedule) -> LiveEvent {
+    availability_event_at(schedule, Utc::now())
+}
+
+fn availability_event_at(schedule: &MarketSchedule, now: DateTime<Utc>) -> LiveEvent {
     LiveEvent::Availability {
-        available: matches!(
-            schedule.session(Utc::now()),
-            MarketSession::PreMarket | MarketSession::Regular
-        ),
-        market_date: schedule.market_date(Utc::now()),
+        available: schedule.session(now) != MarketSession::Closed,
+        market_date: schedule.market_date(now),
     }
 }
 
@@ -561,28 +571,37 @@ fn price_event(
     session: MarketSession,
     market_date: NaiveDate,
 ) -> Option<LiveEvent> {
-    let candle = match update {
-        YahooLiveUpdate::PreMarket(candle) if session == MarketSession::PreMarket => candle,
-        YahooLiveUpdate::Regular(candle) if session == MarketSession::Regular => candle,
+    let (date, price, updated_at) = match update {
+        YahooLiveUpdate::PreMarket(candle) if session == MarketSession::PreMarket => (
+            candle.candle.market_date,
+            candle.candle.close,
+            candle.updated_at,
+        ),
+        YahooLiveUpdate::Regular(candle) if session == MarketSession::Regular => (
+            candle.candle.market_date,
+            candle.candle.close,
+            candle.updated_at,
+        ),
+        YahooLiveUpdate::PostMarket(price) if session == MarketSession::PostMarket => {
+            (price.market_date, price.price, price.updated_at)
+        }
         _ => return None,
     };
-    let price = candle.candle.close;
-    (candle.candle.market_date == market_date && price.is_finite() && price > 0.0).then(|| {
-        LiveEvent::Price {
-            request_id,
-            symbol: candle.symbol.clone(),
-            price,
-            updated_at: candle.updated_at,
-        }
+    (date == market_date && price.is_finite() && price > 0.0).then(|| LiveEvent::Price {
+        request_id,
+        symbol: update.symbol().clone(),
+        price,
+        updated_at,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use crate::models::DailyCandle;
     use crate::models::chart::{MarketChartIndicators, MarketChartPoint};
-    use crate::services::yahoo_live::YahooLiveCandle;
+    use crate::services::yahoo_live::{YahooLiveCandle, YahooLivePrice};
     use chrono::NaiveDate;
     use chrono::Utc;
 
@@ -650,13 +669,56 @@ mod tests {
         };
         let pre = YahooLiveUpdate::PreMarket(candle.clone());
         let regular = YahooLiveUpdate::Regular(candle);
+        let post = YahooLiveUpdate::PostMarket(YahooLivePrice {
+            symbol: YahooSymbol::parse("AAPL").unwrap(),
+            market_date: date,
+            price: 12.0,
+            updated_at: Utc::now(),
+        });
         assert!(price_event(1, &pre, MarketSession::PreMarket, date).is_some());
         assert!(price_event(1, &pre, MarketSession::Regular, date).is_none());
         assert!(price_event(1, &regular, MarketSession::Regular, date).is_some());
         assert!(price_event(1, &regular, MarketSession::Closed, date).is_none());
+        assert!(price_event(1, &post, MarketSession::PostMarket, date).is_some());
+        assert!(price_event(1, &post, MarketSession::Regular, date).is_none());
+        assert!(price_event(1, &post, MarketSession::Closed, date).is_none());
         let next_date = date.succ_opt().unwrap();
         assert!(price_event(1, &pre, MarketSession::PreMarket, next_date).is_none());
         assert!(price_event(1, &regular, MarketSession::Regular, next_date).is_none());
+        assert!(price_event(1, &post, MarketSession::PostMarket, next_date).is_none());
+    }
+
+    #[test]
+    fn availability_uses_the_local_trading_calendar_without_an_evening_cutoff() {
+        use std::time::Duration;
+        let config: Config = toml::from_str(include_str!("../../../config.example.toml")).unwrap();
+        let schedule = MarketSchedule::with_holidays(
+            &config.market,
+            Duration::ZERO,
+            HashSet::from([NaiveDate::from_ymd_opt(2026, 7, 3).unwrap()]),
+        )
+        .unwrap();
+        for (timestamp, available, expected_date) in [
+            ("2026-07-17T06:59:59Z", true, "2026-07-16"),
+            ("2026-07-17T07:00:00Z", true, "2026-07-17"),
+            ("2026-07-18T06:59:59Z", true, "2026-07-17"),
+            ("2026-07-18T07:00:00Z", false, "2026-07-18"),
+            ("2026-07-03T20:00:00Z", false, "2026-07-03"),
+        ] {
+            let now = DateTime::parse_from_rfc3339(timestamp).unwrap().to_utc();
+            let LiveEvent::Availability {
+                available: actual,
+                market_date,
+            } = availability_event_at(&schedule, now)
+            else {
+                panic!("expected availability event");
+            };
+            assert_eq!(actual, available);
+            assert_eq!(
+                market_date,
+                NaiveDate::parse_from_str(expected_date, "%Y-%m-%d").unwrap()
+            );
+        }
     }
 
     #[test]

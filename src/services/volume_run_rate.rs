@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_survives_idle_and_expires_after_extended_session_or_date_rollover() {
+    fn cache_survives_idle_and_evening_until_local_date_rollover() {
         let history = History {
             market_date: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
             days: BTreeMap::new(),
@@ -406,13 +406,14 @@ mod tests {
             "2026-10-01T18:00:00Z",
             "2026-10-01T18:11:00Z",
             "2026-10-01T23:55:00Z",
+            "2026-10-02T00:01:00Z",
+            "2026-10-02T06:59:59Z",
         ] {
             assert!(
                 history.is_current(&schedule, time(timestamp)),
                 "{timestamp}"
             );
         }
-        assert!(!history.is_current(&schedule, time("2026-10-02T00:01:00Z")));
         assert!(!history.is_current(&schedule, time("2026-10-02T07:00:00Z")));
     }
 
