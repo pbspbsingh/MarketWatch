@@ -27,12 +27,12 @@ export function TradeHourlyChart({ trade, timeZone, onSelect, onClose }: { trade
     {result?.key === key && result.error ? <Alert severity="info" action={<Button size="small" onClick={() => setAttempt(n => n + 1)}>Retry</Button>}>Hourly chart unavailable.</Alert>
       : !data ? <div className="tl-chart-placeholder"><CircularProgress size={16} /> Loading hourly candles</div>
       : !data.candles.length ? <Alert severity="info">No hourly history is available for this trade’s dates.</Alert>
-      : <HourlyCanvas data={data} trade={trade} timeZone={timeZone} onSelect={onSelect} />}
+      : <HourlyCanvas onPriceCacheCleared={() => setAttempt(n => n + 1)} data={data} trade={trade} timeZone={timeZone} onSelect={onSelect} />}
     {data?.history_limited && <p className="tl-caption">The provider limits hourly history. Older executions remain in the journal.</p>}
   </section>;
 }
 
-function HourlyCanvas({ data, trade, timeZone, onSelect }: { data: TradeLogHourlyChart; trade: TradeLog; timeZone: string; onSelect: (index: number) => void }) {
+function HourlyCanvas({ data, trade, timeZone, onSelect, onPriceCacheCleared }: { onPriceCacheCleared: () => void; data: TradeLogHourlyChart; trade: TradeLog; timeZone: string; onSelect: (index: number) => void }) {
   const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const price = useRef<PriceChartContext | null>(null);
@@ -59,6 +59,6 @@ function HourlyCanvas({ data, trade, timeZone, onSelect }: { data: TradeLogHourl
   }, [data.candles, markers, candlePalette, theme, palette]);
   useEffect(() => { price.current?.chart.timeScale().fitContent(); }, [data.candles]);
   const missing = trade.executions.length - markers.length;
-  return <><div className="tl-chart"><PriceChart symbol={trade.symbol} movingAverages={false} watermark={false} ariaLabel={`${trade.symbol} hourly chart`} options={options} candleAt={time => typeof time === "number" ? candlesByTime.get(time) : undefined} onReady={ready} onDestroy={destroy} /></div>
+  return <><div className="tl-chart"><PriceChart onPriceCacheCleared={onPriceCacheCleared} onResetZoom={() => price.current?.chart.timeScale().fitContent()} symbol={trade.symbol} movingAverages={false} watermark={false} ariaLabel={`${trade.symbol} hourly chart`} options={options} candleAt={time => typeof time === "number" ? candlesByTime.get(time) : undefined} onReady={ready} onDestroy={destroy} /></div>
     {missing > 0 && <p className="tl-caption">{missing} execution(s) have no matching hourly candle. Markers are shown only where price history exists.</p>}</>;
 }

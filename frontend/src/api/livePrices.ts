@@ -97,6 +97,19 @@ export class GlobalLivePrices {
       this.changed();
     };
   }
+  refreshCharts(symbol: string) {
+    const normalized = marketDataSymbol(symbol);
+    const affected = [...this.charts.entries()].filter(([, { resource }]) =>
+      resource.symbol === normalized || resource.comparison_symbol === normalized);
+    if (affected.length === 0) return;
+    this.store.setState(state => {
+      const charts = { ...state.charts };
+      for (const [key] of affected) delete charts[key];
+      return { charts };
+    });
+    // A new delivery generation rejects queued deltas and requests fresh calculations.
+    this.changed();
+  }
   observePrices(symbols: string[]) {
     const token = {};
     this.priceConsumers.set(token, [...new Set(symbols.map(marketDataSymbol))]);

@@ -29,7 +29,6 @@ import type {
 import type { ChartHostHandle } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
-  bottomRelativeStrengthLayout,
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
   indicatorSeriesOptions,
@@ -65,7 +64,6 @@ import {
 } from "./relativeStrengthSeries";
 import { chartCompanyNameLabel } from "./chartLabels";
 import { ChartCandleReadout } from "./ChartCandleReadout";
-import { RelativeStrengthSlider } from "./RelativeStrengthSlider";
 import { VolumeRunRateBadge } from "./VolumeRunRateBadge";
 import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 
@@ -84,11 +82,11 @@ interface MarketChartProps {
   timeScaleVisible?: boolean;
   rightOffsetPixels?: number;
   attributionLogo?: boolean;
+  onResetZoom?: () => void;
+  onPriceCacheCleared?: () => void | Promise<void>;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
-  relativeStrengthPlacement?: "top" | "bottom" | "hidden";
-  relativeStrengthLive?: MarketChartRelativeStrength | null;
-  hideMovingAverages?: boolean;
+  showRelativeStrength?: boolean;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
   dateMarkers?: MarketChartDateMarker[];
@@ -119,10 +117,10 @@ export function MarketChart({
   rightOffsetPixels = chartRightOffsetPixels,
   attributionLogo = true,
   onChartContext,
+  onResetZoom,
+  onPriceCacheCleared,
   relativeStrength,
-  relativeStrengthPlacement = "top",
-  relativeStrengthLive,
-  hideMovingAverages = false,
+  showRelativeStrength: showRelativeStrengthOverride,
   liveDelta,
   sessionDelta,
   dateMarkers = [],
@@ -136,8 +134,10 @@ export function MarketChart({
     candlePalette,
     logarithmicScale,
     relativeStrengthLineStyle: rsLineStyle,
+    showRelativeStrength: defaultShowRelativeStrength,
     theme,
   } = useAppSettings();
+  const showRelativeStrength = showRelativeStrengthOverride ?? defaultShowRelativeStrength;
   const palette = appPalettes[theme];
   const candlePaletteRef = useRef(candlePalette);
   const themeRef = useRef(theme);
@@ -179,18 +179,6 @@ export function MarketChart({
   const onChartContextRef = useRef(onChartContext);
   const initializedRef = useRef(false);
   const seriesDatasetKeyRef = useRef<string | undefined>(undefined);
-  const liveRelativeStrengthCandidate = relativeStrengthLive ?? (liveDelta?.symbol === data.symbol
-    && liveDelta.interval === data.interval
-    ? liveDelta.relative_strength
-    : undefined);
-  const liveRelativeStrength = liveRelativeStrengthCandidate?.line.moving_average_period === relativeStrength?.line.moving_average_period
-    && liveRelativeStrengthCandidate?.comparison_symbol === relativeStrength?.comparison_symbol
-    ? liveRelativeStrengthCandidate : undefined;
-  const relativeStrengthTrend = liveRelativeStrength?.structure.trend
-    ?? relativeStrength?.structure.trend
-    ?? "unclear";
-  const hasRelativeStrength = relativeStrength != null && relativeStrengthPlacement !== "hidden";
-  const [showRelativeStrength, setShowRelativeStrength] = useState(true);
   useEffect(() => {
     initialViewportRef.current = initialViewport;
   }, [initialViewport]);
@@ -206,8 +194,8 @@ export function MarketChart({
       relativeStrengthLowsRef.current,
       relativeStrengthProvisionalOuterRef.current,
       relativeStrengthProvisionalInnerRef.current,
-    ].forEach((series) => series?.applyOptions({ visible: showRelativeStrength && relativeStrengthPlacement !== "hidden" }));
-  }, [relativeStrengthPlacement, showRelativeStrength]);
+    ].forEach((series) => series?.applyOptions({ visible: showRelativeStrength }));
+  }, [showRelativeStrength]);
   const chartOptions = useMemo(() => ({
     layout: { attributionLogo },
     rightPriceScale: {
@@ -364,25 +352,15 @@ export function MarketChart({
     // Change vertical spacing without reapplying time-scale options and resetting scroll.
     hostRef.current?.getChart()?.priceScale("right").applyOptions({
       scaleMargins: {
-        top: relativeStrengthPlacement === "bottom"
-          ? bottomRelativeStrengthLayout.candleTopMargin : defaultPriceScaleMargins.top,
+        top: defaultPriceScaleMargins.top,
         bottom: priceScaleBottomMargin ?? defaultPriceScaleMargins.bottom,
       },
     });
     relativeStrengthSeriesRef.current?.priceScale().applyOptions({
       mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-      scaleMargins: relativeStrengthPlacement === "bottom"
-        ? bottomRelativeStrengthLayout.scaleMargins : relativeStrengthScaleMargins,
+      scaleMargins: relativeStrengthScaleMargins,
     });
-    relativeStrengthSeriesRef.current?.applyOptions({
-      lastValueVisible: relativeStrengthPlacement !== "bottom",
-    });
-  }, [logarithmicScale, priceScaleBottomMargin, relativeStrengthPlacement]);
-
-  useEffect(() => {
-    movingAverageSeriesRef.current.forEach((series) => series.applyOptions({ visible: !hideMovingAverages }));
-    volumeAverageSeriesRef.current?.applyOptions({ visible: !hideMovingAverages });
-  }, [hideMovingAverages]);
+  }, [logarithmicScale, priceScaleBottomMargin]);
 
   useEffect(() => {
     relativeStrengthSeriesRef.current?.applyOptions({
@@ -470,22 +448,12 @@ export function MarketChart({
     const chart = hostRef.current?.getChart();
     const series = relativeStrengthSeriesRef.current;
     if (chart === null || chart === undefined || series === null) return;
-    const selected = relativeStrengthPlacement === "hidden" ? null : relativeStrength;
+    const selected = relativeStrength;
     const points = relativeStrengthLineData(selected, candlePaletteRef.current, themeRef.current);
     chart.applyOptions({ leftPriceScale: { visible: false } });
     series.setData(points);
     updateRelativeStrengthStructure(selected?.structure);
-  }, [relativeStrength, relativeStrengthPlacement, updateRelativeStrengthStructure]);
-
-  useEffect(() => {
-    if (relativeStrengthPlacement === "hidden"
-      || relativeStrengthLive?.line.moving_average_period !== relativeStrength?.line.moving_average_period
-      || relativeStrengthLive?.comparison_symbol !== relativeStrength?.comparison_symbol) return;
-    const point = relativeStrengthLineData(relativeStrengthLive, candlePalette, theme)[0];
-    if (point !== undefined && updateLineSeries(relativeStrengthSeriesRef.current, point, data.interval)) {
-      updateRelativeStrengthStructure(relativeStrengthLive?.structure);
-    }
-  }, [candlePalette, data.interval, relativeStrength, relativeStrengthLive, relativeStrengthPlacement, theme, updateRelativeStrengthStructure]);
+  }, [relativeStrength, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     if (
@@ -542,8 +510,7 @@ export function MarketChart({
     }
 
     const relativePoint = relativeStrengthLineData(
-      relativeStrengthPlacement === "hidden"
-        || liveDelta.relative_strength?.line.moving_average_period !== relativeStrength?.line.moving_average_period
+      liveDelta.relative_strength?.line.moving_average_period !== relativeStrength?.line.moving_average_period
         || liveDelta.relative_strength?.comparison_symbol !== relativeStrength?.comparison_symbol
         ? null : liveDelta.relative_strength,
       candlePalette,
@@ -555,7 +522,7 @@ export function MarketChart({
         updateRelativeStrengthStructure(liveDelta.relative_strength?.structure);
       }
     }
-  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, relativeStrength, relativeStrengthPlacement, theme, updateRelativeStrengthStructure]);
+  }, [candlePalette, data.candles, data.indicators, data.interval, data.symbol, liveDelta, refreshReadout, relativeStrength, theme, updateRelativeStrengthStructure]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -669,11 +636,6 @@ export function MarketChart({
     }
   }, [data.candles, data.interval, data.moving_averages, data.symbol, data.volume_average, rightOffsetPixels]);
 
-  const trendLabel = relativeStrengthTrend === "uptrend"
-    ? "Uptrend"
-    : relativeStrengthTrend === "downtrend"
-      ? "Downtrend"
-      : "Unclear";
   const companyLabel = companyName === undefined
     ? undefined
     : chartCompanyNameLabel(companyName);
@@ -690,11 +652,13 @@ export function MarketChart({
         symbol={data.symbol}
         interval={data.interval}
         candleAt={time => candlesByDateRef.current.get(chartTimeToMarketDate(time))}
+        onResetZoom={onResetZoom}
+        onPriceCacheCleared={onPriceCacheCleared}
         onReady={initializeSeries}
         onDestroy={context => destroyChart(context.chart)}
       />
       <div className={showCandleReadout ? "market-chart-header" : undefined}>
-        {(companyLabel !== undefined || hasRelativeStrength || volumeRunRate?.state.visible) && (
+        {(companyLabel !== undefined || volumeRunRate?.state.visible) && (
           <div className="market-chart-labels">
             <div className="market-chart-label-row">
               {companyLabel !== undefined && (
@@ -715,25 +679,10 @@ export function MarketChart({
                   </a>
                 )
               )}
-              {hasRelativeStrength && (
-                <button
-                  type="button"
-                  className={showRelativeStrength
-                    ? `market-chart-metric-toggle market-chart-rs-trend-${relativeStrengthTrend}`
-                    : "market-chart-metric-toggle market-chart-metric-hidden"}
-                  aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength; trend: ${trendLabel}`}
-                  aria-pressed={showRelativeStrength}
-                  title={`Relative Strength ${trendLabel}`}
-                  onClick={() => setShowRelativeStrength((visible) => !visible)}
-                >
-                  RS
-                </button>
-              )}
               {volumeRunRate !== undefined && volumeRunRate.state.symbol === data.symbol && (
                 <VolumeRunRateBadge control={volumeRunRate} />
               )}
             </div>
-            {hasRelativeStrength && <RelativeStrengthSlider interval={data.interval} />}
           </div>
         )}
         {showCandleReadout && <ChartCandleReadout {...readout} />}

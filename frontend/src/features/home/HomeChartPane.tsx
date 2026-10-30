@@ -39,6 +39,7 @@ export function HomeChartPane({
     >
       <MarketChartContainer
         showCandleReadout
+        showVolumeRunRate
         symbol={symbol}
         companyName={summary?.company_name ?? undefined}
         tradingViewSymbol={summary?.tradingview_symbol}

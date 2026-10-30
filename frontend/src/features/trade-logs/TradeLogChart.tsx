@@ -36,7 +36,7 @@ export function TradeLogChart({ trade, onSelect, onClose, onEdit, onExpand }: { 
       : result?.key === key && result.error ? <Alert severity="info" action={<Button onClick={() => setAttempt(n => n + 1)}>Retry</Button>}>Chart unavailable. Your journal can still be saved.</Alert>
       : !data ? <div className="tl-chart-placeholder"><CircularProgress size={20} /> Loading chart</div>
       : !data.candles.length ? <Alert severity="info">No price history is available for this ticker and period.</Alert>
-      : <><div className="tl-chart"><MarketChart data={data} relativeStrengthPlacement="hidden" dateMarkers={markers} onMarkerClick={id => onSelect(Number(id))} showCandleReadout /></div>
+      : <><div className="tl-chart"><MarketChart data={data} onPriceCacheCleared={() => setAttempt(n => n + 1)} dateMarkers={markers} onMarkerClick={id => onSelect(Number(id))} showCandleReadout /></div>
         <div className="tl-marker-legend">{trade.executions.map((leg, index) => <Button key={index} size="small" onClick={() => onSelect(index)} title={`${leg.action}: ${leg.quantity} shares at $${leg.price}`}><span className={leg.side === "buy" ? "tl-positive" : "tl-negative"}>{leg.action[0]}{index + 1}</span> {leg.action} {shares(leg.quantity)} @ {leg.price}</Button>)}<span className="tl-marker-hint">Trading dates · Select a marker to find its execution</span></div>
         {missing > 0 && <p className="tl-caption">{missing} execution(s) fall outside the returned trading candles. All executions appear below.</p>}</>}
   </section>;

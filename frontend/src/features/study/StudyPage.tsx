@@ -134,7 +134,10 @@ export function StudyPage() {
         if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
       })
       .finally(() => {
-        if (!controller.signal.aborted && requestRef.current === controller) setLoading(false);
+        if (requestRef.current === controller) {
+          if (!controller.signal.aborted) setLoading(false);
+          requestRef.current = undefined;
+        }
       });
     return () => {
       controller.abort();
@@ -175,6 +178,7 @@ export function StudyPage() {
         setLoading(false);
         setHistoryLoading(false);
       }
+      if (requestRef.current === controller) requestRef.current = undefined;
     });
     return () => {
       controller.abort();
@@ -212,7 +216,32 @@ export function StudyPage() {
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (requestRef.current === controller) {
+        if (!controller.signal.aborted) setLoading(false);
+        requestRef.current = undefined;
+      }
+    }
+  };
+
+  const reloadPriceData = async () => {
+    const current = resultRef.current;
+    if (current === undefined || current !== result || requestRef.current !== undefined) return;
+    historyRequestRef.current?.abort();
+    historyRequestRef.current = undefined;
+    setHistoryLoading(false);
+    const controller = new AbortController();
+    requestRef.current = controller;
+    try {
+      const next = await fetchStudy(
+        [current.series[0].symbol, current.series[1].symbol], current.date, current.interval,
+        { refresh: true, range: { start: current.range_start, end: current.range_end },
+          relativeStrengthPeriod: relativeStrengthPeriods[current.interval], signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      resultRef.current = next;
+      setResult(next);
+    } finally {
+      if (requestRef.current === controller) requestRef.current = undefined;
     }
   };
 
@@ -310,7 +339,10 @@ export function StudyPage() {
         setError(loadError.message);
       }
     } finally {
-      if (!controller.signal.aborted && requestRef.current === controller) setLoading(false);
+      if (requestRef.current === controller) {
+        if (!controller.signal.aborted) setLoading(false);
+        requestRef.current = undefined;
+      }
     }
   };
 
@@ -497,6 +529,7 @@ export function StudyPage() {
             tickerBVisible={tickerBVisible}
             historyLoading={historyLoading}
             onRequestHistory={(direction) => void loadHistory(direction)}
+            onPriceCacheCleared={reloadPriceData}
             weeklyChartContext={showWeeklyChartOverlay ? weeklyChartContext : null}
             rangeOwnerRef={rangeOwnerRef}
           />
@@ -512,6 +545,7 @@ export function StudyPage() {
             onClose={() => setShowWeeklyChartOverlay(false)}
           >
             <StudyWeeklyChart
+              onPriceCacheCleared={reloadPriceData}
               result={result}
               showAxes={showWeeklyOverlayAxes}
               onChartContext={setWeeklyChartContext}

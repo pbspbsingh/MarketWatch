@@ -183,3 +183,28 @@ test("constructor failures retry and malformed nested data cannot crash the shar
     assert.equal(client.store.getState().charts[liveChartKey(chart())].delta.symbol, "AAPL");
   } finally { env.cleanup(); }
 });
+
+test("price cache replacement resets ticker and benchmark live deltas and rejects the previous delivery", () => {
+  const env = setup(); const { client } = env;
+  try {
+    const resource = chart("AAPL", "daily", "SPY");
+    const weekly = chart("AAPL", "weekly");
+    const dependent = chart("AMD", "daily", "AAPL");
+    const unrelated = chart("MSFT");
+    for (const item of [resource, weekly, dependent, unrelated]) client.observeChart(item);
+    client.start(); const socket = Socket.sockets[0]; socket.open();
+    const request = socket.sent.at(-1);
+    request.charts.forEach(item => socket.emit(delta(request, { chart_id: item.chart_id, symbol: item.symbol, interval: item.interval })));
+    const before = client.store.getState().charts[liveChartKey(unrelated)];
+    client.refreshCharts("nasdaq:aapl");
+    const refreshed = socket.sent.at(-1);
+    assert.ok(refreshed.request_id > request.request_id);
+    for (const item of [resource, weekly, dependent]) assert.equal(client.store.getState().charts[liveChartKey(item)], undefined);
+    assert.equal(client.store.getState().charts[liveChartKey(unrelated)], before);
+    socket.emit(delta(request));
+    assert.equal(client.store.getState().charts[liveChartKey(resource)], undefined);
+    socket.emit(delta(refreshed));
+    assert.equal(client.store.getState().charts[liveChartKey(resource)].delta.symbol, "AAPL");
+    assert.equal(Socket.sockets.length, 1);
+  } finally { env.cleanup(); }
+});

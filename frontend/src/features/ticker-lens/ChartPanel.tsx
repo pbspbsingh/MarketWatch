@@ -464,6 +464,7 @@ export function ChartPanel({
                 container={overlayContainer}
                 chartStage={chartStageElement}
                 symbol={summary.symbol}
+                comparisonSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
                 tradingViewSymbol={summary.tradingview_symbol}
                 showAxes={showWeeklyOverlayAxes}
                 onChartContext={setWeeklyChartContext}

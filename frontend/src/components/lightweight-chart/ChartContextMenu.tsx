@@ -5,32 +5,17 @@ export interface ChartMenuPosition {
   top: number;
 }
 
-interface ChartContextMenuProps {
+export function ChartContextMenu({ position, onClose, onResetZoom, onClearPriceCache, clearing }: {
   position: ChartMenuPosition | null;
   onClose: () => void;
-  onResetView: () => void;
-  resetLabel?: string;
-  onRefreshCandles?: () => void;
-}
-
-export function ChartContextMenu({
-  position,
-  onClose,
-  onResetView,
-  resetLabel = "Reset chart view",
-  onRefreshCandles,
-}: ChartContextMenuProps) {
+  onResetZoom: () => void;
+  onClearPriceCache: () => void;
+  clearing: boolean;
+}) {
   return (
-    <Menu
-      open={position !== null}
-      onClose={onClose}
-      anchorReference="anchorPosition"
-      anchorPosition={position ?? undefined}
-    >
-      <MenuItem onClick={onResetView}>{resetLabel}</MenuItem>
-      {onRefreshCandles !== undefined && (
-        <MenuItem onClick={onRefreshCandles}>Refresh Yahoo candles</MenuItem>
-      )}
+    <Menu open={position !== null} onClose={onClose} anchorReference="anchorPosition" anchorPosition={position ?? undefined}>
+      <MenuItem onClick={onResetZoom}>Reset chart zoom</MenuItem>
+      <MenuItem onClick={onClearPriceCache} disabled={clearing}>Clear price cache</MenuItem>
     </Menu>
   );
 }

@@ -11,7 +11,6 @@ import type { LogicalRange } from "lightweight-charts";
 import {
   marketDataSymbol,
   type MarketChartInterval,
-  type MarketChartRelativeStrength,
 } from "../../api/marketChart";
 import { useRelativeStrengthPeriod } from "../../app/AppSettings";
 import { MarketChart, type MarketChartDateMarker } from "./MarketChart";
@@ -46,22 +45,14 @@ interface MarketChartContainerProps {
   timeScaleVisible?: boolean;
   rightOffsetPixels?: number;
   attributionLogo?: boolean;
+  onResetZoom?: () => void;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   onError?: (message: string | undefined) => void;
   historyInteractionTrackerRef?: RefObject<ChartHistoryInteractionTracker>;
   relativeStrengthComparisonSymbol?: string;
-  relativeStrengthPlacement?: "top" | "bottom" | "hidden";
-  /** Null clears the overlay; undefined uses this chart's own RS history. */
-  relativeStrengthOverlay?: MarketChartRelativeStrength | null;
-  relativeStrengthLive?: MarketChartRelativeStrength | null;
-  onRelativeStrengthChange?: (data: MarketChartRelativeStrength | null) => void;
-  hideMovingAverages?: boolean;
+  showRelativeStrength?: boolean;
   showLoadingOverlay?: boolean;
   onLoadStatusChange?: (status: MarketChartLoadStatus) => void;
-  refreshCandlesVersion?: number;
-  reloadVersion?: number;
-  onRefreshSettled?: (version: number, succeeded: boolean) => void;
-  onRelativeStrengthLiveChange?: (data: MarketChartRelativeStrength | null) => void;
 }
 
 const historyLoadThresholdBars = 25;
@@ -85,20 +76,13 @@ export function MarketChartContainer({
   rightOffsetPixels,
   attributionLogo,
   onChartContext,
+  onResetZoom,
   onError,
   historyInteractionTrackerRef,
   relativeStrengthComparisonSymbol,
-  relativeStrengthPlacement = "top",
-  relativeStrengthOverlay,
-  relativeStrengthLive,
-  onRelativeStrengthChange,
-  hideMovingAverages = false,
+  showRelativeStrength,
   showLoadingOverlay = true,
   onLoadStatusChange,
-  refreshCandlesVersion = 0,
-  reloadVersion = 0,
-  onRefreshSettled,
-  onRelativeStrengthLiveChange,
 }: MarketChartContainerProps) {
   const selectedRsPeriod = useRelativeStrengthPeriod(interval);
   const rsPeriod = relativeStrengthComparisonSymbol === undefined ? undefined : selectedRsPeriod;
@@ -106,9 +90,6 @@ export function MarketChartContainer({
     symbol, interval, comparison_symbol: relativeStrengthComparisonSymbol ?? null,
     relative_strength_period: rsPeriod ?? null, volume_run_rate: showVolumeRunRate,
   });
-  useEffect(() => {
-    onRelativeStrengthLiveChange?.(liveDelta?.relative_strength ?? null);
-  }, [liveDelta, onRelativeStrengthLiveChange]);
   const datasetKey = `${symbol}\0${interval}`;
   const handledInteractionSequenceRef = useRef(0);
   const localInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
@@ -122,16 +103,7 @@ export function MarketChartContainer({
   const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
   const { snapshot, status, error, fetching, failed, loadHistory, retry } = useMarketChartQuery({
     symbol, interval, comparisonSymbol: relativeStrengthComparisonSymbol, relativeStrengthPeriod: rsPeriod,
-    refreshVersion: refreshCandlesVersion, reloadVersion, onRefreshSettled,
   });
-
-  useEffect(() => {
-    const comparison = relativeStrengthComparisonSymbol === undefined
-      ? undefined : marketDataSymbol(relativeStrengthComparisonSymbol);
-    const rs = snapshot?.relative_strength;
-    onRelativeStrengthChange?.(rs?.comparison_symbol === comparison
-      && rs?.line.moving_average_period === rsPeriod ? rs ?? null : null);
-  }, [onRelativeStrengthChange, relativeStrengthComparisonSymbol, rsPeriod, snapshot]);
 
   useEffect(() => {
     onErrorRef.current = onError;
@@ -230,10 +202,9 @@ export function MarketChartContainer({
           rightOffsetPixels={rightOffsetPixels}
           attributionLogo={attributionLogo}
           onChartContext={handleChartContext}
-          relativeStrength={relativeStrengthOverlay === undefined ? snapshot.relative_strength : relativeStrengthOverlay}
-          relativeStrengthPlacement={relativeStrengthPlacement}
-          relativeStrengthLive={relativeStrengthLive}
-          hideMovingAverages={hideMovingAverages}
+          onResetZoom={onResetZoom}
+          relativeStrength={snapshot.relative_strength}
+          showRelativeStrength={showRelativeStrength}
           liveDelta={liveDelta}
           sessionDelta={sessionDelta}
         />

@@ -108,18 +108,6 @@
   outline-offset: 2px;
 }
 
-.market-chart-rs-trend-uptrend {
-  color: var(--color-positive);
-}
-
-.market-chart-rs-trend-downtrend {
-  color: var(--color-negative);
-}
-
-.market-chart-rs-trend-unclear {
-  color: var(--color-muted);
-}
-
 .market-chart-metric-hidden {
   color: var(--color-muted);
 }

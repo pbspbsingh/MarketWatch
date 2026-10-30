@@ -43,7 +43,7 @@ export function getChartColors(mode: AppThemeMode, gridOpacity = 1) {
 }
 
 export const defaultChartBarSpacing = 6;
-export const chartRightOffsetPixels = 40;
+export const chartRightOffsetPixels = 32;
 export const defaultPriceScaleMargins = { top: 0.08, bottom: 0.25 } as const;
 export const overlappingPriceScaleMargins = {
   ...defaultPriceScaleMargins,
@@ -156,11 +156,6 @@ export const volumeSeriesOptions = {
 
 export const volumeScaleMargins = { top: 0.78, bottom: 0 } as const;
 export const relativeStrengthScaleMargins = { top: 0.02, bottom: 0.68 } as const;
-export const bottomRelativeStrengthLayout = {
-  candleTopMargin: 0.25,
-  scaleMargins: { top: 0.02, bottom: 0.62 },
-} as const;
-
 export const indicatorSeriesOptions = {
   lineWidth: 1 as const,
   priceLineVisible: false,

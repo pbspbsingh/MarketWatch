@@ -6,6 +6,7 @@ import { createServer } from "vite";
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
 const { marketChartRequest, marketChartKey, marketChartQueryOptions, fetchChartOperation, displayedChartSnapshot, chartPlaceholder } =
   await server.ssrLoadModule("/src/features/charts/marketChartQuery.ts");
+const { clearChartPriceCache } = await server.ssrLoadModule("/src/api/priceCache.ts");
 after(async () => { await server.close(); });
 
 const request = marketChartRequest({ symbol: "NVDA", interval: "daily", comparisonSymbol: "SPY", relativeStrengthPeriod: 5 });
@@ -144,7 +145,7 @@ test("resource changes abort obsolete requests and late replies cannot replace t
   } finally { unsubscribe(); cache.clear(); globalThis.fetch = previousFetch; }
 });
 
-test("forced refresh preserves expanded history and a failed refresh keeps the last valid snapshot", async () => {
+test("clearing price cache reloads expanded chart history and preserves valid data on failure", async () => {
   const cache = client();
   const previousFetch = globalThis.fetch;
   cache.setQueryData(marketChartKey(request), snapshot(request, widerDates));
@@ -154,18 +155,48 @@ test("forced refresh preserves expanded history and a failed refresh keeps the l
     const parsed = new URL(url, "http://market.test");
     calls.push({ url: parsed, method: options.method ?? "GET" });
     if (fail) return new Response("Unavailable", { status: 503 });
-    return response(snapshot(request, parsed.pathname.endsWith("/refresh") ? [dates[0], "2026-10-30"] : [...widerDates, "2026-10-30"]));
+    const resource = parsed.pathname.endsWith("/refresh") ? { ...request, comparisonSymbol: undefined } : request;
+    return response(snapshot(resource, parsed.pathname.endsWith("/history") ? [...widerDates, "2026-10-30"] : [dates[0], "2026-10-30"]));
   };
+  const observer = new QueryObserver(cache, { ...marketChartQueryOptions(cache, request), staleTime: Infinity });
+  const unsubscribe = observer.subscribe(() => {});
   try {
-    await fetchChartOperation(cache, request, "refresh");
-    assert.deepEqual(calls.map(call => call.method), ["POST", "GET"]);
-    assert.equal(calls[1].url.searchParams.get("start"), widerDates[0]);
+    await clearChartPriceCache(cache, request.symbol, request.interval);
+    assert.deepEqual(calls.map(call => call.method), ["POST", "GET", "GET"]);
+    assert.equal(calls[2].url.searchParams.get("start"), widerDates[0]);
     const current = cache.getQueryData(marketChartKey(request));
     assert.equal(current.latest_date, "2026-10-30");
     assert.equal(current.earliest_date, widerDates[0]);
     fail = true;
-    await assert.rejects(fetchChartOperation(cache, request, "refresh"), /Unavailable/);
+    await assert.rejects(clearChartPriceCache(cache, request.symbol, request.interval), /Unavailable/);
     assert.equal(cache.getQueryData(marketChartKey(request)), current);
-    assert.equal(cache.getQueryState(marketChartKey(request)).status, "error");
+    assert.equal(cache.getQueryState(marketChartKey(request)).status, "success");
+  } finally { unsubscribe(); cache.clear(); globalThis.fetch = previousFetch; }
+});
+
+test("clearing a symbol invalidates daily, weekly, and benchmark-dependent queries without touching other tickers", async () => {
+  const cache = client();
+  const previousFetch = globalThis.fetch;
+  const resources = [request, { ...request, interval: "weekly", relativeStrengthPeriod: 2 },
+    { symbol: "AMD", interval: "daily", comparisonSymbol: request.symbol, relativeStrengthPeriod: 5 },
+    { symbol: "SPY", interval: "daily" }];
+  for (const resource of resources) cache.setQueryData(marketChartKey(resource), snapshot(resource));
+  let replaced = false;
+  let reloaded = false;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.method, "POST");
+    assert.match(url, /\/NVDA\/refresh\?/);
+    replaced = true;
+    return response(snapshot({ ...request, comparisonSymbol: undefined }));
+  };
+  try {
+    await clearChartPriceCache(cache, "nasdaq:nvda", "daily", () => { assert.equal(replaced, true); reloaded = true; });
+    assert.equal(reloaded, true);
+    for (const resource of resources.slice(0, 3)) assert.equal(cache.getQueryState(marketChartKey(resource)).isInvalidated, true);
+    assert.equal(cache.getQueryState(marketChartKey(resources[3])).isInvalidated, false);
+    reloaded = false;
+    globalThis.fetch = async () => new Response("Unavailable", { status: 503 });
+    await assert.rejects(clearChartPriceCache(cache, "NVDA", "daily", () => { reloaded = true; }), /Unavailable/);
+    assert.equal(reloaded, false);
   } finally { cache.clear(); globalThis.fetch = previousFetch; }
 });

@@ -1,11 +1,9 @@
-import { RelativeStrengthSlider } from "../charts/RelativeStrengthSlider";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
   type PointerEvent,
   type RefObject,
   type ReactNode,
@@ -29,12 +27,7 @@ import {
   type AnchoredLogicalRange,
 } from "../../components/lightweight-chart/chartRange";
 import {
-  ChartContextMenu,
-  type ChartMenuPosition,
-} from "../../components/lightweight-chart/ChartContextMenu";
-import {
   getChartColors,
-  bottomRelativeStrengthLayout,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthLineStyle,
@@ -87,6 +80,7 @@ export function StudyCharts({
   tickerBVisible,
   historyLoading,
   onRequestHistory,
+  onPriceCacheCleared,
   weeklyChartContext,
   rangeOwnerRef,
 }: {
@@ -98,6 +92,7 @@ export function StudyCharts({
   tickerBVisible: boolean;
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
+  onPriceCacheCleared: () => Promise<void>;
   weeklyChartContext: ChartSyncTarget | null;
   rangeOwnerRef: RefObject<"daily" | "weekly">;
 }) {
@@ -106,10 +101,9 @@ export function StudyCharts({
     candlePalette,
     gridOpacity,
     relativeStrengthLineStyle: rsLineStyle,
-    relativeStrengthDisplay,
+    showRelativeStrength,
     theme,
   } = useAppSettings();
-  const bottomRs = relativeStrengthDisplay === "bottom-line" && tickerBVisible;
   const palette = appPalettes[theme];
   const chartColors = useMemo(() => getChartColors(theme, gridOpacity), [theme, gridOpacity]);
   const priceContexts = useRef<Array<PriceChartContext | null>>([]);
@@ -141,8 +135,6 @@ export function StudyCharts({
     kind?: "pointer" | "wheel";
   }>({ sequence: 0, occurredAt: 0 });
   const handledInteractionSequenceRef = useRef(0);
-  const [showRelativeStrength, setShowRelativeStrength] = useState(true);
-  const [chartMenuPosition, setChartMenuPosition] = useState<ChartMenuPosition | null>(null);
   const [hover, setHover] = useState<{ datasetKey: string; interval: StudyResult["interval"]; date?: string }>();
   const showRelativeStrengthRef = useRef(showRelativeStrength);
   const rsLineStyleRef = useRef(rsLineStyle);
@@ -261,11 +253,6 @@ export function StudyCharts({
     });
   }, [logarithmicScale]);
 
-  const openChartMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setChartMenuPosition({ left: event.clientX, top: event.clientY });
-  }, []);
-
   const centerSelectedDate = useCallback(() => {
     const chart = chartsRef.current[0];
     if (chart === undefined) return;
@@ -286,7 +273,6 @@ export function StudyCharts({
   }, [result.date]);
 
   const resetChartView = useCallback(() => {
-    setChartMenuPosition(null);
     rangeOwnerRef.current = "daily";
     handledInteractionSequenceRef.current = interactionRef.current.sequence;
     centerSelectedDate();
@@ -509,7 +495,7 @@ export function StudyCharts({
   }, [centerSelectedDate, datasetKey, result]);
 
   useEffect(() => {
-    const chart = chartsRef.current[bottomRs ? 1 : 0];
+    const chart = chartsRef.current[0];
     if (chart === undefined) return;
     const previous = relativeStrengthChartRef.current;
     relativeStrengthSeriesRef.current.forEach((series) => previous?.removeSeries(series));
@@ -529,22 +515,9 @@ export function StudyCharts({
     relativeStrengthInnerRef.current = relativeStrength.provisionalInner;
     relativeStrength.series[0]?.priceScale().applyOptions({
       mode: logarithmicScaleRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-      scaleMargins: bottomRs ? bottomRelativeStrengthLayout.scaleMargins : relativeStrengthScaleMargins,
+      scaleMargins: relativeStrengthScaleMargins,
     });
-    relativeStrength.series[0]?.applyOptions({ lastValueVisible: !bottomRs });
-    chartsRef.current[1]?.priceScale("right").applyOptions({
-      scaleMargins: {
-        ...overlappingPriceScaleMargins,
-        top: bottomRs ? bottomRelativeStrengthLayout.candleTopMargin : overlappingPriceScaleMargins.top,
-      },
-    });
-    movingAverageSeriesRef.current.forEach((series, index) => {
-      series.forEach((line) => line.applyOptions({ visible: !bottomRs || index === 0 }));
-    });
-    volumeAverageSeriesRef.current.forEach((line, index) => {
-      line.applyOptions({ visible: !bottomRs || index === 0 });
-    });
-  }, [bottomRs, result]);
+  }, [result]);
 
   useEffect(() => {
     const charts = chartsRef.current;
@@ -590,6 +563,8 @@ export function StudyCharts({
                 symbol={firstSymbol}
                 interval={result.interval}
                 className="study-chart"
+                onResetZoom={resetChartView}
+                onPriceCacheCleared={onPriceCacheCleared}
                 options={studyPriceChartOptions}
                 attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(firstSymbol)}`}
                 candleAt={time => candlesByDateRef.current[0]?.get(timeKey(time))}
@@ -597,7 +572,6 @@ export function StudyCharts({
                 onDestroy={() => { stopChartsRef.current?.(); priceContexts.current[0] = null; }}
               />
             )}
-            interval={result.interval}
             companyName={result.series[0].company_name ?? undefined}
             readout={(
               <ChartCandleReadoutForDate
@@ -606,12 +580,9 @@ export function StudyCharts({
               />
             )}
             onPointerEnter={() => setCrosshairOwner(0)}
-            showRelativeStrength={!bottomRs && result.relative_strength !== null ? showRelativeStrength : undefined}
-            onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}
             onWheel={markWheelInteraction}
-            onContextMenu={openChartMenu}
           />
         )}
         second={(
@@ -622,6 +593,8 @@ export function StudyCharts({
                 symbol={secondSymbol}
                 interval={result.interval}
                 className="study-chart"
+                onResetZoom={resetChartView}
+                onPriceCacheCleared={onPriceCacheCleared}
                 options={studyPriceChartOptions}
                 attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(secondSymbol)}`}
                 candleAt={time => candlesByDateRef.current[1]?.get(timeKey(time))}
@@ -629,25 +602,16 @@ export function StudyCharts({
                 onDestroy={() => { stopChartsRef.current?.(); priceContexts.current[1] = null; }}
               />
             )}
-            interval={result.interval}
             companyName={result.series[1]?.company_name ?? undefined}
             readout={result.series[1] !== undefined && (
               <ChartCandleReadoutForDate series={result.series[1]} date={hoveredDate} />
             )}
-            showRelativeStrength={bottomRs && result.relative_strength !== null ? showRelativeStrength : undefined}
-            onToggleRelativeStrength={() => setShowRelativeStrength((visible) => !visible)}
             onPointerEnter={() => setCrosshairOwner(1)}
             onPointerDown={markPointerInteraction}
             onPointerMove={markChartDrag}
             onWheel={markWheelInteraction}
-            onContextMenu={openChartMenu}
           />
         )}
-      />
-      <ChartContextMenu
-        position={chartMenuPosition}
-        onClose={() => setChartMenuPosition(null)}
-        onResetView={resetChartView}
       />
     </>
   );
@@ -727,29 +691,21 @@ function addRelativeStrength(
 }
 
 function ChartContainer({
-  interval,
   canvas,
   companyName,
   readout,
   onPointerEnter,
-  showRelativeStrength,
-  onToggleRelativeStrength,
   onPointerDown,
   onPointerMove,
   onWheel,
-  onContextMenu,
 }: {
-  interval: StudyResult["interval"];
   canvas: ReactNode;
   companyName?: string;
   readout?: ReactNode;
   onPointerEnter: () => void;
-  showRelativeStrength?: boolean;
-  onToggleRelativeStrength?: () => void;
   onPointerDown: () => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
   onWheel: () => void;
-  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const companyLabel = companyName === undefined
     ? undefined
@@ -761,32 +717,14 @@ function ChartContainer({
       onPointerDownCapture={onPointerDown}
       onPointerMoveCapture={onPointerMove}
       onWheelCapture={onWheel}
-      onContextMenu={onContextMenu}
     >
       {canvas}
       <div className="study-chart-header">
-        {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
+        {companyLabel !== undefined && (
           <div className="study-chart-labels">
-            <div className="study-chart-label-row">
-              {companyLabel !== undefined && (
-                <div className="study-chart-company-name" title={companyName}>
-                  {companyLabel}
-                </div>
-              )}
-              {showRelativeStrength !== undefined && (
-                <button
-                  type="button"
-                  className="study-chart-rs-toggle"
-                  aria-label={`${showRelativeStrength ? "Hide" : "Show"} relative strength`}
-                  aria-pressed={showRelativeStrength}
-                  title={`${showRelativeStrength ? "Hide" : "Show"} Relative Strength`}
-                  onClick={onToggleRelativeStrength}
-                >
-                  RS
-                </button>
-              )}
+            <div className="study-chart-company-name" title={companyName}>
+              {companyLabel}
             </div>
-            {showRelativeStrength !== undefined && <RelativeStrengthSlider interval={interval} />}
           </div>
         )}
         {readout}

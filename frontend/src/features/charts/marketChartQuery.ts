@@ -1,7 +1,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
   fetchMarketChartHistorySnapshot, fetchMarketChartSnapshot, marketDataSymbol,
-  refreshMarketChartSnapshot, type MarketChartInterval, type MarketChartSnapshot,
+  type MarketChartInterval, type MarketChartSnapshot,
 } from "../../api/marketChart";
 import { applyHistoryExpansion, loadedHistoryRange, previousHistoryRange } from "./chartHistory";
 
@@ -61,7 +61,7 @@ export function displayedChartSnapshot(client: QueryClient, request: MarketChart
   return widest === undefined ? undefined : { ...widest, relative_strength: null };
 }
 
-type ChartOperation = "load" | "history" | "refresh";
+type ChartOperation = "load" | "history";
 
 function options(client: QueryClient, request: MarketChartRequest, operation: ChartOperation) {
   const queryKey = marketChartKey(request);
@@ -81,9 +81,7 @@ function options(client: QueryClient, request: MarketChartRequest, operation: Ch
         relativeStrengthPeriod: request.relativeStrengthPeriod, signal };
       if (operation !== "history") {
         // A cached historical end date cannot tell us whether a new session exists.
-        const refreshed = operation === "refresh"
-          ? await refreshMarketChartSnapshot(request.symbol, request.interval, fetchOptions)
-          : await fetchMarketChartSnapshot(request.symbol, request.interval, fetchOptions);
+        const refreshed = await fetchMarketChartSnapshot(request.symbol, request.interval, fetchOptions);
         if (widest === undefined || covers(refreshed, widest)) return refreshed;
         range = loadedHistoryRange({ ...refreshed, earliest_date: widest.earliest_date,
           latest_date: (refreshed.latest_date ?? "") > (widest.latest_date ?? "") ? refreshed.latest_date : widest.latest_date });
@@ -100,13 +98,11 @@ export const marketChartQueryOptions = (client: QueryClient, request: MarketChar
 
 export async function fetchChartOperation(client: QueryClient, input: MarketChartRequest, operation: ChartOperation) {
   const request = marketChartRequest(input);
-  const queryKey = marketChartKey(request);
   if (operation === "history") {
     const snapshot = widestSnapshot(client, request);
     if (snapshot === undefined || !snapshot.has_more_before || snapshot.earliest_date === null || snapshot.latest_date === null
       || previousHistoryRange(snapshot.earliest_date, snapshot.latest_date, request.interval) === undefined) return snapshot;
   }
-  if (operation === "refresh") await client.cancelQueries({ queryKey, exact: true });
   // fetchQuery shares any in-flight request for this resource and owns cancellation/errors.
   return client.fetchQuery({ ...options(client, request, operation), staleTime: 0 });
 }

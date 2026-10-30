@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  type MouseEventHandler,
 } from "react";
 import {
   createChart,
@@ -25,6 +26,7 @@ interface ChartHostProps {
   options?: DeepPartial<ChartOptions>;
   useGlobalPriceScale?: boolean;
   attributionUrl?: string;
+  onContextMenu?: MouseEventHandler<HTMLDivElement>;
   onChartReady?: (chart: IChartApi) => void;
   onChartDestroy?: (chart: IChartApi) => void;
 }
@@ -36,6 +38,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     options,
     useGlobalPriceScale = false,
     attributionUrl,
+    onContextMenu,
     onChartReady,
     onChartDestroy,
   }, ref) {
@@ -108,6 +111,7 @@ export const ChartHost = forwardRef<ChartHostHandle, ChartHostProps>(
     return (
       <div
         ref={containerRef}
+        onContextMenu={onContextMenu}
         className={className}
         aria-label={ariaLabel}
         style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}

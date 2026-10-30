@@ -16,6 +16,7 @@ import {
   type CandlePalette,
   type RelativeStrengthLineStyle,
 } from "./AppSettings";
+import { RelativeStrengthSmoothingControl } from "./RelativeStrengthSmoothingControl";
 import { candleSeriesOptions } from "../components/lightweight-chart/chartOptions";
 
 const lineStyles: Array<{
@@ -38,9 +39,10 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
     gridOpacity, setGridOpacity,
     fiveEmaOpacity, setFiveEmaOpacity,
     relativeStrengthLineStyle, setRelativeStrengthLineStyle,
-    relativeStrengthDisplay, setRelativeStrengthDisplay,
+    showRelativeStrength, setShowRelativeStrength,
     showWeeklyChartOverlay, setShowWeeklyChartOverlay,
     showWeeklyOverlayAxes, setShowWeeklyOverlayAxes,
+    showWeeklyOverlayRelativeStrength, setShowWeeklyOverlayRelativeStrength,
     syncWeeklyOverlayCrosshair, setSyncWeeklyOverlayCrosshair,
   } = useAppSettings();
   const scaleLabelId = useId();
@@ -110,19 +112,17 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
             checked={showCandleReadout}
             onChange={setShowCandleReadout}
           />
-          <div className="settings-choice-row">
-            <span className="settings-control-label">RS display</span>
-            <ToggleButtonGroup className="settings-choice-segments settings-visual-choices" exclusive size="small"
-              value={relativeStrengthDisplay} aria-label="RS display"
-              onChange={(_, value) => {
-                if (value === "top-line" || value === "bottom-line") setRelativeStrengthDisplay(value);
-              }}>
-              <ToggleButton value="top-line" aria-label="Top RS line"><RelativeStrengthSample /> Top line</ToggleButton>
-              <ToggleButton value="bottom-line" aria-label="Bottom RS line"><RelativeStrengthSample bottom /> Bottom line</ToggleButton>
-            </ToggleButtonGroup>
-          </div>
+          <OpacityControl label="5 EMA opacity" value={fiveEmaOpacity} onChange={setFiveEmaOpacity} />
+        </SettingsSection>
+
+        <SettingsSection title="RS Line">
+          <SettingsSwitch
+            label="Show RS"
+            checked={showRelativeStrength}
+            onChange={setShowRelativeStrength}
+          />
           <div className="settings-control">
-            <span className="settings-control-label">Relative strength line</span>
+            <span className="settings-control-label">RS Line Style</span>
             <ToggleButtonGroup
               className="settings-line-styles"
               exclusive fullWidth size="small"
@@ -141,7 +141,8 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               ))}
             </ToggleButtonGroup>
           </div>
-          <OpacityControl label="5 EMA opacity" value={fiveEmaOpacity} onChange={setFiveEmaOpacity} />
+          <RelativeStrengthSmoothingControl interval="daily" label="Daily smoothing" />
+          <RelativeStrengthSmoothingControl interval="weekly" label="Weekly Smoothing" />
         </SettingsSection>
 
         <SettingsSection title="Weekly overlay">
@@ -152,6 +153,12 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           />
           <p className="settings-shortcut"><kbd>Alt / Option</kbd><span>+</span><kbd>W</kbd></p>
           <div className="settings-overlay-options">
+            <SettingsSwitch
+              label="Show RS Line"
+              checked={showWeeklyOverlayRelativeStrength}
+              onChange={setShowWeeklyOverlayRelativeStrength}
+              disabled={!showWeeklyChartOverlay}
+            />
             <SettingsSwitch
               label="Price & time axes"
               checked={showWeeklyOverlayAxes}
@@ -232,16 +239,6 @@ function PriceScaleSample({ logarithmic = false }: { logarithmic?: boolean }) {
         d={logarithmic ? "M6 14C8 6 13 4 21 3" : "M6 14L21 3"}
         fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-function RelativeStrengthSample({ bottom = false }: { bottom?: boolean }) {
-  return (
-    <svg className="settings-scale-sample" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M2 1h20v10H2zM2 13h20v10H2z" fill="none" stroke="currentColor" opacity="0.35" />
-      <path d={bottom ? "M4 20l4-3 4 2 4-4 4 1" : "M4 8l4-3 4 2 4-4 4 1"}
-        fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

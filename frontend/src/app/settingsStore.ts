@@ -7,7 +7,6 @@ import { defaultRelativeStrengthPeriods, validRelativeStrengthPeriod } from "./r
 const settingsKey = "market-watch.settings.v1";
 
 export type CandlePalette = "solid" | "hollow" | "monochrome";
-type RelativeStrengthDisplay = "top-line" | "bottom-line";
 export type RelativeStrengthLineStyle =
   | "solid"
   | "dashed"
@@ -20,12 +19,13 @@ type StoredSettings = {
   showCandleReadout: boolean;
   showWeeklyChartOverlay: boolean;
   showWeeklyOverlayAxes: boolean;
+  showWeeklyOverlayRelativeStrength: boolean;
   syncWeeklyOverlayCrosshair: boolean;
   candlePalette: CandlePalette;
   fiveEmaOpacity: number;
   gridOpacity: number;
+  showRelativeStrength: boolean;
   relativeStrengthLineStyle: RelativeStrengthLineStyle;
-  relativeStrengthDisplay: RelativeStrengthDisplay;
   relativeStrengthPeriods: Record<MarketChartInterval, number>;
 };
 
@@ -35,18 +35,19 @@ type AppSettingsValue = StoredSettings & {
   setShowCandleReadout: (show: boolean) => void;
   setShowWeeklyChartOverlay: (show: boolean) => void;
   setShowWeeklyOverlayAxes: (show: boolean) => void;
+  setShowWeeklyOverlayRelativeStrength: (show: boolean) => void;
   setSyncWeeklyOverlayCrosshair: (sync: boolean) => void;
   setCandlePalette: (candlePalette: CandlePalette) => void;
   setFiveEmaOpacity: (opacity: number) => void;
   setGridOpacity: (opacity: number) => void;
+  setShowRelativeStrength: (show: boolean) => void;
   setRelativeStrengthLineStyle: (style: RelativeStrengthLineStyle) => void;
-  setRelativeStrengthDisplay: (display: RelativeStrengthDisplay) => void;
   setRelativeStrengthPeriod: (interval: MarketChartInterval, period: number) => void;
 };
 
 function readSettings(): StoredSettings {
   try {
-    const value = JSON.parse(localStorage.getItem(settingsKey) ?? "{}") as Partial<Omit<StoredSettings, "relativeStrengthDisplay">> & { relativeStrengthDisplay?: unknown };
+    const value = JSON.parse(localStorage.getItem(settingsKey) ?? "{}") as Partial<StoredSettings>;
     const dailyRsPeriod = value.relativeStrengthPeriods?.daily;
     const weeklyRsPeriod = value.relativeStrengthPeriods?.weekly;
     return {
@@ -57,12 +58,12 @@ function readSettings(): StoredSettings {
       showWeeklyChartOverlay: value.showWeeklyChartOverlay === true,
       showCandleReadout: value.showCandleReadout !== false,
       showWeeklyOverlayAxes: value.showWeeklyOverlayAxes !== false,
+      showWeeklyOverlayRelativeStrength: value.showWeeklyOverlayRelativeStrength !== false,
       syncWeeklyOverlayCrosshair: value.syncWeeklyOverlayCrosshair === true,
       candlePalette: validCandlePalette(value.candlePalette) ? value.candlePalette : "solid",
       fiveEmaOpacity: validOpacity(value.fiveEmaOpacity) ? value.fiveEmaOpacity : 0.9,
       gridOpacity: validOpacity(value.gridOpacity) ? value.gridOpacity : 1,
-      relativeStrengthDisplay: value.relativeStrengthDisplay === "bottom-line" || value.relativeStrengthDisplay === "bottom-bars"
-        ? "bottom-line" : "top-line",
+      showRelativeStrength: value.showRelativeStrength !== false,
       relativeStrengthLineStyle: validRelativeStrengthLineStyle(value.relativeStrengthLineStyle)
         ? value.relativeStrengthLineStyle
         : "large-dashed",
@@ -80,12 +81,13 @@ function readSettings(): StoredSettings {
       showWeeklyChartOverlay: false,
       showCandleReadout: true,
       showWeeklyOverlayAxes: true,
+      showWeeklyOverlayRelativeStrength: true,
       syncWeeklyOverlayCrosshair: false,
       candlePalette: "solid",
       fiveEmaOpacity: 0.9,
       gridOpacity: 1,
+      showRelativeStrength: true,
       relativeStrengthLineStyle: "large-dashed",
-      relativeStrengthDisplay: "top-line",
       relativeStrengthPeriods: defaultRelativeStrengthPeriods,
     };
   }
@@ -138,6 +140,8 @@ export const useSettingsStore = create<SettingsState>()(persist((set) => {
         update((current) => ({ ...current, showWeeklyChartOverlay })),
       setShowWeeklyOverlayAxes: (showWeeklyOverlayAxes) =>
         update((current) => ({ ...current, showWeeklyOverlayAxes })),
+      setShowWeeklyOverlayRelativeStrength: (showWeeklyOverlayRelativeStrength) =>
+        update((current) => ({ ...current, showWeeklyOverlayRelativeStrength })),
       setSyncWeeklyOverlayCrosshair: (syncWeeklyOverlayCrosshair) =>
         update((current) => ({ ...current, syncWeeklyOverlayCrosshair })),
       setCandlePalette: (candlePalette) =>
@@ -146,8 +150,6 @@ export const useSettingsStore = create<SettingsState>()(persist((set) => {
         update((current) => ({ ...current, fiveEmaOpacity })),
       setGridOpacity: (gridOpacity) =>
         update((current) => ({ ...current, gridOpacity })),
-      setRelativeStrengthDisplay: (relativeStrengthDisplay) =>
-        update((current) => ({ ...current, relativeStrengthDisplay })),
       setRelativeStrengthPeriod: (interval, period) => {
         if (!validRelativeStrengthPeriod(interval, period)) return;
         update((current) => current.relativeStrengthPeriods[interval] === period ? current : ({
@@ -155,6 +157,8 @@ export const useSettingsStore = create<SettingsState>()(persist((set) => {
           relativeStrengthPeriods: { ...current.relativeStrengthPeriods, [interval]: period },
         }));
       },
+      setShowRelativeStrength: (showRelativeStrength) =>
+        update((current) => ({ ...current, showRelativeStrength })),
       setRelativeStrengthLineStyle: (relativeStrengthLineStyle) =>
         update((current) => ({ ...current, relativeStrengthLineStyle })),
     },
