@@ -10,11 +10,7 @@ import { Button, CircularProgress, Typography } from "@mui/material";
 import type { LogicalRange } from "lightweight-charts";
 import {
   marketDataSymbol,
-  fetchMarketChartHistorySnapshot,
-  fetchMarketChartSnapshot,
-  refreshMarketChartSnapshot,
   type MarketChartInterval,
-  type MarketChartSnapshot,
   type MarketChartRelativeStrength,
 } from "../../api/marketChart";
 import type {
@@ -27,18 +23,9 @@ import type {
   ChartSyncTarget,
   ChartViewport,
 } from "../../components/lightweight-chart/chartSync";
-import {
-  applyHistoryExpansion,
-  loadedHistoryRange,
-  previousHistoryRange,
-} from "./chartHistory";
+import { useMarketChartQuery } from "./useMarketChartQuery";
 import "./market-chart.css";
 import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
-
-type LoadState =
-  | { key: string; status: "loading" }
-  | { key: string; status: "ready"; snapshot: MarketChartSnapshot }
-  | { key: string; status: "error"; message: string };
 
 export interface ChartHistoryInteractionTracker {
   sequence: number;
@@ -122,12 +109,6 @@ export function MarketChartContainer({
   const selectedRsPeriod = useRelativeStrengthPeriod(interval);
   const rsPeriod = relativeStrengthComparisonSymbol === undefined ? undefined : selectedRsPeriod;
   const datasetKey = `${symbol}\0${interval}`;
-  const requestKey = `${datasetKey}\0${relativeStrengthComparisonSymbol ?? "plain"}\0${rsPeriod ?? "plain"}`;
-  const generationRef = useRef(0);
-  const snapshotRef = useRef<MarketChartSnapshot | undefined>(undefined);
-  const snapshotDatasetKeyRef = useRef<string | undefined>(undefined);
-  const historyControllerRef = useRef<AbortController | null>(null);
-  const handledHistoryTriggerRef = useRef(0);
   const handledInteractionSequenceRef = useRef(0);
   const localInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
     sequence: 0,
@@ -137,31 +118,28 @@ export function MarketChartContainer({
   const onErrorRef = useRef(onError);
   const onChartContextRef = useRef(onChartContext);
   const onLoadStatusChangeRef = useRef(onLoadStatusChange);
-  const onRefreshSettledRef = useRef(onRefreshSettled);
-  const handledRefreshVersionRef = useRef(refreshCandlesVersion);
-  const [loadState, setLoadState] = useState<LoadState>();
-  const [snapshot, setSnapshot] = useState<MarketChartSnapshot>();
-  const [retryVersion, setRetryVersion] = useState(0);
   const [chartContext, setChartContext] = useState<ChartSyncTarget | null>(null);
-  const [historyTrigger, setHistoryTrigger] = useState(0);
-  useEffect(() => {
-    snapshotRef.current = snapshot;
-  }, [snapshot]);
+  const { snapshot, status, error, fetching, failed, loadHistory, retry } = useMarketChartQuery({
+    symbol, interval, comparisonSymbol: relativeStrengthComparisonSymbol, relativeStrengthPeriod: rsPeriod,
+    refreshVersion: refreshCandlesVersion, reloadVersion, onRefreshSettled,
+  });
 
   useEffect(() => {
     const comparison = relativeStrengthComparisonSymbol === undefined
       ? undefined : marketDataSymbol(relativeStrengthComparisonSymbol);
-    onRelativeStrengthChange?.(snapshotDatasetKeyRef.current === datasetKey
-      && snapshot?.relative_strength?.comparison_symbol === comparison
-      ? snapshot?.relative_strength ?? null : null);
-  }, [datasetKey, onRelativeStrengthChange, relativeStrengthComparisonSymbol, snapshot]);
+    const rs = snapshot?.relative_strength;
+    onRelativeStrengthChange?.(rs?.comparison_symbol === comparison
+      && rs?.line.moving_average_period === rsPeriod ? rs ?? null : null);
+  }, [onRelativeStrengthChange, relativeStrengthComparisonSymbol, rsPeriod, snapshot]);
 
   useEffect(() => {
     onErrorRef.current = onError;
     onChartContextRef.current = onChartContext;
     onLoadStatusChangeRef.current = onLoadStatusChange;
-    onRefreshSettledRef.current = onRefreshSettled;
-  }, [onChartContext, onError, onLoadStatusChange, onRefreshSettled]);
+  }, [onChartContext, onError, onLoadStatusChange]);
+  useEffect(() => { onErrorRef.current?.(error); }, [error]);
+  useEffect(() => { onLoadStatusChangeRef.current?.(status); }, [datasetKey, status]);
+  useEffect(() => () => { onErrorRef.current?.(undefined); }, []);
 
   const handleChartContext = useCallback((context: ChartSyncTarget | null) => {
     setChartContext(context);
@@ -178,109 +156,6 @@ export function MarketChartContainer({
   };
 
   useEffect(() => {
-    const generation = ++generationRef.current;
-    const controller = new AbortController();
-    const currentSnapshot = snapshotRef.current;
-    const refreshCandles = handledRefreshVersionRef.current !== refreshCandlesVersion;
-    handledRefreshVersionRef.current = refreshCandlesVersion;
-    let refreshSettled = false;
-    const settleRefresh = (succeeded: boolean) => {
-      if (!refreshCandles || refreshSettled) return;
-      refreshSettled = true;
-      onRefreshSettledRef.current?.(refreshCandlesVersion, succeeded);
-    };
-    const sameDataset = currentSnapshot !== undefined
-      && snapshotDatasetKeyRef.current === datasetKey;
-    const backgroundReload = sameDataset && !refreshCandles;
-    if (backgroundReload) {
-      onLoadStatusChangeRef.current?.("ready");
-      setLoadState({
-        key: datasetKey,
-        status: "ready",
-        snapshot: currentSnapshot,
-      });
-      const comparison = relativeStrengthComparisonSymbol === undefined
-        ? undefined : marketDataSymbol(relativeStrengthComparisonSymbol);
-      if (currentSnapshot.relative_strength?.comparison_symbol !== comparison) {
-        setSnapshot((current) => current === undefined
-          ? current : { ...current, relative_strength: null });
-      }
-    } else {
-      onLoadStatusChangeRef.current?.("loading");
-      setLoadState({ key: datasetKey, status: "loading" });
-    }
-    onErrorRef.current?.(undefined);
-
-    const request = refreshCandles
-      ? refreshMarketChartSnapshot
-      : fetchMarketChartSnapshot;
-    const options = {
-      comparisonSymbol: relativeStrengthComparisonSymbol,
-      relativeStrengthPeriod: rsPeriod,
-      signal: controller.signal,
-    };
-    // Recalculate RS across all loaded candles without replacing the price dataset.
-    const range = backgroundReload ? loadedHistoryRange(currentSnapshot) : undefined;
-    const pending = range !== undefined
-      ? fetchMarketChartHistorySnapshot(symbol, interval, range.start, range.end, options)
-      : request(symbol, interval, options);
-    void pending
-      .then((snapshot) => {
-        if (generationRef.current !== generation) return;
-        if (backgroundReload) {
-          setSnapshot((current) => (
-            current === undefined || snapshotDatasetKeyRef.current !== datasetKey
-              ? current
-              : { ...current, relative_strength: snapshot.relative_strength }
-          ));
-        } else {
-          snapshotDatasetKeyRef.current = datasetKey;
-          setSnapshot(snapshot);
-          setLoadState({ key: datasetKey, status: "ready", snapshot });
-          onLoadStatusChangeRef.current?.("ready");
-          settleRefresh(true);
-        }
-      })
-      .catch((error: unknown) => {
-        if (
-          generationRef.current !== generation
-          || (error instanceof Error && error.name === "AbortError")
-        ) return;
-        const message = error instanceof Error ? error.message : "Failed to load market chart";
-        if (refreshCandles && sameDataset) {
-          setLoadState({ key: datasetKey, status: "ready", snapshot: currentSnapshot });
-          onLoadStatusChangeRef.current?.("ready");
-        } else if (!backgroundReload) {
-          setLoadState({
-            key: datasetKey,
-            status: "error",
-            message,
-          });
-          onLoadStatusChangeRef.current?.("error");
-        }
-        onErrorRef.current?.(message);
-        settleRefresh(false);
-      });
-
-    return () => {
-      controller.abort();
-      if (generationRef.current === generation) generationRef.current += 1;
-      onErrorRef.current?.(undefined);
-      settleRefresh(false);
-    };
-  }, [
-    datasetKey,
-    interval,
-    refreshCandlesVersion,
-    relativeStrengthComparisonSymbol,
-    rsPeriod,
-    reloadVersion,
-    requestKey,
-    retryVersion,
-    symbol,
-  ]);
-
-  useEffect(() => {
     if (chartContext === null) return;
     const timeScale = chartContext.chart.timeScale();
     const handleRange = (range: LogicalRange | null) => {
@@ -288,12 +163,13 @@ export function MarketChartContainer({
       if (
         range === null
         || range.from > historyLoadThresholdBars
-        || historyControllerRef.current !== null
+        || fetching
+        || status !== "ready"
         || handledInteractionSequenceRef.current === interactionTracker.sequence
         || performance.now() - interactionTracker.occurredAt > chartInteractionWindowMs
       ) return;
       handledInteractionSequenceRef.current = interactionTracker.sequence;
-      setHistoryTrigger((current) => current + 1);
+      loadHistory();
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRange);
     return () => {
@@ -301,13 +177,14 @@ export function MarketChartContainer({
         timeScale.unsubscribeVisibleLogicalRangeChange(handleRange);
       }
     };
-  }, [chartContext, interactionTrackerRef]);
+  }, [chartContext, fetching, interactionTrackerRef, loadHistory, status]);
 
-  const state = loadState?.key === datasetKey ? loadState : undefined;
   useEffect(() => {
     if (
       chartContext === null
-      || state?.status !== "ready"
+      || status !== "ready"
+      || fetching
+      || failed
       || snapshot === undefined
       || snapshot.interval !== interval
       || !snapshot.has_more_before
@@ -316,87 +193,17 @@ export function MarketChartContainer({
     ) return;
 
     const timeout = window.setTimeout(() => {
-      if (chartContext.isDisposed() || historyControllerRef.current !== null) return;
+      if (chartContext.isDisposed()) return;
       const range = chartContext.chart.timeScale().getVisibleLogicalRange();
       if (range === null) return;
       const bars = chartContext.candleSeries.barsInLogicalRange(range);
       if (bars !== null && bars.barsBefore < 0) {
-        setHistoryTrigger((current) => current + 1);
+        loadHistory();
       }
     }, automaticHistoryCheckDelayMs);
 
     return () => window.clearTimeout(timeout);
-  }, [chartContext, interval, snapshot, state?.status]);
-
-  useEffect(() => {
-    if (handledHistoryTriggerRef.current === historyTrigger) return;
-    handledHistoryTriggerRef.current = historyTrigger;
-    if (
-      state?.status !== "ready"
-      || snapshot === undefined
-      || snapshot.interval !== interval
-      || !snapshot.has_more_before
-      || snapshot.earliest_date === null
-      || snapshot.latest_date === null
-    ) return;
-    const range = previousHistoryRange(
-      snapshot.earliest_date,
-      snapshot.latest_date,
-      interval,
-    );
-    if (range === undefined) return;
-    const generation = generationRef.current;
-
-    const controller = new AbortController();
-    historyControllerRef.current = controller;
-    void fetchMarketChartHistorySnapshot(
-      symbol,
-      interval,
-      range.start,
-      range.end,
-      {
-        comparisonSymbol: relativeStrengthComparisonSymbol,
-        relativeStrengthPeriod: rsPeriod,
-        signal: controller.signal,
-      },
-    )
-      .then((expanded) => {
-        if (generationRef.current !== generation) return;
-        setSnapshot((current) => current === undefined
-          ? expanded
-          : applyHistoryExpansion(current, expanded));
-      })
-      .catch((error: unknown) => {
-        if (
-          generationRef.current !== generation
-          || (error instanceof Error && error.name === "AbortError")
-        ) return;
-        const message = error instanceof Error
-          ? error.message
-          : "Failed to load market chart history";
-        onErrorRef.current?.(message);
-      })
-      .finally(() => {
-        if (historyControllerRef.current === controller) {
-          historyControllerRef.current = null;
-        }
-      });
-    return () => {
-      controller.abort();
-      if (historyControllerRef.current === controller) {
-        historyControllerRef.current = null;
-      }
-    };
-  }, [
-    historyTrigger,
-    interval,
-    relativeStrengthComparisonSymbol,
-    rsPeriod,
-    requestKey,
-    snapshot,
-    state?.status,
-    symbol,
-  ]);
+  }, [chartContext, failed, fetching, interval, loadHistory, snapshot, status]);
 
   return (
     <div
@@ -430,14 +237,14 @@ export function MarketChartContainer({
           sessionDelta={sessionDelta}
         />
       )}
-      {state?.status === "error" ? (
+      {status === "error" ? (
         <div className="panel-status market-chart-overlay">
-          <Typography color="error">{state.message}</Typography>
-          <Button size="small" variant="outlined" onClick={() => setRetryVersion((value) => value + 1)}>
+          <Typography color="error">{error}</Typography>
+          <Button size="small" variant="outlined" onClick={() => { void retry(); }}>
             Retry
           </Button>
         </div>
-      ) : showLoadingOverlay && state?.status !== "ready" ? (
+      ) : showLoadingOverlay && status !== "ready" ? (
         <div className="panel-status market-chart-overlay">
           <CircularProgress size="1rem" />
           <Typography color="text.secondary">Loading chart</Typography>

@@ -58,9 +58,8 @@ export function applyHistoryExpansion(
       (candle, index) => candle.date === expanded.candles[index]?.date,
     );
   if (!sameCandleDates) return expanded;
-  if (!current.has_more_before) return current;
   return {
-    ...current,
+    ...expanded,
     has_more_before: false,
   };
 }
