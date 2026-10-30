@@ -137,6 +137,28 @@ test("ticker metrics share the global channel, survive completion, and restore d
   release(); events.stop();
 });
 
+test("filter counts stream independently of visible rows and reset on refresh", () => {
+  const { events, socket } = setup();
+  const metrics = new TickerMetricsSubscriptions(events);
+  const resource = { selection: { type: "industries", keys: ["counts"] }, filters: disabledTickerFilters };
+  const release = metrics.observe(resource);
+  const id = socket.sent.at(-1).subscription_id;
+  const update = state => socket.receive({ type: "snapshot", subscription_id: id, payload: { domain: "tickers", state } });
+  const cached = () => queryClient.getQueryData(tickerMetricsKey(resource));
+  update({ type: "reset", total: 10 });
+  const excluded = { adr: 6, dollarVolume: 7, above200Sma: 4 };
+  update({ type: "filter_counts", excluded });
+  update({ type: "complete" });
+  assert.deepEqual(cached().excluded, excluded, "Independent counts can overlap, even with no visible rows");
+  update({ type: "filter_counts", excluded: { ...excluded, adr: 5 } });
+  assert.equal(cached().excluded.adr, 5, "Counts continue after completion");
+  update({ type: "reset", total: 2 });
+  assert.equal(cached().excluded, undefined, "Refresh must not display counts from the previous universe");
+  update({ type: "filter_counts", excluded: { adr: -1, dollarVolume: 0, above200Sma: 0 } });
+  assert.equal(socket.code, 1002, "Malformed counts are rejected at the boundary");
+  release(); events.stop();
+});
+
 test("stale cache remains readable while acquisition waits for its settled snapshot", async () => {
   const { events, socket, industry } = setup();
   assert.equal(socket.url, "wss://market.test/api/events");

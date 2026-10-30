@@ -17,6 +17,9 @@ export type TickerLensPreferences = {
   expandedSectors: string[];
   filters: TickerFilters;
   filtersPinned: boolean;
+  filterAnchor?: number;
+  groupWidth?: number;
+  groupsCollapsed?: boolean;
 };
 
 export function createDefaultPreferences(): TickerLensPreferences {
@@ -46,6 +49,11 @@ export function isPreferences(value: unknown): value is TickerLensPreferences {
     || !sort(value.tickerSort, tickerSortOptions.map(option => option.key))
     || typeof value.groupBySector !== "boolean" || typeof value.filtersPinned !== "boolean"
     || !Array.isArray(value.expandedSectors) || !value.expandedSectors.every(key => typeof key === "string")) return false;
+  if (value.filterAnchor !== undefined && (typeof value.filterAnchor !== "number"
+    || !Number.isFinite(value.filterAnchor) || value.filterAnchor < 0)) return false;
+  if (value.groupWidth !== undefined && (typeof value.groupWidth !== "number"
+    || !Number.isFinite(value.groupWidth) || value.groupWidth <= 0)) return false;
+  if (value.groupsCollapsed !== undefined && typeof value.groupsCollapsed !== "boolean") return false;
   const filters = value.filters;
   if (!record(filters)) return false;
   const threshold = (item: unknown, max: number) => record(item) && typeof item.enabled === "boolean"

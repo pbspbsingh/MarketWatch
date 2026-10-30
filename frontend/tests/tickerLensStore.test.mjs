@@ -82,6 +82,7 @@ test("persistence saves preferences, never session selections or custom metrics"
   store.getState().setSelectedTicker("NVDA");
   store.getState().setGroupsCollapsed(true);
   store.getState().setExpandedSectors(new Set(["technology"]));
+  store.getState().setFilterAnchor(396);
   const saved = JSON.parse(storage.getItem(preferenceKey));
   assert.deepEqual(Object.keys(saved.state), ["preferences"]);
   assert.deepEqual(saved.state.preferences.tickerSort, { key: "week", direction: "asc" });
@@ -90,12 +91,31 @@ test("persistence saves preferences, never session selections or custom metrics"
   const restored = createTickerLensStore({ storage });
   assert.equal(restored.getState().selectedGroupKeys.size, 0);
   assert.equal(restored.getState().selectedTicker, undefined);
-  assert.equal(restored.getState().groupsCollapsed, false);
+  assert.equal(restored.getState().preferences.groupsCollapsed, true);
   assert.equal(restored.getState().metricSort, undefined);
   assert.deepEqual(restored.getState().preferences.tickerSort, { key: "week", direction: "asc" });
+  assert.equal(restored.getState().preferences.filterAnchor, 396);
+  assert.equal(restored.getState().preferences.filtersPinned, false);
   const custom = createTickerLensStore({ storage, defaultMetricSort: { metricId: "highest-return", direction: "desc" } });
   assert.equal(custom.getState().metricSort.key, "metric:highest-return");
   assert.deepEqual(custom.getState().preferences.tickerSort, { key: "week", direction: "asc" });
+});
+
+test("group resizing folds below its minimum and preserves the expanded width", () => {
+  const storage = memoryStorage();
+  const store = createTickerLensStore({ storage });
+  store.getState().setGroupWidth(430);
+  store.getState().setGroupWidth(223);
+  assert.equal(store.getState().preferences.groupsCollapsed, true);
+  assert.equal(createTickerLensStore({ storage }).getState().preferences.groupsCollapsed, true);
+  assert.equal(store.getState().preferences.groupWidth, 430);
+  store.getState().setGroupsCollapsed(false);
+  assert.equal(store.getState().preferences.groupWidth, 430);
+  assert.equal(createTickerLensStore({ storage }).getState().preferences.groupWidth, 430);
+  store.getState().setGroupWidth(224);
+  assert.equal(store.getState().preferences.groupsCollapsed, false);
+  store.getState().setGroupWidth(900);
+  assert.equal(store.getState().preferences.groupWidth, 640);
 });
 
 test("filter thresholds persist, while enabled flags survive reload only when pinned", () => {

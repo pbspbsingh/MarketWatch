@@ -133,15 +133,7 @@ export function TickerLensSearch({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLocaleLowerCase() === "f" &&
-        document.querySelector('[role="dialog"][aria-modal="true"]') === null
-      ) {
-        event.preventDefault();
-        setOpen(true);
-        focusQuery(true);
-      } else if (event.key === "Escape" && open) {
+      if (event.key === "Escape" && open) {
         event.preventDefault();
         if (query !== "") updateQuery("");
         else setOpen(false);
@@ -178,7 +170,7 @@ export function TickerLensSearch({
 
   if (!open) {
     return (
-      <Tooltip title="Search groups and tickers (Ctrl/Cmd+F)">
+      <Tooltip title="Search groups and tickers">
         <IconButton
           className="ticker-lens-search-toggle"
           size="small"

@@ -1,7 +1,5 @@
 import type { TickerSelection } from "../../api/generated/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import { IconButton, Tooltip } from "@mui/material";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAppSettings } from "../../app/AppSettings";
 import { fetchSectorRankings, type SectorRanking } from "../../api/industries";
@@ -16,6 +14,7 @@ import {
 import { ChartPanel } from "./ChartPanel";
 import { fetchThemeGroupRankings } from "./groupRankings";
 import { GroupPanel } from "./GroupPanel";
+import { GroupDivider } from "./GroupDivider";
 import { TickerPanel } from "./TickerPanel";
 import { TickerLensFilters } from "./TickerLensFilters";
 import { useIndustryData } from "../../api/industryData";
@@ -115,12 +114,15 @@ function TickerLensContent({
   const setSelectedGroupKeys = useTickerLensState(state => state.setSelectedGroupKeys);
   const selectedTicker = useTickerLensState(state => state.selectedTicker);
   const setSelectedTicker = useTickerLensState(state => state.setSelectedTicker);
-  const groupsCollapsed = useTickerLensState(state => state.groupsCollapsed);
+  const groupsCollapsed = useTickerLensState(state => state.preferences.groupsCollapsed ?? false);
+  const groupWidth = useTickerLensState(state => state.preferences.groupWidth);
   const setGroupsCollapsed = useTickerLensState(state => state.setGroupsCollapsed);
   const tickerFilters = useTickerLensState(state => state.preferences.filters);
   const setTickerFilters = useTickerLensState(state => state.setFilters);
   const tickerFiltersPersisted = useTickerLensState(state => state.preferences.filtersPinned);
   const setTickerFiltersPersisted = useTickerLensState(state => state.setFiltersPinned);
+  const filterAnchor = useTickerLensState(state => state.preferences.filterAnchor);
+  const setFilterAnchor = useTickerLensState(state => state.setFilterAnchor);
   const sectorRankingsRequest = useMemo(
     () => groupMode === "industry" && groupBySector ? { mode: groupMode } as const : undefined,
     [groupBySector, groupMode],
@@ -334,6 +336,7 @@ function TickerLensContent({
   return (
     <section
       ref={setLensElement}
+      style={{ "--ticker-lens-group-width": groupWidth === undefined ? undefined : `${groupWidth}px` } as CSSProperties}
       className={[
         "ticker-lens",
         bounded ? "ticker-lens-bounded" : "",
@@ -351,6 +354,8 @@ function TickerLensContent({
         counts={tickerFilterCounts}
         onChange={setTickerFilters}
         onPersistedChange={setTickerFiltersPersisted}
+        anchor={filterAnchor}
+        onAnchorChange={setFilterAnchor}
       />
       <div
         id="ticker-lens-group-panel"
@@ -377,21 +382,7 @@ function TickerLensContent({
           onRevealGroup={revealGroupInList}
         />
       </div>
-      <Tooltip
-        title={`${groupsCollapsed ? "Show groups" : "Hide groups"} (Alt/Option+G)`}
-        placement="right"
-      >
-        <IconButton
-          className="ticker-lens-group-toggle"
-          size="small"
-          aria-label={groupsCollapsed ? "Show groups" : "Hide groups"}
-          aria-controls="ticker-lens-group-panel"
-          aria-expanded={!groupsCollapsed}
-          onClick={() => setGroupsCollapsed((collapsed) => !collapsed)}
-        >
-          <ChevronLeftIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <GroupDivider groups={groups} />
       <TickerPanel
         bounded={bounded}
         metricSelection={metricSelection}

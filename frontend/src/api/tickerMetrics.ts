@@ -1,11 +1,11 @@
 import { applicationEvents, type ApplicationEvents } from "./applicationEvents";
-import type { TickerFilters, TickerMetricsResource, TickerRanking } from "./generated/contracts";
+import type { TickerFilterExclusions, TickerFilters, TickerMetricsResource, TickerRanking } from "./generated/contracts";
 import { queryClient } from "../shared/queryClient";
 import { hashKey } from "@tanstack/react-query";
 
 export const disabledTickerFilters: TickerFilters = { adr: { enabled: false, min: 0 }, dollarVolume: { enabled: false, min: 0 }, above200Sma: { enabled: false } };
 
-export type TickerMetricsState = { tickers: TickerRanking[]; total: number; loading: boolean; error?: string };
+export type TickerMetricsState = { tickers: TickerRanking[]; total: number; excluded?: TickerFilterExclusions; loading: boolean; error?: string };
 export const tickerMetricsKey = (resource: TickerMetricsResource) => ["ticker-metrics", resource] as const;
 
 export class TickerMetricsSubscriptions {
@@ -32,7 +32,7 @@ export class TickerMetricsSubscriptions {
         switch (payload.state.type) {
           case "reset": {
             received.clear();
-            return { ...state, total: payload.state.total, loading: true, error: undefined };
+            return { ...state, total: payload.state.total, excluded: undefined, loading: true, error: undefined };
           }
           case "remove": {
             const symbol = payload.state.symbol;
@@ -40,6 +40,7 @@ export class TickerMetricsSubscriptions {
             return { ...state, tickers: state.tickers.filter(ticker => ticker.symbol !== symbol) };
           }
           case "complete": return { ...state, tickers: state.tickers.filter(ticker => received.has(ticker.symbol)), loading: false };
+          case "filter_counts": return { ...state, excluded: payload.state.excluded };
           case "ticker": {
             const ticker = payload.state.ticker;
             received.add(ticker.symbol);

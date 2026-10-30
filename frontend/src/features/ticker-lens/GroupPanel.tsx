@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -16,13 +17,14 @@ import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
   Badge,
+  ButtonBase,
   Checkbox,
   CircularProgress,
   IconButton,
+  Menu,
   MenuItem,
   Select,
   ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -90,6 +92,8 @@ export function GroupPanel({
   revealGroup,
   onRevealGroup,
 }: GroupPanelProps) {
+  const groupModeMenuId = useId();
+  const [groupModeAnchor, setGroupModeAnchor] = useState<HTMLElement | null>(null);
   const groupElements = useRef(new Map<string, HTMLButtonElement>());
   const handledRevealGroupRevision = useRef<number | undefined>(undefined);
   const sortSetting = useTickerLensState(state => state.preferences.groupSort);
@@ -243,100 +247,132 @@ export function GroupPanel({
 
   return (
     <section className="workspace-panel industries-panel">
-      <header className="panel-header panel-list-header">
-        <div className="panel-header-title">
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={mode}
-            aria-label="Group tickers by"
-            onChange={(_, value: GroupMode | null) => {
-              if (value !== null) setMode(value);
-            }}
-          >
-            <ToggleButton value="industry">Industry</ToggleButton>
-            <ToggleButton value="theme">Theme</ToggleButton>
-          </ToggleButtonGroup>
-          {selectedGroupKeys.size > 0 ? (
+      <header className="panel-header group-panel-header">
+        <div className="panel-list-header group-header-main">
+          <Typography component="h2">
+            <ButtonBase
+              id={`${groupModeMenuId}-trigger`}
+              className="group-mode-title"
+              aria-haspopup="menu"
+              aria-expanded={groupModeAnchor !== null}
+              aria-controls={groupModeAnchor === null ? undefined : groupModeMenuId}
+              onClick={(event) => setGroupModeAnchor(event.currentTarget)}
+            >
+              {mode === "industry" ? "Industries" : "Themes"}
+              <ExpandMoreIcon fontSize="small" />
+            </ButtonBase>
+          </Typography>
+          <div className="metric-sort-controls">
+            <Select
+              size="small"
+              value={activeSortSetting.key}
+              aria-label={`Sort ${mode === "industry" ? "industries" : "themes"} by`}
+              onChange={(event) =>
+                setSortSetting({ key: event.target.value as SortKey, direction: "desc" })
+              }
+            >
+              {availableSortOptions.map((option) => (
+                <MenuItem key={option.key} value={option.key}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
             <IconButton
               size="small"
-              aria-label={`Unselect ${selectedGroupKeys.size} groups`}
-              onClick={() => setSelectedGroupKeys(new Set())}
+              aria-label={`Sort ${activeSortSetting.direction === "desc" ? "ascending" : "descending"}`}
+              onClick={() => setSortSetting({
+                ...activeSortSetting,
+                direction: activeSortSetting.direction === "desc" ? "asc" : "desc",
+              })}
             >
-              <Badge badgeContent={selectedGroupKeys.size} color="primary">
-                <RemoveDoneIcon fontSize="small" />
+              {activeSortSetting.direction === "desc" ? (
+                <ArrowDownwardIcon fontSize="small" />
+              ) : (
+                <ArrowUpwardIcon fontSize="small" />
+              )}
+            </IconButton>
+          </div>
+        </div>
+        <div className="group-selection-toolbar" role="toolbar" aria-label="Group selection">
+          <span className="group-selection-count">{selectedGroupKeys.size}/{groups.length} selected</span>
+          <div className="group-header-actions">
+            {selectedGroupKeys.size > 0 ? (
+              <IconButton
+                size="small"
+                aria-label={`Unselect ${selectedGroupKeys.size} groups`}
+                onClick={() => setSelectedGroupKeys(new Set())}
+              >
+                <Badge badgeContent={selectedGroupKeys.size} color="primary">
+                  <RemoveDoneIcon fontSize="small" />
+                </Badge>
+              </IconButton>
+            ) : (
+              <IconButton
+                size="small"
+                aria-label="Select all groups"
+                onClick={() => {
+                  const allKeys = groups
+                    .map((group) => group.key)
+                    .filter((key) => !exploredGroupKeys.has(key));
+                  if (mode === "theme" && !exploredGroupKeys.has(unassignedGroupKey)) {
+                    allKeys.push(unassignedGroupKey);
+                  }
+                  setSelectedGroupKeys(new Set(allKeys));
+                }}
+              >
+                <DoneAllIcon fontSize="small" />
+              </IconButton>
+            )}
+            <IconButton
+              size="small"
+              aria-label={`Clear ${exploredGroupKeys.size} explored groups`}
+              disabled={exploredGroupKeys.size === 0}
+              onClick={clearExplored}
+            >
+              <Badge badgeContent={exploredGroupKeys.size} color="secondary">
+                <RemoveCircleOutlineIcon fontSize="small" />
               </Badge>
             </IconButton>
-          ) : (
-            <IconButton
-              size="small"
-              aria-label="Select all groups"
-              onClick={() => {
-                const allKeys = groups
-                  .map((group) => group.key)
-                  .filter((key) => !exploredGroupKeys.has(key));
-                if (mode === "theme" && !exploredGroupKeys.has(unassignedGroupKey)) {
-                  allKeys.push(unassignedGroupKey);
-                }
-                setSelectedGroupKeys(new Set(allKeys));
-              }}
-            >
-              <DoneAllIcon fontSize="small" />
-            </IconButton>
-          )}
-          <IconButton
-            size="small"
-            aria-label={`Clear ${exploredGroupKeys.size} explored groups`}
-            disabled={exploredGroupKeys.size === 0}
-            onClick={clearExplored}
-          >
-            <Badge badgeContent={exploredGroupKeys.size} color="secondary">
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </Badge>
-          </IconButton>
-        </div>
-        <div className="metric-sort-controls">
-          {mode === "industry" && (
-            <ToggleButton
-              size="small"
-              value="sector"
-              selected={groupBySector}
-              aria-label="Group industries by sector"
-              title="Group industries by sector"
-              onChange={() => setGroupBySector((current) => !current)}
-            >
-              <AccountTreeIcon fontSize="small" />
-            </ToggleButton>
-          )}
-          <Select
-            size="small"
-            value={activeSortSetting.key}
-            aria-label={`Sort ${mode === "industry" ? "industries" : "themes"} by`}
-            onChange={(event) =>
-              setSortSetting({ key: event.target.value as SortKey, direction: "desc" })
-            }
-          >
-            {availableSortOptions.map((option) => (
-              <MenuItem key={option.key} value={option.key}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </Select>
-          <IconButton
-            size="small"
-            aria-label={`Sort ${activeSortSetting.direction === "desc" ? "ascending" : "descending"}`}
-            onClick={() => setSortSetting({
-              ...activeSortSetting,
-              direction: activeSortSetting.direction === "desc" ? "asc" : "desc",
-            })}
-          >
-            {activeSortSetting.direction === "desc" ? (
-              <ArrowDownwardIcon fontSize="small" />
-            ) : (
-              <ArrowUpwardIcon fontSize="small" />
+            {mode === "industry" && (
+              <ToggleButton
+                size="small"
+                value="sector"
+                selected={groupBySector}
+                aria-label="Group industries by sector"
+                title="Group industries by sector"
+                onChange={() => setGroupBySector((current) => !current)}
+              >
+                <AccountTreeIcon fontSize="small" />
+              </ToggleButton>
             )}
-          </IconButton>
+          </div>
         </div>
+        <Menu
+          id={groupModeMenuId}
+          anchorEl={groupModeAnchor}
+          open={groupModeAnchor !== null}
+          onClose={() => setGroupModeAnchor(null)}
+          slotProps={{ list: { "aria-labelledby": `${groupModeMenuId}-trigger` } }}
+        >
+          <MenuItem
+            selected={mode === "industry"}
+            onClick={() => {
+              setMode("industry");
+              setGroupModeAnchor(null);
+            }}
+          >
+            Industries
+          </MenuItem>
+          <MenuItem
+            selected={mode === "theme"}
+            onClick={() => {
+              setMode("theme");
+              setGroupModeAnchor(null);
+            }}
+          >
+            Themes
+          </MenuItem>
+        </Menu>
       </header>
       {loadingGroups && (
         <div className="panel-status">

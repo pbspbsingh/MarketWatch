@@ -353,13 +353,19 @@ export function TickerPanel({
   useEffect(() => {
     const symbols = tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0");
     onTickersChange?.(symbols);
-    onFilterCountsChange?.({ total: metricsActive ? rankingStream.total : tickers.length, filtered: tickers.length });
+  }, [onTickersChange, tickerSymbolsKey]);
+
+  useEffect(() => {
+    onFilterCountsChange?.({
+      total: metricsActive ? rankingStream.total : tickers.length,
+      filtered: tickers.length,
+      excluded: rankingStream.excluded,
+    });
   }, [
     metricsActive,
     rankingStream.total,
+    rankingStream.excluded,
     onFilterCountsChange,
-    onTickersChange,
-    tickerSymbolsKey,
     tickers.length,
   ]);
 

@@ -1,10 +1,11 @@
 use crate::contracts::events::{ApplicationEvent, ApplicationSnapshot};
 use crate::contracts::tickers::{
-    TickerFilters, TickerMetricsResource, TickerMetricsUpdate, TickerSelection,
+    TickerFilterExclusions, TickerFilters, TickerMetricsResource, TickerMetricsUpdate,
+    TickerSelection,
 };
 use crate::models::{TickerRanking, TickerSymbol};
 use crate::services::{industry_data::IndustryDataService, tickers::TickerCatalogService};
-use std::{fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::sync::{
     broadcast::error::RecvError,
     mpsc::{self, Sender},
@@ -15,6 +16,8 @@ struct Delivery {
     filters: TickerFilters,
     sender: Sender<(u64, ApplicationEvent)>,
     generation: u64,
+    exclusions: HashMap<TickerSymbol, TickerFilterExclusions>,
+    excluded: TickerFilterExclusions,
 }
 
 impl Delivery {
@@ -31,7 +34,17 @@ impl Delivery {
             .is_ok()
     }
 
-    async fn ticker(&self, ticker: TickerRanking) -> bool {
+    async fn ticker(&mut self, ticker: TickerRanking) -> bool {
+        let excluded = self.filters.exclusions(&ticker);
+        let previous = self
+            .exclusions
+            .insert(ticker.symbol.clone(), excluded)
+            .unwrap_or_default();
+        self.excluded.adr = self.excluded.adr - previous.adr + excluded.adr;
+        self.excluded.dollar_volume =
+            self.excluded.dollar_volume - previous.dollar_volume + excluded.dollar_volume;
+        self.excluded.above_200_sma =
+            self.excluded.above_200_sma - previous.above_200_sma + excluded.above_200_sma;
         let update = if self.filters.includes(&ticker) {
             TickerMetricsUpdate::Ticker { ticker }
         } else {
@@ -40,6 +53,13 @@ impl Delivery {
             }
         };
         self.update(update).await
+    }
+
+    async fn filter_counts(&self) -> bool {
+        self.update(TickerMetricsUpdate::FilterCounts {
+            excluded: self.excluded,
+        })
+        .await
     }
 
     async fn error(&self, error: impl Display) {
@@ -77,8 +97,10 @@ async fn resolve_symbols(
 async fn acquire_metrics(
     service: &TickerCatalogService,
     symbols: &[TickerSymbol],
-    delivery: &Delivery,
+    delivery: &mut Delivery,
 ) -> bool {
+    delivery.exclusions.clear();
+    delivery.excluded = TickerFilterExclusions::default();
     if !delivery
         .update(TickerMetricsUpdate::Reset {
             total: symbols.len(),
@@ -111,7 +133,7 @@ async fn acquire_metrics(
             return false;
         }
     }
-    delivery.update(TickerMetricsUpdate::Complete).await
+    delivery.filter_counts().await && delivery.update(TickerMetricsUpdate::Complete).await
 }
 
 pub(super) async fn forward(
@@ -124,11 +146,13 @@ pub(super) async fn forward(
 ) {
     let selection = resource.selection;
     let dynamic = !matches!(selection, TickerSelection::Symbols { .. });
-    let delivery = Delivery {
+    let mut delivery = Delivery {
         id,
         filters: resource.filters,
         sender,
         generation,
+        exclusions: HashMap::new(),
+        excluded: TickerFilterExclusions::default(),
     };
     if let Err(error) = delivery.filters.validate() {
         delivery.error(error).await;
@@ -146,7 +170,7 @@ pub(super) async fn forward(
         }
     };
     loop {
-        if !acquire_metrics(&service, &symbols, &delivery).await {
+        if !acquire_metrics(&service, &symbols, &mut delivery).await {
             return;
         }
         loop {
@@ -195,6 +219,9 @@ pub(super) async fn forward(
                     Err(error) => tracing::warn!(%symbol, %error, "Ticker metric update failed"),
                 }
             }
+            if !delivery.filter_counts().await {
+                return;
+            }
         }
     }
 }
@@ -202,7 +229,7 @@ pub(super) async fn forward(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::tickers::MinimumFilter;
+    use crate::contracts::tickers::{EnabledFilter, MinimumFilter};
     use crate::models::AssignmentSource;
     use crate::services::industry_data::tests::seed_catalog;
     use crate::{
@@ -239,6 +266,9 @@ mod tests {
                     }
                     TickerMetricsUpdate::Complete => {
                         return total.expect("Reset must precede completion");
+                    }
+                    TickerMetricsUpdate::FilterCounts { excluded } => {
+                        assert_eq!(excluded, TickerFilterExclusions::default())
                     }
                 },
                 ApplicationEvent::Error { message, .. } => panic!("{message}"),
@@ -518,6 +548,7 @@ mod tests {
             7,
         ));
         let mut last = None;
+        let mut excluded = None;
         loop {
             let (generation, event) = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
                 .await
@@ -530,6 +561,13 @@ mod tests {
                     ..
                 } => last = Some(ticker),
                 ApplicationEvent::Snapshot {
+                    payload:
+                        ApplicationSnapshot::Tickers(TickerMetricsUpdate::FilterCounts {
+                            excluded: counts,
+                        }),
+                    ..
+                } => excluded = Some(counts),
+                ApplicationEvent::Snapshot {
                     payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::Complete),
                     ..
                 } => break,
@@ -541,6 +579,7 @@ mod tests {
             last.is_none(),
             "Filtered tickers must not be sent to the client"
         );
+        assert_eq!(excluded.unwrap().dollar_volume, 1);
         store
             .upsert_daily_candles(&symbol, &[candle(date, 120.0)])
             .await
@@ -558,6 +597,10 @@ mod tests {
         };
         assert_eq!(ticker.dollar_volume, Some(12_000.0));
         assert_eq!(ticker.performance.unwrap().day, 0.5);
+        let (_, counts) = receiver.recv().await.unwrap();
+        assert!(matches!(counts, ApplicationEvent::Snapshot {
+            payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::FilterCounts { excluded }), ..
+        } if excluded == TickerFilterExclusions::default()));
         let payload = serde_json::to_value(&ticker).unwrap();
         assert!(
             payload.get("above_200_sma").is_none(),
@@ -578,7 +621,82 @@ mod tests {
                 ..
             }
         ));
+        let (_, counts) = receiver.recv().await.unwrap();
+        assert!(matches!(counts, ApplicationEvent::Snapshot {
+            payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::FilterCounts { excluded }), ..
+        } if excluded.dollar_volume == 1));
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn exclusion_counts_overlap_and_replace_previous_metrics_without_double_counting() {
+        let (sender, mut receiver) = mpsc::channel(16);
+        let mut delivery = Delivery {
+            id: "counts".into(),
+            filters: TickerFilters {
+                adr: MinimumFilter {
+                    enabled: true,
+                    min: 5.0,
+                },
+                dollar_volume: MinimumFilter {
+                    enabled: true,
+                    min: 10_000.0,
+                },
+                above_200_sma: EnabledFilter { enabled: true },
+            },
+            sender,
+            generation: 1,
+            exclusions: HashMap::new(),
+            excluded: TickerFilterExclusions::default(),
+        };
+        let mut ticker = TickerRanking {
+            symbol: TickerSymbol::parse("NVDA").unwrap(),
+            watchlist_ids: vec![],
+            performance: None,
+            adr_percent: None,
+            dollar_volume: Some(5_000.0),
+            above_200_sma: Some(false),
+        };
+        assert!(delivery.ticker(ticker.clone()).await);
+        assert!(delivery.ticker(ticker.clone()).await);
+        ticker.symbol = TickerSymbol::parse("AMD").unwrap();
+        assert!(delivery.ticker(ticker.clone()).await);
+        assert_eq!(
+            delivery.excluded,
+            TickerFilterExclusions {
+                adr: 2,
+                dollar_volume: 2,
+                above_200_sma: 2
+            }
+        );
+        ticker.adr_percent = Some(5.0);
+        ticker.dollar_volume = Some(10_000.0);
+        ticker.above_200_sma = Some(true);
+        assert!(delivery.ticker(ticker).await);
+        assert_eq!(
+            delivery.excluded,
+            TickerFilterExclusions {
+                adr: 1,
+                dollar_volume: 1,
+                above_200_sma: 1
+            }
+        );
+        for _ in 0..3 {
+            assert!(matches!(
+                receiver.recv().await.unwrap().1,
+                ApplicationEvent::Snapshot {
+                    payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::Remove { .. }),
+                    ..
+                }
+            ));
+        }
+        assert!(matches!(
+            receiver.recv().await.unwrap().1,
+            ApplicationEvent::Snapshot {
+                payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::Ticker { .. }),
+                ..
+            }
+        ));
     }
 }

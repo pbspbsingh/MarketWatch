@@ -33,6 +33,7 @@ export function useTickerRankingStream({ enabled, selection, filters = disabledT
   const [dismissedError, setDismissedError] = useState<{ resource: typeof resource; message?: string }>();
   return {
     tickers,
+    excluded: enabled && hasSelection ? metrics.data?.excluded : undefined,
     total: metrics.data?.total ?? (selection.type === "symbols" ? selection.symbols.length : 0),
     loading: enabled && hasSelection && (metrics.data?.loading ?? true),
     error: dismissedError?.resource === resource && dismissedError.message === error ? undefined : error,

@@ -27,6 +27,11 @@ function validTickerUpdate(value: unknown) {
   if (value.type === "complete") return true;
   if (value.type === "reset") return typeof value.total === "number" && Number.isSafeInteger(value.total) && value.total >= 0;
   if (value.type === "remove") return typeof value.symbol === "string";
+  if (value.type === "filter_counts") {
+    const excluded = value.excluded;
+    return record(excluded) && ["adr", "dollarVolume", "above200Sma"].every(key =>
+      typeof excluded[key] === "number" && Number.isSafeInteger(excluded[key]) && excluded[key] >= 0);
+  }
   const ticker = value.ticker;
   if (value.type !== "ticker" || !record(ticker)) return false;
   return typeof ticker.symbol === "string" && Array.isArray(ticker.watchlist_ids)

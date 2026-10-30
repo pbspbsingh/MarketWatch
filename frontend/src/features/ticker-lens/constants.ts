@@ -34,3 +34,7 @@ export const defaultTickerSortSetting: TickerSortSetting = {
 };
 export const unassignedGroupKey = "unassigned";
 export const emptyGroupKeys = new Set<string>();
+export const minimumGroupWidth = 224;
+export const maximumGroupWidth = 640;
+export const defaultGroupWidth = 320;
+export const collapsedGroupWidth = 32;

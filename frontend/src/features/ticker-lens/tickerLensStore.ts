@@ -1,6 +1,6 @@
 import { createStore, type StateCreator } from "zustand/vanilla";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { unassignedGroupKey } from "./constants";
+import { maximumGroupWidth, minimumGroupWidth, unassignedGroupKey } from "./constants";
 import { createDefaultPreferences, isPreferences, persistedPreferences, type TickerLensPreferences } from "./tickerLensPreferences";
 import type { DefaultMetricSort, GroupMode, SortSetting, TickerFilters, TickerSortSetting } from "./types";
 import { isMetricSortKey, searchGroupMode, searchIncludesUnassigned, searchIndustryKeys, searchThemeIds, searchThemeNames, searchTickerSymbol } from "./utils";
@@ -21,7 +21,6 @@ export type TickerLensState = {
   preferences: TickerLensPreferences;
   selectedGroupKeys: Set<string>;
   selectedTicker: string | undefined;
-  groupsCollapsed: boolean;
   exploredGroups: Record<GroupMode, Set<string>>;
   metricSort: TickerSortSetting | undefined;
   requestedThemeNames: string[];
@@ -29,11 +28,13 @@ export type TickerLensState = {
   setSelectedGroupKeys: (value: Update<Set<string>>) => void;
   setSelectedTicker: (value: Update<string | undefined>) => void;
   setGroupsCollapsed: (value: Update<boolean>) => void;
+  setGroupWidth: (width: number) => void;
   setGroupBySector: (value: Update<boolean>) => void;
   setGroupSort: (value: Update<SortSetting>) => void;
   setTickerSort: (value: Update<TickerSortSetting>) => void;
   setFilters: (filters: TickerFilters) => void;
   setFiltersPinned: (pinned: boolean) => void;
+  setFilterAnchor: (anchor: number) => void;
   setExpandedSectors: (value: Update<Set<string>>) => void;
   markExplored: (key: string) => void;
   clearExplored: () => void;
@@ -52,7 +53,6 @@ export function createTickerLensStore(options: {
     preferences: { ...createDefaultPreferences(), groupMode: initial.mode },
     selectedGroupKeys: initial.keys,
     selectedTicker: initial.ticker,
-    groupsCollapsed: false,
     exploredGroups: { industry: new Set(), theme: new Set() },
     metricSort: options.defaultMetricSort === undefined ? undefined : {
       key: `metric:${options.defaultMetricSort.metricId}`, direction: options.defaultMetricSort.direction,
@@ -72,7 +72,17 @@ export function createTickerLensStore(options: {
       const selectedTicker = updated(value, state.selectedTicker);
       return selectedTicker === state.selectedTicker ? state : { selectedTicker };
     }),
-    setGroupsCollapsed: value => set(state => ({ groupsCollapsed: updated(value, state.groupsCollapsed) })),
+    setGroupsCollapsed: value => set(state => ({ preferences: {
+      ...state.preferences, groupsCollapsed: updated(value, state.preferences.groupsCollapsed ?? false),
+    } })),
+    setGroupWidth: width => set(state => {
+      if (!Number.isFinite(width)) return state;
+      if (width < minimumGroupWidth) return state.preferences.groupsCollapsed ? state
+        : { preferences: { ...state.preferences, groupsCollapsed: true } };
+      const groupWidth = Math.min(width, maximumGroupWidth);
+      return !state.preferences.groupsCollapsed && state.preferences.groupWidth === groupWidth ? state
+        : { preferences: { ...state.preferences, groupWidth, groupsCollapsed: false } };
+    }),
     setGroupBySector: value => set(state => ({ preferences: { ...state.preferences, groupBySector: updated(value, state.preferences.groupBySector) } })),
     setGroupSort: value => set(state => ({ preferences: { ...state.preferences, groupSort: updated(value, state.preferences.groupSort) } })),
     setTickerSort: value => set(state => {
@@ -82,6 +92,7 @@ export function createTickerLensStore(options: {
     }),
     setFilters: filters => set(state => ({ preferences: { ...state.preferences, filters } })),
     setFiltersPinned: filtersPinned => set(state => ({ preferences: { ...state.preferences, filtersPinned } })),
+    setFilterAnchor: filterAnchor => set(state => ({ preferences: { ...state.preferences, filterAnchor } })),
     setExpandedSectors: value => set(state => ({ preferences: {
       ...state.preferences, expandedSectors: [...updated(value, new Set(state.preferences.expandedSectors))].sort(),
     } })),

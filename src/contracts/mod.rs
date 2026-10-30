@@ -13,8 +13,8 @@ use industry::{
 };
 use std::path::Path;
 use tickers::{
-    EnabledFilter, MinimumFilter, TickerFilters, TickerMetricsResource, TickerMetricsUpdate,
-    TickerSelection,
+    EnabledFilter, MinimumFilter, TickerFilterExclusions, TickerFilters, TickerMetricsResource,
+    TickerMetricsUpdate, TickerSelection,
 };
 use ts_rs::{Config, TS};
 
@@ -33,6 +33,7 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         MinimumFilter::decl(&config),
         EnabledFilter::decl(&config),
         TickerFilters::decl(&config),
+        TickerFilterExclusions::decl(&config),
         TickerSelection::decl(&config),
         TickerMetricsResource::decl(&config),
         TickerMetricsUpdate::decl(&config),

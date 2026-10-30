@@ -1,4 +1,4 @@
-import type { PerformancePeriods } from "../../api/generated/contracts";
+import type { PerformancePeriods, TickerFilterExclusions } from "../../api/generated/contracts";
 
 type GroupSortKey = "count";
 export type SortKey = GroupSortKey | keyof PerformancePeriods;
@@ -33,6 +33,7 @@ export type { TickerFilters } from "../../api/generated/contracts";
 export type TickerFilterCounts = {
   total: number;
   filtered: number;
+  excluded?: TickerFilterExclusions;
 };
 
 export type GroupRanking = {

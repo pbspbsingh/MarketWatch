@@ -40,16 +40,38 @@ impl TickerFilters {
     }
 
     pub fn includes(&self, ticker: &TickerRanking) -> bool {
-        (!self.adr.enabled
-            || ticker
-                .adr_percent
-                .is_some_and(|value| value >= self.adr.min))
-            && (!self.dollar_volume.enabled
-                || ticker
-                    .dollar_volume
-                    .is_some_and(|value| value >= self.dollar_volume.min))
-            && (!self.above_200_sma.enabled || ticker.above_200_sma == Some(true))
+        self.exclusions(ticker) == TickerFilterExclusions::default()
     }
+
+    pub fn exclusions(&self, ticker: &TickerRanking) -> TickerFilterExclusions {
+        TickerFilterExclusions {
+            adr: usize::from(
+                self.adr.enabled
+                    && !ticker
+                        .adr_percent
+                        .is_some_and(|value| value >= self.adr.min),
+            ),
+            dollar_volume: usize::from(
+                self.dollar_volume.enabled
+                    && !ticker
+                        .dollar_volume
+                        .is_some_and(|value| value >= self.dollar_volume.min),
+            ),
+            above_200_sma: usize::from(
+                self.above_200_sma.enabled && ticker.above_200_sma != Some(true),
+            ),
+        }
+    }
+}
+
+/// Independent exclusions across the selected universe; counts can overlap.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TickerFilterExclusions {
+    pub adr: usize,
+    pub dollar_volume: usize,
+    #[serde(rename = "above200Sma")]
+    pub above_200_sma: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
@@ -81,6 +103,7 @@ pub enum TickerMetricsUpdate {
     Reset { total: usize },
     Ticker { ticker: TickerRanking },
     Remove { symbol: TickerSymbol },
+    FilterCounts { excluded: TickerFilterExclusions },
     Complete,
 }
 
