@@ -88,6 +88,7 @@ interface TickerPanelProps {
 
 interface TickerRowProps {
   tickers: TickerRanking[];
+  excludedSymbols: ReadonlySet<string>;
   sortKey: TickerSortKey;
   metric?: TickerMetric;
   selectedTicker: string | undefined;
@@ -108,6 +109,7 @@ function TickerRow({
   style,
   ariaAttributes,
   tickers,
+  excludedSymbols,
   sortKey,
   metric: selectedMetric,
   selectedTicker,
@@ -131,7 +133,8 @@ function TickerRow({
   return (
     <li style={style} {...ariaAttributes}>
       <button
-        className="ranked-list-item ticker-list-item"
+        className={`ranked-list-item ticker-list-item${excludedSymbols.has(ticker.symbol) ? " ticker-list-item-excluded" : ""}`}
+        title={excludedSymbols.has(ticker.symbol) ? "Excluded by active filters; shown because this ticker was linked" : undefined}
         type="button"
         aria-pressed={selectedTicker === ticker.symbol}
         onClick={() => onSelect(ticker.symbol)}
@@ -214,6 +217,7 @@ export function TickerPanel({
   const revealTickerFrame = useRef<number | undefined>(undefined);
   const rankingRequests = useRef(new Set<string>());
   const sortSetting = useTickerLensState(state => state.metricSort ?? state.preferences.tickerSort);
+  const tickerLink = useTickerLensState(state => state.tickerLink);
   const setSortSetting = useTickerLensState(state => state.setTickerSort);
   const [errorState, setErrorState] = useState<{ key: string; message: string }>();
   const awaitingGroupSelection = !bounded && groupKeys.size === 0;
@@ -225,6 +229,7 @@ export function TickerPanel({
     if (isMetricSortKey(sortSetting.key) && activeMetric === undefined) setSortSetting(defaultTickerSortSetting);
   }, [activeMetric, setSortSetting, sortSetting.key]);
   const rankingStream = useTickerRankingStream({
+    revealSymbol: tickerLink?.symbol,
     filters: tickerFilters,
     enabled: metricsActive,
     selection: metricSelection,
@@ -343,12 +348,12 @@ export function TickerPanel({
   const tickerSymbolsKey = tickers.map((ticker) => ticker.symbol).join("\0");
 
   useEffect(() => {
-    if (panelLoading || awaitingGroupSelection) return;
+    if (panelLoading || awaitingGroupSelection || tickerLink?.symbol === selectedTicker) return;
     const availableSymbols = new Set(tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0"));
     setSelectedTicker((current) =>
       current !== undefined && !availableSymbols.has(current) ? undefined : current,
     );
-  }, [awaitingGroupSelection, panelLoading, setSelectedTicker, tickerSymbolsKey]);
+  }, [awaitingGroupSelection, panelLoading, selectedTicker, setSelectedTicker, tickerLink, tickerSymbolsKey]);
 
   useEffect(() => {
     const symbols = tickerSymbolsKey === "" ? [] : tickerSymbolsKey.split("\0");
@@ -358,13 +363,14 @@ export function TickerPanel({
   useEffect(() => {
     onFilterCountsChange?.({
       total: metricsActive ? rankingStream.total : tickers.length,
-      filtered: tickers.length,
+      filtered: tickers.length - rankingStream.excludedSymbols.size,
       excluded: rankingStream.excluded,
     });
   }, [
     metricsActive,
     rankingStream.total,
     rankingStream.excluded,
+    rankingStream.excludedSymbols,
     onFilterCountsChange,
     tickers.length,
   ]);
@@ -375,6 +381,7 @@ export function TickerPanel({
   const revealTickerInList = useCallback(() => {
     if (
       revealTicker === undefined ||
+      panelLoading ||
       handledRevealTickerRevision.current === revealTicker.revision ||
       scheduledRevealTickerRevision.current === revealTicker.revision
     ) return;
@@ -383,22 +390,26 @@ export function TickerPanel({
     if (index < 0 || element === null || element === undefined) return;
     scheduledRevealTickerRevision.current = revealTicker.revision;
     revealTickerFrame.current = window.requestAnimationFrame(() => {
-      element.scrollTop = index * tickerRowHeight
-        - (element.clientHeight - tickerRowHeight) / 2;
+      element.scrollTo({
+        top: index * tickerRowHeight - (element.clientHeight - tickerRowHeight) / 2,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
       handledRevealTickerRevision.current = revealTicker.revision;
       scheduledRevealTickerRevision.current = undefined;
       revealTickerFrame.current = undefined;
     });
-  }, [revealTicker, sortedTickers, tickerList]);
+  }, [panelLoading, revealTicker, sortedTickers, tickerList]);
 
-  useEffect(revealTickerInList, [revealTickerInList]);
-  useEffect(() => () => {
-    if (revealTickerFrame.current !== undefined) {
-      window.cancelAnimationFrame(revealTickerFrame.current);
-      revealTickerFrame.current = undefined;
-      scheduledRevealTickerRevision.current = undefined;
-    }
-  }, []);
+  useEffect(() => {
+    revealTickerInList();
+    return () => {
+      if (revealTickerFrame.current !== undefined) {
+        window.cancelAnimationFrame(revealTickerFrame.current);
+        revealTickerFrame.current = undefined;
+        scheduledRevealTickerRevision.current = undefined;
+      }
+    };
+  }, [revealTickerInList]);
 
   useEffect(() => {
     if (selectedTicker === undefined) return;
@@ -528,6 +539,7 @@ export function TickerPanel({
   );
   const tickerRowProps = useMemo<TickerRowProps>(() => ({
     tickers: sortedTickers,
+    excludedSymbols: rankingStream.excludedSymbols,
     sortKey: sortSetting.key,
     metric: activeMetric,
     selectedTicker,
@@ -542,6 +554,7 @@ export function TickerPanel({
     selectedTicker,
     sortSetting.key,
     sortedTickers,
+    rankingStream.excludedSymbols,
     toggleSelectedTicker,
     watchlists,
   ]);
@@ -551,7 +564,7 @@ export function TickerPanel({
       <header className="panel-header panel-list-header">
         <div className="panel-header-title">
           <Typography component="h2">Tickers</Typography>
-          <Tooltip title={`Total ${metricsActive ? rankingStream.total : tickers.length} · Filtered ${tickers.length}`}>
+          <Tooltip title={`Total ${metricsActive ? rankingStream.total : tickers.length} · Filtered ${tickers.length - rankingStream.excludedSymbols.size}`}>
             <Typography className="panel-position" color="text.secondary">
               {selectedTickerPosition}/{sortedTickers.length}
             </Typography>

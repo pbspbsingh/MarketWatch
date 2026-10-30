@@ -95,6 +95,8 @@ pub enum TickerSelection {
 pub struct TickerMetricsResource {
     pub selection: TickerSelection,
     pub filters: TickerFilters,
+    #[serde(default)]
+    pub reveal_symbol: Option<TickerSymbol>,
 }
 
 #[derive(Serialize, TS)]
@@ -102,6 +104,7 @@ pub struct TickerMetricsResource {
 pub enum TickerMetricsUpdate {
     Reset { total: usize },
     Ticker { ticker: TickerRanking },
+    ExcludedTicker { ticker: TickerRanking },
     Remove { symbol: TickerSymbol },
     FilterCounts { excluded: TickerFilterExclusions },
     Complete,

@@ -5,7 +5,14 @@ import { hashKey } from "@tanstack/react-query";
 
 export const disabledTickerFilters: TickerFilters = { adr: { enabled: false, min: 0 }, dollarVolume: { enabled: false, min: 0 }, above200Sma: { enabled: false } };
 
-export type TickerMetricsState = { tickers: TickerRanking[]; total: number; excluded?: TickerFilterExclusions; loading: boolean; error?: string };
+export type TickerMetricsState = {
+  tickers: TickerRanking[];
+  total: number;
+  excluded?: TickerFilterExclusions;
+  excludedSymbols?: string[];
+  loading: boolean;
+  error?: string;
+};
 export const tickerMetricsKey = (resource: TickerMetricsResource) => ["ticker-metrics", resource] as const;
 
 export class TickerMetricsSubscriptions {
@@ -37,17 +44,25 @@ export class TickerMetricsSubscriptions {
           case "remove": {
             const symbol = payload.state.symbol;
             received.delete(symbol);
-            return { ...state, tickers: state.tickers.filter(ticker => ticker.symbol !== symbol) };
+            return { ...state, tickers: state.tickers.filter(ticker => ticker.symbol !== symbol),
+              excludedSymbols: state.excludedSymbols?.filter(value => value !== symbol) };
           }
-          case "complete": return { ...state, tickers: state.tickers.filter(ticker => received.has(ticker.symbol)), loading: false };
+          case "complete": return { ...state, tickers: state.tickers.filter(ticker => received.has(ticker.symbol)),
+            excludedSymbols: state.excludedSymbols?.filter(symbol => received.has(symbol)), loading: false };
           case "filter_counts": return { ...state, excluded: payload.state.excluded };
-          case "ticker": {
+          case "ticker":
+          case "excluded_ticker": {
             const ticker = payload.state.ticker;
             received.add(ticker.symbol);
             const index = state.tickers.findIndex(item => item.symbol === ticker.symbol);
             const tickers = [...state.tickers];
             if (index < 0) tickers.push(ticker); else tickers[index] = ticker;
-            return { ...state, tickers };
+            const excluded = payload.state.type === "excluded_ticker";
+            const wasExcluded = state.excludedSymbols?.includes(ticker.symbol) ?? false;
+            const excludedSymbols = excluded === wasExcluded ? state.excludedSymbols
+              : excluded ? [...state.excludedSymbols ?? [], ticker.symbol]
+                : state.excludedSymbols?.filter(symbol => symbol !== ticker.symbol);
+            return { ...state, tickers, excludedSymbols };
           }
         }
       });

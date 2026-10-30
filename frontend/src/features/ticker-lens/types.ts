@@ -46,6 +46,7 @@ export type GroupRanking = {
 };
 
 export type SelectedTickerContext = {
+  symbol: string;
   industry: { key: string; name: string } | null;
   themeNames: string[];
 };

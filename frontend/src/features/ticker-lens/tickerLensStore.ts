@@ -2,7 +2,7 @@ import { createStore, type StateCreator } from "zustand/vanilla";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { maximumGroupWidth, minimumGroupWidth, unassignedGroupKey } from "./constants";
 import { createDefaultPreferences, isPreferences, persistedPreferences, type TickerLensPreferences } from "./tickerLensPreferences";
-import type { DefaultMetricSort, GroupMode, SortSetting, TickerFilters, TickerSortSetting } from "./types";
+import type { DefaultMetricSort, GroupMode, RevealRequest, SortSetting, TickerFilters, TickerSortSetting } from "./types";
 import { isMetricSortKey, searchGroupMode, searchIncludesUnassigned, searchIndustryKeys, searchThemeIds, searchThemeNames, searchTickerSymbol } from "./utils";
 
 type Update<T> = T | ((current: T) => T);
@@ -17,10 +17,21 @@ function navigationSelection(search: URLSearchParams, fallback: GroupMode) {
   return { mode, keys, ticker: searchTickerSymbol(search), names: mode === "theme" ? searchThemeNames(search) : [] };
 }
 
+const tickerLink = (symbol: string | undefined) => symbol === undefined ? undefined : { symbol, resolved: false };
+const reveal = (value: string | undefined, revision: number): RevealRequest<string> | undefined =>
+  value === undefined ? undefined : { value, revision };
+const singleKey = (keys: Set<string>) => keys.size === 1 ? keys.values().next().value : undefined;
+
 export type TickerLensState = {
   preferences: TickerLensPreferences;
   selectedGroupKeys: Set<string>;
   selectedTicker: string | undefined;
+  tickerLink: { symbol: string; resolved: boolean } | undefined;
+  revealRevision: number;
+  revealGroup: RevealRequest<string> | undefined;
+  revealTicker: RevealRequest<string> | undefined;
+  revealGroupInList: (key: string) => void;
+  revealTickerInList: (symbol: string) => void;
   exploredGroups: Record<GroupMode, Set<string>>;
   metricSort: TickerSortSetting | undefined;
   requestedThemeNames: string[];
@@ -39,6 +50,7 @@ export type TickerLensState = {
   markExplored: (key: string) => void;
   clearExplored: () => void;
   resolveThemeNames: (groups: readonly { key: string; name: string }[]) => void;
+  resolveTickerLink: (symbol: string, mode: GroupMode, keys: Set<string>) => void;
   applyNavigation: (search: URLSearchParams) => void;
 };
 
@@ -53,6 +65,12 @@ export function createTickerLensStore(options: {
     preferences: { ...createDefaultPreferences(), groupMode: initial.mode },
     selectedGroupKeys: initial.keys,
     selectedTicker: initial.ticker,
+    tickerLink: tickerLink(initial.ticker),
+    revealRevision: 1,
+    revealGroup: reveal(singleKey(initial.keys), 1),
+    revealTicker: reveal(initial.ticker, 1),
+    revealGroupInList: key => set(state => ({ revealRevision: state.revealRevision + 1, revealGroup: reveal(key, state.revealRevision + 1) })),
+    revealTickerInList: symbol => set(state => ({ revealRevision: state.revealRevision + 1, revealTicker: reveal(symbol, state.revealRevision + 1) })),
     exploredGroups: { industry: new Set(), theme: new Set() },
     metricSort: options.defaultMetricSort === undefined ? undefined : {
       key: `metric:${options.defaultMetricSort.metricId}`, direction: options.defaultMetricSort.direction,
@@ -60,17 +78,23 @@ export function createTickerLensStore(options: {
     requestedThemeNames: initial.names,
     setMode: mode => set(state => state.preferences.groupMode === mode ? state : ({
       preferences: { ...state.preferences, groupMode: mode }, selectedGroupKeys: new Set(),
-      selectedTicker: undefined, requestedThemeNames: [],
+      selectedTicker: undefined, tickerLink: undefined, requestedThemeNames: [], revealGroup: undefined, revealTicker: undefined,
     })),
     setSelectedGroupKeys: value => set(state => {
       const keys = new Set([...updated(value, new Set(state.selectedGroupKeys))]
         .filter(key => !state.exploredGroups[state.preferences.groupMode].has(key)));
-      if (equalSets(keys, state.selectedGroupKeys) && state.requestedThemeNames.length === 0) return state;
-      return { selectedGroupKeys: keys, selectedTicker: equalSets(keys, state.selectedGroupKeys) ? state.selectedTicker : undefined, requestedThemeNames: [] };
+      const unchanged = equalSets(keys, state.selectedGroupKeys);
+      if (unchanged && state.requestedThemeNames.length === 0) return state;
+      return {
+        selectedGroupKeys: keys, selectedTicker: unchanged ? state.selectedTicker : undefined,
+        tickerLink: unchanged ? state.tickerLink : undefined, requestedThemeNames: [],
+        revealGroup: unchanged ? state.revealGroup : undefined,
+        revealTicker: unchanged ? state.revealTicker : undefined,
+      };
     }),
     setSelectedTicker: value => set(state => {
       const selectedTicker = updated(value, state.selectedTicker);
-      return selectedTicker === state.selectedTicker ? state : { selectedTicker };
+      return selectedTicker === state.selectedTicker ? state : { selectedTicker, tickerLink: undefined, revealGroup: undefined, revealTicker: undefined };
     }),
     setGroupsCollapsed: value => set(state => ({ preferences: {
       ...state.preferences, groupsCollapsed: updated(value, state.preferences.groupsCollapsed ?? false),
@@ -101,9 +125,13 @@ export function createTickerLensStore(options: {
       const keys = state.selectedGroupKeys.size ? state.selectedGroupKeys : new Set([key]);
       const explored = new Set([...state.exploredGroups[mode], ...keys]);
       const selected = new Set([...state.selectedGroupKeys].filter(value => !explored.has(value)));
+      const unchanged = equalSets(selected, state.selectedGroupKeys);
       return {
         exploredGroups: { ...state.exploredGroups, [mode]: explored }, selectedGroupKeys: selected,
-        selectedTicker: equalSets(selected, state.selectedGroupKeys) ? state.selectedTicker : undefined,
+        selectedTicker: unchanged ? state.selectedTicker : undefined,
+        tickerLink: unchanged ? state.tickerLink : undefined,
+        revealGroup: unchanged ? state.revealGroup : undefined,
+        revealTicker: unchanged ? state.revealTicker : undefined,
       };
     }),
     clearExplored: () => set(state => ({ exploredGroups: { ...state.exploredGroups, [state.preferences.groupMode]: new Set() } })),
@@ -116,12 +144,27 @@ export function createTickerLensStore(options: {
         exploredGroups: { ...state.exploredGroups, theme: new Set([...state.exploredGroups.theme].filter(key => !keys.has(key))) },
       };
     }),
+    resolveTickerLink: (symbol, mode, keys) => set(state => {
+      if (state.tickerLink?.symbol !== symbol || state.tickerLink.resolved
+        || state.selectedTicker !== symbol || state.preferences.groupMode !== mode || keys.size === 0) return state;
+      const selection = [...state.selectedGroupKeys].some(key => keys.has(key)) ? state.selectedGroupKeys : new Set(keys);
+      const groupKey = [...keys].find(key => selection.has(key)) ?? [...keys][0];
+      return {
+        preferences: { ...state.preferences, groupsCollapsed: false },
+        tickerLink: { symbol, resolved: true }, selectedGroupKeys: selection, requestedThemeNames: [],
+        revealRevision: state.revealRevision + 1,
+        revealGroup: reveal(groupKey, state.revealRevision + 1), revealTicker: reveal(symbol, state.revealRevision + 1),
+        exploredGroups: { ...state.exploredGroups, [mode]: new Set([...state.exploredGroups[mode]].filter(key => !selection.has(key))) },
+      };
+    }),
     applyNavigation: search => set(state => {
       const { mode, keys, ticker, names } = navigationSelection(search, state.preferences.groupMode);
       return {
         preferences: state.preferences.groupMode === mode ? state.preferences : { ...state.preferences, groupMode: mode },
         selectedGroupKeys: equalSets(keys, state.selectedGroupKeys) ? state.selectedGroupKeys : keys,
-        selectedTicker: ticker, requestedThemeNames: names,
+        selectedTicker: ticker, tickerLink: tickerLink(ticker), requestedThemeNames: names,
+        revealRevision: state.revealRevision + 1,
+        revealGroup: reveal(singleKey(keys), state.revealRevision + 1), revealTicker: reveal(ticker, state.revealRevision + 1),
         exploredGroups: { ...state.exploredGroups, [mode]: new Set([...state.exploredGroups[mode]].filter(key => !keys.has(key))) },
       };
     }),
@@ -138,7 +181,9 @@ export function createTickerLensStore(options: {
       const navigation = navigationSelection(search, preferences.groupMode);
       return {
         ...current, preferences: { ...preferences, groupMode: navigation.mode }, selectedGroupKeys: navigation.keys,
-        selectedTicker: navigation.ticker, requestedThemeNames: navigation.names,
+        selectedTicker: navigation.ticker, tickerLink: tickerLink(navigation.ticker), requestedThemeNames: navigation.names,
+        revealRevision: current.revealRevision + 1,
+        revealGroup: reveal(singleKey(navigation.keys), current.revealRevision + 1), revealTicker: reveal(navigation.ticker, current.revealRevision + 1),
       };
     },
   }));

@@ -375,6 +375,7 @@ export function ChartPanel({
         if (controller.signal.aborted || summaryRequestKey === undefined) return;
         setSummaryState({ key: summaryRequestKey, value: chartSummary });
         onSelectedTickerContext({
+          symbol: selectedTicker,
           industry: chartSummary.industry,
           themeNames: chartSummary.themes,
         });

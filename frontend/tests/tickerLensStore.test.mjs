@@ -118,6 +118,49 @@ test("group resizing folds below its minimum and preserves the expanded width", 
   assert.equal(store.getState().preferences.groupWidth, 640);
 });
 
+test("ticker links select matching groups atomically, reveal both lists, and keep filters active", () => {
+  for (const [mode, keys] of [["industry", ["semiconductors"]], ["theme", ["1", "2"]], ["theme", ["unassigned"]]]) {
+    const store = createTickerLensStore({ search: new URLSearchParams(`mode=${mode}&ticker=NVDA`) });
+    store.getState().setGroupsCollapsed(true);
+    const filters = { ...store.getState().preferences.filters, adr: { enabled: true, min: 7 } };
+    store.getState().setFilters(filters);
+    const suppliedKeys = new Set(keys);
+    store.getState().resolveTickerLink("NVDA", mode, suppliedKeys);
+    suppliedKeys.clear();
+    const state = store.getState();
+    assert.deepEqual([...state.selectedGroupKeys], keys);
+    assert.equal(state.selectedTicker, "NVDA");
+    assert.deepEqual(state.tickerLink, { symbol: "NVDA", resolved: true });
+    assert.equal(state.preferences.filters, filters);
+    assert.equal(state.preferences.groupsCollapsed, false);
+    assert.equal(state.revealGroup.value, keys[0]);
+    assert.equal(state.revealTicker.value, "NVDA");
+    state.resolveTickerLink("NVDA", mode, new Set(["obsolete"]));
+    assert.equal(store.getState(), state, "Resolution only happens once per link");
+  }
+});
+
+test("ticker-link resolution ignores stale context, preserves matching URL groups, and yields to manual selection", () => {
+  const store = createTickerLensStore({ search: new URLSearchParams("mode=theme&theme_ids=2&ticker=NVDA") });
+  const initial = store.getState();
+  initial.resolveTickerLink("AMD", "theme", new Set(["1"]));
+  initial.resolveTickerLink("NVDA", "industry", new Set(["semiconductors"]));
+  assert.equal(store.getState(), initial);
+  initial.resolveTickerLink("NVDA", "theme", new Set(["1", "2"]));
+  assert.deepEqual([...store.getState().selectedGroupKeys], ["2"]);
+  assert.equal(store.getState().revealGroup.value, "2");
+  const revision = store.getState().revealTicker.revision;
+  store.getState().applyNavigation(new URLSearchParams("mode=theme"));
+  store.getState().applyNavigation(new URLSearchParams("mode=theme&ticker=AMD"));
+  assert.ok(store.getState().revealTicker.revision > revision, "Navigation cannot reuse a handled reveal revision");
+  store.getState().setSelectedGroupKeys(new Set(["3"]));
+  const manual = store.getState();
+  assert.equal(manual.tickerLink, undefined);
+  assert.equal(manual.revealTicker, undefined);
+  manual.resolveTickerLink("AMD", "theme", new Set(["4"]));
+  assert.equal(store.getState(), manual);
+});
+
 test("filter thresholds persist, while enabled flags survive reload only when pinned", () => {
   const storage = memoryStorage();
   const store = createTickerLensStore({ storage });

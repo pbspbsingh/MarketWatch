@@ -26,9 +26,9 @@ export type TickerFilterExclusions = { adr: number, dollarVolume: number, above2
 
 export type TickerSelection = { "type": "symbols", symbols: Array<TickerSymbol>, } | { "type": "industries", keys: Array<string>, } | { "type": "themes", ids: Array<number>, include_unassigned: boolean, };
 
-export type TickerMetricsResource = { selection: TickerSelection, filters: TickerFilters, };
+export type TickerMetricsResource = { selection: TickerSelection, filters: TickerFilters, reveal_symbol: TickerSymbol | null, };
 
-export type TickerMetricsUpdate = { "type": "reset", total: number, } | { "type": "ticker", ticker: TickerRanking, } | { "type": "remove", symbol: TickerSymbol, } | { "type": "filter_counts", excluded: TickerFilterExclusions, } | { "type": "complete" };
+export type TickerMetricsUpdate = { "type": "reset", total: number, } | { "type": "ticker", ticker: TickerRanking, } | { "type": "excluded_ticker", ticker: TickerRanking, } | { "type": "remove", symbol: TickerSymbol, } | { "type": "filter_counts", excluded: TickerFilterExclusions, } | { "type": "complete" };
 
 export type IndustryClassification = { industry_key: string, industry_name: string, sector_key: string, sector_name: string, ticker_count: number, };
 

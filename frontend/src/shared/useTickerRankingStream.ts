@@ -5,16 +5,18 @@ import { disabledTickerFilters, tickerMetricsKey, tickerMetricsSubscriptions, ty
 import { queryClient } from "./queryClient";
 
 const emptyTickers: TickerMetricsState["tickers"] = [];
+const emptySymbols: string[] = [];
 
-export function useTickerRankingStream({ enabled, selection, filters = disabledTickerFilters }: {
+export function useTickerRankingStream({ enabled, selection, filters = disabledTickerFilters, revealSymbol }: {
   filters?: TickerFilters;
   enabled: boolean;
   selection: TickerSelection;
+  revealSymbol?: string;
 }) {
   const hasSelection = selection.type === "symbols" ? selection.symbols.length > 0
     : selection.type === "industries" ? selection.keys.length > 0
     : selection.ids.length > 0 || selection.include_unassigned;
-  const resource = useMemo(() => ({ selection, filters }), [filters, selection]);
+  const resource = useMemo(() => ({ selection, filters, reveal_symbol: revealSymbol ?? null }), [filters, revealSymbol, selection]);
   useEffect(() => {
     if (!enabled || !hasSelection) return;
     return tickerMetricsSubscriptions.observe(resource);
@@ -22,6 +24,8 @@ export function useTickerRankingStream({ enabled, selection, filters = disabledT
   const metrics = useQuery<TickerMetricsState>({ queryKey: tickerMetricsKey(resource), queryFn: skipToken });
   const [watchlistOverrides, setWatchlistOverrides] = useState(new Map<string, number[]>());
   const baseTickers = enabled && hasSelection ? metrics.data?.tickers ?? emptyTickers : emptyTickers;
+  const excluded = enabled && hasSelection ? metrics.data?.excludedSymbols ?? emptySymbols : emptySymbols;
+  const excludedSymbols = useMemo(() => new Set(excluded), [excluded]);
   const tickers = useMemo(() => baseTickers.map(ticker => {
     const ids = watchlistOverrides.get(ticker.symbol);
     return ids === undefined ? ticker : { ...ticker, watchlist_ids: ids };
@@ -33,6 +37,7 @@ export function useTickerRankingStream({ enabled, selection, filters = disabledT
   const [dismissedError, setDismissedError] = useState<{ resource: typeof resource; message?: string }>();
   return {
     tickers,
+    excludedSymbols,
     excluded: enabled && hasSelection ? metrics.data?.excluded : undefined,
     total: metrics.data?.total ?? (selection.type === "symbols" ? selection.symbols.length : 0),
     loading: enabled && hasSelection && (metrics.data?.loading ?? true),

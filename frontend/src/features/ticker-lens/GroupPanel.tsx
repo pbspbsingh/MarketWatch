@@ -239,7 +239,7 @@ export function GroupPanel({
     if (scrollGroupKey === undefined) return;
     const element = groupElements.current.get(scrollGroupKey);
     if (element === undefined) return;
-    element.scrollIntoView({ block: "nearest" });
+    element.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     if (pendingRevealGroupKey !== undefined && revealGroup !== undefined) {
       handledRevealGroupRevision.current = revealGroup.revision;
     }

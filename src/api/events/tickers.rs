@@ -18,6 +18,7 @@ struct Delivery {
     generation: u64,
     exclusions: HashMap<TickerSymbol, TickerFilterExclusions>,
     excluded: TickerFilterExclusions,
+    reveal_symbol: Option<TickerSymbol>,
 }
 
 impl Delivery {
@@ -47,6 +48,8 @@ impl Delivery {
             self.excluded.above_200_sma - previous.above_200_sma + excluded.above_200_sma;
         let update = if self.filters.includes(&ticker) {
             TickerMetricsUpdate::Ticker { ticker }
+        } else if self.reveal_symbol.as_ref() == Some(&ticker.symbol) {
+            TickerMetricsUpdate::ExcludedTicker { ticker }
         } else {
             TickerMetricsUpdate::Remove {
                 symbol: ticker.symbol,
@@ -149,6 +152,7 @@ pub(super) async fn forward(
     let mut delivery = Delivery {
         id,
         filters: resource.filters,
+        reveal_symbol: resource.reveal_symbol,
         sender,
         generation,
         exclusions: HashMap::new(),
@@ -260,6 +264,9 @@ mod tests {
                     TickerMetricsUpdate::Reset { total: count } => total = Some(count),
                     TickerMetricsUpdate::Ticker { ticker } => {
                         visible.insert(ticker.symbol.to_string());
+                    }
+                    TickerMetricsUpdate::ExcludedTicker { .. } => {
+                        panic!("No reveal symbol was requested")
                     }
                     TickerMetricsUpdate::Remove { symbol } => {
                         visible.remove(symbol.as_str());
@@ -380,6 +387,7 @@ mod tests {
                 TickerMetricsResource {
                     selection,
                     filters: TickerFilters::default(),
+                    reveal_symbol: None,
                 },
                 sender,
                 1,
@@ -533,6 +541,7 @@ mod tests {
             Arc::new(industry),
             "metrics".into(),
             TickerMetricsResource {
+                reveal_symbol: None,
                 selection: TickerSelection::Symbols {
                     symbols: vec![symbol.clone()],
                 },
@@ -633,6 +642,7 @@ mod tests {
     async fn exclusion_counts_overlap_and_replace_previous_metrics_without_double_counting() {
         let (sender, mut receiver) = mpsc::channel(16);
         let mut delivery = Delivery {
+            reveal_symbol: None,
             id: "counts".into(),
             filters: TickerFilters {
                 adr: MinimumFilter {
@@ -658,6 +668,7 @@ mod tests {
             dollar_volume: Some(5_000.0),
             above_200_sma: Some(false),
         };
+        let mut linked = ticker.clone();
         assert!(delivery.ticker(ticker.clone()).await);
         assert!(delivery.ticker(ticker.clone()).await);
         ticker.symbol = TickerSymbol::parse("AMD").unwrap();
@@ -691,6 +702,29 @@ mod tests {
                 }
             ));
         }
+        assert!(matches!(
+            receiver.recv().await.unwrap().1,
+            ApplicationEvent::Snapshot {
+                payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::Ticker { .. }),
+                ..
+            }
+        ));
+        delivery.reveal_symbol = Some(linked.symbol.clone());
+        assert!(delivery.ticker(linked.clone()).await);
+        assert_eq!(
+            delivery.excluded.adr, 1,
+            "Revealing a linked row must not change exclusion counts"
+        );
+        assert!(
+            matches!(receiver.recv().await.unwrap().1, ApplicationEvent::Snapshot {
+            payload: ApplicationSnapshot::Tickers(TickerMetricsUpdate::ExcludedTicker { ticker }), ..
+        } if ticker.symbol == linked.symbol)
+        );
+        linked.adr_percent = Some(5.0);
+        linked.dollar_volume = Some(10_000.0);
+        linked.above_200_sma = Some(true);
+        assert!(delivery.ticker(linked).await);
+        assert_eq!(delivery.excluded, TickerFilterExclusions::default());
         assert!(matches!(
             receiver.recv().await.unwrap().1,
             ApplicationEvent::Snapshot {

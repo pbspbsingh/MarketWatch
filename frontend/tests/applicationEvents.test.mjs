@@ -137,6 +137,34 @@ test("ticker metrics share the global channel, survive completion, and restore d
   release(); events.stop();
 });
 
+test("linked excluded tickers carry a server marker that clears when metrics pass or membership removes them", () => {
+  const { events, socket } = setup();
+  const metrics = new TickerMetricsSubscriptions(events);
+  const resource = { selection: { type: "symbols", symbols: ["NVDA"] }, filters: disabledTickerFilters, reveal_symbol: "NVDA" };
+  const release = metrics.observe(resource);
+  const id = socket.sent.at(-1).subscription_id;
+  const update = state => socket.receive({ type: "snapshot", subscription_id: id, payload: { domain: "tickers", state } });
+  const cached = () => queryClient.getQueryData(tickerMetricsKey(resource));
+  const ticker = { symbol: "NVDA", watchlist_ids: [], performance: null, adr_percent: 4, dollar_volume: 1_000_000 };
+  update({ type: "reset", total: 1 });
+  update({ type: "excluded_ticker", ticker });
+  update({ type: "filter_counts", excluded: { adr: 1, dollarVolume: 0, above200Sma: 0 } });
+  update({ type: "complete" });
+  assert.equal(cached().tickers.length, 1);
+  assert.deepEqual(cached().excludedSymbols, ["NVDA"]);
+  assert.equal(cached().excluded.adr, 1, "The visible exception still counts as excluded");
+  update({ type: "ticker", ticker: { ...ticker, adr_percent: 8 } });
+  assert.deepEqual(cached().excludedSymbols, []);
+  update({ type: "excluded_ticker", ticker });
+  update({ type: "reset", total: 0 });
+  update({ type: "complete" });
+  assert.deepEqual(cached().tickers, []);
+  assert.deepEqual(cached().excludedSymbols, []);
+  update({ type: "excluded_ticker", ticker: { ...ticker, symbol: "AMD" } });
+  assert.equal(socket.code, 1002, "Only the requested linked ticker can bypass filtering");
+  release(); events.stop();
+});
+
 test("filter counts stream independently of visible rows and reset on refresh", () => {
   const { events, socket } = setup();
   const metrics = new TickerMetricsSubscriptions(events);

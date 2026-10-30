@@ -25,7 +25,6 @@ import type {
   GroupMode,
   GroupRanking,
   DefaultMetricSort,
-  RevealRequest,
   SelectedTickerContext,
   TickerFilterCounts,
   TickerMetric,
@@ -33,6 +32,7 @@ import type {
 } from "./types";
 import {
   industryMarketWatchUrl,
+  highlightedGroups,
   themeMarketWatchIdUrl,
   tickerMarketWatchUrl,
 } from "./utils";
@@ -114,6 +114,8 @@ function TickerLensContent({
   const setSelectedGroupKeys = useTickerLensState(state => state.setSelectedGroupKeys);
   const selectedTicker = useTickerLensState(state => state.selectedTicker);
   const setSelectedTicker = useTickerLensState(state => state.setSelectedTicker);
+  const tickerLink = useTickerLensState(state => state.tickerLink);
+  const resolveTickerLink = useTickerLensState(state => state.resolveTickerLink);
   const groupsCollapsed = useTickerLensState(state => state.preferences.groupsCollapsed ?? false);
   const groupWidth = useTickerLensState(state => state.preferences.groupWidth);
   const setGroupsCollapsed = useTickerLensState(state => state.setGroupsCollapsed);
@@ -139,15 +141,10 @@ function TickerLensContent({
   });
   const [searchTickerSymbols, setSearchTickerSymbols] = useState<string[]>([]);
   const [tickerFilterCounts, setTickerFilterCounts] = useState<TickerFilterCounts>({ total: 0, filtered: 0 });
-  const [revealGroup, setRevealGroup] = useState<RevealRequest<string> | undefined>(() => {
-    const keys = selectedGroupKeys;
-    const key = keys.size === 1 ? keys.values().next().value : undefined;
-    return key === undefined ? undefined : { value: key, revision: 1 };
-  });
-  const [revealTicker, setRevealTicker] = useState<RevealRequest<string> | undefined>(() => {
-    const symbol = selectedTicker;
-    return symbol === undefined ? undefined : { value: symbol, revision: 1 };
-  });
+  const revealGroup = useTickerLensState(state => state.revealGroup);
+  const revealTicker = useTickerLensState(state => state.revealTicker);
+  const revealGroupInList = useTickerLensState(state => state.revealGroupInList);
+  const revealTickerInList = useTickerLensState(state => state.revealTickerInList);
   const bounded = universe.type === "bounded";
   const { catalog, catalogError } = useIndustryData(groupMode === "industry");
   const industryGroups = useMemo<GroupRanking[]>(() => catalog?.data.type === "catalog"
@@ -215,9 +212,12 @@ function TickerLensContent({
     (context: SelectedTickerContext | undefined) => setSelectedTickerContext(context),
     [],
   );
-  const revealGroupInList = useCallback((key: string) => {
-    setRevealGroup((current) => ({ value: key, revision: (current?.revision ?? 0) + 1 }));
-  }, []);
+  useEffect(() => {
+    if (tickerLink === undefined || tickerLink.resolved || groupsLoading
+      || selectedTickerContext?.symbol !== tickerLink.symbol) return;
+    const keys = highlightedGroups({ groups, mode: groupMode, selectedTickerContext, unassignedGroupKey });
+    resolveTickerLink(tickerLink.symbol, groupMode, keys);
+  }, [groupMode, groups, groupsLoading, resolveTickerLink, selectedTickerContext, tickerLink]);
   const industryKeys = groupMode === "industry" ? selectedGroupKeys : emptyGroupKeys;
   useEffect(() => {
     if (!bounded && groupMode === "industry") return;
@@ -422,7 +422,7 @@ function TickerLensContent({
         }}
         onSelectTicker={(symbol) => {
           setSelectedTicker(symbol);
-          setRevealTicker((current) => ({ value: symbol, revision: (current?.revision ?? 0) + 1 }));
+          revealTickerInList(symbol);
         }}
         onSelectGlobal={(result: GlobalSearchResult) => {
           const url = result.type === "industry"

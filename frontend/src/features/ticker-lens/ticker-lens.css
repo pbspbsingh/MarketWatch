@@ -796,3 +796,7 @@
   font-size: 0.66rem;
   font-weight: 600;
 }
+.ticker-list-item-excluded > * {
+  filter: blur(0.35px);
+  opacity: 0.5;
+}

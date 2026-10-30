@@ -33,7 +33,7 @@ function validTickerUpdate(value: unknown) {
       typeof excluded[key] === "number" && Number.isSafeInteger(excluded[key]) && excluded[key] >= 0);
   }
   const ticker = value.ticker;
-  if (value.type !== "ticker" || !record(ticker)) return false;
+  if ((value.type !== "ticker" && value.type !== "excluded_ticker") || !record(ticker)) return false;
   return typeof ticker.symbol === "string" && Array.isArray(ticker.watchlist_ids)
     && ticker.watchlist_ids.every(id => typeof id === "number" && Number.isSafeInteger(id) && id > 0)
     && validPerformance(ticker.performance)
@@ -58,8 +58,9 @@ export function snapshotMatchesResource(resource: ApplicationResource, payload: 
   switch (resource.domain) {
     case "tickers": {
       if (payload.domain !== "tickers") return false;
+      if (payload.state.type === "excluded_ticker" && payload.state.ticker.symbol !== resource.resource.reveal_symbol) return false;
       if (resource.resource.selection.type !== "symbols") return true;
-      if (payload.state.type === "ticker") return resource.resource.selection.symbols.includes(payload.state.ticker.symbol);
+      if (payload.state.type === "ticker" || payload.state.type === "excluded_ticker") return resource.resource.selection.symbols.includes(payload.state.ticker.symbol);
       if (payload.state.type === "remove") return resource.resource.selection.symbols.includes(payload.state.symbol);
       return true;
     }
