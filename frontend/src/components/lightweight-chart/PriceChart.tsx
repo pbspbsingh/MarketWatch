@@ -47,14 +47,13 @@ interface PriceChartProps {
   movingAverages?: boolean;
   candleAt: (time: Time) => CandleAppearance | undefined;
   onResetZoom?: () => void;
-  onPriceCacheCleared?: () => void | Promise<void>;
   onReady: (context: PriceChartContext) => void;
   onDestroy: (context: PriceChartContext) => void;
 }
 
 export const PriceChart = forwardRef<ChartHostHandle, PriceChartProps>(function PriceChart({
   symbol, interval = "daily", className, ariaLabel, options, attributionUrl,
-  watermark = true, movingAverages = true, candleAt, onReady, onDestroy, onResetZoom, onPriceCacheCleared,
+  watermark = true, movingAverages = true, candleAt, onReady, onDestroy, onResetZoom,
 }, ref) {
   const { candlePalette, theme, fiveEmaOpacity } = useAppSettings();
   const host = useRef<ChartHostHandle>(null);
@@ -63,7 +62,7 @@ export const PriceChart = forwardRef<ChartHostHandle, PriceChartProps>(function 
   const queryClient = useQueryClient();
   const clearCache = useMutation({
     mutationKey: ["clear-price-cache", symbol, interval],
-    mutationFn: () => clearChartPriceCache(queryClient, symbol, interval, onPriceCacheCleared),
+    mutationFn: () => clearChartPriceCache(queryClient, symbol, interval),
   });
   const resetZoom = () => {
     setMenuPosition(null);

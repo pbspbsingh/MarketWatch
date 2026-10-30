@@ -80,7 +80,6 @@ export function StudyCharts({
   tickerBVisible,
   historyLoading,
   onRequestHistory,
-  onPriceCacheCleared,
   weeklyChartContext,
   rangeOwnerRef,
 }: {
@@ -92,7 +91,6 @@ export function StudyCharts({
   tickerBVisible: boolean;
   historyLoading: boolean;
   onRequestHistory: (direction: "before" | "after") => void;
-  onPriceCacheCleared: () => Promise<void>;
   weeklyChartContext: ChartSyncTarget | null;
   rangeOwnerRef: RefObject<"daily" | "weekly">;
 }) {
@@ -564,7 +562,6 @@ export function StudyCharts({
                 interval={result.interval}
                 className="study-chart"
                 onResetZoom={resetChartView}
-                onPriceCacheCleared={onPriceCacheCleared}
                 options={studyPriceChartOptions}
                 attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(firstSymbol)}`}
                 candleAt={time => candlesByDateRef.current[0]?.get(timeKey(time))}
@@ -594,7 +591,6 @@ export function StudyCharts({
                 interval={result.interval}
                 className="study-chart"
                 onResetZoom={resetChartView}
-                onPriceCacheCleared={onPriceCacheCleared}
                 options={studyPriceChartOptions}
                 attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(secondSymbol)}`}
                 candleAt={time => candlesByDateRef.current[1]?.get(timeKey(time))}

@@ -24,11 +24,6 @@ import {
 } from "@mui/material";
 import type { MarketChartInterval } from "../../api/marketChart";
 import {
-  fetchLastStudy,
-  fetchStudy,
-  type StudyResult,
-} from "../../api/study";
-import {
   ImageExportMenu,
   type ImageExportAction,
 } from "../../components/ImageExportMenu";
@@ -44,7 +39,8 @@ import { WeeklyChartOverlayFrame } from "../ticker-lens/WeeklyChartOverlay";
 import { isArrowKeyControl } from "../ticker-lens/utils";
 import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
 import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
-import { shiftYears } from "./studyDates";
+import { useStudyQuery } from "./useStudyQuery";
+import { studySelection } from "./studyQuery";
 import "./study.css";
 
 const todayText = localDateText(new Date());
@@ -56,7 +52,6 @@ const studyIntervalKey = "market-watch.study-interval";
 export function StudyPage() {
   const {
     logarithmicScale,
-    relativeStrengthPeriods,
     setLogarithmicScale,
     showWeeklyChartOverlay,
     showWeeklyOverlayAxes,
@@ -66,18 +61,16 @@ export function StudyPage() {
   const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
   const [weeklyChartContext, setWeeklyChartContext] = useState<ChartSyncTarget | null>(null);
   const rangeOwnerRef = useRef<"daily" | "weekly">("daily");
-  const [symbolA, setSymbolA] = useState("SPY");
-  const [symbolB, setSymbolB] = useState("QQQ");
-  const [date, setDate] = useState(todayText);
+  const [inputs, setInputs] = useState<{ symbolA?: string; symbolB?: string; date?: string }>({});
   const [interval, setInterval] = useState<MarketChartInterval>(
     () => localStorage.getItem(studyIntervalKey) === "weekly" ? "weekly" : "daily",
   );
-  const initialIntervalRef = useRef(interval);
   const rsPeriod = useRelativeStrengthPeriod(interval);
-  const initialRsPeriodRef = useRef(rsPeriod);
-  const [result, setResult] = useState<StudyResult>();
-  const [datasetVersion, setDatasetVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const study = useStudyQuery(interval, rsPeriod);
+  const { result, datasetVersion, loading, historyLoading } = study;
+  const symbolA = inputs.symbolA ?? study.selection?.symbols[0] ?? "SPY";
+  const symbolB = inputs.symbolB ?? study.selection?.symbols[1] ?? "QQQ";
+  const date = inputs.date ?? study.selection?.date ?? todayText;
   const [orientation, setOrientation] = useState<SplitOrientation>(() =>
     localStorage.getItem(studyOrientationKey) === "horizontal" ? "horizontal" : "vertical",
   );
@@ -90,10 +83,6 @@ export function StudyPage() {
     severity: "success" | "error";
   }>();
   const [exporting, setExporting] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const requestRef = useRef<AbortController | undefined>(undefined);
-  const historyRequestRef = useRef<AbortController | undefined>(undefined);
-  const resultRef = useRef(result);
 
   useEffect(() => {
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
@@ -107,243 +96,21 @@ export function StudyPage() {
     return () => document.removeEventListener("keydown", handleShortcut);
   }, [setShowWeeklyChartOverlay, showWeeklyChartOverlay]);
 
-  useEffect(() => {
-    resultRef.current = result;
-  }, [result]);
-
-  useEffect(() => {
-    requestRef.current?.abort();
-    historyRequestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    fetchLastStudy(
-      initialIntervalRef.current,
-      controller.signal,
-      initialRsPeriodRef.current,
-    )
-      .then((last) => {
-        if (last === null || controller.signal.aborted) return;
-        resultRef.current = last;
-        setResult(last);
-        setDate(last.date);
-        setInterval(last.interval);
-        setSymbolA(last.series[0]?.symbol ?? "SPY");
-        setSymbolB(last.series[1]?.symbol ?? "QQQ");
-      })
-      .catch((loadError: unknown) => {
-        if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
-      })
-      .finally(() => {
-        if (requestRef.current === controller) {
-          if (!controller.signal.aborted) setLoading(false);
-          requestRef.current = undefined;
-        }
-      });
-    return () => {
-      controller.abort();
-      if (requestRef.current === controller) requestRef.current = undefined;
-    };
-  }, []);
-
-  useEffect(() => () => {
-    requestRef.current?.abort();
-    historyRequestRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    const current = result;
-    if (current === undefined || current.interval !== interval
-      || current.relative_strength === null
-      || current.relative_strength.line.moving_average_period === rsPeriod) return;
-    requestRef.current?.abort();
-    historyRequestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    void fetchStudy(
-      [current.series[0].symbol, current.series[1].symbol], current.date, current.interval,
-      {
-        range: { start: current.range_start, end: current.range_end },
-        relativeStrengthPeriod: rsPeriod,
-        signal: controller.signal,
-      },
-    ).then((next) => {
-      if (controller.signal.aborted || resultRef.current !== current) return;
-      const updated = { ...current, relative_strength: next.relative_strength };
-      resultRef.current = updated;
-      setResult(updated);
-    }).catch((loadError: unknown) => {
-      if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : "Unable to update RS average");
-    }).finally(() => {
-      if (!controller.signal.aborted && requestRef.current === controller) {
-        setLoading(false);
-        setHistoryLoading(false);
-      }
-      if (requestRef.current === controller) requestRef.current = undefined;
-    });
-    return () => {
-      controller.abort();
-      if (requestRef.current === controller) requestRef.current = undefined;
-    };
-  }, [interval, result, rsPeriod]);
-
-  const load = async (refresh: boolean) => {
-    const validationError = validateInputs(symbolA, symbolB, date);
-    if (validationError !== undefined) {
-      setError(validationError);
-      return;
-    }
-    requestRef.current?.abort();
-    historyRequestRef.current?.abort();
-    historyRequestRef.current = undefined;
-    setHistoryLoading(false);
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setLoading(true);
-    setError(undefined);
-    try {
-      const next = await fetchStudy(
-        [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()],
-        date,
-        interval,
-        { refresh, relativeStrengthPeriod: relativeStrengthPeriods[interval], signal: controller.signal },
-      );
-      if (controller.signal.aborted) return;
-      resultRef.current = next;
-      setResult(next);
-      setDatasetVersion((version) => version + 1);
-      setSymbolA(next.series[0]?.symbol ?? symbolA);
-      setSymbolB(next.series[1]?.symbol ?? symbolB);
-    } catch (loadError) {
-      if (loadError instanceof Error && loadError.name !== "AbortError") setError(loadError.message);
-    } finally {
-      if (requestRef.current === controller) {
-        if (!controller.signal.aborted) setLoading(false);
-        requestRef.current = undefined;
-      }
-    }
-  };
-
-  const reloadPriceData = async () => {
-    const current = resultRef.current;
-    if (current === undefined || current !== result || requestRef.current !== undefined) return;
-    historyRequestRef.current?.abort();
-    historyRequestRef.current = undefined;
-    setHistoryLoading(false);
-    const controller = new AbortController();
-    requestRef.current = controller;
-    try {
-      const next = await fetchStudy(
-        [current.series[0].symbol, current.series[1].symbol], current.date, current.interval,
-        { refresh: true, range: { start: current.range_start, end: current.range_end },
-          relativeStrengthPeriod: relativeStrengthPeriods[current.interval], signal: controller.signal },
-      );
-      if (controller.signal.aborted) return;
-      resultRef.current = next;
-      setResult(next);
-    } finally {
-      if (requestRef.current === controller) requestRef.current = undefined;
-    }
-  };
-
-  const loadHistory = async (direction: "before" | "after") => {
-    const current = resultRef.current;
-    if (
-      current === undefined
-      || historyRequestRef.current !== undefined
-      || direction === "before" && !current.has_more_before
-      || direction === "after" && !current.has_more_after
-    ) return;
-
-    const range = direction === "before"
-      ? { start: shiftYears(current.range_start, -1), end: current.range_end }
-      : { start: current.range_start, end: shiftYears(current.range_end, 1) };
-    const fetchRange = direction === "before"
-      ? { start: range.start, end: current.range_start }
-      : { start: current.range_end, end: range.end };
-    const requestKey = studyResultKey(current);
-    const controller = new AbortController();
-    historyRequestRef.current = controller;
-    setHistoryLoading(true);
-    try {
-      const expanded = await fetchStudy(
-        [current.series[0].symbol, current.series[1].symbol],
-        current.date,
-        current.interval,
-        {
-          range,
-          relativeStrengthPeriod: relativeStrengthPeriods[current.interval],
-          fetchRange,
-          signal: controller.signal,
-        },
-      );
-      if (
-        !controller.signal.aborted
-        && resultRef.current !== undefined
-        && studyResultKey(resultRef.current) === requestKey
-      ) {
-        resultRef.current = expanded;
-        setResult(expanded);
-      }
-    } catch (historyError) {
-      if (!(historyError instanceof Error && historyError.name === "AbortError")) {
-        setError(historyError instanceof Error
-          ? `Unable to load ${direction === "before" ? "earlier" : "later"} history: ${historyError.message}`
-          : `Unable to load ${direction === "before" ? "earlier" : "later"} history`);
-      }
-    } finally {
-      if (historyRequestRef.current === controller) {
-        historyRequestRef.current = undefined;
-        setHistoryLoading(false);
-      }
-    }
-  };
-
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void load(false);
+    const validationError = validateInputs(symbolA, symbolB, date);
+    if (validationError !== undefined) { setError(validationError); return; }
+    setError(undefined);
+    const symbols: [string, string] = [symbolA.trim().toUpperCase(), symbolB.trim().toUpperCase()];
+    setInputs({ symbolA: symbols[0], symbolB: symbols[1], date });
+    // Loading the same study keeps its expanded history; the chart resets its zoom.
+    study.load(result?.date === date && result.series[0].symbol === symbols[0] && result.series[1].symbol === symbols[1]
+      ? studySelection(result) : { symbols, date });
   };
 
-  const changeInterval = async (nextInterval: MarketChartInterval) => {
+  const changeInterval = (nextInterval: MarketChartInterval) => {
     setInterval(nextInterval);
     localStorage.setItem(studyIntervalKey, nextInterval);
-    const current = resultRef.current;
-    if (current === undefined || current.interval === nextInterval) return;
-
-    requestRef.current?.abort();
-    historyRequestRef.current?.abort();
-    historyRequestRef.current = undefined;
-    setHistoryLoading(false);
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setLoading(true);
-    setError(undefined);
-    try {
-      const next = await fetchStudy(
-        [current.series[0].symbol, current.series[1].symbol],
-        current.date,
-        nextInterval,
-        {
-          relativeStrengthPeriod: relativeStrengthPeriods[nextInterval],
-          range: { start: current.range_start, end: current.range_end },
-          signal: controller.signal,
-        },
-      );
-      if (!controller.signal.aborted && requestRef.current === controller) {
-        resultRef.current = next;
-        setResult(next);
-      }
-    } catch (loadError) {
-      if (loadError instanceof Error && loadError.name !== "AbortError") {
-        setInterval(current.interval);
-        localStorage.setItem(studyIntervalKey, current.interval);
-        setError(loadError.message);
-      }
-    } finally {
-      if (requestRef.current === controller) {
-        if (!controller.signal.aborted) setLoading(false);
-        requestRef.current = undefined;
-      }
-    }
   };
 
   const changeDate = (event: ChangeEvent<HTMLInputElement>) => {
@@ -352,7 +119,7 @@ export function StudyPage() {
     const rawCaret = input.selectionStart ?? rawValue.length;
     const nextDate = formatDateInput(rawValue);
     const nextCaret = dateCaretPosition(rawValue, rawCaret, nextDate);
-    setDate(nextDate);
+    setInputs(current => ({ ...current, date: nextDate }));
     window.requestAnimationFrame(() => {
       if (document.activeElement === input) input.setSelectionRange(nextCaret, nextCaret);
     });
@@ -414,14 +181,14 @@ export function StudyPage() {
           size="small"
           label="Ticker A"
           value={symbolA}
-          onChange={(event) => setSymbolA(event.target.value)}
+          onChange={(event) => setInputs(current => ({ ...current, symbolA: event.target.value }))}
           onFocus={(event) => event.currentTarget.select()}
         />
         <TextField
           size="small"
           label="Ticker B"
           value={symbolB}
-          onChange={(event) => setSymbolB(event.target.value)}
+          onChange={(event) => setInputs(current => ({ ...current, symbolB: event.target.value }))}
           onFocus={(event) => event.currentTarget.select()}
         />
         <TextField
@@ -448,7 +215,7 @@ export function StudyPage() {
           <ToggleButton value="weekly">Weekly</ToggleButton>
         </ToggleButtonGroup>
         <Button size="small" variant="contained" type="submit" disabled={loading}>Load</Button>
-        <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={() => void load(true)}>Refresh</Button>
+        <Button size="small" variant="outlined" type="button" disabled={loading || result === undefined} onClick={study.refresh}>Refresh</Button>
         {loading && <CircularProgress size="1rem" />}
         <Tooltip title="Weekly chart overlay (Alt+W)">
           <IconButton
@@ -517,7 +284,7 @@ export function StudyPage() {
       <div ref={setChartStageElement} className="study-body">
         {result === undefined ? (
           <div className="panel-status">
-            <Typography color="text.secondary">Enter two tickers and a historical date</Typography>
+            <Typography color="text.secondary">{loading ? "Loading Study…" : "Enter two tickers and a historical date"}</Typography>
           </div>
         ) : (
           <StudyCharts
@@ -528,8 +295,7 @@ export function StudyPage() {
             onSplitChange={(split) => localStorage.setItem(studySplitKey, String(split))}
             tickerBVisible={tickerBVisible}
             historyLoading={historyLoading}
-            onRequestHistory={(direction) => void loadHistory(direction)}
-            onPriceCacheCleared={reloadPriceData}
+            onRequestHistory={study.loadHistory}
             weeklyChartContext={showWeeklyChartOverlay ? weeklyChartContext : null}
             rangeOwnerRef={rangeOwnerRef}
           />
@@ -545,7 +311,6 @@ export function StudyPage() {
             onClose={() => setShowWeeklyChartOverlay(false)}
           >
             <StudyWeeklyChart
-              onPriceCacheCleared={reloadPriceData}
               result={result}
               showAxes={showWeeklyOverlayAxes}
               onChartContext={setWeeklyChartContext}
@@ -553,7 +318,7 @@ export function StudyPage() {
           </WeeklyChartOverlayFrame>
         )}
       </div>
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast message={error ?? study.error} onClose={() => { setError(undefined); study.dismissError(); }} />
       <Toast
         message={captureNotice?.message}
         severity={captureNotice?.severity}
@@ -591,10 +356,6 @@ function localDateText(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function studyResultKey(result: StudyResult) {
-  return `${result.series[0]?.symbol ?? ""}\0${result.series[1]?.symbol ?? ""}\0${result.date}\0${result.interval}`;
 }
 
 function formatDateInput(value: string) {

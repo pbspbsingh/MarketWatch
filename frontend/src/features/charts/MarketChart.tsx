@@ -83,7 +83,6 @@ interface MarketChartProps {
   rightOffsetPixels?: number;
   attributionLogo?: boolean;
   onResetZoom?: () => void;
-  onPriceCacheCleared?: () => void | Promise<void>;
   onChartContext?: (context: ChartSyncTarget | null) => void;
   relativeStrength?: MarketChartRelativeStrength | null;
   showRelativeStrength?: boolean;
@@ -118,7 +117,6 @@ export function MarketChart({
   attributionLogo = true,
   onChartContext,
   onResetZoom,
-  onPriceCacheCleared,
   relativeStrength,
   showRelativeStrength: showRelativeStrengthOverride,
   liveDelta,
@@ -653,7 +651,6 @@ export function MarketChart({
         interval={data.interval}
         candleAt={time => candlesByDateRef.current.get(chartTimeToMarketDate(time))}
         onResetZoom={onResetZoom}
-        onPriceCacheCleared={onPriceCacheCleared}
         onReady={initializeSeries}
         onDestroy={context => destroyChart(context.chart)}
       />

@@ -185,7 +185,6 @@ test("clearing a symbol invalidates daily, weekly, and benchmark-dependent queri
     cache.setQueryData(marketChartKey(resource), snapshot(resource));
   }
   let replaced = false;
-  let reloaded = false;
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, "POST");
     assert.match(url, /\/NVDA\/refresh\?/);
@@ -193,13 +192,13 @@ test("clearing a symbol invalidates daily, weekly, and benchmark-dependent queri
     return response(snapshot({ ...request, comparisonSymbol: undefined }));
   };
   try {
-    await clearChartPriceCache(cache, "nasdaq:nvda", "daily", () => { assert.equal(replaced, true); reloaded = true; });
-    assert.equal(reloaded, true);
+    await clearChartPriceCache(cache, "nasdaq:nvda", "daily");
+    assert.equal(replaced, true);
     for (const resource of resources.slice(0, 3)) assert.equal(cache.getQueryState(marketChartKey(resource)).isInvalidated, true);
     assert.equal(cache.getQueryState(marketChartKey(resources[3])).isInvalidated, false);
-    reloaded = false;
+    for (const resource of resources) cache.setQueryData(marketChartKey(resource), snapshot(resource));
     globalThis.fetch = async () => new Response("Unavailable", { status: 503 });
-    await assert.rejects(clearChartPriceCache(cache, "NVDA", "daily", () => { reloaded = true; }), /Unavailable/);
-    assert.equal(reloaded, false);
+    await assert.rejects(clearChartPriceCache(cache, "NVDA", "daily"), /Unavailable/);
+    for (const resource of resources) assert.equal(cache.getQueryState(marketChartKey(resource)).isInvalidated, false);
   } finally { cache.clear(); globalThis.fetch = previousFetch; }
 });

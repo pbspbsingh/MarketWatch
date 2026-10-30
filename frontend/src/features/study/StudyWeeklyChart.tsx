@@ -1,73 +1,50 @@
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircularProgress, Typography } from "@mui/material";
-import { fetchLastStudy, type StudyResult } from "../../api/study";
+import type { StudyResult } from "../../api/study";
 import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
 import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
+import { displayedStudyResult, studyQueryOptions, studySelection } from "./studyQuery";
 import { MarketChart } from "../charts/MarketChart";
 
 export function StudyWeeklyChart({
   result,
   showAxes,
   onChartContext,
-  onPriceCacheCleared,
 }: {
   result: StudyResult;
   showAxes: boolean;
   onChartContext: (context: ChartSyncTarget | null) => void;
-  onPriceCacheCleared: () => Promise<void>;
 }) {
   const { showWeeklyOverlayRelativeStrength } = useAppSettings();
   const period = useRelativeStrengthPeriod("weekly");
-  const [loaded, setLoaded] = useState<{
-    period: number;
-    request: StudyResult;
-    weekly?: StudyResult;
-    error?: string;
-  }>();
-  const current = loaded?.request === result && loaded.period === period ? loaded : undefined;
-  const series = current?.weekly?.series[0];
+  const client = useQueryClient();
+  const request = { ...studySelection(result), interval: "weekly" as const, period };
+  const query = useQuery(studyQueryOptions(client, request));
+  const weekly = displayedStudyResult(client, request, query.data);
+  const series = weekly?.interval === "weekly" ? weekly.series[0] : undefined;
 
-  useEffect(() => {
-    const controller = new AbortController();
-    // The backend aggregates the same cached daily dataset used by the study.
-    void fetchLastStudy("weekly", controller.signal, period).then((weekly) => {
-      if (controller.signal.aborted) return;
-      if (weekly === null || weekly.date !== result.date
-        || weekly.range_start !== result.range_start || weekly.range_end !== result.range_end
-        || weekly.series.length !== result.series.length
-        || weekly.series.some((item, index) => item.symbol !== result.series[index]?.symbol)) {
-        throw new Error("Weekly chart does not match the loaded study. Reload the study to retry.");
-      }
-      setLoaded({ request: result, period, weekly });
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setLoaded({
-        request: result, period,
-        error: error instanceof Error ? error.message : "Unable to load weekly study chart",
-      });
-    });
-    return () => controller.abort();
-  }, [result, period]);
-
-  if (current?.error !== undefined) return (
-    <div className="panel-status" role="alert"><Typography color="error">{current.error}</Typography></div>
+  if (query.isError && series === undefined) return (
+    <div className="panel-status" role="alert"><Typography color="error">{query.error instanceof Error ? query.error.message : "Unable to load weekly Study"}</Typography></div>
   );
   if (series === undefined) return (
     <div className="panel-status"><CircularProgress size="1rem" /></div>
   );
   const markerDate = series.candles.findLast((candle) => candle.date <= result.date)?.date;
   return (
-    <MarketChart
-      data={{ ...series, interval: "weekly" }}
-      relativeStrength={current?.weekly?.relative_strength}
-      showRelativeStrength={showWeeklyOverlayRelativeStrength}
-      companyName={series.company_name ?? undefined}
-      rightPriceScaleVisible={showAxes}
-      timeScaleVisible={showAxes}
-      rightOffsetPixels={10}
-      attributionLogo={false}
-      onChartContext={onChartContext}
-      onPriceCacheCleared={onPriceCacheCleared}
-      dateMarkers={markerDate === undefined ? [] : [{ date: markerDate, text: result.date }]}
-    />
+    <>
+      {query.isError && <div className="weekly-chart-overlay-error" role="alert">Unable to refresh weekly Study. Showing cached prices.</div>}
+      <MarketChart
+        data={{ ...series, interval: "weekly" }}
+        relativeStrength={weekly?.relative_strength}
+        showRelativeStrength={showWeeklyOverlayRelativeStrength}
+        companyName={series.company_name ?? undefined}
+        rightPriceScaleVisible={showAxes}
+        timeScaleVisible={showAxes}
+        rightOffsetPixels={10}
+        attributionLogo={false}
+        onChartContext={onChartContext}
+        dateMarkers={markerDate === undefined ? [] : [{ date: markerDate, text: result.date }]}
+      />
+    </>
   );
 }
