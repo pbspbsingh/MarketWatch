@@ -1,6 +1,20 @@
 pub mod events;
 pub mod industry;
+pub mod live;
 pub mod tickers;
+
+use crate::models::chart::{
+    MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartPoint,
+    MarketChartRelativeStrength, MarketChartSeries, MarketChartSnapshot, VolumeEventKind,
+};
+use crate::models::{
+    RelativeStrengthCalculation, RelativeStrengthCalculationPoint, RelativeStrengthStructure,
+    RelativeStrengthSwing, RelativeStrengthSwingKind, RelativeStrengthTrend, YahooSymbol,
+};
+use crate::services::volume_run_rate::VolumeRunRate;
+use live::{
+    LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
+};
 
 use crate::models::ticker_collection::RejectedTicker;
 use crate::models::{
@@ -23,6 +37,28 @@ pub fn export(check: bool) -> anyhow::Result<()> {
     let config = Config::default().with_large_int("number");
     let declarations = [
         TickerSymbol::decl(&config),
+        YahooSymbol::decl(&config),
+        VolumeEventKind::decl(&config),
+        MarketChartInterval::decl(&config),
+        MarketChartCandle::decl(&config),
+        MarketChartPoint::decl(&config),
+        MarketChartSeries::decl(&config),
+        MarketChartIndicators::decl(&config),
+        MarketChartSnapshot::decl(&config),
+        MarketChartRelativeStrength::decl(&config),
+        RelativeStrengthCalculation::decl(&config),
+        RelativeStrengthCalculationPoint::decl(&config),
+        RelativeStrengthSwingKind::decl(&config),
+        RelativeStrengthTrend::decl(&config),
+        RelativeStrengthSwing::decl(&config),
+        RelativeStrengthStructure::decl(&config),
+        VolumeRunRate::decl(&config),
+        LiveCommand::decl(&config),
+        RawLiveChartRequest::decl(&config),
+        LiveChartDelta::decl(&config),
+        LiveSessionKind::decl(&config),
+        LiveSessionDelta::decl(&config),
+        LiveEvent::decl(&config),
         RejectedTicker::decl(&config),
         TickerCollectionFile::decl(&config),
         TickerCollectionSource::decl(&config),

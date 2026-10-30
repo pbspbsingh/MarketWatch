@@ -13,7 +13,7 @@ import {
   type MarketChartLoadStatus,
 } from "../charts/MarketChartContainer";
 import { SplitPane } from "../../components/SplitPane";
-import { useAppSettings, useRelativeStrengthPeriod } from "../../app/AppSettings";
+import { useAppSettings } from "../../app/AppSettings";
 import {
   ChartContextMenu,
   type ChartMenuPosition,
@@ -33,16 +33,10 @@ import {
 } from "../../components/lightweight-chart/chartOptions";
 import { readChartViewport, writeChartViewport } from "./chartViewport";
 import { marketDataSymbol, type MarketChartRelativeStrength } from "../../api/marketChart";
-import {
-  type MarketChartLiveDelta,
-  type MarketChartSessionDelta,
-} from "../../api/marketChartLive";
 import { isArrowKeyControl, tickerMarketWatchUrl } from "./utils";
-import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
 import type { MarketChartDateMarker } from "../charts/MarketChart";
 
 interface SplitLightweightChartsProps {
-  volumeRunRate?: VolumeRunRateControl;
   topSymbol: string;
   topDateMarkers?: MarketChartDateMarker[];
   bottomSymbol: string;
@@ -56,10 +50,6 @@ interface SplitLightweightChartsProps {
   initialSplit: number;
   onSplitChange: (split: number) => void;
   onError: (source: "top" | "bottom", message: string | undefined) => void;
-  topLiveDelta?: MarketChartLiveDelta;
-  bottomLiveDelta?: MarketChartLiveDelta;
-  topSessionDelta?: MarketChartSessionDelta;
-  bottomSessionDelta?: MarketChartSessionDelta;
 }
 
 const viewportPersistenceDebounceMs = 200;
@@ -75,7 +65,6 @@ interface ChartMenuState {
 }
 
 export default function SplitLightweightCharts({
-  volumeRunRate,
   topSymbol,
   topDateMarkers,
   bottomSymbol,
@@ -89,13 +78,8 @@ export default function SplitLightweightCharts({
   initialSplit,
   onSplitChange,
   onError,
-  topLiveDelta,
-  bottomLiveDelta,
-  topSessionDelta,
-  bottomSessionDelta,
 }: SplitLightweightChartsProps) {
   const { syncWeeklyOverlayCrosshair, relativeStrengthDisplay } = useAppSettings();
-  const rsPeriod = useRelativeStrengthPeriod(interval === "D" ? "daily" : "weekly");
   const bottomRs = relativeStrengthDisplay === "bottom-line";
   const rsKey = `${marketDataSymbol(topSymbol)}\0${marketDataSymbol(bottomSymbol)}\0${interval}`;
   const [rsState, setRsState] = useState<{ key: string; data: MarketChartRelativeStrength | null }>();
@@ -103,10 +87,11 @@ export default function SplitLightweightCharts({
     setRsState({ key: rsKey, data });
   }, [rsKey]);
   const rsData = rsState?.key === rsKey ? rsState.data : null;
-  const rsLive = topLiveDelta?.symbol === marketDataSymbol(topSymbol)
-    && topLiveDelta.interval === (interval === "D" ? "daily" : "weekly")
-    && topLiveDelta.relative_strength?.line.moving_average_period === rsPeriod
-    && topLiveDelta.relative_strength?.comparison_symbol === marketDataSymbol(bottomSymbol) ? topLiveDelta.relative_strength : null;
+  const [rsLiveState, setRsLiveState] = useState<{ key: string; data: MarketChartRelativeStrength | null }>();
+  const receiveRelativeStrengthLive = useCallback((data: MarketChartRelativeStrength | null) => {
+    setRsLiveState({ key: rsKey, data });
+  }, [rsKey]);
+  const rsLive = rsLiveState?.key === rsKey ? rsLiveState.data : null;
   const [topContext, setTopContext] = useState<ChartSyncTarget | null>(null);
   const [bottomContext, setBottomContext] = useState<ChartSyncTarget | null>(null);
   const [chartMenu, setChartMenu] = useState<ChartMenuState | null>(null);
@@ -297,7 +282,7 @@ export default function SplitLightweightCharts({
               showCandleReadout
               symbol={topSymbol}
               dateMarkers={topDateMarkers}
-              volumeRunRate={volumeRunRate}
+              showVolumeRunRate
               companyName={topCompanyName}
               tradingViewSymbol={topTradingViewSymbol}
               interval={chartInterval}
@@ -307,6 +292,7 @@ export default function SplitLightweightCharts({
               relativeStrengthComparisonSymbol={bottomSymbol}
               relativeStrengthPlacement={bottomRs ? "hidden" : "top"}
               onRelativeStrengthChange={receiveRelativeStrength}
+              onRelativeStrengthLiveChange={receiveRelativeStrengthLive}
               showLoadingOverlay={false}
               refreshCandlesVersion={topRefreshVersion}
               reloadVersion={topReloadVersion}
@@ -314,8 +300,6 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setTopLoadState({ key: topDatasetKey, status })}
               onChartContext={setTopContext}
               onError={(message) => onError("top", message)}
-              liveDelta={topLiveDelta}
-              sessionDelta={topSessionDelta}
             />
             {(topPending || topLoading) && <ChartLoadingOverlay />}
           </div>
@@ -348,8 +332,6 @@ export default function SplitLightweightCharts({
               onLoadStatusChange={(status) => setBottomLoadState({ key: bottomDatasetKey, status })}
               onChartContext={setBottomContext}
               onError={(message) => onError("bottom", message)}
-              liveDelta={bottomLiveDelta}
-              sessionDelta={bottomSessionDelta}
             />
             {bottomLoading && <ChartLoadingOverlay />}
           </div>

@@ -1,15 +1,7 @@
 import { marketDataSymbol } from "./marketChart";
 
-export interface VolumeRunRateState {
-  symbol: string;
-  market_date: string;
-  visible: boolean;
-  cached: boolean;
-  ratio: number | null;
-  sample_days: number;
-  updated_at: string | null;
-  calculated_at: string;
-}
+import type { VolumeRunRate as VolumeRunRateState } from "./generated/contracts";
+export type { VolumeRunRate as VolumeRunRateState } from "./generated/contracts";
 
 export function isVolumeRunRateState(state: VolumeRunRateState): boolean {
   return typeof state?.symbol === "string"

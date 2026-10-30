@@ -4,6 +4,7 @@ use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use thiserror::Error;
+use ts_rs::TS;
 
 const DAILY_LINE_SMOOTHING_PERIOD: usize = 5;
 const WEEKLY_LINE_SMOOTHING_PERIOD: usize = 3;
@@ -15,13 +16,13 @@ pub struct ChartDateRange {
     pub end: NaiveDate,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct RelativeStrengthCalculation {
     pub moving_average_period: usize,
     pub points: Vec<RelativeStrengthCalculationPoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct RelativeStrengthCalculationPoint {
     pub date: NaiveDate,
     pub value: f64,
@@ -30,14 +31,14 @@ pub struct RelativeStrengthCalculationPoint {
     pub relative_return_percent: Option<f64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum RelativeStrengthSwingKind {
     High,
     Low,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum RelativeStrengthTrend {
     Uptrend,
@@ -45,14 +46,14 @@ pub enum RelativeStrengthTrend {
     Unclear,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
 pub struct RelativeStrengthSwing {
     pub date: NaiveDate,
     pub value: f64,
     pub kind: RelativeStrengthSwingKind,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct RelativeStrengthStructure {
     pub confirmed: Vec<RelativeStrengthSwing>,
     pub provisional: Option<RelativeStrengthSwing>,

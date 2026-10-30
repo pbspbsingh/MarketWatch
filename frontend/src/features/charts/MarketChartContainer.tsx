@@ -13,10 +13,6 @@ import {
   type MarketChartInterval,
   type MarketChartRelativeStrength,
 } from "../../api/marketChart";
-import type {
-  MarketChartLiveDelta,
-  MarketChartSessionDelta,
-} from "../../api/marketChartLive";
 import { useRelativeStrengthPeriod } from "../../app/AppSettings";
 import { MarketChart, type MarketChartDateMarker } from "./MarketChart";
 import type {
@@ -25,7 +21,7 @@ import type {
 } from "../../components/lightweight-chart/chartSync";
 import { useMarketChartQuery } from "./useMarketChartQuery";
 import "./market-chart.css";
-import type { VolumeRunRateControl } from "../../shared/useVolumeRunRate";
+import { useMarketChartLive } from "./useMarketChartLive";
 
 export interface ChartHistoryInteractionTracker {
   sequence: number;
@@ -35,7 +31,7 @@ export interface ChartHistoryInteractionTracker {
 export type MarketChartLoadStatus = "loading" | "ready" | "error";
 
 interface MarketChartContainerProps {
-  volumeRunRate?: VolumeRunRateControl;
+  showVolumeRunRate?: boolean;
   showCandleReadout?: boolean;
   symbol: string;
   dateMarkers?: MarketChartDateMarker[];
@@ -65,8 +61,7 @@ interface MarketChartContainerProps {
   refreshCandlesVersion?: number;
   reloadVersion?: number;
   onRefreshSettled?: (version: number, succeeded: boolean) => void;
-  liveDelta?: MarketChartLiveDelta;
-  sessionDelta?: MarketChartSessionDelta;
+  onRelativeStrengthLiveChange?: (data: MarketChartRelativeStrength | null) => void;
 }
 
 const historyLoadThresholdBars = 25;
@@ -74,7 +69,7 @@ const chartInteractionWindowMs = 1_000;
 const automaticHistoryCheckDelayMs = 500;
 
 export function MarketChartContainer({
-  volumeRunRate,
+  showVolumeRunRate = false,
   showCandleReadout = false,
   symbol,
   dateMarkers,
@@ -103,11 +98,17 @@ export function MarketChartContainer({
   refreshCandlesVersion = 0,
   reloadVersion = 0,
   onRefreshSettled,
-  liveDelta,
-  sessionDelta,
+  onRelativeStrengthLiveChange,
 }: MarketChartContainerProps) {
   const selectedRsPeriod = useRelativeStrengthPeriod(interval);
   const rsPeriod = relativeStrengthComparisonSymbol === undefined ? undefined : selectedRsPeriod;
+  const { delta: liveDelta, session: sessionDelta, volumeRunRate, error: liveError } = useMarketChartLive({
+    symbol, interval, comparison_symbol: relativeStrengthComparisonSymbol ?? null,
+    relative_strength_period: rsPeriod ?? null, volume_run_rate: showVolumeRunRate,
+  });
+  useEffect(() => {
+    onRelativeStrengthLiveChange?.(liveDelta?.relative_strength ?? null);
+  }, [liveDelta, onRelativeStrengthLiveChange]);
   const datasetKey = `${symbol}\0${interval}`;
   const handledInteractionSequenceRef = useRef(0);
   const localInteractionTrackerRef = useRef<ChartHistoryInteractionTracker>({
@@ -137,7 +138,7 @@ export function MarketChartContainer({
     onChartContextRef.current = onChartContext;
     onLoadStatusChangeRef.current = onLoadStatusChange;
   }, [onChartContext, onError, onLoadStatusChange]);
-  useEffect(() => { onErrorRef.current?.(error); }, [error]);
+  useEffect(() => { onErrorRef.current?.(error ?? liveError); }, [error, liveError]);
   useEffect(() => { onLoadStatusChangeRef.current?.(status); }, [datasetKey, status]);
   useEffect(() => () => { onErrorRef.current?.(undefined); }, []);
 

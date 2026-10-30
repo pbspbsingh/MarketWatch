@@ -2,6 +2,7 @@ use chrono::{Datelike, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use thiserror::Error;
+use ts_rs::TS;
 
 use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::{
@@ -14,7 +15,7 @@ const WEEKLY_DAILY_SMA_PERIOD: usize = 200;
 const DAILY_VOLUME_AVERAGE_PERIOD: usize = 50;
 const WEEKLY_VOLUME_AVERAGE_PERIOD: usize = 10;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum VolumeEventKind {
     HistoryHigh,
@@ -26,14 +27,14 @@ struct VolumeEventMeasurement {
     volume: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum MarketChartInterval {
     Daily,
     Weekly,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartCandle {
     pub date: NaiveDate,
     pub open: f64,
@@ -42,6 +43,7 @@ pub struct MarketChartCandle {
     pub close: f64,
     pub volume: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub volume_event: Option<VolumeEventKind>,
 }
 
@@ -59,13 +61,13 @@ impl From<&DailyCandle> for MarketChartCandle {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartPoint {
     pub date: NaiveDate,
     pub value: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartSeries {
     pub period: usize,
     pub points: Vec<MarketChartPoint>,
@@ -77,7 +79,7 @@ pub struct ChartIndicatorPeriods {
     pub average_volume_sessions: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartIndicators {
     pub date: NaiveDate,
     pub adr_percent: Option<f64>,
@@ -85,7 +87,7 @@ pub struct MarketChartIndicators {
     pub average_volume: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartSnapshot {
     pub symbol: TickerSymbol,
     pub interval: MarketChartInterval,
@@ -99,7 +101,7 @@ pub struct MarketChartSnapshot {
     pub has_more_before: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct MarketChartRelativeStrength {
     pub comparison_symbol: TickerSymbol,
     pub line: RelativeStrengthCalculation,

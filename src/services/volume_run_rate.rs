@@ -8,8 +8,9 @@ use chrono::{DateTime, NaiveDate, Timelike, Utc};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct VolumeRunRate {
     pub symbol: YahooSymbol,
     pub market_date: NaiveDate,

@@ -1,63 +1,7 @@
-export type MarketChartInterval = "daily" | "weekly";
-type VolumeEventKind = "history_high" | "year_high";
+import type { MarketChartInterval, MarketChartCandle, MarketChartSeries, MarketChartIndicators, MarketChartSnapshot } from "./generated/contracts";
+export type { MarketChartInterval, MarketChartCandle, MarketChartSeries, MarketChartIndicators, MarketChartSnapshot, MarketChartRelativeStrength, RelativeStrengthStructure as MarketChartRelativeStrengthStructure } from "./generated/contracts";
 
 export const maximumMarketChartHistoryDays = 10_000;
-
-export interface MarketChartCandle {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  volume_event?: VolumeEventKind;
-}
-
-interface MarketChartPoint {
-  date: string;
-  value: number;
-}
-
-export interface MarketChartSeries {
-  period: number;
-  points: MarketChartPoint[];
-}
-
-interface MarketChartRelativeStrengthPoint extends MarketChartPoint {
-  ticker_return_percent: number | null;
-  comparison_return_percent: number | null;
-  relative_return_percent: number | null;
-}
-
-interface MarketChartRelativeStrengthCalculation {
-  moving_average_period: number;
-  points: MarketChartRelativeStrengthPoint[];
-}
-
-interface MarketChartRelativeStrengthSwing {
-  date: string;
-  value: number;
-  kind: "high" | "low";
-}
-
-export interface MarketChartRelativeStrengthStructure {
-  confirmed: MarketChartRelativeStrengthSwing[];
-  provisional: MarketChartRelativeStrengthSwing | null;
-  trend: "uptrend" | "downtrend" | "unclear";
-}
-
-export interface MarketChartRelativeStrength {
-  comparison_symbol: string;
-  line: MarketChartRelativeStrengthCalculation;
-  structure: MarketChartRelativeStrengthStructure;
-}
-
-export interface MarketChartIndicators {
-  date: string;
-  adr_percent: number | null;
-  extension_from_50_sma: number | null;
-  average_volume: number | null;
-}
 
 export interface MarketChartData {
   symbol: string;
@@ -66,15 +10,6 @@ export interface MarketChartData {
   moving_averages: MarketChartSeries[];
   volume_average?: MarketChartSeries;
   indicators?: MarketChartIndicators[];
-}
-
-export interface MarketChartSnapshot extends MarketChartData {
-  volume_average: MarketChartSeries;
-  indicators: MarketChartIndicators[];
-  relative_strength: MarketChartRelativeStrength | null;
-  earliest_date: string | null;
-  latest_date: string | null;
-  has_more_before: boolean;
 }
 
 interface MarketChartRequestOptions {

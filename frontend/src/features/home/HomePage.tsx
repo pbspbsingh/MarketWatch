@@ -8,11 +8,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import { fetchHomeCharts } from "../../api/home";
 import type { MarketChartInterval } from "../../api/marketChart";
-import {
-  MarketChartLiveClient,
-  type MarketChartLiveDelta,
-  type MarketChartSessionDelta,
-} from "../../api/marketChartLive";
 import { Toast } from "../../components/Toast";
 import {
   setHorizontalCrosshairVisible,
@@ -29,8 +24,6 @@ import "./home.css";
 
 interface ChartState {
   summary?: ChartSummary;
-  liveDelta?: MarketChartLiveDelta;
-  sessionDelta?: MarketChartSessionDelta;
 }
 
 const homeChartViewportStorageKey = "market-watch.home-chart-viewport";
@@ -104,45 +97,6 @@ export function HomePage() {
 
   useEffect(() => {
     if (tickers === undefined) return;
-    const chartSymbols = Object.fromEntries(
-      tickers.map((symbol, index) => [`home-${index}`, symbol]),
-    );
-    const client = new MarketChartLiveClient({
-      onDelta: (delta) => {
-        const symbol = chartSymbols[delta.chart_id];
-        if (symbol === undefined) return;
-        setCharts((current) => ({
-          ...current,
-          [symbol]: {
-            ...current[symbol],
-            liveDelta: delta,
-            sessionDelta: sessionAfterRegularUpdate(current[symbol]?.sessionDelta, delta),
-          },
-        }));
-      },
-      onSession: (delta) => {
-        const symbol = chartSymbols[delta.chart_id];
-        if (symbol === undefined) return;
-        setCharts((current) => ({
-          ...current,
-          [symbol]: {
-            ...current[symbol],
-            sessionDelta: delta,
-          },
-        }));
-      },
-      onError: setError,
-    });
-    client.setCharts(tickers.map((symbol, index) => ({
-      chart_id: `home-${index}`,
-      symbol,
-      interval,
-    })));
-    return () => client.close();
-  }, [interval, tickers]);
-
-  useEffect(() => {
-    if (tickers === undefined) return;
     const targets = tickers.map((symbol) => chartContexts[symbol]);
     if (targets.some((target) => target === null || target === undefined)) return;
     return synchronizeChartGroup(
@@ -191,10 +145,6 @@ export function HomePage() {
             summary={charts[symbol]?.summary}
             interval={interval}
             rightPriceScaleVisible={rightPriceScaleVisible}
-            liveDelta={charts[symbol]?.liveDelta?.interval === interval
-              ? charts[symbol]?.liveDelta
-              : undefined}
-            sessionDelta={charts[symbol]?.sessionDelta}
             initialViewport={initialViewport}
             onChartContext={(context) => {
               setChartContexts((current) => current[symbol] === context
@@ -269,14 +219,4 @@ export function HomePage() {
       />
     </main>
   );
-}
-
-function sessionAfterRegularUpdate(
-  current: MarketChartSessionDelta | undefined,
-  regular: MarketChartLiveDelta,
-): MarketChartSessionDelta | undefined {
-  const matchesPostMarketSession = current?.session === "post_market"
-    && current.symbol === regular.symbol
-    && current.date === regular.candle.date;
-  return matchesPostMarketSession ? current : undefined;
 }

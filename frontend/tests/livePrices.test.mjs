@@ -1,0 +1,185 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { createServer } from "vite";
+
+const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+const { GlobalLivePrices, liveChartKey, sessionAfterRegularUpdate } = await server.ssrLoadModule("/src/api/livePrices.ts");
+after(async () => { await server.close(); });
+
+class Socket extends EventTarget {
+  static OPEN = 1;
+  static sockets = [];
+  readyState = 0;
+  sent = [];
+  constructor(url) { super(); this.url = url; Socket.sockets.push(this); }
+  open() { this.readyState = 1; this.dispatchEvent(new Event("open")); }
+  send(payload) { this.sent.push(JSON.parse(payload)); }
+  emit(event) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(event) })); }
+  close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
+}
+const chart = (symbol = "AAPL", interval = "daily", comparison = null) => ({
+  symbol, interval, comparison_symbol: comparison, relative_strength_period: comparison === null ? null : 5, volume_run_rate: false,
+});
+const candle = { date: "2026-10-30", open: 10, high: 12, low: 9, close: 11, volume: 100 };
+const delta = (request, extra = {}) => ({
+  type: "delta", request_id: request.request_id,
+  delta: { chart_id: request.charts[0].chart_id, symbol: request.charts[0].symbol, interval: request.charts[0].interval,
+    candle, moving_averages: [], volume_average: { period: 50, points: [] }, indicators: null, relative_strength: null, ...extra },
+});
+function setup() {
+  const previous = { window: globalThis.window, WebSocket: globalThis.WebSocket };
+  const timers = new Map(); let id = 0;
+  globalThis.window = { location: { protocol: "https:", host: "market.test" },
+    setTimeout(callback, delay) { timers.set(++id, { callback, delay }); return id; },
+    clearTimeout(id) { timers.delete(id); } };
+  globalThis.WebSocket = Socket;
+  Socket.sockets = [];
+  const client = new GlobalLivePrices();
+  const flush = delay => {
+    for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.callback(); }
+  };
+  return { client, timers, flush, cleanup() { client.stop(); globalThis.window = previous.window; globalThis.WebSocket = previous.WebSocket; } };
+}
+
+test("one application socket multiplexes daily, weekly, benchmark, and raw prices; identical resources share lifetime", () => {
+  const env = setup(); const { client } = env;
+  try {
+    const releaseMain = client.observeChart(chart(" nasdaq:aapl ", "daily", "SPY"));
+    const releaseDuplicate = client.observeChart(chart("AAPL", "daily", "SPY"));
+    const releaseWeekly = client.observeChart(chart("AAPL", "weekly"));
+    const releaseBenchmark = client.observeChart(chart("SPY"));
+    const releasePrices = client.observePrices(["AAPL", "MSFT", "aapl"]);
+    client.start(); client.start();
+    assert.equal(Socket.sockets.length, 1);
+    const socket = Socket.sockets[0]; socket.open();
+    assert.equal(socket.url, "wss://market.test/api/live-prices");
+    let request = socket.sent.at(-1);
+    assert.equal(request.type, "set_subscriptions");
+    assert.equal(request.charts.length, 3);
+    assert.deepEqual(request.symbols, ["AAPL", "MSFT"]);
+    assert.equal(request.charts[0].comparison_symbol, "SPY");
+    releaseMain();
+    assert.equal(socket.sent.length, 1);
+    releaseDuplicate();
+    request = socket.sent.at(-1);
+    assert.equal(request.charts.length, 2);
+    assert.equal(request.charts[0].interval, "weekly");
+    releaseWeekly(); releaseBenchmark(); releasePrices();
+    assert.deepEqual(socket.sent.at(-1).charts, []);
+    assert.equal(socket.readyState, Socket.OPEN);
+    assert.equal(Socket.sockets.length, 1);
+  } finally { env.cleanup(); }
+});
+
+test("routing rejects old generations, released IDs, wrong symbols, and mismatched RS periods", () => {
+  const env = setup(); const { client } = env;
+  try {
+    const resource = chart("AAPL", "daily", "SPY");
+    const release = client.observeChart(resource);
+    client.start(); const socket = Socket.sockets[0]; socket.open();
+    const old = socket.sent.at(-1);
+    socket.emit(delta(old));
+    assert.equal(client.store.getState().charts[liveChartKey(resource)].delta.candle.close, 11);
+    client.observeChart(chart("SPY")); const current = socket.sent.at(-1);
+    socket.emit(delta(old, { candle: { ...candle, close: 99 } }));
+    socket.emit(delta(current, { symbol: "MSFT", candle: { ...candle, close: 99 } }));
+    socket.emit(delta(current, { relative_strength: { comparison_symbol: "SPY", line: { moving_average_period: 10, points: [] } } }));
+    assert.equal(client.store.getState().charts[liveChartKey(resource)].delta.candle.close, 11);
+    release();
+    socket.emit(delta(socket.sent.at(-1), { chart_id: old.charts[0].chart_id }));
+    assert.equal(client.store.getState().charts[liveChartKey(resource)], undefined);
+  } finally { env.cleanup(); }
+});
+
+test("reconnect restores all resources on one replacement socket and ignores retired socket events", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    client.observeChart(chart()); client.observeChart(chart("AAPL", "weekly")); client.observePrices(["MSFT"]);
+    client.start(); const first = Socket.sockets[0]; first.open(); const request = first.sent.at(-1);
+    first.emit(delta(request)); first.close();
+    assert.equal(client.store.getState().status, "reconnecting");
+    assert.deepEqual(client.store.getState().charts, {});
+    flush(1000); const second = Socket.sockets[1]; second.open();
+    assert.deepEqual(second.sent.at(-1), request);
+    first.emit(delta(request));
+    assert.deepEqual(client.store.getState().charts, {});
+    second.emit(delta(request));
+    assert.equal(client.store.getState().charts[liveChartKey(chart())].delta.symbol, "AAPL");
+    client.stop(); second.close();
+    assert.equal(env.timers.size, 0);
+  } finally { env.cleanup(); }
+});
+
+test("raw prices are batched, scoped to requested symbols, and cleared when availability changes", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    client.observePrices(["MSFT"]); client.start(); const socket = Socket.sockets[0]; socket.open();
+    socket.emit({ type: "availability", available: true, market_date: "2026-10-30" });
+    const request = socket.sent.at(-1);
+    const price = symbol => ({ type: "price", request_id: request.request_id, symbol, price: 42, updated_at: "2026-10-30T15:00:00Z" });
+    socket.emit(price("AAPL")); socket.emit(price("MSFT"));
+    assert.equal(client.store.getState().prices.size, 0);
+    flush(250);
+    assert.deepEqual([...client.store.getState().prices.keys()], ["MSFT"]);
+    socket.emit(price("MSFT"));
+    socket.emit({ type: "availability", available: false, market_date: "2026-10-30" });
+    flush(250);
+    assert.equal(client.store.getState().prices.size, 0);
+  } finally { env.cleanup(); }
+});
+
+test("one chart error stays scoped to that resource, malformed messages trigger recovery", () => {
+  const env = setup(); const { client } = env;
+  try {
+    client.observeChart(chart()); client.observeChart(chart("SPY")); client.start(); const socket = Socket.sockets[0]; socket.open();
+    const request = socket.sent.at(-1);
+    socket.emit({ type: "error", request_id: request.request_id, chart_id: request.charts[0].chart_id, message: "failed AAPL" });
+    assert.equal(client.store.getState().charts[liveChartKey(chart())].error, "failed AAPL");
+    assert.equal(client.store.getState().charts[liveChartKey(chart("SPY"))], undefined);
+    socket.emit(null);
+    assert.equal(client.store.getState().status, "reconnecting");
+  } finally { env.cleanup(); }
+});
+
+test("pre-market future candles and matching post-market sessions survive regular updates", () => {
+  const regular = delta({ request_id: 1, charts: [{ chart_id: "a", symbol: "AAPL", interval: "daily" }] }).delta;
+  const pre = { symbol: "AAPL", date: "2026-11-02", session: "pre_market" };
+  assert.equal(sessionAfterRegularUpdate(pre, regular), pre);
+  const post = { symbol: "AAPL", date: candle.date, session: "post_market" };
+  assert.equal(sessionAfterRegularUpdate(post, regular), post);
+  assert.equal(sessionAfterRegularUpdate({ ...pre, date: candle.date }, regular), undefined);
+  assert.equal(sessionAfterRegularUpdate(pre, { ...regular, interval: "weekly" }), pre);
+});
+
+test("VRR shares the chart subscription and ignores older calculations and unrelated symbols", () => {
+  const env = setup(); const { client } = env;
+  try {
+    const resource = { ...chart(), volume_run_rate: true };
+    client.observeChart(resource); client.start(); const socket = Socket.sockets[0]; socket.open();
+    const request = socket.sent.at(-1);
+    assert.equal(request.charts[0].volume_run_rate, true);
+    const state = { symbol: "AAPL", market_date: "2026-10-30", visible: true, cached: true, ratio: 1.5,
+      sample_days: 10, updated_at: "2026-10-30T15:00:00Z", calculated_at: "2026-10-30T15:00:00Z" };
+    const event = state => ({ type: "volume_run_rate", request_id: request.request_id, chart_id: request.charts[0].chart_id, state });
+    socket.emit(event(state));
+    socket.emit(event({ ...state, ratio: 9, calculated_at: "2026-10-30T14:00:00Z" }));
+    socket.emit(event({ ...state, symbol: "MSFT", ratio: 9 }));
+    assert.deepEqual(client.store.getState().charts[liveChartKey(resource)].volumeRunRate, state);
+    assert.equal(Socket.sockets.length, 1);
+  } finally { env.cleanup(); }
+});
+
+test("constructor failures retry and malformed nested data cannot crash the shared stream", () => {
+  const env = setup(); const { client, flush } = env;
+  try {
+    globalThis.WebSocket = class { static OPEN = 1; constructor() { throw new Error("offline"); } };
+    client.observeChart(chart()); client.start();
+    assert.equal(client.store.getState().status, "reconnecting");
+    globalThis.WebSocket = Socket; flush(1000);
+    const socket = Socket.sockets[0]; socket.open(); const request = socket.sent.at(-1);
+    assert.doesNotThrow(() => socket.emit(delta(request, { relative_strength: { comparison_symbol: "SPY" } })));
+    assert.doesNotThrow(() => socket.emit(delta(request, { moving_averages: [null] })));
+    socket.emit(delta(request));
+    assert.equal(client.store.getState().charts[liveChartKey(chart())].delta.symbol, "AAPL");
+  } finally { env.cleanup(); }
+});

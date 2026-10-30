@@ -4,8 +4,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use smol_str::SmolStr;
 use std::fmt;
 use thiserror::Error;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TS)]
+#[ts(type = "string")]
 pub struct YahooSymbol(SmolStr);
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]

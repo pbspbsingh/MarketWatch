@@ -8,7 +8,7 @@ mod global_search;
 mod home;
 mod industries;
 mod institutions;
-mod live_prices;
+mod live;
 mod market;
 mod market_chart;
 mod market_explorer;
@@ -42,7 +42,7 @@ pub fn router() -> Router<AppState> {
         .merge(market_chart::router())
         .merge(market_explorer::router())
         .merge(n_factor::router())
-        .merge(live_prices::router())
+        .merge(live::router())
         .merge(study::router())
         .merge(tickers::router())
         .merge(ticker_collections::router())

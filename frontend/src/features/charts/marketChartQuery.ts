@@ -68,7 +68,7 @@ function options(client: QueryClient, request: MarketChartRequest, operation: Ch
   return queryOptions({
     queryKey,
     // Reuse cached data immediately and revalidate on a new observer/resource.
-    // Live ticks still render through the existing live adapter in this phase.
+    // Live deltas arrive through the shared live-data store.
     staleTime: 0,
     queryFn: async ({ signal }): Promise<MarketChartSnapshot> => {
       const current = client.getQueryData<MarketChartSnapshot>(queryKey);

@@ -37,7 +37,6 @@ import type {
 } from "./types";
 import { useAppSettings } from "../../app/AppSettings";
 import type { ChartSyncTarget } from "../../components/lightweight-chart/chartSync";
-import { useSplitChartLive } from "../../shared/useSplitChartLive";
 import {
   industriesMarketWatchUrl,
   industryMarketWatchUrl,
@@ -304,16 +303,6 @@ export function ChartPanel({
       return next;
     });
   }, []);
-  const liveCharts = useSplitChartLive(
-    summary !== undefined
-      ? {
-          topSymbol: summary.symbol,
-          bottomSymbol: bottomChartSymbol ?? summary.benchmark_symbol,
-          interval,
-        }
-      : undefined,
-    (message) => handleChartError("top", message),
-  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -450,7 +439,6 @@ export function ChartPanel({
               )}
             >
               <SplitLightweightCharts
-                {...liveCharts}
                 topDateMarkers={interval === "D" ? dateMarkers : undefined}
                 topSymbol={summary.symbol}
                 bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}

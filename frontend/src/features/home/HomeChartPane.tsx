@@ -1,8 +1,4 @@
 import type { ChartSummary } from "../../api/chart";
-import type {
-  MarketChartLiveDelta,
-  MarketChartSessionDelta,
-} from "../../api/marketChartLive";
 import type { MarketChartInterval } from "../../api/marketChart";
 import type {
   ChartSyncTarget,
@@ -16,8 +12,6 @@ interface HomeChartPaneProps {
   summary: ChartSummary | undefined;
   interval: MarketChartInterval;
   rightPriceScaleVisible: boolean;
-  liveDelta?: MarketChartLiveDelta;
-  sessionDelta?: MarketChartSessionDelta;
   initialViewport?: ChartViewport;
   onError: (message: string | undefined) => void;
   onChartContext: (context: ChartSyncTarget | null) => void;
@@ -30,8 +24,6 @@ export function HomeChartPane({
   summary,
   interval,
   rightPriceScaleVisible,
-  liveDelta,
-  sessionDelta,
   initialViewport,
   onError,
   onChartContext,
@@ -53,8 +45,6 @@ export function HomeChartPane({
         interval={interval}
         priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
         rightPriceScaleVisible={rightPriceScaleVisible}
-        liveDelta={liveDelta}
-        sessionDelta={sessionDelta}
         initialViewport={initialViewport}
         onError={onError}
         onChartContext={onChartContext}

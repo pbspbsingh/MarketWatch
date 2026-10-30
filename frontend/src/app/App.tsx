@@ -3,6 +3,7 @@ import { CircularProgress, Snackbar, Typography } from "@mui/material";
 import { useStore } from "zustand";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./AppShell";
+import { livePrices } from "../api/livePrices";
 import { applicationEvents } from "../api/applicationEvents";
 import { applicationConnection } from "../shared/applicationConnection";
 
@@ -56,13 +57,15 @@ const TradeLogsPage = lazy(() =>
 
 export function App() {
   const connectionStatus = useStore(applicationConnection, state => state.status);
+  const liveStatus = useStore(livePrices.store, state => state.status);
   useEffect(() => {
     applicationEvents.start();
-    return () => applicationEvents.stop();
+    livePrices.start();
+    return () => { applicationEvents.stop(); livePrices.stop(); };
   }, []);
   return (
     <>
-      <Snackbar open={connectionStatus === "reconnecting"} message="Connection lost. Reconnecting…" />
+      <Snackbar open={connectionStatus === "reconnecting" || liveStatus === "reconnecting"} message="Connection lost. Reconnecting…" />
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Page title="Home"><HomePage /></Page>} />

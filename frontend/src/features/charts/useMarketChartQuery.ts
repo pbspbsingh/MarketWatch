@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { livePrices } from "../../api/livePrices";
 import type { MarketChartInterval, MarketChartSnapshot } from "../../api/marketChart";
 import {
   chartPlaceholder, displayedChartSnapshot, fetchChartOperation, marketChartQueryOptions,
@@ -23,6 +24,12 @@ export function useMarketChartQuery({ symbol, interval, comparisonSymbol, relati
   const period = normalized.relativeStrengthPeriod;
   const request = useMemo(() => ({ symbol: chartSymbol, interval,
     comparisonSymbol: comparison, relativeStrengthPeriod: period }), [chartSymbol, interval, comparison, period]);
+  useEffect(() => livePrices.store.subscribe((state, previous) => {
+    if (state.status === "connected" && previous.status !== "connected") {
+      // A reconnect may span multiple sessions; a last-bar delta cannot fill that gap.
+      void fetchChartOperation(client, request, "load").catch(() => { /* The query owns the error. */ });
+    }
+  }), [client, request]);
   const query = useQuery({ ...marketChartQueryOptions(client, request),
     placeholderData: useCallback((previous: MarketChartSnapshot | undefined) => chartPlaceholder(previous, request), [request]) });
   const snapshot = useMemo(() => displayedChartSnapshot(client, request, query.data), [client, request, query.data]);

@@ -2,6 +2,50 @@
 
 export type TickerSymbol = string;
 
+export type YahooSymbol = string;
+
+export type VolumeEventKind = "history_high" | "year_high";
+
+export type MarketChartInterval = "daily" | "weekly";
+
+export type MarketChartCandle = { date: string, open: number, high: number, low: number, close: number, volume: number, volume_event?: VolumeEventKind, };
+
+export type MarketChartPoint = { date: string, value: number, };
+
+export type MarketChartSeries = { period: number, points: Array<MarketChartPoint>, };
+
+export type MarketChartIndicators = { date: string, adr_percent: number | null, extension_from_50_sma: number | null, average_volume: number | null, };
+
+export type MarketChartSnapshot = { symbol: TickerSymbol, interval: MarketChartInterval, candles: Array<MarketChartCandle>, moving_averages: Array<MarketChartSeries>, volume_average: MarketChartSeries, indicators: Array<MarketChartIndicators>, relative_strength: MarketChartRelativeStrength | null, earliest_date: string | null, latest_date: string | null, has_more_before: boolean, };
+
+export type MarketChartRelativeStrength = { comparison_symbol: TickerSymbol, line: RelativeStrengthCalculation, structure: RelativeStrengthStructure, };
+
+export type RelativeStrengthCalculation = { moving_average_period: number, points: Array<RelativeStrengthCalculationPoint>, };
+
+export type RelativeStrengthCalculationPoint = { date: string, value: number, ticker_return_percent: number | null, comparison_return_percent: number | null, relative_return_percent: number | null, };
+
+export type RelativeStrengthSwingKind = "high" | "low";
+
+export type RelativeStrengthTrend = "uptrend" | "downtrend" | "unclear";
+
+export type RelativeStrengthSwing = { date: string, value: number, kind: RelativeStrengthSwingKind, };
+
+export type RelativeStrengthStructure = { confirmed: Array<RelativeStrengthSwing>, provisional: RelativeStrengthSwing | null, trend: RelativeStrengthTrend, };
+
+export type VolumeRunRate = { symbol: YahooSymbol, market_date: string, visible: boolean, cached: boolean, ratio: number | null, sample_days: number, updated_at: string | null, calculated_at: string, };
+
+export type LiveCommand = { "type": "set_subscriptions", request_id: number, charts: Array<RawLiveChartRequest>, symbols: Array<string>, };
+
+export type RawLiveChartRequest = { volume_run_rate: boolean, chart_id: string, symbol: string, interval: MarketChartInterval, comparison_symbol: string | null, relative_strength_period: number | null, };
+
+export type LiveChartDelta = { chart_id: string, symbol: TickerSymbol, interval: MarketChartInterval, candle: MarketChartCandle, moving_averages: Array<MarketChartSeries>, volume_average: MarketChartSeries, indicators: MarketChartIndicators | null, relative_strength: MarketChartRelativeStrength | null, };
+
+export type LiveSessionKind = "pre_market" | "post_market";
+
+export type LiveSessionDelta = { chart_id: string, symbol: YahooSymbol, date: string, session: LiveSessionKind, candle: MarketChartCandle | null, price: number, indicators: MarketChartIndicators | null, };
+
+export type LiveEvent = { "type": "availability", available: boolean, market_date: string, } | { "type": "price", request_id: number, symbol: YahooSymbol, price: number, updated_at: string, } | { "type": "volume_run_rate", request_id: number, chart_id: string, state: VolumeRunRate, } | { "type": "subscribed", request_id: number, symbols: Array<YahooSymbol>, } | { "type": "delta", request_id: number, delta: LiveChartDelta, } | { "type": "session", request_id: number, delta: LiveSessionDelta, } | { "type": "error", request_id: number, chart_id: string | null, message: string, };
+
 export type RejectedTicker = { symbol: TickerSymbol, reason: string, };
 
 export type TickerCollectionFile = { name: string, row_count: number, extracted_count: number, skipped_rows: number, };

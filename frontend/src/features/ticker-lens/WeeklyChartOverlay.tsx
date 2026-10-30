@@ -13,8 +13,6 @@ import {
 import { createPortal } from "react-dom";
 import CloseIcon from "@mui/icons-material/Close";
 import { IconButton } from "@mui/material";
-import { marketDataSymbol } from "../../api/marketChart";
-import { MarketChartLiveClient, type MarketChartLiveDelta } from "../../api/marketChartLive";
 import { readChartViewport } from "./chartViewport";
 import {
   subscribeChartViewport,
@@ -166,17 +164,7 @@ function LiveWeeklyChart({
 }: Pick<WeeklyChartOverlayProps, "symbol" | "tradingViewSymbol" | "showAxes" | "onChartContext"> & {
   initialViewport: ReturnType<typeof readChartViewport>;
 }) {
-  const [liveDelta, setLiveDelta] = useState<MarketChartLiveDelta>();
   const [error, setError] = useState<string>();
-  useEffect(() => {
-    const client = new MarketChartLiveClient({
-      onDelta: setLiveDelta,
-      onSession: () => undefined,
-      onError: setError,
-    });
-    client.setCharts([{ chart_id: "top", symbol, interval: "weekly" }]);
-    return () => client.close();
-  }, [symbol]);
   return (
     <>
       <Suspense fallback={null}>
@@ -190,7 +178,7 @@ function LiveWeeklyChart({
           rightOffsetPixels={10}
           attributionLogo={false}
           onChartContext={onChartContext}
-          liveDelta={liveDelta?.symbol === marketDataSymbol(symbol) ? liveDelta : undefined}
+          onError={setError}
         />
       </Suspense>
       {error && <div className="weekly-chart-overlay-error" role="alert">{error}</div>}

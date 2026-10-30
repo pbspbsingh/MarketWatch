@@ -1,164 +1,9 @@
-import {
-  marketDataSymbol,
-  type MarketChartCandle,
-  type MarketChartInterval,
-  type MarketChartIndicators,
-  type MarketChartRelativeStrength,
-  type MarketChartSeries,
-} from "./marketChart";
-import { isVolumeRunRateState, type VolumeRunRateState } from "./volumeRunRate";
+import type { MarketChartCandle, MarketChartIndicators, MarketChartSeries, MarketChartRelativeStrength, MarketChartRelativeStrengthStructure } from "./marketChart";
+import type { LiveChartDelta, LiveSessionDelta } from "./generated/contracts";
+export type MarketChartLiveDelta = LiveChartDelta;
+export type MarketChartSessionDelta = LiveSessionDelta;
 
-interface MarketChartLiveRequest {
-  volume_run_rate?: boolean;
-  chart_id: string;
-  symbol: string;
-  interval: MarketChartInterval;
-  comparison_symbol?: string;
-  relative_strength_period?: number;
-}
-
-export interface MarketChartLiveDelta {
-  chart_id: string;
-  symbol: string;
-  interval: MarketChartInterval;
-  candle: MarketChartCandle;
-  moving_averages: MarketChartSeries[];
-  volume_average: MarketChartSeries;
-  relative_strength: MarketChartRelativeStrength | null;
-  indicators: MarketChartIndicators | null;
-}
-
-export interface MarketChartSessionDelta {
-  chart_id: string;
-  symbol: string;
-  date: string;
-  session: "pre_market" | "post_market";
-  candle: MarketChartCandle | null;
-  price: number;
-  indicators: MarketChartIndicators | null;
-}
-
-interface LiveChartClientOptions {
-  onVolumeRunRate?: (chartId: string, state: VolumeRunRateState) => void;
-  onDelta: (delta: MarketChartLiveDelta) => void;
-  onSession: (delta: MarketChartSessionDelta) => void;
-  onError: (message: string) => void;
-}
-
-type LiveChartEvent =
-  | { type: "volume_run_rate"; request_id: number; chart_id: string; state: VolumeRunRateState }
-  | { type: "subscribed"; request_id: number; symbols: string[] }
-  | { type: "delta"; request_id: number; delta: MarketChartLiveDelta }
-  | { type: "session"; request_id: number; delta: MarketChartSessionDelta }
-  | { type: "error"; request_id: number; message: string };
-
-const initialReconnectDelayMs = 1_000;
-const maximumReconnectDelayMs = 30_000;
-
-export class MarketChartLiveClient {
-  private socket?: WebSocket;
-  private reconnectTimer?: number;
-  private reconnectDelayMs = initialReconnectDelayMs;
-  private requestId = 0;
-  private charts: MarketChartLiveRequest[] = [];
-  private serializedCharts = "";
-  private closed = false;
-
-  constructor(private readonly options: LiveChartClientOptions) {}
-
-  setCharts(charts: MarketChartLiveRequest[]) {
-    const normalized = charts.map((chart) => ({
-      ...chart,
-      symbol: marketDataSymbol(chart.symbol),
-      comparison_symbol: chart.comparison_symbol === undefined
-        ? undefined
-        : marketDataSymbol(chart.comparison_symbol),
-    }));
-    const serialized = JSON.stringify(normalized);
-    if (serialized === this.serializedCharts) return;
-    this.charts = normalized;
-    this.serializedCharts = serialized;
-    this.requestId += 1;
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.sendDesiredCharts(this.socket);
-    } else if (this.charts.length > 0) {
-      this.connect();
-    } else {
-      window.clearTimeout(this.reconnectTimer);
-    }
-  }
-
-  close() {
-    this.closed = true;
-    window.clearTimeout(this.reconnectTimer);
-    this.socket?.close(1000, "chart closed");
-    this.socket = undefined;
-  }
-
-  private connect() {
-    if (
-      this.closed
-      || this.charts.length === 0
-      || this.socket?.readyState === WebSocket.OPEN
-      || this.socket?.readyState === WebSocket.CONNECTING
-    ) return;
-    window.clearTimeout(this.reconnectTimer);
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/market-chart/live`);
-    this.socket = socket;
-    socket.addEventListener("open", () => {
-      if (this.socket !== socket || this.closed) return;
-      this.reconnectDelayMs = initialReconnectDelayMs;
-      this.sendDesiredCharts(socket);
-    });
-    socket.addEventListener("message", (event) => {
-      if (this.socket !== socket || this.closed) return;
-      this.handleMessage(event.data);
-    });
-    socket.addEventListener("close", () => {
-      if (this.socket !== socket) return;
-      this.socket = undefined;
-      if (!this.closed && this.charts.length > 0) this.scheduleReconnect();
-    });
-  }
-
-  private sendDesiredCharts(socket: WebSocket) {
-    socket.send(JSON.stringify({
-      type: "set_charts",
-      request_id: this.requestId,
-      charts: this.charts,
-    }));
-  }
-
-  private handleMessage(payload: unknown) {
-    if (typeof payload !== "string") return;
-    let event: LiveChartEvent;
-    try {
-      event = JSON.parse(payload) as LiveChartEvent;
-    } catch {
-      this.options.onError("Live chart sent invalid JSON");
-      return;
-    }
-    if (event.request_id !== this.requestId) return;
-    if (event.type === "volume_run_rate" && typeof event.chart_id === "string" && isVolumeRunRateState(event.state)) {
-      this.options.onVolumeRunRate?.(event.chart_id, event.state);
-    } else if (event.type === "error") {
-      this.options.onError(event.message);
-    } else if (event.type === "delta" && isLiveDelta(event.delta)) {
-      this.options.onDelta(event.delta);
-    } else if (event.type === "session" && isSessionDelta(event.delta)) {
-      this.options.onSession(event.delta);
-    }
-  }
-
-  private scheduleReconnect() {
-    window.clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = window.setTimeout(() => this.connect(), this.reconnectDelayMs);
-    this.reconnectDelayMs = Math.min(maximumReconnectDelayMs, this.reconnectDelayMs * 2);
-  }
-}
-
-function isSessionDelta(delta: MarketChartSessionDelta): boolean {
+export function isSessionDelta(delta: MarketChartSessionDelta): boolean {
   return typeof delta?.chart_id === "string"
     && typeof delta.symbol === "string"
     && /^\d{4}-\d{2}-\d{2}$/.test(delta.date)
@@ -168,13 +13,14 @@ function isSessionDelta(delta: MarketChartSessionDelta): boolean {
     && (delta.session === "pre_market" ? isCandle(delta.candle) : delta.candle === null);
 }
 
-function isLiveDelta(delta: MarketChartLiveDelta): boolean {
+export function isLiveDelta(delta: MarketChartLiveDelta): boolean {
   return typeof delta?.chart_id === "string"
     && typeof delta.symbol === "string"
     && (delta.interval === "daily" || delta.interval === "weekly")
     && isCandle(delta.candle)
-    && Array.isArray(delta.moving_averages)
-    && Array.isArray(delta.volume_average?.points)
+    && Array.isArray(delta.moving_averages) && delta.moving_averages.every(isSeries)
+    && isSeries(delta.volume_average)
+    && (delta.relative_strength === null || isRelativeStrength(delta.relative_strength))
     && (delta.indicators === null || isIndicators(delta.indicators) && delta.indicators.date === delta.candle.date);
 }
 
@@ -190,4 +36,24 @@ function isCandle(candle: MarketChartCandle | null | undefined): candle is Marke
     && candle !== undefined
     && /^\d{4}-\d{2}-\d{2}$/.test(candle.date)
     && [candle.open, candle.high, candle.low, candle.close, candle.volume].every(Number.isFinite);
+}
+
+function isSeries(value: MarketChartSeries | undefined): boolean {
+  return value !== undefined && value !== null && Number.isInteger(value.period) && value.period > 0
+    && Array.isArray(value.points) && value.points.every(point => point != null
+      && /^\d{4}-\d{2}-\d{2}$/.test(point.date) && Number.isFinite(point.value));
+}
+function isRelativeStrength(value: MarketChartRelativeStrength | undefined): boolean {
+  if (value == null || typeof value.comparison_symbol !== "string" || value.line == null
+    || !Number.isInteger(value.line.moving_average_period) || value.line.moving_average_period <= 0
+    || !Array.isArray(value.line.points) || value.structure == null) return false;
+  const swing = (point: MarketChartRelativeStrengthStructure["provisional"]) => point != null
+    && /^\d{4}-\d{2}-\d{2}$/.test(point.date) && Number.isFinite(point.value)
+    && (point.kind === "high" || point.kind === "low");
+  return value.line.points.every(point => point != null && /^\d{4}-\d{2}-\d{2}$/.test(point.date)
+    && Number.isFinite(point.value) && [point.ticker_return_percent, point.comparison_return_percent, point.relative_return_percent]
+      .every(metric => metric === null || Number.isFinite(metric)))
+    && Array.isArray(value.structure.confirmed) && value.structure.confirmed.every(swing)
+    && (value.structure.provisional === null || swing(value.structure.provisional))
+    && ["uptrend", "downtrend", "unclear"].includes(value.structure.trend);
 }
