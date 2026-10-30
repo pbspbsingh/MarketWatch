@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { createServer } from "vite";
+import { createTestServer } from "./viteTestServer.mjs";
 
-const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+const server = await createTestServer();
 const { priceSeriesData } = await server.ssrLoadModule("/src/components/lightweight-chart/priceChartSeries.ts");
 const { volumeColor } = await server.ssrLoadModule("/src/components/lightweight-chart/chartOptions.ts");
 const { synchronizeCharts, synchronizeChartGroup, synchronizeWeeklyOverlayCrosshairs } = await server.ssrLoadModule("/src/components/lightweight-chart/chartSync.ts");

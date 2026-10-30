@@ -1,38 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, Button, CircularProgress, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { TickMarkType, type Time, type UTCTimestamp } from "lightweight-charts";
-import { fetchTradeLogHourlyChart, type TradeLog, type TradeLogHourlyChart } from "../../api/tradeLogs";
+import type { TradeLog, TradeLogHourlyChart } from "../../api/tradeLogs";
 import { PriceChart, type PriceChartContext } from "../../components/lightweight-chart/PriceChart";
 import { useAppSettings } from "../../app/AppSettings";
 import { appPalettes } from "../../app/theme";
 import { hourlyExecutionMarkers } from "./executionMarkers";
-import { errorMessage } from "./format";
+import { tradeHourlyChartQueryOptions } from "./tradeChartQuery";
 import { tradeTimeFormatters } from "./timeFormat";
 
 export function TradeHourlyChart({ trade, timeZone, onSelect, onClose }: { trade: TradeLog; timeZone: string; onSelect: (index: number) => void; onClose?: () => void }) {
-  const [result, setResult] = useState<{ key: string; data?: TradeLogHourlyChart; error?: string } | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const key = `${trade.id}:${trade.revision}:${attempt}`;
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchTradeLogHourlyChart(trade.id, controller.signal)
-      .then(data => { if (!controller.signal.aborted) setResult({ key, data }); })
-      .catch(error => { if (!controller.signal.aborted) setResult({ key, error: errorMessage(error) }); });
-    return () => controller.abort();
-  }, [trade.id, key]);
-  const data = result?.key === key ? result.data : undefined;
+  const query = useQuery(tradeHourlyChartQueryOptions(trade));
+  const data = query.data;
   return <section className="tl-hourly-section tl-trade-view-section" aria-label="Hourly execution chart">
     <div className="tl-section-heading"><h3>Hourly</h3><span>{timeZone} · Includes extended hours</span>{onClose && <IconButton size="small" aria-label="Close trade chart overlay" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>}</div>
-    {result?.key === key && result.error ? <Alert severity="info" action={<Button size="small" onClick={() => setAttempt(n => n + 1)}>Retry</Button>}>Hourly chart unavailable.</Alert>
+    {query.isError && data !== undefined && <Alert severity="info" action={<Button size="small" onClick={() => { void query.refetch(); }}>Retry</Button>}>Could not refresh hourly prices. Showing cached data.</Alert>}
+    {query.isError && data === undefined ? <Alert severity="info" action={<Button size="small" onClick={() => { void query.refetch(); }}>Retry</Button>}>Hourly chart unavailable.</Alert>
       : !data ? <div className="tl-chart-placeholder"><CircularProgress size={16} /> Loading hourly candles</div>
       : !data.candles.length ? <Alert severity="info">No hourly history is available for this trade’s dates.</Alert>
-      : <HourlyCanvas onPriceCacheCleared={() => setAttempt(n => n + 1)} data={data} trade={trade} timeZone={timeZone} onSelect={onSelect} />}
+      : <HourlyCanvas key={`${trade.id}:${trade.revision}`} data={data} trade={trade} timeZone={timeZone} onSelect={onSelect} />}
     {data?.history_limited && <p className="tl-caption">The provider limits hourly history. Older executions remain in the journal.</p>}
   </section>;
 }
 
-function HourlyCanvas({ data, trade, timeZone, onSelect, onPriceCacheCleared }: { onPriceCacheCleared: () => void; data: TradeLogHourlyChart; trade: TradeLog; timeZone: string; onSelect: (index: number) => void }) {
+function HourlyCanvas({ data, trade, timeZone, onSelect }: { data: TradeLogHourlyChart; trade: TradeLog; timeZone: string; onSelect: (index: number) => void }) {
   const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
   const price = useRef<PriceChartContext | null>(null);
@@ -57,8 +50,8 @@ function HourlyCanvas({ data, trade, timeZone, onSelect, onPriceCacheCleared }: 
     price.current?.setCandles(data.candles.map(candle => ({ ...candle, time: candle.time as UTCTimestamp })));
     price.current?.markers.setMarkers(markers.map(marker => ({ id: String(marker.index), time: marker.time as UTCTimestamp, text: marker.text, position: marker.side === "buy" ? "belowBar" : "aboveBar", shape: marker.side === "buy" ? "arrowUp" : "arrowDown", color: marker.side === "buy" ? palette.positive : palette.negative })));
   }, [data.candles, markers, candlePalette, theme, palette]);
-  useEffect(() => { price.current?.chart.timeScale().fitContent(); }, [data.candles]);
+  useEffect(() => { price.current?.chart.timeScale().fitContent(); }, []);
   const missing = trade.executions.length - markers.length;
-  return <><div className="tl-chart"><PriceChart onPriceCacheCleared={onPriceCacheCleared} onResetZoom={() => price.current?.chart.timeScale().fitContent()} symbol={trade.symbol} movingAverages={false} watermark={false} ariaLabel={`${trade.symbol} hourly chart`} options={options} candleAt={time => typeof time === "number" ? candlesByTime.get(time) : undefined} onReady={ready} onDestroy={destroy} /></div>
+  return <><div className="tl-chart"><PriceChart onResetZoom={() => price.current?.chart.timeScale().fitContent()} symbol={trade.symbol} movingAverages={false} watermark={false} ariaLabel={`${trade.symbol} hourly chart`} options={options} candleAt={time => typeof time === "number" ? candlesByTime.get(time) : undefined} onReady={ready} onDestroy={destroy} /></div>
     {missing > 0 && <p className="tl-caption">{missing} execution(s) have no matching hourly candle. Markers are shown only where price history exists.</p>}</>;
 }

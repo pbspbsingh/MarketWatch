@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { createServer } from "vite";
+import { createTestServer } from "./viteTestServer.mjs";
 
-const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+const server = await createTestServer();
 const { GlobalLivePrices, liveChartKey, sessionAfterRegularUpdate } = await server.ssrLoadModule("/src/api/livePrices.ts");
 after(async () => { await server.close(); });
 

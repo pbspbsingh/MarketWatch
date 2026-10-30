@@ -3,8 +3,8 @@ import { livePrices } from "./livePrices";
 import { marketDataSymbol, refreshMarketChartSnapshot, type MarketChartInterval } from "./marketChart";
 
 function chartUsesPriceSymbol(query: Query, symbol: string) {
-  const key = query.queryKey;
-  return key[0] === "market-chart" && (key[1] === symbol || key[3] === symbol);
+  const symbols = query.meta?.priceSymbols;
+  return Array.isArray(symbols) && symbols.includes(symbol);
 }
 
 export async function clearChartPriceCache(client: QueryClient, symbol: string, interval: MarketChartInterval,

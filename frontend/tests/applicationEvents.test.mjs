@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { createServer } from "vite";
+import { createTestServer } from "./viteTestServer.mjs";
 
 class Socket extends EventTarget {
   static OPEN = 1;
@@ -27,7 +27,7 @@ globalThis.window = {
   setTimeout(callback) { const id = ++nextTimer; reconnects.set(id, callback); return id; },
   clearTimeout(id) { reconnects.delete(id); },
 };
-const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+const server = await createTestServer();
 const { ApplicationEvents } = await server.ssrLoadModule("/src/api/applicationEvents.ts");
 const { IndustrySubscriptions, industryQueryKey } = await server.ssrLoadModule("/src/api/industrySubscriptions.ts");
 const { createApplicationConnectionStore } = await server.ssrLoadModule("/src/shared/applicationConnection.ts");

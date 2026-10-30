@@ -67,6 +67,7 @@ function options(client: QueryClient, request: MarketChartRequest, operation: Ch
   const queryKey = marketChartKey(request);
   return queryOptions({
     queryKey,
+    meta: { priceSymbols: [request.symbol, ...(request.comparisonSymbol === undefined ? [] : [request.comparisonSymbol])] },
     // Reuse cached data immediately and revalidate on a new observer/resource.
     // Live deltas arrive through the shared live-data store.
     staleTime: 0,

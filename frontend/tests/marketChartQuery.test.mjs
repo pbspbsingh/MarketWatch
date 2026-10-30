@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { createServer } from "vite";
+import { createTestServer } from "./viteTestServer.mjs";
 
-const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+const server = await createTestServer();
 const { marketChartRequest, marketChartKey, marketChartQueryOptions, fetchChartOperation, displayedChartSnapshot, chartPlaceholder } =
   await server.ssrLoadModule("/src/features/charts/marketChartQuery.ts");
 const { clearChartPriceCache } = await server.ssrLoadModule("/src/api/priceCache.ts");
@@ -180,7 +180,10 @@ test("clearing a symbol invalidates daily, weekly, and benchmark-dependent queri
   const resources = [request, { ...request, interval: "weekly", relativeStrengthPeriod: 2 },
     { symbol: "AMD", interval: "daily", comparisonSymbol: request.symbol, relativeStrengthPeriod: 5 },
     { symbol: "SPY", interval: "daily" }];
-  for (const resource of resources) cache.setQueryData(marketChartKey(resource), snapshot(resource));
+  for (const resource of resources) {
+    cache.getQueryCache().build(cache, marketChartQueryOptions(cache, resource));
+    cache.setQueryData(marketChartKey(resource), snapshot(resource));
+  }
   let replaced = false;
   let reloaded = false;
   globalThis.fetch = async (url, options) => {
