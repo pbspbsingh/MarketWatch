@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Alert, Button, Chip, CircularProgress, IconButton, MenuItem, TextField, Tooltip } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
@@ -6,34 +5,16 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import { previewTradeLog, type TradeLog, type TradeLogDirection, type TradeLogExecutionInput, type TradeLogInput, type TradeLogTag } from "../../api/tradeLogs";
+import type { TradeLog, TradeLogDirection, TradeLogExecutionInput, TradeLogInput, TradeLogTag } from "../../api/tradeLogs";
 import { TagPicker } from "./TagPicker";
-import { errorMessage, localDateTime, money, newExecution, payload, pnlClass, shares } from "./format";
+import { localDateTime, money, newExecution, pnlClass, shares } from "./format";
+import { useTradePreview } from "./useTradePreview";
 
 export function TradeEditor({ draft, saved, tags, dirty, busy, onChange, onSave, onReset, onDelete, onClose }: {
   draft: TradeLogInput; saved: TradeLog | null; tags: TradeLogTag[]; dirty: boolean; busy: boolean;
   onChange: (draft: TradeLogInput) => void; onSave: () => void; onReset: () => void; onDelete: () => void; onClose: () => void;
 }) {
-  const signature = JSON.stringify(draft);
-  const [result, setResult] = useState<{ signature: string; trade?: TradeLog; error?: string } | null>(null);
-  const [lastValidTrade, setLastValidTrade] = useState<TradeLog | null>(saved);
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      let input: TradeLogInput;
-      const draft = JSON.parse(signature) as TradeLogInput;
-      if (!draft.symbol.trim()) { setResult({ signature, error: "Enter a ticker to calculate this trade." }); return; }
-      if (!/^[a-zA-Z0-9.-]+$/.test(draft.symbol.trim())) { setResult({ signature, error: "Use a stock or ETF ticker, such as AAPL or BRK-B." }); return; }
-      try { input = payload(draft); }
-      catch { setResult({ signature, error: "Enter a valid date and time for every execution." }); return; }
-      void previewTradeLog(input, controller.signal)
-        .then(trade => { if (!controller.signal.aborted) { setResult({ signature, trade }); setLastValidTrade(trade); } })
-        .catch(error => { if (!controller.signal.aborted) setResult({ signature, error: errorMessage(error) }); });
-    }, 350);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [signature]);
-  const preview = result?.signature === signature ? result.trade : undefined;
-  const validation = result?.signature === signature ? result.error : undefined;
+  const { preview, validation, lastValidTrade } = useTradePreview(draft, saved);
   const summary = preview?.summary ?? lastValidTrade?.summary;
   const short = draft.direction === "short";
   const entrySide = short ? "sell" : "buy";
