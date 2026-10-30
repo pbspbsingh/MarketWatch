@@ -5,7 +5,6 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAppSettings } from "../../app/AppSettings";
 import { fetchChartSummary, type ChartSummary } from "../../api/chart";
 import { fetchHomeCharts } from "../../api/home";
 import type { MarketChartInterval } from "../../api/marketChart";
@@ -30,7 +29,6 @@ import "./home.css";
 
 interface ChartState {
   summary?: ChartSummary;
-  summarySettled?: boolean;
   liveDelta?: MarketChartLiveDelta;
   sessionDelta?: MarketChartSessionDelta;
 }
@@ -53,7 +51,6 @@ function homeChartViewportKey(interval: MarketChartInterval) {
 }
 
 export function HomePage() {
-  const { chartEngine } = useAppSettings();
   const [tickers, setTickers] = useState<string[]>();
   const [charts, setCharts] = useState<Record<string, ChartState>>({});
   const [error, setError] = useState<string>();
@@ -94,15 +91,11 @@ export function HomePage() {
         .then((summary) => {
           setCharts((current) => ({
             ...current,
-            [symbol]: { ...current[symbol], summary, summarySettled: true },
+            [symbol]: { ...current[symbol], summary },
           }));
         })
         .catch((loadError: unknown) => {
           if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setCharts((current) => ({
-            ...current,
-            [symbol]: { ...current[symbol], summarySettled: true },
-          }));
           setError(loadError instanceof Error ? loadError.message : `Failed to load ${symbol}`);
         });
     }
@@ -110,7 +103,7 @@ export function HomePage() {
   }, [tickers]);
 
   useEffect(() => {
-    if (tickers === undefined || chartEngine !== "lightweight") return;
+    if (tickers === undefined) return;
     const chartSymbols = Object.fromEntries(
       tickers.map((symbol, index) => [`home-${index}`, symbol]),
     );
@@ -146,20 +139,20 @@ export function HomePage() {
       interval,
     })));
     return () => client.close();
-  }, [chartEngine, interval, tickers]);
+  }, [interval, tickers]);
 
   useEffect(() => {
-    if (tickers === undefined || chartEngine !== "lightweight") return;
+    if (tickers === undefined) return;
     const targets = tickers.map((symbol) => chartContexts[symbol]);
     if (targets.some((target) => target === null || target === undefined)) return;
     return synchronizeChartGroup(
       targets as ChartSyncTarget[],
       (source) => source === chartContexts[viewportOwnerRef.current ?? tickers[0]],
     );
-  }, [chartContexts, chartEngine, tickers]);
+  }, [chartContexts, tickers]);
 
   useEffect(() => {
-    if (tickers === undefined || chartEngine !== "lightweight") return;
+    if (tickers === undefined) return;
     const target = chartContexts[tickers[0]];
     if (target === null || target === undefined) return;
     return subscribeChartViewport(
@@ -167,17 +160,17 @@ export function HomePage() {
       (viewport) => writeStoredChartViewport(homeChartViewportKey(interval), viewport),
       viewportPersistenceDebounceMs,
     );
-  }, [chartContexts, chartEngine, interval, tickers]);
+  }, [chartContexts, interval, tickers]);
 
   useEffect(() => {
-    if (tickers === undefined || chartEngine !== "lightweight") return;
+    if (tickers === undefined) return;
     for (const symbol of tickers) {
       const context = chartContexts[symbol];
       if (context !== null && context !== undefined) {
         setHorizontalCrosshairVisible(context, symbol === activeCrosshairOwner);
       }
     }
-  }, [activeCrosshairOwner, chartContexts, chartEngine, tickers]);
+  }, [activeCrosshairOwner, chartContexts, tickers]);
 
   if (tickers === undefined) {
     return (
@@ -196,7 +189,6 @@ export function HomePage() {
             key={symbol}
             symbol={symbol}
             summary={charts[symbol]?.summary}
-            summarySettled={charts[symbol]?.summarySettled ?? false}
             interval={interval}
             rightPriceScaleVisible={rightPriceScaleVisible}
             liveDelta={charts[symbol]?.liveDelta?.interval === interval
@@ -247,7 +239,6 @@ export function HomePage() {
           </ToggleButton>
         </ToggleButtonGroup>
         <ToggleButton
-          disabled={chartEngine !== "lightweight"}
           size="small"
           value="axis"
           selected={rightPriceScaleVisible}

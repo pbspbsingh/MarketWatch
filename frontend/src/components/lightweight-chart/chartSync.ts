@@ -15,7 +15,21 @@ export interface ChartSyncTarget {
   chart: IChartApi;
   candleSeries: ISeriesApi<"Candlestick">;
   candleAt: (date: string) => { close: number } | undefined;
+  setHoveredDate?: (date: string | undefined) => void;
   isDisposed: () => boolean;
+}
+
+/** Programmatic crosshair changes do not emit Lightweight Charts hover events. */
+export function setChartCrosshair(target: ChartSyncTarget, date: string | undefined, price?: number) {
+  if (target.isDisposed()) return;
+  const candle = date === undefined ? undefined : target.candleAt(date);
+  if (date === undefined || candle === undefined) {
+    target.chart.clearCrosshairPosition();
+    target.setHoveredDate?.(undefined);
+  } else {
+    target.chart.setCrosshairPosition(price ?? candle.close, marketDateToChartTime(date), target.candleSeries);
+    target.setHoveredDate?.(date);
+  }
 }
 
 /** Sync weekly to main/comparison, and comparison dates to weekly, without changing viewports. */
@@ -40,6 +54,7 @@ export function synchronizeWeeklyOverlayCrosshairs(
       synchronizing = true;
       try {
         const date = event.time === undefined ? undefined : chartTimeToMarketDate(event.time);
+        source.setHoveredDate?.(date);
         const price = event.point === undefined || source === comparison
           ? null : source.candleSeries.coordinateToPrice(event.point.y);
         const validPosition = date !== undefined && event.point !== undefined
@@ -61,7 +76,7 @@ export function synchronizeWeeklyOverlayCrosshairs(
             : firstTradingDateInWeek(target, date);
           const candle = targetDate === undefined ? undefined : target.candleAt(targetDate);
           if (!validPosition || targetDate === undefined || candle === undefined) {
-            target.chart.clearCrosshairPosition();
+            setChartCrosshair(target, undefined);
             continue;
           }
           const targetTime = marketDateToChartTime(targetDate);
@@ -69,14 +84,11 @@ export function synchronizeWeeklyOverlayCrosshairs(
           const x = timeScale.timeToCoordinate(targetTime);
           // Lightweight Charts clamps an offscreen synthetic crosshair to the visible bars.
           if (x === null || x < 0 || x > timeScale.width()) {
-            target.chart.clearCrosshairPosition();
+            setChartCrosshair(target, undefined);
             continue;
           }
-          target.chart.setCrosshairPosition(
-            source === comparison || target === comparison ? candle.close : price!,
-            targetTime,
-            target.candleSeries,
-          );
+          setChartCrosshair(target, targetDate,
+            source === comparison || target === comparison ? candle.close : price!);
         }
       } finally {
         synchronizing = false;
@@ -93,7 +105,7 @@ export function synchronizeWeeklyOverlayCrosshairs(
     });
     targets.forEach((target) => {
       if (target.isDisposed()) return;
-      target.chart.clearCrosshairPosition();
+      setChartCrosshair(target, undefined);
     });
     setHorizontalCrosshairVisible(weekly, true);
   };
@@ -244,16 +256,8 @@ export function synchronizeCharts(
       const date = event.time === undefined
         ? undefined
         : chartTimeToMarketDate(event.time);
-      const candle = date === undefined ? undefined : target.candleAt(date);
-      if (date === undefined || candle === undefined) {
-        target.chart.clearCrosshairPosition();
-      } else {
-        target.chart.setCrosshairPosition(
-          candle.close,
-          marketDateToChartTime(date),
-          target.candleSeries,
-        );
-      }
+      source.setHoveredDate?.(date);
+      setChartCrosshair(target, date);
     } finally {
       synchronizingCrosshair = false;
     }
@@ -272,8 +276,8 @@ export function synchronizeCharts(
       second.chart.timeScale().unsubscribeVisibleLogicalRangeChange(secondRangeHandler);
       second.chart.unsubscribeCrosshairMove(secondCrosshairHandler);
     }
-    if (!first.isDisposed()) first.chart.clearCrosshairPosition();
-    if (!second.isDisposed()) second.chart.clearCrosshairPosition();
+    setChartCrosshair(first, undefined);
+    setChartCrosshair(second, undefined);
   };
 }
 
@@ -340,18 +344,10 @@ export function synchronizeChartGroup(
         const date = event.time === undefined
           ? undefined
           : chartTimeToMarketDate(event.time);
+        source.setHoveredDate?.(date);
         for (const target of targets) {
           if (target === source || target.isDisposed()) continue;
-          const candle = date === undefined ? undefined : target.candleAt(date);
-          if (date === undefined || candle === undefined) {
-            target.chart.clearCrosshairPosition();
-          } else {
-            target.chart.setCrosshairPosition(
-              candle.close,
-              marketDateToChartTime(date),
-              target.candleSeries,
-            );
-          }
+          setChartCrosshair(target, date);
         }
       } finally {
         synchronizingCrosshair = false;
@@ -368,7 +364,7 @@ export function synchronizeChartGroup(
       target.chart.unsubscribeCrosshairMove(crosshairHandlers[index]);
     });
     targets.forEach((target) => {
-      if (!target.isDisposed()) target.chart.clearCrosshairPosition();
+      setChartCrosshair(target, undefined);
     });
   };
 }

@@ -1,21 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import {
-  CandlestickSeries,
-  createTextWatermark,
-  HistogramSeries,
   LineSeries,
   LineStyle,
   MismatchDirection,
   PriceScaleMode,
-  createSeriesMarkers,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
   type ISeriesMarkersPluginApi,
-  type ITextWatermarkPluginApi,
   type Time,
   type MouseEventParams,
 } from "lightweight-charts";
@@ -31,26 +26,20 @@ import type {
   MarketChartLiveDelta,
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
-import {
-  ChartHost,
-  type ChartHostHandle,
-} from "../../components/lightweight-chart/ChartHost";
+import type { ChartHostHandle } from "../../components/lightweight-chart/ChartHost";
 import {
   candleSeriesOptions,
   bottomRelativeStrengthLayout,
   chartRightOffsetPixels,
   defaultPriceScaleMargins,
-  fiveEmaColor,
   indicatorSeriesOptions,
   relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
-  volumeAverageSeriesOptions,
-  volumeScaleMargins,
-  volumeSeriesOptions,
   volumeColor,
   visualizationColors,
 } from "../../components/lightweight-chart/chartOptions";
+import { PriceChart, type PriceChartContext } from "../../components/lightweight-chart/PriceChart";
 import { useAppSettings } from "../../app/AppSettings";
 import { appPalettes } from "../../app/theme";
 import {
@@ -67,9 +56,8 @@ import {
 } from "../../components/lightweight-chart/chartRange";
 import {
   lineData,
-  movingAverageSeriesCount,
   movingAverageSpecs,
-} from "./chartSeries";
+} from "../../components/lightweight-chart/priceChartSeries";
 import {
   relativeStrengthLineData,
   recolorRelativeStrengthLineData,
@@ -115,15 +103,6 @@ export interface MarketChartDateMarker {
   exactDate?: boolean;
 }
 
-function watermarkLines(symbol: string, color: string) {
-  return [{
-    text: symbol,
-    color: `${color}24`,
-    fontSize: 48,
-    fontStyle: "bold",
-  }];
-}
-
 export function MarketChart({
   volumeRunRate,
   showCandleReadout = false,
@@ -149,12 +128,12 @@ export function MarketChart({
   dateMarkers = [],
   onMarkerClick,
 }: MarketChartProps) {
+  const priceContextRef = useRef<PriceChartContext | null>(null);
   const markerClickRef = useRef(onMarkerClick);
   useEffect(() => { markerClickRef.current = onMarkerClick; }, [onMarkerClick]);
   const markerClickHandlerRef = useRef<((event: MouseEventParams<Time>) => void) | null>(null);
   const {
     candlePalette,
-    fiveEmaOpacity,
     logarithmicScale,
     relativeStrengthLineStyle: rsLineStyle,
     theme,
@@ -174,8 +153,6 @@ export function MarketChart({
   const relativeStrengthProvisionalInnerRef = useRef<ISeriesApi<"Line">>(null);
   const postMarketLineRef = useRef<IPriceLine>(null);
   const dateMarkersRef = useRef<ISeriesMarkersPluginApi<Time>>(null);
-  const watermarkRef = useRef<ITextWatermarkPluginApi<Time>>(null);
-  const symbolRef = useRef(data.symbol);
   const candlesByDateRef = useRef(new Map<string, MarketChartCandle>());
   const indicatorsByDateRef = useRef(new Map<string, MarketChartIndicators>());
   const hoveredDateRef = useRef<string | undefined>(undefined);
@@ -183,12 +160,16 @@ export function MarketChart({
   const [readout, setReadout] = useState<{ candle?: MarketChartCandle; indicators?: MarketChartIndicators }>({});
   const refreshReadout = useCallback(() => {
     const date = hoveredDateRef.current;
-    if (!showCandleReadout || date === undefined) return;
-    const candle = candlesByDateRef.current.get(date);
-    const indicators = indicatorsByDateRef.current.get(date);
+    if (!showCandleReadout) return;
+    const candle = date === undefined ? undefined : candlesByDateRef.current.get(date);
+    const indicators = date === undefined ? undefined : indicatorsByDateRef.current.get(date);
     setReadout((current) => current.candle === candle && current.indicators === indicators
       ? current : { candle, indicators });
   }, [showCandleReadout]);
+  const setHoveredDate = useCallback((date: string | undefined) => {
+    hoveredDateRef.current = date;
+    refreshReadout();
+  }, [refreshReadout]);
   const chartContextRef = useRef<ChartSyncTarget>(null);
   const chartDisposedRef = useRef(true);
   const contextReportedRef = useRef(false);
@@ -268,34 +249,25 @@ export function MarketChart({
     relativeStrengthProvisionalInnerRef.current?.setData(provisionalData);
   }, []);
 
-  const initializeSeries = useCallback((chart: IChartApi) => {
+  const initializeSeries = useCallback((price: PriceChartContext) => {
+    priceContextRef.current = price;
+    const { chart } = price;
     chartDisposedRef.current = false;
     const viewport = initialViewportRef.current;
     if (viewport !== undefined) {
       chart.timeScale().applyOptions({ barSpacing: viewport.barSpacing });
     }
-    const candleSeries = chart.addSeries(
-      CandlestickSeries,
-      candleSeriesOptions(candlePalette, theme),
-    );
+    const candleSeries = price.candles;
     candleSeriesRef.current = candleSeries;
-    dateMarkersRef.current = createSeriesMarkers(candleSeries, []);
+    dateMarkersRef.current = price.markers;
     const markerClick = (event: MouseEventParams<Time>) => {
       if (typeof event.hoveredObjectId === "string") markerClickRef.current?.(event.hoveredObjectId);
     };
     markerClickHandlerRef.current = markerClick;
     chart.subscribeClick(markerClick);
-    const volumeSeries = chart.addSeries(HistogramSeries, volumeSeriesOptions);
-    volumeSeries.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
-    volumeSeriesRef.current = volumeSeries;
-    volumeAverageSeriesRef.current = chart.addSeries(
-      LineSeries,
-      volumeAverageSeriesOptions,
-    );
-    movingAverageSeriesRef.current = Array.from(
-      { length: movingAverageSeriesCount },
-      () => chart.addSeries(LineSeries, indicatorSeriesOptions),
-    );
+    volumeSeriesRef.current = price.volume;
+    volumeAverageSeriesRef.current = price.volumeAverage;
+    movingAverageSeriesRef.current = price.movingAverages;
     const relativeStrengthSeries = chart.addSeries(
       LineSeries,
       {
@@ -339,57 +311,43 @@ export function MarketChart({
       pointMarkersRadius: 1.25,
       priceScaleId: "left",
     });
-    watermarkRef.current = createTextWatermark(chart.panes()[0], {
-      horzAlign: "center",
-      vertAlign: "center",
-      lines: watermarkLines(symbolRef.current, palette.muted),
-    });
     chartContextRef.current = {
       chart,
       candleSeries,
       candleAt: (date) => candlesByDateRef.current.get(date),
+      setHoveredDate,
       isDisposed: () => chartDisposedRef.current,
     };
     if (showCandleReadout) {
       const handler = (event: MouseEventParams<Time>) => {
-        if (event.time === undefined) return;
-        hoveredDateRef.current = chartTimeToMarketDate(event.time);
-        refreshReadout();
+        setHoveredDate(event.time === undefined ? undefined : chartTimeToMarketDate(event.time));
       };
       readoutCrosshairHandlerRef.current = handler;
       chart.subscribeCrosshairMove(handler);
     }
     contextReportedRef.current = false;
     initializedRef.current = false;
-  }, [candlePalette, palette, refreshReadout, rsLineStyle, showCandleReadout, theme]);
+  }, [candlePalette, palette, rsLineStyle, setHoveredDate, showCandleReadout, theme]);
 
   const destroyChart = useCallback((chart: IChartApi) => {
+    priceContextRef.current = null;
     if (markerClickHandlerRef.current) chart.unsubscribeClick(markerClickHandlerRef.current);
     markerClickHandlerRef.current = null;
     if (readoutCrosshairHandlerRef.current !== null) {
       chart.unsubscribeCrosshairMove(readoutCrosshairHandlerRef.current);
       readoutCrosshairHandlerRef.current = null;
     }
-    watermarkRef.current?.detach();
-    watermarkRef.current = null;
     relativeStrengthHighsRef.current = null;
     relativeStrengthLowsRef.current = null;
     relativeStrengthProvisionalOuterRef.current = null;
     relativeStrengthProvisionalInnerRef.current = null;
     relativeStrengthSeriesRef.current = null;
     postMarketLineRef.current = null;
-    dateMarkersRef.current?.detach();
     dateMarkersRef.current = null;
     chartDisposedRef.current = true;
     if (contextReportedRef.current) onChartContextRef.current?.(null);
     contextReportedRef.current = false;
   }, []);
-
-  useEffect(() => {
-    watermarkRef.current?.applyOptions({
-      lines: watermarkLines(data.symbol, palette.muted),
-    });
-  }, [data.symbol, palette]);
 
   useEffect(() => {
     relativeStrengthProvisionalInnerRef.current?.applyOptions({
@@ -400,20 +358,6 @@ export function MarketChart({
   useEffect(() => {
     candlePaletteRef.current = candlePalette;
     themeRef.current = theme;
-    const candles = candleSeriesRef.current;
-    candles?.applyOptions(candleSeriesOptions(candlePalette, theme));
-    // Remove session color overrides when changing style; retain current live OHLC values.
-    if (candles !== null) candles.setData(candles.data().map((candle) => ({
-      ...candle, color: undefined, borderColor: undefined, wickColor: undefined,
-    })));
-    const volume = volumeSeriesRef.current;
-    if (volume !== null) volume.setData(volume.data().map((bar) => {
-      const candle = candlesByDateRef.current.get(chartTimeToMarketDate(bar.time));
-      return candle === undefined ? bar : {
-        ...bar,
-        color: volumeColor(candle.open, candle.close, candle.volume_event, candlePalette, theme),
-      };
-    }));
   }, [candlePalette, theme]);
 
   useEffect(() => {
@@ -471,21 +415,9 @@ export function MarketChart({
     candlesByDateRef.current = new Map(
       data.candles.map((candle) => [candle.date, candle]),
     );
-    const candles = data.candles.map((candle): CandlestickData<Time> => ({
-      time: marketDateToChartTime(candle.date),
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-    }));
-    const volume = data.candles.map((candle): HistogramData<Time> => ({
-      time: marketDateToChartTime(candle.date),
-      value: candle.volume,
-      color: volumeColor(candle.open, candle.close, candle.volume_event, candlePaletteRef.current, themeRef.current),
-    }));
-
-    candleSeriesRef.current?.setData(candles);
-    volumeSeriesRef.current?.setData(volume);
+    priceContextRef.current?.setCandles(data.candles.map(candle => ({
+      ...candle, time: marketDateToChartTime(candle.date),
+    })));
     seriesDatasetKeyRef.current = datasetKey;
     if (chart !== null && chart !== undefined && visibleRange !== undefined) {
       restoreAnchoredLogicalRange(chart, visibleRange);
@@ -530,22 +462,9 @@ export function MarketChart({
         line.setData([]);
         return;
       }
-      if (spec.period !== 5 || spec.type !== "EMA") {
-        line.applyOptions({ color: spec.color });
-      }
       line.setData(lineData(byPeriod.get(spec.period)));
     });
   }, [data.interval, data.moving_averages]);
-
-  useEffect(() => {
-    const specs = movingAverageSpecs(data.interval);
-    movingAverageSeriesRef.current.forEach((line, index) => {
-      const spec = specs[index];
-      if (spec?.period === 5 && spec.type === "EMA") {
-        line.applyOptions({ color: fiveEmaColor(fiveEmaOpacity) });
-      }
-    });
-  }, [data.interval, fiveEmaOpacity]);
 
   useEffect(() => {
     const chart = hostRef.current?.getChart();
@@ -760,8 +679,7 @@ export function MarketChart({
     : chartCompanyNameLabel(companyName);
   return (
     <>
-      <ChartHost
-        useGlobalPriceScale
+      <PriceChart
         ref={hostRef}
         className={className}
         ariaLabel={ariaLabel ?? `${data.symbol} price chart`}
@@ -769,8 +687,11 @@ export function MarketChart({
         attributionUrl={tradingViewSymbol === undefined
           ? undefined
           : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}
-        onChartReady={initializeSeries}
-        onChartDestroy={destroyChart}
+        symbol={data.symbol}
+        interval={data.interval}
+        candleAt={time => candlesByDateRef.current.get(chartTimeToMarketDate(time))}
+        onReady={initializeSeries}
+        onDestroy={context => destroyChart(context.chart)}
       />
       <div className={showCandleReadout ? "market-chart-header" : undefined}>
         {(companyLabel !== undefined || hasRelativeStrength || volumeRunRate?.state.visible) && (

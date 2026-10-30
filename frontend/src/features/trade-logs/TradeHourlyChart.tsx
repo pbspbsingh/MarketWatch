@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, CircularProgress, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import { CandlestickSeries, HistogramSeries, TickMarkType, createSeriesMarkers, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type Time, type UTCTimestamp } from "lightweight-charts";
+import { TickMarkType, type Time, type UTCTimestamp } from "lightweight-charts";
 import { fetchTradeLogHourlyChart, type TradeLog, type TradeLogHourlyChart } from "../../api/tradeLogs";
-import { ChartHost } from "../../components/lightweight-chart/ChartHost";
-import { candleSeriesOptions, volumeSeriesOptions, volumeScaleMargins, volumeColor } from "../../components/lightweight-chart/chartOptions";
+import { PriceChart, type PriceChartContext } from "../../components/lightweight-chart/PriceChart";
 import { useAppSettings } from "../../app/AppSettings";
 import { appPalettes } from "../../app/theme";
 import { hourlyExecutionMarkers } from "./executionMarkers";
@@ -36,10 +35,7 @@ export function TradeHourlyChart({ trade, timeZone, onSelect, onClose }: { trade
 function HourlyCanvas({ data, trade, timeZone, onSelect }: { data: TradeLogHourlyChart; trade: TradeLog; timeZone: string; onSelect: (index: number) => void }) {
   const { candlePalette, theme } = useAppSettings();
   const palette = appPalettes[theme];
-  const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
+  const price = useRef<PriceChartContext | null>(null);
   const selectionRef = useRef(onSelect);
   useEffect(() => { selectionRef.current = onSelect; }, [onSelect]);
   const options = useMemo(() => {
@@ -49,27 +45,20 @@ function HourlyCanvas({ data, trade, timeZone, onSelect }: { data: TradeLogHourl
       localization: { timeFormatter: (time: Time) => typeof time === "number" ? labels.dateTime.format(new Date(time * 1000)) : String(time) },
     };
   }, [timeZone]);
-  const ready = useCallback((chart: IChartApi) => {
-    chartRef.current = chart;
-    candlesRef.current = chart.addSeries(CandlestickSeries, candleSeriesOptions(candlePalette, theme));
-    volumeRef.current = chart.addSeries(HistogramSeries, volumeSeriesOptions);
-    volumeRef.current.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
-    markersRef.current = createSeriesMarkers(candlesRef.current, []);
+  const ready = useCallback((context: PriceChartContext) => {
+    const { chart } = context;
+    price.current = context;
     chart.subscribeClick(event => { if (typeof event.hoveredObjectId === "string") selectionRef.current(Number(event.hoveredObjectId)); });
-  }, [candlePalette, theme]);
-  const destroy = useCallback(() => {
-    markersRef.current?.detach(); markersRef.current = null; chartRef.current = null;
-    candlesRef.current = null; volumeRef.current = null;
   }, []);
+  const destroy = useCallback(() => { price.current = null; }, []);
+  const candlesByTime = useMemo(() => new Map(data.candles.map(candle => [candle.time, candle])), [data.candles]);
   const markers = useMemo(() => hourlyExecutionMarkers(data.candles.map(candle => candle.time), trade.executions), [data.candles, trade.executions]);
   useEffect(() => {
-    candlesRef.current?.applyOptions(candleSeriesOptions(candlePalette, theme));
-    candlesRef.current?.setData(data.candles.map(candle => ({ ...candle, time: candle.time as UTCTimestamp })));
-    volumeRef.current?.setData(data.candles.map(candle => ({ time: candle.time as UTCTimestamp, value: candle.volume, color: volumeColor(candle.open, candle.close, undefined, candlePalette, theme) })));
-    markersRef.current?.setMarkers(markers.map(marker => ({ id: String(marker.index), time: marker.time as UTCTimestamp, text: marker.text, position: marker.side === "buy" ? "belowBar" : "aboveBar", shape: marker.side === "buy" ? "arrowUp" : "arrowDown", color: marker.side === "buy" ? palette.positive : palette.negative })));
+    price.current?.setCandles(data.candles.map(candle => ({ ...candle, time: candle.time as UTCTimestamp })));
+    price.current?.markers.setMarkers(markers.map(marker => ({ id: String(marker.index), time: marker.time as UTCTimestamp, text: marker.text, position: marker.side === "buy" ? "belowBar" : "aboveBar", shape: marker.side === "buy" ? "arrowUp" : "arrowDown", color: marker.side === "buy" ? palette.positive : palette.negative })));
   }, [data.candles, markers, candlePalette, theme, palette]);
-  useEffect(() => { chartRef.current?.timeScale().fitContent(); }, [data.candles]);
+  useEffect(() => { price.current?.chart.timeScale().fitContent(); }, [data.candles]);
   const missing = trade.executions.length - markers.length;
-  return <><div className="tl-chart"><ChartHost useGlobalPriceScale ariaLabel={`${trade.symbol} hourly chart`} options={options} onChartReady={ready} onChartDestroy={destroy} /></div>
+  return <><div className="tl-chart"><PriceChart symbol={trade.symbol} movingAverages={false} watermark={false} ariaLabel={`${trade.symbol} hourly chart`} options={options} candleAt={time => typeof time === "number" ? candlesByTime.get(time) : undefined} onReady={ready} onDestroy={destroy} /></div>
     {missing > 0 && <p className="tl-caption">{missing} execution(s) have no matching hourly candle. Markers are shown only where price history exists.</p>}</>;
 }

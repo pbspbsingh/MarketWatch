@@ -11,29 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import {
-  CandlestickSeries,
-  CrosshairMode,
-  HistogramSeries,
   LineSeries,
-  ColorType,
   PriceScaleMode,
-  createChart,
-  createSeriesMarkers,
-  createTextWatermark,
-  type CandlestickData,
-  type HistogramData,
   type LogicalRange,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
-  type ITextWatermarkPluginApi,
   type MouseEventParams,
   type Time,
-  type WhitespaceData,
 } from "lightweight-charts";
 import type { StudyCandle, StudyResult } from "../../api/study";
 import { SplitPane, type SplitOrientation } from "../../components/SplitPane";
-import { updateAttributionUrl } from "../../components/lightweight-chart/ChartHost";
+import { PriceChart, type PriceChartContext } from "../../components/lightweight-chart/PriceChart";
 import {
   captureAnchoredLogicalRange,
   restoreAnchoredLogicalRange,
@@ -45,19 +34,12 @@ import {
 } from "../../components/lightweight-chart/ChartContextMenu";
 import {
   getChartColors,
-  chartThemeOptions,
-  candleSeriesOptions,
   bottomRelativeStrengthLayout,
-  fiveEmaColor,
   indicatorSeriesOptions,
   overlappingPriceScaleMargins,
   relativeStrengthLineStyle,
   relativeStrengthScaleMargins,
   relativeStrengthSeriesOptions,
-  volumeAverageSeriesOptions,
-  volumeScaleMargins,
-  volumeSeriesOptions,
-  volumeColor,
 } from "../../components/lightweight-chart/chartOptions";
 import { appPalettes, type AppThemeMode } from "../../app/theme";
 import {
@@ -66,10 +48,8 @@ import {
   type RelativeStrengthLineStyle,
 } from "../../app/AppSettings";
 import {
-  movingAverageSeriesCount,
   movingAverageSpecs,
-  type MovingAverageSpec,
-} from "../charts/chartSeries";
+} from "../../components/lightweight-chart/priceChartSeries";
 import {
   relativeStrengthLineData,
   recolorRelativeStrengthLineData,
@@ -83,6 +63,11 @@ import {
   synchronizeWeeklyOverlayCrosshairs,
   type ChartSyncTarget,
 } from "../../components/lightweight-chart/chartSync";
+
+const studyPriceChartOptions = {
+  rightPriceScale: { scaleMargins: overlappingPriceScaleMargins },
+  timeScale: { timeVisible: false },
+};
 
 const historyLoadThresholdBars = 50;
 const chartInteractionWindowMs = 1_000;
@@ -119,7 +104,6 @@ export function StudyCharts({
   const {
     logarithmicScale,
     candlePalette,
-    fiveEmaOpacity,
     gridOpacity,
     relativeStrengthLineStyle: rsLineStyle,
     relativeStrengthDisplay,
@@ -128,17 +112,14 @@ export function StudyCharts({
   const bottomRs = relativeStrengthDisplay === "bottom-line" && tickerBVisible;
   const palette = appPalettes[theme];
   const chartColors = useMemo(() => getChartColors(theme, gridOpacity), [theme, gridOpacity]);
-  const topRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const priceContexts = useRef<Array<PriceChartContext | null>>([]);
+  const stopChartsRef = useRef<(() => void) | undefined>(undefined);
   const chartsRef = useRef<IChartApi[]>([]);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick">[]>([]);
-  const volumeSeriesRef = useRef<ISeriesApi<"Histogram">[]>([]);
   const volumeAverageSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const movingAverageSeriesRef = useRef<ISeriesApi<"Line">[][]>([]);
   const markerSeriesRef = useRef<ISeriesMarkersPluginApi<Time>[]>([]);
-  const watermarkRef = useRef<ITextWatermarkPluginApi<Time>[]>([]);
   const candlePaletteRef = useRef(candlePalette);
-  const fiveEmaOpacityRef = useRef(fiveEmaOpacity);
   const appearanceRef = useRef({ chartColors, palette, theme });
   const candlesByDateRef = useRef<Array<Map<string, StudyCandle>>>([]);
   const datesRef = useRef<string[]>([]);
@@ -169,6 +150,12 @@ export function StudyCharts({
   const secondSymbol = result.series[1]?.symbol ?? "";
   const hasTwoSeries = result.series.length === 2;
   const datasetKey = `${firstSymbol}\0${secondSymbol}\0${result.date}\0${datasetVersion}`;
+  const setHoveredDate = useCallback((date: string | undefined) => {
+    const interval = intervalRef.current;
+    setHover(current => current?.datasetKey === datasetKey
+      && current.interval === interval && current.date === date
+      ? current : { datasetKey, interval, date });
+  }, [datasetKey]);
 
   useEffect(() => {
     historyLoadingRef.current = historyLoading;
@@ -200,18 +187,6 @@ export function StudyCharts({
 
   useEffect(() => {
     candlePaletteRef.current = candlePalette;
-    candleSeriesRef.current.forEach((series) => {
-      series.applyOptions(candleSeriesOptions(candlePalette, theme));
-    });
-    volumeSeriesRef.current.forEach((series, index) => {
-      series.setData(series.data().map((bar) => {
-        const candle = candlesByDateRef.current[index]?.get(timeKey(bar.time));
-        return candle === undefined ? bar : {
-          ...bar,
-          color: volumeColor(candle.open, candle.close, candle.volume_event, candlePalette, theme),
-        };
-      }));
-    });
     const rsLine = relativeStrengthSeriesRef.current[0];
     if (rsLine !== undefined) {
       const points = rsLine.data().filter((point) => "value" in point);
@@ -225,31 +200,7 @@ export function StudyCharts({
   }, [candlePalette, theme]);
 
   useEffect(() => {
-    fiveEmaOpacityRef.current = fiveEmaOpacity;
-    const specs = movingAverageSpecs(result.interval);
-    movingAverageSeriesRef.current.forEach((averages) => {
-      averages.forEach((line, index) => {
-        const spec = specs[index];
-        if (spec !== undefined) {
-          line.applyOptions({ color: studyMovingAverageColor(spec, fiveEmaOpacity) });
-        }
-      });
-    });
-  }, [fiveEmaOpacity, result.interval]);
-
-  useEffect(() => {
     appearanceRef.current = { chartColors, palette, theme };
-    chartsRef.current.forEach((chart) => chart.applyOptions(chartThemeOptions(theme, gridOpacity)));
-    watermarkRef.current.forEach((watermark, index) => {
-      watermark.applyOptions({
-        lines: [{
-          text: index === 0 ? firstSymbol : secondSymbol,
-          color: `${palette.muted}24`,
-          fontSize: 48,
-          fontStyle: "bold",
-        }],
-      });
-    });
     relativeStrengthInnerRef.current?.applyOptions({ color: chartColors.background });
 
     const markerDate = datesRef.current.find((date) => date >= result.date)
@@ -305,9 +256,6 @@ export function StudyCharts({
 
   useEffect(() => {
     logarithmicScaleRef.current = logarithmicScale;
-    chartsRef.current.forEach((chart) => chart.priceScale("right").applyOptions({
-      mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-    }));
     relativeStrengthSeriesRef.current[0]?.priceScale().applyOptions({
       mode: logarithmicScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
     });
@@ -345,94 +293,22 @@ export function StudyCharts({
   }, [centerSelectedDate, rangeOwnerRef]);
 
   useEffect(() => {
-    const top = topRef.current;
-    const bottom = bottomRef.current;
-    if (top === null || bottom === null || !hasTwoSeries) return;
-    const candleSeries: ISeriesApi<"Candlestick">[] = [];
-    const volumeSeries: ISeriesApi<"Histogram">[] = [];
-    const volumeAverageSeries: ISeriesApi<"Line">[] = [];
-    const movingAverageSeries: ISeriesApi<"Line">[][] = [];
-    const markerSeries: ISeriesMarkersPluginApi<Time>[] = [];
-    const watermarks: ITextWatermarkPluginApi<Time>[] = [];
-    const attributionObservers: MutationObserver[] = [];
-    const containers = [top, bottom];
-    const symbols = [firstSymbol, secondSymbol];
-    const appearance = appearanceRef.current;
-    const charts = containers.map((container, index) => {
-      const chart = createChart(container, {
-        autoSize: true,
-        layout: {
-          background: { type: ColorType.Solid, color: appearance.chartColors.background },
-          textColor: appearance.chartColors.text,
-          attributionLogo: true,
-        },
-        grid: {
-          vertLines: { color: appearance.chartColors.grid },
-          horzLines: { color: appearance.chartColors.grid },
-        },
-        crosshair: {
-          mode: CrosshairMode.Normal,
-          horzLine: {
-            visible: index === crosshairOwnerRef.current,
-            labelVisible: index === crosshairOwnerRef.current,
-          },
-        },
-        rightPriceScale: {
-          borderColor: appearance.chartColors.border,
-          mode: logarithmicScaleRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-          scaleMargins: overlappingPriceScaleMargins,
-        },
-        timeScale: { borderColor: appearance.chartColors.border, timeVisible: false },
-      });
-      const attributionUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbols[index])}`;
-      const attributionObserver = new MutationObserver(() => {
-        updateAttributionUrl(container, attributionUrl);
-      });
-      attributionObserver.observe(container, { childList: true, subtree: true });
-      attributionObservers.push(attributionObserver);
-      updateAttributionUrl(container, attributionUrl);
-      const candles = chart.addSeries(
-        CandlestickSeries,
-        candleSeriesOptions(candlePaletteRef.current, appearance.theme),
-      );
-      watermarks.push(createTextWatermark(chart.panes()[0], {
-        horzAlign: "center",
-        vertAlign: "center",
-        lines: [{
-          text: symbols[index],
-          color: `${appearance.palette.muted}24`,
-          fontSize: 48,
-          fontStyle: "bold",
-        }],
-      }));
-      candleSeries.push(candles);
-      const volume = chart.addSeries(HistogramSeries, volumeSeriesOptions);
-      volume.priceScale().applyOptions({ scaleMargins: volumeScaleMargins });
-      volumeSeries.push(volume);
-      volumeAverageSeries.push(chart.addSeries(LineSeries, volumeAverageSeriesOptions));
-      const averages: ISeriesApi<"Line">[] = [];
-      for (let averageIndex = 0; averageIndex < movingAverageSeriesCount; averageIndex += 1) {
-        const spec = movingAverageSpecs("daily")[averageIndex]!;
-        const line = chart.addSeries(LineSeries, {
-          color: studyMovingAverageColor(spec, fiveEmaOpacityRef.current),
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        averages.push(line);
-      }
-      movingAverageSeries.push(averages);
-      markerSeries.push(createSeriesMarkers(candles, []));
-      return chart;
-    });
+    const [top, bottom] = priceContexts.current;
+    if (top == null || bottom == null || !hasTwoSeries) return;
+    const contexts = [top, bottom];
+    const charts = contexts.map(context => context.chart);
+    const candleSeries = contexts.map(context => context.candles);
+    const volumeAverageSeries = contexts.map(context => context.volumeAverage);
+    const movingAverageSeries = contexts.map(context => context.movingAverages);
+    const markerSeries = contexts.map(context => context.markers);
+    charts.forEach((chart, index) => chart.applyOptions({ crosshair: {
+      horzLine: { visible: index === crosshairOwnerRef.current, labelVisible: index === crosshairOwnerRef.current },
+    } }));
     chartsRef.current = charts;
     candleSeriesRef.current = candleSeries;
-    volumeSeriesRef.current = volumeSeries;
     volumeAverageSeriesRef.current = volumeAverageSeries;
     movingAverageSeriesRef.current = movingAverageSeries;
     markerSeriesRef.current = markerSeries;
-    watermarkRef.current = watermarks;
 
     let synchronizing = false;
     const synchronize = (target: typeof charts[number], range: LogicalRange | null) => {
@@ -481,13 +357,7 @@ export function StudyCharts({
       synchronizingCrosshair = true;
       try {
         const date = event.time === undefined ? undefined : timeKey(event.time);
-        if (date !== undefined) {
-          const interval = intervalRef.current;
-          setHover((current) => current?.datasetKey === datasetKey
-            && current.interval === interval && current.date === date
-            ? current
-            : { datasetKey, interval, date });
-        }
+        setHoveredDate(date);
         const candle = date === undefined
           ? undefined
           : candlesByDateRef.current[targetIndex]?.get(date);
@@ -508,7 +378,10 @@ export function StudyCharts({
       charts[0].subscribeCrosshairMove(topCrosshairHandler);
       charts[1].subscribeCrosshairMove(bottomCrosshairHandler);
     }
-    return () => {
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
       charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(topHandler);
       charts[1].timeScale().unsubscribeVisibleLogicalRangeChange(bottomHandler);
       charts[0].timeScale().unsubscribeVisibleLogicalRangeChange(historyHandler);
@@ -517,28 +390,27 @@ export function StudyCharts({
       charts[1].unsubscribeCrosshairMove(bottomCrosshairHandler);
       const anchor = captureAnchoredLogicalRange(charts[0], candleSeries[0]);
       if (anchor !== undefined) viewportRef.current = { datasetKey, anchor };
-      watermarks.forEach((watermark) => watermark.detach());
-      attributionObservers.forEach((observer) => observer.disconnect());
-      charts.forEach((chart) => chart.remove());
       chartsRef.current = [];
       candleSeriesRef.current = [];
-      volumeSeriesRef.current = [];
       volumeAverageSeriesRef.current = [];
       movingAverageSeriesRef.current = [];
       markerSeriesRef.current = [];
-      watermarkRef.current = [];
       relativeStrengthChartRef.current = undefined;
       relativeStrengthSeriesRef.current = [];
       relativeStrengthInnerRef.current = undefined;
       candlesByDateRef.current = [];
       datesRef.current = [];
       dataInitializedRef.current = false;
+      if (stopChartsRef.current === stop) stopChartsRef.current = undefined;
     };
+    stopChartsRef.current = stop;
+    return stop;
   }, [
     datasetKey,
     firstSymbol,
     hasTwoSeries,
     secondSymbol,
+    setHoveredDate,
   ]);
 
   useEffect(() => {
@@ -575,32 +447,10 @@ export function StudyCharts({
     try {
       result.series.forEach((series, index) => {
         const byDate = candlesByDate[index];
-        candleSeries[index].setData(
-          dates.map((date): CandlestickData<Time> | WhitespaceData<Time> => {
-            const candle = byDate.get(date);
-            return candle === undefined
-              ? { time: date }
-              : {
-                time: date,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-              };
-          }),
-        );
-        volumeSeriesRef.current[index]?.setData(
-          dates.map((date): HistogramData<Time> | WhitespaceData<Time> => {
-            const candle = byDate.get(date);
-            return candle === undefined
-              ? { time: date }
-              : {
-                time: date,
-                value: candle.volume,
-                color: volumeColor(candle.open, candle.close, candle.volume_event, candlePaletteRef.current, appearanceRef.current.theme),
-              };
-          }),
-        );
+        priceContexts.current[index]?.setCandles(dates.map(date => {
+          const candle = byDate.get(date);
+          return candle === undefined ? { time: date } : { ...candle, time: date };
+        }));
         volumeAverageSeriesRef.current[index]?.setData(
           series.volume_average.points.map((point) => ({
             time: point.date,
@@ -616,9 +466,6 @@ export function StudyCharts({
           if (spec === undefined) {
             line.setData([]);
           } else {
-            line.applyOptions({
-              color: studyMovingAverageColor(spec, fiveEmaOpacityRef.current),
-            });
             line.setData(averagesByPeriod.get(spec.period)?.points.map(
               (point) => ({ time: point.date, value: point.value }),
             ) ?? []);
@@ -706,6 +553,7 @@ export function StudyCharts({
       chart,
       candleSeries: candleSeriesRef.current[index],
       candleAt: (date) => candlesByDateRef.current[index]?.get(date),
+      setHoveredDate: index === 0 ? setHoveredDate : undefined,
       isDisposed: () => chartsRef.current[index] !== chart,
     }));
     const stopRanges = synchronizeDailyWeeklyRanges(targets[0], weeklyChartContext,
@@ -721,7 +569,7 @@ export function StudyCharts({
       stopRanges();
       stopCrosshairs();
     };
-  }, [rangeOwnerRef, result, setCrosshairOwner, tickerBVisible, weeklyChartContext]);
+  }, [rangeOwnerRef, result, setCrosshairOwner, setHoveredDate, tickerBVisible, weeklyChartContext]);
 
   const hoveredDate = hover?.datasetKey === datasetKey && hover.interval === result.interval
     ? hover.date
@@ -736,7 +584,19 @@ export function StudyCharts({
         onSplitChange={onSplitChange}
         first={(
           <ChartContainer
-            containerRef={topRef}
+            canvas={(
+              <PriceChart
+                key={`${datasetKey}:top`}
+                symbol={firstSymbol}
+                interval={result.interval}
+                className="study-chart"
+                options={studyPriceChartOptions}
+                attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(firstSymbol)}`}
+                candleAt={time => candlesByDateRef.current[0]?.get(timeKey(time))}
+                onReady={context => { priceContexts.current[0] = context; }}
+                onDestroy={() => { stopChartsRef.current?.(); priceContexts.current[0] = null; }}
+              />
+            )}
             interval={result.interval}
             companyName={result.series[0].company_name ?? undefined}
             readout={(
@@ -756,7 +616,19 @@ export function StudyCharts({
         )}
         second={(
           <ChartContainer
-            containerRef={bottomRef}
+            canvas={(
+              <PriceChart
+                key={`${datasetKey}:bottom`}
+                symbol={secondSymbol}
+                interval={result.interval}
+                className="study-chart"
+                options={studyPriceChartOptions}
+                attributionUrl={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(secondSymbol)}`}
+                candleAt={time => candlesByDateRef.current[1]?.get(timeKey(time))}
+                onReady={context => { priceContexts.current[1] = context; }}
+                onDestroy={() => { stopChartsRef.current?.(); priceContexts.current[1] = null; }}
+              />
+            )}
             interval={result.interval}
             companyName={result.series[1]?.company_name ?? undefined}
             readout={result.series[1] !== undefined && (
@@ -779,12 +651,6 @@ export function StudyCharts({
       />
     </>
   );
-}
-
-function studyMovingAverageColor(spec: MovingAverageSpec, fiveEmaOpacity: number) {
-  return spec.period === 5 && spec.type === "EMA"
-    ? fiveEmaColor(fiveEmaOpacity)
-    : spec.color;
 }
 
 function timeKey(time: Time) {
@@ -862,7 +728,7 @@ function addRelativeStrength(
 
 function ChartContainer({
   interval,
-  containerRef,
+  canvas,
   companyName,
   readout,
   onPointerEnter,
@@ -874,7 +740,7 @@ function ChartContainer({
   onContextMenu,
 }: {
   interval: StudyResult["interval"];
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  canvas: ReactNode;
   companyName?: string;
   readout?: ReactNode;
   onPointerEnter: () => void;
@@ -897,7 +763,7 @@ function ChartContainer({
       onWheelCapture={onWheel}
       onContextMenu={onContextMenu}
     >
-      <div ref={containerRef} className="study-chart" />
+      {canvas}
       <div className="study-chart-header">
         {(companyLabel !== undefined || showRelativeStrength !== undefined) && (
           <div className="study-chart-labels">

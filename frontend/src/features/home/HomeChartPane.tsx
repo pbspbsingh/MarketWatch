@@ -1,12 +1,9 @@
-import { CircularProgress, Typography } from "@mui/material";
-import { useAppSettings } from "../../app/AppSettings";
 import type { ChartSummary } from "../../api/chart";
 import type {
   MarketChartLiveDelta,
   MarketChartSessionDelta,
 } from "../../api/marketChartLive";
 import type { MarketChartInterval } from "../../api/marketChart";
-import { TradingViewChart } from "../../components/TradingViewChart";
 import type {
   ChartSyncTarget,
   ChartViewport,
@@ -17,7 +14,6 @@ import { MarketChartContainer } from "../charts/MarketChartContainer";
 interface HomeChartPaneProps {
   symbol: string;
   summary: ChartSummary | undefined;
-  summarySettled: boolean;
   interval: MarketChartInterval;
   rightPriceScaleVisible: boolean;
   liveDelta?: MarketChartLiveDelta;
@@ -32,7 +28,6 @@ interface HomeChartPaneProps {
 export function HomeChartPane({
   symbol,
   summary,
-  summarySettled,
   interval,
   rightPriceScaleVisible,
   liveDelta,
@@ -43,8 +38,6 @@ export function HomeChartPane({
   onPointerEnter,
   onViewportInteraction,
 }: HomeChartPaneProps) {
-  const { chartEngine } = useAppSettings();
-
   return (
     <section
       className="home-chart-pane"
@@ -52,35 +45,20 @@ export function HomeChartPane({
       onPointerDownCapture={onViewportInteraction}
       onWheelCapture={onViewportInteraction}
     >
-      {chartEngine === "lightweight" ? (
-        <MarketChartContainer
-          showCandleReadout
-          symbol={symbol}
-          companyName={summary?.company_name ?? undefined}
-          tradingViewSymbol={summary?.tradingview_symbol}
-          interval={interval}
-          priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
-          rightPriceScaleVisible={rightPriceScaleVisible}
-          liveDelta={liveDelta}
-          sessionDelta={sessionDelta}
-          initialViewport={initialViewport}
-          onError={onError}
-          onChartContext={onChartContext}
-        />
-      ) : summary !== undefined ? (
-        <TradingViewChart
-          symbol={summary.tradingview_symbol}
-          interval={interval === "daily" ? "D" : "W"}
-          onError={onError}
-        />
-      ) : (
-        <div className="panel-status">
-          {!summarySettled && <CircularProgress size="1rem" />}
-          <Typography color={summarySettled ? "error" : "text.secondary"}>
-            {summarySettled ? `Unable to resolve ${symbol}` : "Loading chart"}
-          </Typography>
-        </div>
-      )}
+      <MarketChartContainer
+        showCandleReadout
+        symbol={symbol}
+        companyName={summary?.company_name ?? undefined}
+        tradingViewSymbol={summary?.tradingview_symbol}
+        interval={interval}
+        priceScaleBottomMargin={overlappingPriceScaleMargins.bottom}
+        rightPriceScaleVisible={rightPriceScaleVisible}
+        liveDelta={liveDelta}
+        sessionDelta={sessionDelta}
+        initialViewport={initialViewport}
+        onError={onError}
+        onChartContext={onChartContext}
+      />
     </section>
   );
 }

@@ -32,7 +32,6 @@ const lineStyles: Array<{
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const {
     theme, setTheme,
-    chartEngine, setChartEngine,
     logarithmicScale, setLogarithmicScale,
     showCandleReadout, setShowCandleReadout,
     candlePalette, setCandlePalette,
@@ -44,8 +43,6 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
     showWeeklyOverlayAxes, setShowWeeklyOverlayAxes,
     syncWeeklyOverlayCrosshair, setSyncWeeklyOverlayCrosshair,
   } = useAppSettings();
-  const lightweight = chartEngine === "lightweight";
-  const engineLabelId = useId();
   const scaleLabelId = useId();
   const candleLabelId = useId();
 
@@ -76,19 +73,6 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
 
         <SettingsSection title="Charts">
           <div className="settings-choice-row">
-            <span id={engineLabelId} className="settings-control-label">Chart engine</span>
-            <ToggleButtonGroup
-              className="settings-choice-segments" exclusive size="small"
-              value={chartEngine} aria-labelledby={engineLabelId}
-              onChange={(_, value) => {
-                if (value === "tradingview" || value === "lightweight") setChartEngine(value);
-              }}
-            >
-              <ToggleButton value="tradingview" aria-label="TradingView chart">TradingView</ToggleButton>
-              <ToggleButton value="lightweight" aria-label="Lightweight Charts">Lightweight</ToggleButton>
-            </ToggleButtonGroup>
-          </div>
-          <div className="settings-choice-row">
             <span id={scaleLabelId} className="settings-control-label">Price scale</span>
             <ToggleButtonGroup
               className="settings-choice-segments settings-visual-choices" exclusive size="small"
@@ -103,28 +87,24 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               <ToggleButton value="logarithmic"><PriceScaleSample logarithmic /> Log</ToggleButton>
             </ToggleButtonGroup>
           </div>
-          {lightweight && (
-            <>
-              <div className="settings-choice-row">
-                <span id={candleLabelId} className="settings-control-label">Candle style</span>
-                <ToggleButtonGroup
-                  className="settings-choice-segments settings-visual-choices" exclusive size="small"
-                  value={candlePalette} aria-labelledby={candleLabelId}
-                  onChange={(_, value) => {
-                    if (validCandlePalette(value)) setCandlePalette(value);
-                  }}
-                >
-                  <ToggleButton value="solid" aria-label="Red and green candles"><CandleSample /> Solid</ToggleButton>
-                  <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample palette="hollow" /> Hollow</ToggleButton>
-                  <ToggleButton value="monochrome" aria-label="Monochrome candles" title="Monochrome"><CandleSample palette="monochrome" /> Mono</ToggleButton>
-                </ToggleButtonGroup>
-              </div>
-              <OpacityControl label="Grid opacity" value={gridOpacity} onChange={setGridOpacity} />
-            </>
-          )}
+          <div className="settings-choice-row">
+            <span id={candleLabelId} className="settings-control-label">Candle style</span>
+            <ToggleButtonGroup
+              className="settings-choice-segments settings-visual-choices" exclusive size="small"
+              value={candlePalette} aria-labelledby={candleLabelId}
+              onChange={(_, value) => {
+                if (validCandlePalette(value)) setCandlePalette(value);
+              }}
+            >
+              <ToggleButton value="solid" aria-label="Red and green candles"><CandleSample /> Solid</ToggleButton>
+              <ToggleButton value="hollow" aria-label="Red and hollow green candles"><CandleSample palette="hollow" /> Hollow</ToggleButton>
+              <ToggleButton value="monochrome" aria-label="Monochrome candles" title="Monochrome"><CandleSample palette="monochrome" /> Mono</ToggleButton>
+            </ToggleButtonGroup>
+          </div>
+          <OpacityControl label="Grid opacity" value={gridOpacity} onChange={setGridOpacity} />
         </SettingsSection>
 
-        {lightweight && <SettingsSection title="Indicators">
+        <SettingsSection title="Indicators">
           <SettingsSwitch
             label="Show candle readout"
             checked={showCandleReadout}
@@ -162,7 +142,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
             </ToggleButtonGroup>
           </div>
           <OpacityControl label="5 EMA opacity" value={fiveEmaOpacity} onChange={setFiveEmaOpacity} />
-        </SettingsSection>}
+        </SettingsSection>
 
         <SettingsSection title="Weekly overlay">
           <SettingsSwitch
@@ -178,12 +158,12 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
               onChange={setShowWeeklyOverlayAxes}
               disabled={!showWeeklyChartOverlay}
             />
-            {lightweight && <SettingsSwitch
+            <SettingsSwitch
               label="Sync crosshair"
               checked={syncWeeklyOverlayCrosshair}
               onChange={setSyncWeeklyOverlayCrosshair}
               disabled={!showWeeklyChartOverlay}
-            />}
+            />
           </div>
         </SettingsSection>
       </div>

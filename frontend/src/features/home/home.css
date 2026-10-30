@@ -59,8 +59,7 @@
   border-bottom: 0;
 }
 
-.home-chart-pane > .market-chart-container,
-.home-chart-pane > .tradingview-chart {
+.home-chart-pane > .market-chart-container {
   min-height: 0;
   flex: 1;
 }

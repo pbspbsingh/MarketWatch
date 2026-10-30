@@ -1,4 +1,6 @@
-import type { LineData, Time } from "lightweight-charts";
+import type { CandlestickData, HistogramData, LineData, Time, WhitespaceData } from "lightweight-charts";
+import type { CandlePalette } from "../../app/settingsStore";
+import type { AppThemeMode } from "../../app/theme";
 import type {
   MarketChartInterval,
   MarketChartSeries,
@@ -6,13 +8,36 @@ import type {
 import {
   dailyMovingAverageColors,
   weeklyMovingAverageColors,
-} from "../../components/lightweight-chart/chartOptions";
-import { marketDateToChartTime } from "../../components/lightweight-chart/chartTime";
+  volumeColor,
+} from "./chartOptions";
+import { marketDateToChartTime } from "./chartTime";
 
 export interface MovingAverageSpec {
   period: number;
   type: "SMA" | "EMA";
   color: string;
+}
+
+export type PriceCandle = (CandlestickData<Time> & {
+  volume: number;
+  volume_event?: "history_high" | "year_high";
+}) | WhitespaceData<Time>;
+
+export function priceSeriesData(data: readonly PriceCandle[], palette: CandlePalette, theme: AppThemeMode) {
+  const candles: Array<CandlestickData<Time> | WhitespaceData<Time>> = [];
+  const volume: Array<HistogramData<Time> | WhitespaceData<Time>> = [];
+  for (const candle of data) {
+    if (!("open" in candle)) {
+      candles.push({ time: candle.time });
+      volume.push({ time: candle.time });
+    } else {
+      const { time, open, high, low, close } = candle;
+      candles.push({ time, open, high, low, close });
+      volume.push({ time, value: candle.volume,
+        color: volumeColor(open, close, candle.volume_event, palette, theme) });
+    }
+  }
+  return { candles, volume };
 }
 
 const dailySpecs: readonly MovingAverageSpec[] = [

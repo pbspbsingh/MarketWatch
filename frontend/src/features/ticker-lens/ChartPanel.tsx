@@ -15,7 +15,6 @@ import {
   type TickerGroupSummaryItem,
 } from "../../api/tickers";
 import { TickerDetailsDialog, type TickerDetailsTab } from "../../components/TickerDetailsDialog";
-import { SplitTradingViewCharts } from "../../components/SplitTradingViewCharts";
 import { Toast } from "../../components/Toast";
 import type { MarketChartDateMarker } from "../charts/MarketChart";
 import type { ImageExportAction } from "../../components/ImageExportMenu";
@@ -99,7 +98,6 @@ export function ChartPanel({
     readChartBenchmarkMode(chartBenchmarkKey, chartThemeEtfKey),
   );
   const [themeSelection, setThemeSelection] = useState<{ ticker: string; etf: string }>();
-  const [panelError, setPanelError] = useState<{ key: string; message: string }>();
   const [warning, setWarning] = useState<string>();
   const [captureNotice, setCaptureNotice] = useState<{
     message: string;
@@ -108,7 +106,6 @@ export function ChartPanel({
   const [exportingChartPanel, setExportingChartPanel] = useState(false);
   const [chartErrors, setChartErrors] = useState<Partial<Record<"top" | "bottom", string>>>({});
   const {
-    chartEngine,
     showWeeklyChartOverlay,
     showWeeklyOverlayAxes,
     setShowWeeklyChartOverlay,
@@ -141,7 +138,6 @@ export function ChartPanel({
   const groupSummaryError = groupSummaryState.key === groupSummaryRequestKey
     ? groupSummaryState.error
     : undefined;
-  const error = panelError?.key === summaryRequestKey ? panelError?.message : undefined;
   const detailsOpen = detailsSelection?.tickerSelection === tickerSelection && selectedTicker !== undefined;
   const selectedThemeEtf = themeSelection?.ticker === selectedTicker ? themeSelection?.etf : undefined;
   const activeSummary = summary;
@@ -264,7 +260,6 @@ export function ChartPanel({
     const panel = panelRef.current;
     if (
       panel === null
-      || chartEngine !== "lightweight"
       || summary === undefined
       || exportingChartPanel
     ) return;
@@ -295,7 +290,7 @@ export function ChartPanel({
     } finally {
       setExportingChartPanel(false);
     }
-  }, [bottomChartSymbol, chartEngine, exportingChartPanel, summary]);
+  }, [bottomChartSymbol, exportingChartPanel, summary]);
 
   const handleChartError = useCallback((
     source: "top" | "bottom",
@@ -310,7 +305,7 @@ export function ChartPanel({
     });
   }, []);
   const liveCharts = useSplitChartLive(
-    chartEngine === "lightweight" && summary !== undefined
+    summary !== undefined
       ? {
           topSymbol: summary.symbol,
           bottomSymbol: bottomChartSymbol ?? summary.benchmark_symbol,
@@ -430,7 +425,7 @@ export function ChartPanel({
           ? { tickerSelection, initialTab: "fundamentals" }
           : undefined)}
         exportChartPanel={exportChartPanel}
-        exportChartPanelDisabled={chartEngine !== "lightweight" || summary === undefined}
+        exportChartPanelDisabled={summary === undefined}
         exportingChartPanel={exportingChartPanel}
       />
       {selectedTicker === undefined && (
@@ -445,19 +440,7 @@ export function ChartPanel({
       )}
       {selectedTicker !== undefined && (
         <div ref={setChartStageElement} className="ticker-lens-chart-stage">
-          {summary !== undefined && chartEngine === "tradingview" && (
-            <SplitTradingViewCharts
-              topSymbol={summary.tradingview_symbol}
-              bottomSymbol={bottomChartSymbol ?? summary.benchmark_symbol}
-              interval={interval}
-              initialSplit={readChartSplit(chartSplitKey)}
-              onSplitChange={(nextSplit) => localStorage.setItem(chartSplitKey, String(nextSplit))}
-              onError={(message) => {
-                if (summaryRequestKey !== undefined) setPanelError({ key: summaryRequestKey, message });
-              }}
-            />
-          )}
-          {summary !== undefined && chartEngine === "lightweight" && (
+          {summary !== undefined && (
             <Suspense
               fallback={(
                 <div className="panel-status">
@@ -503,10 +486,9 @@ export function ChartPanel({
         </div>
       )}
       <Toast
-        message={error ?? summaryError ?? groupSummaryError ?? chartError}
+        message={summaryError ?? groupSummaryError ?? chartError}
         onClose={() => {
-          if (error !== undefined) setPanelError(undefined);
-          else if (summaryError !== undefined && summaryRequestKey !== undefined) {
+          if (summaryError !== undefined && summaryRequestKey !== undefined) {
             setSummaryState({ key: summaryRequestKey });
           } else if (groupSummaryError !== undefined && groupSummaryRequestKey !== undefined) {
             setGroupSummaryState({ key: groupSummaryRequestKey });
