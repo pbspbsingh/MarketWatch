@@ -12,6 +12,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use ts_rs::TS;
 
 pub struct TradeLogMarketService {
     logs: Arc<TradeLogsService>,
@@ -19,7 +20,8 @@ pub struct TradeLogMarketService {
     client: Arc<YahooClient>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(rename = "TradeLogHourlyCandle")]
 pub struct HourlyCandle {
     time: i64,
     open: f64,
@@ -28,7 +30,8 @@ pub struct HourlyCandle {
     close: f64,
     volume: u64,
 }
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(rename = "TradeLogHourlyChart")]
 pub struct HourlyChart {
     symbol: TickerSymbol,
     candles: Vec<HourlyCandle>,

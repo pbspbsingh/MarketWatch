@@ -2,10 +2,15 @@ pub mod events;
 pub mod industry;
 pub mod live;
 pub mod tickers;
+pub mod trade_logs;
 
 use crate::models::chart::{
     MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartPoint,
     MarketChartRelativeStrength, MarketChartSeries, MarketChartSnapshot, VolumeEventKind,
+};
+use crate::models::trade_logs::{
+    Direction, Execution, ExecutionAction, ExecutionInput, Side, Tag, TagInput, Trade, TradeInput,
+    TradeStatus, TradeSummary, Valuation,
 };
 use crate::models::{
     RelativeStrengthCalculation, RelativeStrengthCalculationPoint, RelativeStrengthStructure,
@@ -14,10 +19,13 @@ use crate::models::{
 use crate::services::study::{
     StudyCandle, StudyMovingAverage, StudyMovingAveragePoint, StudyResult, StudySeries,
 };
+use crate::services::trade_logs::market::{HourlyCandle, HourlyChart};
+use crate::services::trade_logs::{Snapshot, Statistics, TagStatistics};
 use crate::services::volume_run_rate::VolumeRunRate;
 use live::{
     LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
 };
+use trade_logs::TradeLogSnapshot;
 
 use crate::models::ticker_collection::RejectedTicker;
 use crate::models::{
@@ -60,6 +68,24 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         StudyMovingAverage::decl(&config),
         StudySeries::decl(&config),
         StudyResult::decl(&config),
+        Direction::decl(&config),
+        Side::decl(&config),
+        ExecutionAction::decl(&config),
+        TradeStatus::decl(&config),
+        ExecutionInput::decl(&config),
+        TradeInput::decl(&config),
+        Execution::decl(&config),
+        TradeSummary::decl(&config),
+        Trade::decl(&config),
+        Valuation::decl(&config),
+        Tag::decl(&config),
+        TagInput::decl(&config),
+        Statistics::decl(&config),
+        TagStatistics::decl(&config),
+        Snapshot::decl(&config),
+        TradeLogSnapshot::decl(&config),
+        HourlyCandle::decl(&config),
+        HourlyChart::decl(&config),
         VolumeRunRate::decl(&config),
         LiveCommand::decl(&config),
         RawLiveChartRequest::decl(&config),

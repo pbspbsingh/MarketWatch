@@ -334,7 +334,9 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::trade_logs::{calculate, tests::input, validate};
+    use crate::models::trade_logs::{
+        ExecutionAction, TradeStatus, calculate, tests::input, validate,
+    };
 
     #[tokio::test]
     async fn short_direction_round_trips_and_can_be_corrected_with_its_legs() {
@@ -427,7 +429,7 @@ mod tests {
         assert_eq!(updated.trade.input.executions[0].id, leg_id);
         assert_eq!(
             calculate(id, 2, &updated.trade).unwrap().summary.status,
-            "open"
+            TradeStatus::Open
         );
         let mut invalid = updated.trade.input.clone();
         invalid.notes = "Must roll back".into();
@@ -574,7 +576,7 @@ mod tests {
         let stored = store.trade_logs_snapshot().await.unwrap().trades.remove(0);
         let trade = calculate(stored.id, stored.revision, &stored.trade).unwrap();
         assert_eq!(trade.summary.realized_pnl, "5");
-        assert_eq!(trade.executions[2].action, "Close");
+        assert_eq!(trade.executions[2].action, ExecutionAction::Close);
         store.delete_trade_log_tag(tag, 1).await.unwrap();
         assert_eq!(
             store.trade_logs_snapshot().await.unwrap().trades[0].revision,

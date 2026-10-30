@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::contracts::trade_logs::TradeLogSnapshot;
 use crate::models::trade_logs::{TagInput, TradeInput};
 use crate::services::trade_logs::{Filter, TradeLogsError, TradeLogsService};
 use crate::store::trade_logs::WriteError;
@@ -17,13 +18,6 @@ struct Revision {
     revision: i64,
 }
 
-#[derive(Serialize)]
-struct TradeLogSnapshot {
-    #[serde(flatten)]
-    snapshot: crate::services::trade_logs::Snapshot,
-    time_zone: &'static str,
-}
-
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/trade-logs", get(list).post(create))
@@ -34,7 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/trade-logs/tags/{id}", put(update_tag).delete(delete_tag))
         .route("/trade-logs/{id}", get(detail).put(update).delete(delete))
 }
-async fn valuations(State(state): State<AppState>) -> Result<impl serde::Serialize> {
+async fn valuations(State(state): State<AppState>) -> Result<impl Serialize> {
     state
         .trade_log_market
         .valuations()
@@ -42,10 +36,7 @@ async fn valuations(State(state): State<AppState>) -> Result<impl serde::Seriali
         .map(Json)
         .map_err(error)
 }
-async fn hourly(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<impl serde::Serialize> {
+async fn hourly(State(state): State<AppState>, Path(id): Path<i64>) -> Result<impl Serialize> {
     state
         .trade_log_market
         .hourly_chart(id)
@@ -56,7 +47,7 @@ async fn hourly(
 async fn list(
     State(state): State<AppState>,
     Query(filter): Query<Filter>,
-) -> Result<impl serde::Serialize> {
+) -> Result<impl Serialize> {
     state
         .trade_logs
         .snapshot(filter)
@@ -69,19 +60,16 @@ async fn list(
         })
         .map_err(error)
 }
-async fn detail(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<impl serde::Serialize> {
+async fn detail(State(state): State<AppState>, Path(id): Path<i64>) -> Result<impl Serialize> {
     state.trade_logs.get(id).await.map(Json).map_err(error)
 }
-async fn preview(Json(input): Json<TradeInput>) -> Result<impl serde::Serialize> {
+async fn preview(Json(input): Json<TradeInput>) -> Result<impl Serialize> {
     TradeLogsService::preview(input).map(Json).map_err(error)
 }
 async fn create(
     State(state): State<AppState>,
     Json(input): Json<TradeInput>,
-) -> Result<impl serde::Serialize> {
+) -> Result<impl Serialize> {
     state
         .trade_logs
         .save(None, input)
@@ -93,7 +81,7 @@ async fn update(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(input): Json<TradeInput>,
-) -> Result<impl serde::Serialize> {
+) -> Result<impl Serialize> {
     state
         .trade_logs
         .save(Some(id), input)
@@ -116,7 +104,7 @@ async fn delete(
 async fn create_tag(
     State(state): State<AppState>,
     Json(input): Json<TagInput>,
-) -> Result<impl serde::Serialize> {
+) -> Result<impl Serialize> {
     state
         .trade_logs
         .save_tag(None, input)
@@ -128,7 +116,7 @@ async fn update_tag(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(input): Json<TagInput>,
-) -> Result<impl serde::Serialize> {
+) -> Result<impl Serialize> {
     state
         .trade_logs
         .save_tag(Some(id), input)

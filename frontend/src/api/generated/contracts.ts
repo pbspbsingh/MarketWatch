@@ -42,6 +42,42 @@ export type StudySeries = { symbol: TickerSymbol, company_name: string | null, c
 
 export type StudyResult = { date: string, interval: MarketChartInterval, range_start: string, range_end: string, has_more_before: boolean, has_more_after: boolean, series: Array<StudySeries>, relative_strength: MarketChartRelativeStrength | null, };
 
+export type TradeLogDirection = "long" | "short";
+
+export type TradeLogSide = "buy" | "sell";
+
+export type TradeLogAction = "Open" | "Add" | "Reduce" | "Close";
+
+export type TradeLogStatus = "open" | "closed";
+
+export type TradeLogExecutionInput = { id: number | null, executed_at: string, side: TradeLogSide, quantity: string, price: string, fee: string, notes: string, tag_ids: Array<number>, };
+
+export type TradeLogInput = { revision: number | null, symbol: TickerSymbol, direction: TradeLogDirection, notes: string, tag_ids: Array<number>, executions: Array<TradeLogExecutionInput>, };
+
+export type TradeLogExecution = { market_date: string, action: TradeLogAction, remaining_quantity: string, realized_pnl: string, net_return_percent: number | null, id: number | null, executed_at: string, side: TradeLogSide, quantity: string, price: string, fee: string, notes: string, tag_ids: Array<number>, };
+
+export type TradeLogSummary = { status: TradeLogStatus, remaining_quantity: string, average_cost: string | null, average_entry_price: string, realized_pnl: string, realized_return_percent: number | null, fees: string, entry_notional: string, net_return_percent: number | null, opened_at: string, closed_at: string | null, };
+
+export type TradeLog = { id: number, revision: number, symbol: TickerSymbol, direction: TradeLogDirection, notes: string, tag_ids: Array<number>, executions: Array<TradeLogExecution>, summary: TradeLogSummary, };
+
+export type TradeLogValuation = { trade_id: number, revision: number, mark_price: string | null, mark_date: string | null, unrealized_pnl: string | null, total_pnl: string | null, net_return_percent: number | null, };
+
+export type TradeLogTag = { id: number, name: string, description: string | null, revision: number, trade_count: number, execution_count: number, };
+
+export type TradeLogTagInput = { name: string, description: string | null, revision: number | null, };
+
+export type TradeLogStatistics = { closed_trades: number, winners: number, losers: number, breakeven: number, net_pnl: string, average_pnl: string | null, average_winner: string | null, average_loser: string | null, win_rate: number | null, profit_factor: number | null, };
+
+export type TradeLogTagStatistics = { tag_id: number, statistics: TradeLogStatistics, };
+
+export type TradeLogSnapshotData = { trades: Array<TradeLog>, tags: Array<TradeLogTag>, statistics: TradeLogStatistics, tag_statistics: Array<TradeLogTagStatistics>, untagged_trades: number, open_trades: number, open_realized_pnl: string, };
+
+export type TradeLogSnapshot = { time_zone: string, trades: Array<TradeLog>, tags: Array<TradeLogTag>, statistics: TradeLogStatistics, tag_statistics: Array<TradeLogTagStatistics>, untagged_trades: number, open_trades: number, open_realized_pnl: string, };
+
+export type TradeLogHourlyCandle = { time: number, open: number, high: number, low: number, close: number, volume: number, };
+
+export type TradeLogHourlyChart = { symbol: TickerSymbol, candles: Array<TradeLogHourlyCandle>, history_limited: boolean, };
+
 export type VolumeRunRate = { symbol: YahooSymbol, market_date: string, visible: boolean, cached: boolean, ratio: number | null, sample_days: number, updated_at: string | null, calculated_at: string, };
 
 export type LiveCommand = { "type": "set_subscriptions", request_id: number, charts: Array<RawLiveChartRequest>, symbols: Array<string>, };

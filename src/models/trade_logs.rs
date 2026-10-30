@@ -3,12 +3,14 @@ use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::America::New_York;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, str::FromStr};
+use ts_rs::TS;
 
 pub const SCALE: i64 = 1_000_000;
 const MAX_UNITS: i64 = 1_000_000_000_000;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "TradeLogDirection")]
 pub enum Direction {
     #[default]
     Long,
@@ -39,8 +41,9 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "TradeLogSide")]
 pub enum Side {
     Buy,
     Sell,
@@ -54,7 +57,8 @@ impl Side {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[ts(rename = "TradeLogExecutionInput")]
 pub struct ExecutionInput {
     pub id: Option<i64>,
     pub executed_at: DateTime<Utc>,
@@ -72,7 +76,8 @@ fn zero() -> String {
     "0".into()
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[ts(rename = "TradeLogInput")]
 pub struct TradeInput {
     pub revision: Option<i64>,
     pub symbol: TickerSymbol,
@@ -98,19 +103,38 @@ pub struct ValidatedTrade {
     pub executions: Vec<ExecutionValue>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, TS)]
+#[ts(rename = "TradeLogAction")]
+pub enum ExecutionAction {
+    Open,
+    Add,
+    Reduce,
+    Close,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename = "TradeLogStatus")]
+pub enum TradeStatus {
+    Open,
+    Closed,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLogExecution")]
 pub struct Execution {
     #[serde(flatten)]
     pub input: ExecutionInput,
     pub market_date: String,
-    pub action: &'static str,
+    pub action: ExecutionAction,
     pub remaining_quantity: String,
     pub realized_pnl: String,
     pub net_return_percent: Option<f64>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLogSummary")]
 pub struct TradeSummary {
-    pub status: &'static str,
+    pub status: TradeStatus,
     pub remaining_quantity: String,
     pub average_cost: Option<String>,
     pub average_entry_price: String,
@@ -122,7 +146,8 @@ pub struct TradeSummary {
     pub opened_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLog")]
 pub struct Trade {
     pub id: i64,
     pub revision: i64,
@@ -142,7 +167,8 @@ pub struct Trade {
     pub gross_entry_notional: i128,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLogValuation")]
 pub struct Valuation {
     pub trade_id: i64,
     pub revision: i64,
@@ -189,7 +215,8 @@ pub fn value_open_trade(trade: &Trade, mark: Option<(i64, NaiveDate)>) -> Valuat
             .map(|total| total as f64 / trade.gross_entry_notional as f64 * 100.0),
     }
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLogTag")]
 pub struct Tag {
     pub id: i64,
     pub name: String,
@@ -198,7 +225,8 @@ pub struct Tag {
     pub trade_count: usize,
     pub execution_count: usize,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(rename = "TradeLogTagInput")]
 pub struct TagInput {
     pub name: String,
     pub description: Option<String>,
@@ -356,7 +384,11 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
                     "A trade ends when flat. Record a subsequent entry as a new trade".into(),
                 );
             }
-            let action = if quantity == 0 { "Open" } else { "Add" };
+            let action = if quantity == 0 {
+                ExecutionAction::Open
+            } else {
+                ExecutionAction::Add
+            };
             quantity = quantity
                 .checked_add(leg.quantity)
                 .ok_or("Position size is too large")?;
@@ -385,7 +417,11 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
             quantity -= leg.quantity;
             realized += pnl;
             (
-                if quantity == 0 { "Close" } else { "Reduce" },
+                if quantity == 0 {
+                    ExecutionAction::Close
+                } else {
+                    ExecutionAction::Reduce
+                },
                 pnl,
                 (exited_entry_notional > 0)
                     .then(|| pnl as f64 / exited_entry_notional as f64 * 100.0),
@@ -423,7 +459,11 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
         tag_ids: trade.input.tag_ids.clone(),
         executions,
         summary: TradeSummary {
-            status: if quantity == 0 { "closed" } else { "open" },
+            status: if quantity == 0 {
+                TradeStatus::Closed
+            } else {
+                TradeStatus::Open
+            },
             remaining_quantity: decimal(quantity),
             average_cost: (quantity > 0).then(|| cash(basis * SCALE as i128 / quantity as i128)),
             average_entry_price: cash(entry_notional * SCALE as i128 / entry_quantity),
@@ -525,7 +565,12 @@ pub(crate) mod tests {
                 .iter()
                 .map(|e| e.action)
                 .collect::<Vec<_>>(),
-            ["Open", "Add", "Reduce", "Close"]
+            [
+                ExecutionAction::Open,
+                ExecutionAction::Add,
+                ExecutionAction::Reduce,
+                ExecutionAction::Close
+            ]
         );
         assert_eq!(trade.executions[2].realized_pnl, "497.5");
         assert_eq!(trade.executions[3].realized_pnl, "2245.5");
@@ -539,7 +584,7 @@ pub(crate) mod tests {
         );
         assert_eq!(trade.summary.realized_pnl, "2743");
         assert_eq!(trade.summary.fees, "7");
-        assert_eq!(trade.summary.status, "closed");
+        assert_eq!(trade.summary.status, TradeStatus::Closed);
         assert_eq!(trade.summary.remaining_quantity, "0");
         assert!(trade.summary.average_cost.is_none());
     }
@@ -554,7 +599,7 @@ pub(crate) mod tests {
         assert_eq!(result(value.clone()).summary.realized_pnl, "0.787");
         value.executions.pop();
         let reopened = result(value);
-        assert_eq!(reopened.summary.status, "open");
+        assert_eq!(reopened.summary.status, TradeStatus::Open);
         assert_eq!(reopened.summary.remaining_quantity, "0.3");
         assert_eq!(reopened.summary.average_cost.as_deref(), Some("10.688889"));
         assert_eq!(reopened.summary.realized_pnl, "0.095667");
@@ -633,7 +678,12 @@ pub(crate) mod tests {
                 .iter()
                 .map(|leg| leg.action)
                 .collect::<Vec<_>>(),
-            ["Open", "Add", "Reduce", "Close"]
+            [
+                ExecutionAction::Open,
+                ExecutionAction::Add,
+                ExecutionAction::Reduce,
+                ExecutionAction::Close
+            ]
         );
         assert_eq!(closed.executions[2].realized_pnl, "497.5");
         assert_eq!(closed.executions[3].realized_pnl, "2245.5");
@@ -645,11 +695,11 @@ pub(crate) mod tests {
         );
         assert_eq!(closed.summary.realized_pnl, "2743");
         assert_eq!(closed.summary.fees, "7");
-        assert_eq!(closed.summary.status, "closed");
+        assert_eq!(closed.summary.status, TradeStatus::Closed);
         assert!(closed.summary.average_cost.is_none());
         source.executions.pop();
         let reopened = result(source);
-        assert_eq!(reopened.summary.status, "open");
+        assert_eq!(reopened.summary.status, TradeStatus::Open);
         assert_eq!(reopened.summary.remaining_quantity, "150");
         assert_eq!(reopened.summary.average_cost.as_deref(), Some("24.99"));
         assert_eq!(reopened.summary.realized_pnl, "497.5");

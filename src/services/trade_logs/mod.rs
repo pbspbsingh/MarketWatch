@@ -1,11 +1,12 @@
 use crate::models::trade_logs::{
-    Direction, Tag, TagInput, Trade, TradeInput, calculate, cash, validate,
+    Direction, Tag, TagInput, Trade, TradeInput, TradeStatus, calculate, cash, validate,
 };
 use crate::store::{Store, trade_logs::WriteError};
 use chrono::NaiveDate;
 use chrono_tz::America::New_York;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Reverse, fmt::Display, str::FromStr};
+use ts_rs::TS;
 pub mod market;
 
 #[derive(Debug, thiserror::Error)]
@@ -110,9 +111,11 @@ impl Filter {
             && (self.status.is_empty()
                 || self.status.iter().any(|status| match status.as_str() {
                     "all" => true,
-                    "win" => trade.summary.status == "closed" && trade.net_cash > 0,
-                    "loss" => trade.summary.status == "closed" && trade.net_cash < 0,
-                    status => status == trade.summary.status,
+                    "win" => trade.summary.status == TradeStatus::Closed && trade.net_cash > 0,
+                    "loss" => trade.summary.status == TradeStatus::Closed && trade.net_cash < 0,
+                    "open" => trade.summary.status == TradeStatus::Open,
+                    "closed" => trade.summary.status == TradeStatus::Closed,
+                    _ => false,
                 }))
             && self.symbol.as_ref().is_none_or(|symbol| {
                 trade
@@ -139,7 +142,8 @@ pub fn has_tag(trade: &Trade, tag: i64, scope: TagScope) -> bool {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(rename = "TradeLogStatistics")]
 pub struct Statistics {
     pub closed_trades: usize,
     pub winners: usize,
@@ -158,7 +162,7 @@ pub fn statistics<'a>(trades: impl Iterator<Item = &'a Trade>) -> Statistics {
     let mut losses = 0;
     let mut profit = 0_i128;
     let mut loss = 0_i128;
-    for trade in trades.filter(|trade| trade.summary.status == "closed") {
+    for trade in trades.filter(|trade| trade.summary.status == TradeStatus::Closed) {
         count += 1;
         if trade.net_cash > 0 {
             wins += 1;
@@ -181,12 +185,14 @@ pub fn statistics<'a>(trades: impl Iterator<Item = &'a Trade>) -> Statistics {
         profit_factor: (loss > 0).then(|| profit as f64 / loss as f64),
     }
 }
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(rename = "TradeLogTagStatistics")]
 pub struct TagStatistics {
     pub tag_id: i64,
     pub statistics: Statistics,
 }
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(rename = "TradeLogSnapshotData")]
 pub struct Snapshot {
     pub trades: Vec<Trade>,
     pub tags: Vec<Tag>,
@@ -268,12 +274,12 @@ impl TradeLogsService {
                 .count(),
             open_trades: trades
                 .iter()
-                .filter(|trade| trade.summary.status == "open")
+                .filter(|trade| trade.summary.status == TradeStatus::Open)
                 .count(),
             open_realized_pnl: cash(
                 trades
                     .iter()
-                    .filter(|trade| trade.summary.status == "open")
+                    .filter(|trade| trade.summary.status == TradeStatus::Open)
                     .map(|trade| trade.net_cash)
                     .sum(),
             ),
