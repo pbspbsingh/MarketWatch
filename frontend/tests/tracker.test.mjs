@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { createTestServer } from "./viteTestServer.mjs";
 
 const server = await createTestServer();
-const { createTrackerStore, sortTrackerRows, trackerMetric } = await server.ssrLoadModule("/src/features/theme-tracker/trackerStore.ts");
+const { createTrackerStore, sortTrackerRows, trackerMetric, visibleTrackerRows } = await server.ssrLoadModule("/src/features/theme-tracker/trackerStore.ts");
 const { beforeMarketClose, fetchMarketHours, observeMarketHours } = await server.ssrLoadModule("/src/api/marketHours.ts");
 const { isApplicationEvent, snapshotMatchesResource } = await server.ssrLoadModule("/src/api/applicationEventProtocol.ts");
 after(async () => { await server.close(); });
@@ -58,6 +58,56 @@ test("historical preferences are separate for Theme and Sector and TD falls back
     assert.deepEqual(store.getState().ranges, { theme: "month", sector: "year" });
     assert.ok([...values.values()].every(value => value !== "trading_day"));
     assert.deepEqual(createTrackerStore().getState().ranges, { theme: "month", sector: "year" });
+  } finally { globalThis.localStorage = original; }
+});
+
+test("hidden themes persist by ID across renames and are excluded from selection and completion ordering", () => {
+  const original = globalThis.localStorage; const values = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  try {
+    const store = createTrackerStore(); const rows = [row("1", "QQQ", 0.9), row("2", "GLD", 0.1)];
+    store.getState().receive({ type: "catalog", mode: "theme", rows });
+    store.getState().setThemeVisibility(["1"], false);
+    assert.equal(store.getState().selectedKey, "2");
+    store.getState().select("1"); assert.equal(store.getState().selectedKey, "2");
+    store.getState().receive({ type: "complete", mode: "theme" });
+    assert.equal(store.getState().selectedKey, "2");
+    const restored = createTrackerStore();
+    restored.getState().receive({ type: "catalog", mode: "theme", rows: [{ ...rows[0], name: "Renamed" }, rows[1]] });
+    assert.deepEqual([...restored.getState().hiddenThemeKeys], ["1"]);
+    assert.equal(restored.getState().selectedKey, "2");
+    restored.getState().setThemeVisibility(["1"], true);
+    assert.equal(restored.getState().selectedKey, "2");
+    assert.equal(createTrackerStore().getState().hiddenThemeKeys.size, 0);
+  } finally { globalThis.localStorage = original; }
+});
+
+test("all themes can be hidden and restored without affecting sector visibility or losing the catalog", () => {
+  const store = createTrackerStore(); const rows = [row("1"), row("2", "GLD")];
+  store.getState().receive({ type: "catalog", mode: "theme", rows });
+  store.getState().setThemeVisibility(["1", "2"], false);
+  store.getState().receive({ type: "complete", mode: "theme" });
+  assert.equal(store.getState().selectedKey, undefined);
+  assert.deepEqual(visibleTrackerRows(rows, "theme", store.getState().hiddenThemeKeys), []);
+  assert.equal(store.getState().rows.length, 2);
+  store.getState().setMode("sector");
+  store.getState().receive({ type: "catalog", mode: "sector", rows: [row("1", "XLK")] });
+  assert.equal(store.getState().selectedKey, "1");
+  assert.equal(visibleTrackerRows(store.getState().rows, "sector", store.getState().hiddenThemeKeys).length, 1);
+  store.getState().setMode("theme"); store.getState().receive({ type: "catalog", mode: "theme", rows });
+  assert.equal(store.getState().selectedKey, undefined);
+  store.getState().setThemeVisibility(["1", "2"], true);
+  assert.equal(store.getState().selectedKey, "1");
+});
+
+test("invalid saved theme visibility and unavailable storage do not break the tracker", () => {
+  const original = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => "{", setItem: () => { throw new Error("Storage unavailable"); } };
+  try {
+    const store = createTrackerStore();
+    assert.equal(store.getState().hiddenThemeKeys.size, 0);
+    store.getState().setThemeVisibility(["1"], false);
+    assert.equal(store.getState().hiddenThemeKeys.has("1"), true);
   } finally { globalThis.localStorage = original; }
 });
 

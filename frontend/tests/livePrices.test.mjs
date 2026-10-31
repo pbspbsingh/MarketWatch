@@ -4,6 +4,7 @@ import { createTestServer } from "./viteTestServer.mjs";
 
 const server = await createTestServer();
 const { GlobalLivePrices, liveChartKey, sessionAfterRegularUpdate } = await server.ssrLoadModule("/src/api/livePrices.ts");
+const { createTrackerStore, visibleTrackerRows } = await server.ssrLoadModule("/src/features/theme-tracker/trackerStore.ts");
 after(async () => { await server.close(); });
 
 class Socket extends EventTarget {
@@ -40,6 +41,31 @@ function setup() {
   };
   return { client, timers, flush, cleanup() { client.stop(); globalThis.window = previous.window; globalThis.WebSocket = previous.WebSocket; } };
 }
+
+test("tracker visibility removes hidden ETF TD subscriptions and restores them on the same shared socket", () => {
+  const env = setup(); const { client } = env; const tracker = createTrackerStore();
+  const row = (key, etf_symbol) => ({ key, etf_symbol, name: key, industry_keys: [], performance: null, previous_close: null, loading: true, error: null });
+  tracker.getState().receive({ type: "catalog", mode: "theme", rows: [row("1", "QQQ"), row("2", "GLD"), row("3", "QQQ")] });
+  let release;
+  const subscribe = () => {
+    release?.();
+    const { rows, mode, hiddenThemeKeys } = tracker.getState();
+    release = client.observePrices(visibleTrackerRows(rows, mode, hiddenThemeKeys).map(row => row.etf_symbol));
+  };
+  try {
+    subscribe(); client.start(); const socket = Socket.sockets[0]; socket.open();
+    assert.deepEqual(socket.sent.at(-1).symbols, ["GLD", "QQQ"]);
+    tracker.getState().setThemeVisibility(["1"], false); subscribe();
+    assert.deepEqual(socket.sent.at(-1).symbols, ["GLD", "QQQ"]);
+    tracker.getState().setThemeVisibility(["3"], false); subscribe();
+    assert.deepEqual(socket.sent.at(-1).symbols, ["GLD"]);
+    tracker.getState().setThemeVisibility(["2"], false); subscribe();
+    assert.deepEqual(socket.sent.at(-1).symbols, []);
+    tracker.getState().setThemeVisibility(["1"], true); subscribe();
+    assert.deepEqual(socket.sent.at(-1).symbols, ["QQQ"]);
+    assert.equal(Socket.sockets.length, 1);
+  } finally { release?.(); env.cleanup(); }
+});
 
 test("one application socket multiplexes daily, weekly, benchmark, and raw prices; identical resources share lifetime", () => {
   const env = setup(); const { client } = env;

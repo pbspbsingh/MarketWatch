@@ -11,7 +11,8 @@ import { useLivePrices } from "../../shared/useLivePrices";
 import { useMarketHours } from "../../shared/useMarketHours";
 import { ChartPanel } from "../ticker-lens/ChartPanel";
 import { industriesMarketWatchUrl, isArrowKeyControl, themeMarketWatchIdUrl } from "../ticker-lens/utils";
-import { sortTrackerRows, trackerMetric, trackerRanges, type TrackerRange } from "./trackerStore";
+import { sortTrackerRows, trackerMetric, trackerRanges, visibleTrackerRows, type TrackerRange } from "./trackerStore";
+import { ThemeVisibilityPicker } from "./ThemeVisibilityPicker";
 import { useTrackerStream } from "./useTrackerStream";
 import "./theme-tracker.css";
 
@@ -21,7 +22,7 @@ export function ThemeTrackerPage() {
   const [initialSplit] = useState(() => restoreChartSplit("market-watch.theme-tracker-width", 30));
   const market = useMarketHours();
   const tracker = useTrackerStream(market.hours?.market_date);
-  const { mode, rows, selectedKey, select, setMode, setRange, leaveTradingDay } = tracker;
+  const { mode, rows, selectedKey, select, setMode, setRange, leaveTradingDay, hiddenThemeKeys, setThemeVisibility } = tracker;
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [contextMenu, setContextMenu] = useState<{ row: TrackerRow; mode: TrackerMode; top: number; left: number }>();
   const [dismissedMarketError, setDismissedMarketError] = useState<string>();
@@ -30,10 +31,11 @@ export function ThemeTrackerPage() {
   useEffect(() => { if (!tdAllowed) leaveTradingDay(); }, [leaveTradingDay, tdAllowed]);
   const requestedRange = tracker.ranges[mode];
   const range = requestedRange === "trading_day" && !tdAllowed ? tracker.historical[mode] : requestedRange;
-  const symbols = useMemo(() => [...new Set(rows.map(row => row.etf_symbol))], [rows]);
+  const visibleRows = useMemo(() => visibleTrackerRows(rows, mode, hiddenThemeKeys), [rows, mode, hiddenThemeKeys]);
+  const symbols = useMemo(() => [...new Set(visibleRows.map(row => row.etf_symbol))], [visibleRows]);
   const live = useLivePrices({ enabled: tdAllowed && range === "trading_day", symbols });
-  const sorted = useMemo(() => sortTrackerRows(rows, range, live.prices), [rows, range, live.prices]);
-  const selected = rows.find(row => row.key === selectedKey);
+  const sorted = useMemo(() => sortTrackerRows(visibleRows, range, live.prices), [visibleRows, range, live.prices]);
+  const selected = visibleRows.find(row => row.key === selectedKey);
   const groupKeys = useMemo(() => new Set(selected === undefined ? [] : mode === "theme" ? [selected.key] : selected.industry_keys), [selected, mode]);
   const industryKeys = useMemo(() => new Set(mode === "sector" ? selected?.industry_keys ?? [] : []), [selected, mode]);
   const ignoreTickerContext = useCallback(() => {}, []);
@@ -78,6 +80,7 @@ export function ThemeTrackerPage() {
               {mode === "theme" ? "Theme" : "Sector"}<ExpandMoreIcon fontSize="small" />
             </ButtonBase>
           </Typography>
+          {mode === "theme" && <ThemeVisibilityPicker rows={rows} hiddenKeys={hiddenThemeKeys} onVisibilityChange={setThemeVisibility} />}
           <Menu id={menuId} anchorEl={modeAnchor} open={modeAnchor !== null} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-labelledby": `${menuId}-trigger` } }}>
             <MenuItem selected={mode === "theme"} onClick={() => chooseMode("theme")}>Theme</MenuItem>
             <MenuItem selected={mode === "sector"} onClick={() => chooseMode("sector")}>Sector</MenuItem>
@@ -106,6 +109,7 @@ export function ThemeTrackerPage() {
               </li>;
             })}
             {!tracker.loading && rows.length === 0 && <li className="panel-status">No {mode === "theme" ? "themes" : "sectors"} available</li>}
+            {rows.length > 0 && visibleRows.length === 0 && <li className="panel-status">All themes are hidden. Use “Choose visible themes” to show them.</li>}
           </ol>
         )}
         <Menu open={contextMenu !== undefined} onClose={() => setContextMenu(undefined)} anchorReference="anchorPosition"
@@ -115,7 +119,8 @@ export function ThemeTrackerPage() {
           </MenuItem>
         </Menu>
       </aside>} second={
-      <ChartPanel overlayContainer={overlayContainer} mode={mode === "theme" ? "theme" : "industry"} groupKeys={groupKeys} industryKeys={industryKeys} selectedTicker={selected?.etf_symbol}
+      selected === undefined ? <div className="workspace-panel panel-status">Select a {mode === "theme" ? "theme" : "sector"} to display charts</div> :
+      <ChartPanel overlayContainer={overlayContainer} mode={mode === "theme" ? "theme" : "industry"} groupKeys={groupKeys} industryKeys={industryKeys} selectedTicker={selected.etf_symbol}
         onSelectedTickerContext={ignoreTickerContext} horizontalDetailsNavigation={false} forceSystemBenchmark />} />
       <Toast message={tracker.error} onClose={tracker.clearError} />
       <Toast message={live.error} onClose={live.clearError} />
