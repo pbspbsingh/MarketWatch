@@ -11,6 +11,7 @@ sqlite-bundled = ["sqlx/sqlite-bundled", "institutions/sqlite-bundled"]
 sqlite-unbundled = ["sqlx/sqlite-unbundled", "institutions/sqlite-unbundled"]
 
 [dependencies]
+market_analysis.workspace = true
 ai.workspace = true
 sec.workspace = true
 news.workspace = true

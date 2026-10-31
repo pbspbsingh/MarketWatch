@@ -6,8 +6,8 @@ use ts_rs::TS;
 
 use super::average_daily_range_percent;
 use super::average_volume;
-use super::chart_relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use super::extension_from_50_sma;
+use super::relative_strength::{RelativeStrengthCalculation, RelativeStrengthStructure};
 use market_types::{DailyCandle, TickerSymbol};
 
 const DAILY_MA_PERIODS: [usize; 6] = [5, 10, 20, 50, 150, 200];
@@ -560,7 +560,7 @@ mod tests {
         );
         assert_eq!(&points[..50], prefix.as_slice());
 
-        let weekly = crate::models::chart::aggregate_market_weeks(&daily).unwrap();
+        let weekly = crate::chart::aggregate_market_weeks(&daily).unwrap();
         let weekly_points = market_chart_indicators(
             &daily,
             &weekly,

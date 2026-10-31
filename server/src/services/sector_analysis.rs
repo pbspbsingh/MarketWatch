@@ -1,10 +1,10 @@
 use crate::config::MarketConfig;
 use crate::models::SectorRanking;
-use crate::models::candle_performance;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use chrono::Utc;
+use market_analysis::candle_performance;
 use market_types::TickerSymbol;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;

@@ -1,10 +1,10 @@
 use crate::config::{MarketConfig, sector_name};
 use crate::contracts::tracker::{TrackerMode, TrackerRow};
-use crate::models::candle_performance;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use chrono::Utc;
+use market_analysis::candle_performance;
 use market_types::TickerSymbol;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::{broadcast::Receiver as MarketChanges, watch::Receiver as CatalogChanges};

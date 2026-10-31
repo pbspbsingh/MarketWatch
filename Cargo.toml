@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/market_analysis",
     "server",
     "crates/market_types",
     "crates/institutions",
@@ -28,6 +29,7 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Workspace crates
+market_analysis = { path = "crates/market_analysis" }
 ai = { path = "crates/providers/ai" }
 sec = { path = "crates/providers/sec" }
 news = { path = "crates/providers/news" }

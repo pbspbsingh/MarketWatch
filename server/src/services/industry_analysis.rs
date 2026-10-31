@@ -1,5 +1,6 @@
-use crate::models::{IndustryRanking, PerformancePeriods};
+use crate::models::IndustryRanking;
 use crate::store::Store;
+use market_analysis::PerformancePeriods;
 use std::collections::HashMap;
 use thiserror::Error;
 

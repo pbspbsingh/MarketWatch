@@ -1,9 +1,8 @@
-use crate::models::ChartDateRange;
-use crate::models::calculate_relative_strength_line;
-use crate::models::chart::MarketChartInterval;
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use chrono::{Months, NaiveDate};
+use market_analysis::chart::MarketChartInterval;
+use market_analysis::{ChartDateRange, calculate_relative_strength_line};
 use market_types::{DailyCandle, TickerSymbol};
 use serde::Serialize;
 use std::collections::HashSet;

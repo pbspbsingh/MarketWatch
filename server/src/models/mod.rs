@@ -1,5 +1,3 @@
-pub mod chart;
-mod chart_relative_strength;
 mod daily_notes;
 pub mod fundamental_assessment;
 pub(crate) mod fundamentals_background;
@@ -13,19 +11,8 @@ mod top_stock_screens;
 pub(crate) mod trade_logs;
 mod watchlists;
 
-pub(crate) use chart_relative_strength::{
-    ChartDateRange, RelativeStrengthCalculation, RelativeStrengthCalculationError,
-    RelativeStrengthCalculationPoint, RelativeStrengthStructure, RelativeStrengthSwing,
-    RelativeStrengthSwingKind, RelativeStrengthTrend, analyze_relative_strength_structure,
-    calculate_relative_strength_line, calculate_relative_strength_line_with_period,
-    chart_relative_strength_period,
-};
 pub use daily_notes::DailyNote;
-pub use performance::{
-    IndustryRanking, PerformancePeriods, SectorRanking, ThemeRanking, TickerRanking,
-    average_daily_range_percent, average_volume, candle_performance, close_above_sma,
-    extension_from_50_sma,
-};
+pub use performance::{IndustryRanking, SectorRanking, ThemeRanking, TickerRanking};
 pub use theme_audits::{
     ThemeAudit, ThemeAuditAcceptance, ThemeAuditBatchProgress, ThemeAuditOverview,
     ThemeAuditProgress, ThemeAuditRunStatus, ThemeAuditStatus, ThemeAuditTheme,

@@ -1,4 +1,4 @@
-use crate::models::PerformancePeriods;
+use market_analysis::PerformancePeriods;
 use market_types::TickerSymbol;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

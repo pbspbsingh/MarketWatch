@@ -1583,6 +1583,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "market_analysis"
+version = "3.0.0"
+dependencies = [
+ "chrono",
+ "market_types",
+ "serde",
+ "thiserror",
+ "ts-rs",
+]
+
+[[package]]
 name = "market_types"
 version = "3.0.0"
 dependencies = [
@@ -1612,6 +1623,7 @@ dependencies = [
  "image",
  "include_dir",
  "institutions",
+ "market_analysis",
  "market_types",
  "news",
  "nyse",

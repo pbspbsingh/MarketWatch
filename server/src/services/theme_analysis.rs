@@ -1,9 +1,10 @@
 use crate::config::MarketConfig;
-use crate::models::{ThemeRanking, candle_performance};
+use crate::models::ThemeRanking;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
 use chrono::Utc;
+use market_analysis::candle_performance;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;

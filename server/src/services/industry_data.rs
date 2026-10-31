@@ -2,11 +2,11 @@ use crate::contracts::industry::{
     ETF_INDUSTRY_KEY, IndustryCatalogEntry, IndustryData, IndustryResource, IndustryState,
     MEMBERSHIP_FRESH_DAYS,
 };
-use crate::models::PerformancePeriods;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use chrono::TimeDelta;
+use market_analysis::PerformancePeriods;
 use market_types::TickerSymbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

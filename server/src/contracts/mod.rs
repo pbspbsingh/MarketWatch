@@ -7,16 +7,6 @@ pub mod tickers;
 pub mod tracker;
 pub mod trade_logs;
 
-use crate::models::RelativeStrengthCalculation;
-use crate::models::RelativeStrengthCalculationPoint;
-use crate::models::RelativeStrengthStructure;
-use crate::models::RelativeStrengthSwing;
-use crate::models::RelativeStrengthSwingKind;
-use crate::models::RelativeStrengthTrend;
-use crate::models::chart::{
-    MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartPoint,
-    MarketChartRelativeStrength, MarketChartSeries, MarketChartSnapshot, VolumeEventKind,
-};
 use crate::models::trade_logs::{
     Direction, Execution, ExecutionAction, ExecutionInput, Side, Tag, TagInput, Trade, TradeInput,
     TradeStatus, TradeSummary, Valuation,
@@ -37,10 +27,21 @@ use crate::services::volume_run_rate::VolumeRunRate;
 use live::{
     LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
 };
+use market_analysis::chart::MarketChartCandle;
+use market_analysis::chart::MarketChartIndicators;
+use market_analysis::chart::MarketChartInterval;
+use market_analysis::chart::MarketChartPoint;
+use market_analysis::chart::MarketChartRelativeStrength;
+use market_analysis::chart::MarketChartSeries;
+use market_analysis::chart::MarketChartSnapshot;
+use market_analysis::chart::VolumeEventKind;
+use market_analysis::{
+    RelativeStrengthCalculation, RelativeStrengthCalculationPoint, RelativeStrengthStructure,
+    RelativeStrengthSwing, RelativeStrengthSwingKind, RelativeStrengthTrend,
+};
 use market_types::{Forecast, FundamentalPeriod, Fundamentals, TradingViewSymbol, YahooSymbol};
 use trade_logs::TradeLogSnapshot;
 
-use crate::models::PerformancePeriods;
 use crate::models::ThemeRanking;
 use crate::models::TickerCollection;
 use crate::models::TickerCollectionFile;
@@ -53,6 +54,7 @@ use industry::{
     IndustryCatalogEntry, IndustryClassification, IndustryData, IndustryResource, IndustryState,
 };
 use market::MarketHours;
+use market_analysis::PerformancePeriods;
 use market_types::TickerSymbol;
 use std::path::Path;
 use tickers::{

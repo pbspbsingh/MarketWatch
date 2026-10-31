@@ -1,5 +1,5 @@
-use crate::models::PerformancePeriods;
 use chrono::{DateTime, Utc};
+use market_analysis::PerformancePeriods;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

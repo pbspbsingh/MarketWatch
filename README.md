@@ -7,6 +7,7 @@ Local market-analysis web application.
 - `frontend/`: React client.
 - `server/`: application composition, HTTP/WebSocket endpoints, services, and application storage.
 - `crates/market_types/`: shared symbols, exchange identifiers, candles, profiles, and fundamentals; no HTTP, runtime, or database dependencies.
+- `crates/market_analysis/`: pure candle aggregation, indicators, relative strength, and performance calculations.
 - `crates/institutions/`: institutional ownership persistence and archive ingestion.
 - `crates/providers/`: Yahoo, Finviz, NYSE, SEC, news, and AI adapters. Shared HTTP options and throttling live in `http/`; adapters have no server or database dependencies.
 

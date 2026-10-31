@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::PerformancePeriods;
+use market_analysis::PerformancePeriods;
 use market_types::TickerSymbol;
 
 #[derive(Clone, Debug, Serialize, TS)]

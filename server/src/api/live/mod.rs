@@ -2,12 +2,6 @@ use crate::app::AppState;
 use crate::contracts::live::{
     LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
 };
-use crate::models::RelativeStrengthCalculation;
-use crate::models::chart::{
-    MarketChartCandle, MarketChartInterval, MarketChartRelativeStrength, MarketChartSeries,
-    MarketChartSnapshot,
-};
-use crate::models::chart_relative_strength_period;
 use crate::services::market_chart::MarketChartService;
 use crate::services::yahoo_live::{
     MAX_ACTIVE_SYMBOLS, YahooLiveHandle, YahooLiveSubscription, YahooLiveUpdate,
@@ -19,6 +13,13 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::get;
 use chrono::{DateTime, NaiveDate, Utc};
+use market_analysis::RelativeStrengthCalculation;
+use market_analysis::chart::MarketChartCandle;
+use market_analysis::chart::MarketChartInterval;
+use market_analysis::chart::MarketChartRelativeStrength;
+use market_analysis::chart::MarketChartSeries;
+use market_analysis::chart::MarketChartSnapshot;
+use market_analysis::chart_relative_strength_period;
 use market_types::{TickerSymbol, YahooSymbol};
 use std::collections::{HashMap, HashSet};
 use std::future::pending;
@@ -599,10 +600,11 @@ fn price_event(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::models::chart::{MarketChartIndicators, MarketChartPoint};
     use crate::services::yahoo_live::{YahooLiveCandle, YahooLivePrice};
     use chrono::NaiveDate;
     use chrono::Utc;
+    use market_analysis::chart::MarketChartIndicators;
+    use market_analysis::chart::MarketChartPoint;
     use market_types::DailyCandle;
 
     fn request(symbol: &str, comparison: Option<&str>) -> RawLiveChartRequest {

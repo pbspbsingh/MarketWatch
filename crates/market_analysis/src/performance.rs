@@ -1,0 +1,141 @@
+use chrono::{NaiveDate, TimeDelta};
+use market_types::DailyCandle;
+use serde::Serialize;
+use ts_rs::TS;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, TS)]
+pub struct PerformancePeriods {
+    pub day: f64,
+    pub week: f64,
+    pub month: f64,
+    pub quarter: f64,
+    pub half_year: f64,
+    pub year: f64,
+}
+
+pub fn candle_performance(candles: &[DailyCandle], as_of: NaiveDate) -> PerformancePeriods {
+    let Some(end_close) = close_on_or_before(candles, as_of) else {
+        return PerformancePeriods::default();
+    };
+
+    PerformancePeriods {
+        day: previous_close(candles, as_of)
+            .filter(|close| *close != 0.0)
+            .map_or(0.0, |close| (end_close / close) - 1.0),
+        week: period_return(candles, end_close, as_of - TimeDelta::days(7)),
+        month: period_return(candles, end_close, as_of - TimeDelta::days(30)),
+        quarter: period_return(candles, end_close, as_of - TimeDelta::days(90)),
+        half_year: period_return(candles, end_close, as_of - TimeDelta::days(180)),
+        year: period_return(candles, end_close, as_of - TimeDelta::days(365)),
+    }
+}
+
+pub fn average_daily_range_percent(candles: &[DailyCandle]) -> f64 {
+    if candles.is_empty() {
+        return 0.0;
+    }
+    100.0
+        * candles
+            .iter()
+            .filter(|candle| candle.low > 0.0)
+            .map(|candle| (candle.high / candle.low) - 1.0)
+            .sum::<f64>()
+        / candles.len() as f64
+}
+
+pub fn average_volume(candles: &[DailyCandle]) -> i64 {
+    if candles.is_empty() {
+        return 0;
+    }
+    candles.iter().map(|candle| candle.volume).sum::<i64>() / candles.len() as i64
+}
+
+pub fn extension_from_50_sma(candles: &[DailyCandle], adr_sessions: usize) -> Option<f64> {
+    const SMA_SESSIONS: usize = 50;
+    let latest_close = candles.last()?.close;
+    let sma_candles = latest_sessions(candles, SMA_SESSIONS);
+    if sma_candles.len() < SMA_SESSIONS {
+        return None;
+    }
+    let sma = sma_candles.iter().map(|candle| candle.close).sum::<f64>() / SMA_SESSIONS as f64;
+    let adr_candles = latest_sessions(candles, adr_sessions);
+    if adr_candles.is_empty() {
+        return None;
+    }
+    let adr = adr_candles
+        .iter()
+        .map(|candle| candle.high - candle.low)
+        .sum::<f64>()
+        / adr_candles.len() as f64;
+    (adr > 0.0).then_some((latest_close - sma) / adr)
+}
+
+pub fn close_above_sma(candles: &[DailyCandle], sessions: usize) -> Option<bool> {
+    let latest_close = candles.last()?.close;
+    let sma_candles = latest_sessions(candles, sessions);
+    if sma_candles.len() < sessions {
+        return None;
+    }
+    let sma = sma_candles.iter().map(|candle| candle.close).sum::<f64>() / sessions as f64;
+    Some(latest_close > sma)
+}
+
+fn latest_sessions(candles: &[DailyCandle], sessions: usize) -> &[DailyCandle] {
+    &candles[candles.len().saturating_sub(sessions)..]
+}
+
+fn previous_close(candles: &[DailyCandle], as_of: NaiveDate) -> Option<f64> {
+    let mut closes = candles
+        .iter()
+        .rev()
+        .filter(|candle| candle.market_date <= as_of)
+        .map(|candle| candle.close);
+    closes.next()?;
+    closes.next()
+}
+
+fn period_return(candles: &[DailyCandle], end_close: f64, date: NaiveDate) -> f64 {
+    close_on_or_before(candles, date)
+        .filter(|close| *close != 0.0)
+        .map_or(0.0, |close| (end_close / close) - 1.0)
+}
+
+fn close_on_or_before(candles: &[DailyCandle], date: NaiveDate) -> Option<f64> {
+    candles
+        .iter()
+        .rev()
+        .find(|candle| candle.market_date <= date)
+        .map(|candle| candle.close)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candle(date: &str, close: f64) -> DailyCandle {
+        DailyCandle {
+            market_date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 1,
+        }
+    }
+
+    #[test]
+    fn calculates_period_returns_from_closest_prior_candle() {
+        let candles = vec![
+            candle("2025-06-12", 100.0),
+            candle("2026-06-05", 180.0),
+            candle("2026-06-12", 200.0),
+        ];
+
+        let performance =
+            candle_performance(&candles, NaiveDate::from_ymd_opt(2026, 6, 12).unwrap());
+
+        assert!((performance.week - 0.111_111_111_111_111_16).abs() < f64::EPSILON);
+        assert!((performance.year - 1.0).abs() < f64::EPSILON);
+        assert_eq!(performance.month, 1.0);
+    }
+}

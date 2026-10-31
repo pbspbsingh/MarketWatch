@@ -1,9 +1,10 @@
-use crate::models::chart::{
-    MarketChartCandle, MarketChartIndicators, MarketChartInterval, MarketChartRelativeStrength,
-    MarketChartSeries,
-};
 use crate::services::volume_run_rate::VolumeRunRate;
 use chrono::{DateTime, NaiveDate, Utc};
+use market_analysis::chart::MarketChartCandle;
+use market_analysis::chart::MarketChartIndicators;
+use market_analysis::chart::MarketChartInterval;
+use market_analysis::chart::MarketChartRelativeStrength;
+use market_analysis::chart::MarketChartSeries;
 use market_types::{TickerSymbol, YahooSymbol};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

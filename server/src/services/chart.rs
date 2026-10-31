@@ -1,10 +1,8 @@
 use crate::config::MarketConfig;
-use crate::models::average_daily_range_percent;
-use crate::models::average_volume;
-use crate::models::extension_from_50_sma;
 use crate::services::yahoo::YahooService;
 use crate::store::Store;
 use anyhow::Context;
+use market_analysis::{average_daily_range_percent, average_volume, extension_from_50_sma};
 use market_types::{DailyCandle, TickerSymbol, TradingViewSymbol};
 use serde::Serialize;
 use std::collections::BTreeMap;
