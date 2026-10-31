@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM n_factor_reports WHERE symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "36bdab37d0881709dcbe2ad9740fdd6d4e91779b6e2392c3c4e79d0bfdd76409"
+}

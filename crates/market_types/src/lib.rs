@@ -17,3 +17,6 @@ pub const ETF_INDUSTRY_KEY: &str = "exchangetradedfund";
 
 mod news;
 pub use news::{NewsCoverage, NewsItem, NewsStopReason};
+
+mod industry;
+pub use industry::IndustryClassification;

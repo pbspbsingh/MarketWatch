@@ -1,3 +1,5 @@
+use crate::services::theme_tickers::load_industry_names;
+use crate::services::theme_tickers::remove_ticker;
 use crate::services::theme_tickers::{load_theme_ticker, load_theme_tickers};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
@@ -179,15 +181,13 @@ impl ThemeService {
     }
 
     pub async fn filter_industries(&self) -> Result<Vec<ThemeTickerIndustry>, ThemeServiceError> {
-        self.store
-            .theme_filter_industries()
+        load_industry_names(&self.store)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
 
     pub async fn delete_ticker(&self, symbol: &TickerSymbol) -> Result<(), ThemeServiceError> {
-        self.store
-            .delete_ticker(symbol)
+        remove_ticker(&self.store, symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .then_some(())

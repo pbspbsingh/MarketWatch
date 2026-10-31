@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM theme_ai_jobs WHERE EXISTS (SELECT 1 FROM json_each(symbols) WHERE value = ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "357623eb84fdfa76eb0c15874e0e9963a1f89d4e46ad257a0c45662528f49490"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT market_date AS \"market_date!: NaiveDate\" FROM nyse_holidays ORDER BY market_date",
+  "describe": {
+    "columns": [
+      {
+        "name": "market_date!: NaiveDate",
+        "ordinal": 0,
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "nyse_holidays",
+            "name": "market_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "87342576723e6becf95d7b4a726748da767955e480e040dadeee951e634f776d"
+}

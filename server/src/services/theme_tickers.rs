@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::store::{CompanyText, Store};
+use crate::store::{CompanyText, IndustryName, Store};
 use market_types::TickerSymbol;
 use themes::{ThemeTicker, ThemeTickerIndustry};
 
@@ -9,7 +9,7 @@ pub(crate) async fn select_theme_symbols(
     ids: &[i64],
     include_unassigned: bool,
 ) -> anyhow::Result<Vec<TickerSymbol>> {
-    let known = store.known_tickers().await?;
+    let known = known_symbols(store).await?;
     store.theme_symbols(&known, ids, include_unassigned).await
 }
 
@@ -33,7 +33,7 @@ async fn load(store: &Store, only: Option<&TickerSymbol>) -> anyhow::Result<Vec<
                 Vec::new()
             }
         }
-        None => store.known_tickers().await?,
+        None => known_symbols(store).await?,
     };
     let states = store.theme_ticker_states(&known, only).await?;
     let symbols: Vec<_> = states.iter().map(|state| state.symbol.clone()).collect();
@@ -72,6 +72,35 @@ async fn load(store: &Store, only: Option<&TickerSymbol>) -> anyhow::Result<Vec<
             }
         })
         .collect())
+}
+
+/// The open universe includes user assignments even when their market cache is absent.
+pub(crate) async fn known_symbols(store: &Store) -> anyhow::Result<Vec<TickerSymbol>> {
+    let (mut symbols, assigned) =
+        tokio::try_join!(store.market_symbols(), store.assigned_theme_symbols())?;
+    symbols.extend(assigned);
+    symbols.sort();
+    symbols.dedup();
+    Ok(symbols)
+}
+
+pub(crate) async fn load_industry_names(store: &Store) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
+    Ok(store
+        .industry_names()
+        .await?
+        .into_iter()
+        .map(|row: IndustryName| ThemeTickerIndustry {
+            key: row.key,
+            name: row.name,
+        })
+        .collect())
+}
+
+/// Both deletions are idempotent; no transaction spans the independent databases.
+pub(crate) async fn remove_ticker(store: &Store, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+    let user_deleted = store.delete_ticker_references(symbol).await?;
+    let market_deleted = store.delete_market_ticker(symbol).await?;
+    Ok(user_deleted || market_deleted)
 }
 
 #[cfg(test)]

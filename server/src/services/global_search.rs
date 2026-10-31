@@ -1,3 +1,4 @@
+use crate::services::theme_tickers::known_symbols;
 use crate::store::Store;
 use market_types::TickerSymbol;
 use serde::Serialize;
@@ -80,7 +81,7 @@ impl GlobalSearchService {
         let (industry_rankings, themes, tickers) = tokio::try_join!(
             self.store.current_industry_rankings(),
             self.store.themes_with_assignments(),
-            self.store.known_tickers(),
+            known_symbols(&self.store),
         )
         .map_err(GlobalSearchError::Persistence)?;
 

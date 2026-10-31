@@ -11,7 +11,6 @@ use themes::ThemeAiJobSummary;
 use themes::ThemeAssignment;
 use themes::ThemeSuggestion;
 use themes::ThemeSuggestionError;
-use themes::ThemeTickerIndustry;
 use themes::TickerThemeState;
 
 struct StoredTheme {
@@ -72,66 +71,44 @@ pub struct TickerThemeMembership {
 }
 
 impl Store {
-    pub async fn delete_ticker(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+    pub async fn delete_ticker_references(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
         let symbol = symbol.as_str();
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin ticker deletion transaction")?;
-        let mut deleted = 0;
-        deleted += sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
-            .execute(&mut *transaction)
-            .await
-            .context("failed to delete ticker theme assignments")?
-            .rows_affected();
-        deleted += sqlx::query!(
-            "DELETE FROM industry_membership_tickers WHERE symbol = ?",
-            symbol,
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to delete ticker industry memberships")?
-        .rows_affected();
-        deleted += sqlx::query!("DELETE FROM tickers WHERE symbol = ?", symbol)
-            .execute(&mut *transaction)
-            .await
-            .context("failed to delete ticker market data")?
-            .rows_affected();
-        deleted += sqlx::query!(
-            "DELETE FROM theme_ai_processed_symbols WHERE symbol = ?",
-            symbol,
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to delete ticker automatic processing outcome")?
-        .rows_affected();
-        deleted += sqlx::query!(
-            "DELETE FROM theme_ai_jobs
-             WHERE EXISTS (SELECT 1 FROM json_each(symbols) WHERE value = ?)",
-            symbol,
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to delete ticker AI jobs")?
-        .rows_affected();
-        sqlx::query!(
-            "DELETE FROM industry_memberships
-             WHERE NOT EXISTS (
-                 SELECT 1
-                 FROM industry_membership_tickers
-                 WHERE industry_membership_tickers.industry_key = industry_memberships.industry_key
-             )",
-        )
-        .execute(&mut *transaction)
-        .await
-        .context("failed to remove empty industry memberships")?;
-        transaction
-            .commit()
-            .await
-            .context("failed to commit ticker deletion")?;
-        self.membership_changes.send_replace(());
-        Ok(deleted > 0)
+        let mut tx = self.pool.begin().await?;
+        let result = async {
+            let mut deleted = sqlx::query!("DELETE FROM theme_stocks WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM theme_ai_processed_symbols WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM theme_ai_jobs WHERE EXISTS (SELECT 1 FROM json_each(symbols) WHERE value = ?)", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM theme_audits WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM watchlist_tickers WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            Ok::<_, anyhow::Error>(deleted > 0)
+        }.await;
+        match result {
+            Ok(deleted) => {
+                tx.commit().await?;
+                self.membership_changes.send_replace(());
+                Ok(deleted)
+            }
+            Err(error) => {
+                tx.rollback()
+                    .await
+                    .context("failed to roll back ticker reference deletion")?;
+                Err(error)
+            }
+        }
+    }
+
+    pub async fn assigned_theme_symbols(&self) -> anyhow::Result<Vec<TickerSymbol>> {
+        sqlx::query_scalar!("SELECT DISTINCT symbol FROM theme_stocks ORDER BY symbol")
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+            .collect()
     }
 
     pub async fn theme_names_for_ticker(
@@ -371,47 +348,6 @@ impl Store {
         .await
         .context("failed to load theme ticker state")?;
         theme_tickers_from_rows(rows)
-    }
-
-    pub async fn theme_filter_industries(&self) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
-        sqlx::query!(
-            r#"WITH current_rankings AS (
-                   SELECT industry_key, industry_name
-                   FROM industry_rankings
-               ),
-               membership_industries AS (
-                   SELECT industry_memberships.industry_key,
-                          COALESCE(
-                              current_rankings.industry_name,
-                              industry_memberships.industry_name,
-                              industry_memberships.industry_key
-                          ) AS industry_name
-                   FROM industry_memberships
-                   LEFT JOIN current_rankings
-                     ON current_rankings.industry_key = industry_memberships.industry_key
-               ),
-               all_industries AS (
-                   SELECT industry_key, industry_name
-                   FROM current_rankings
-                   UNION
-                   SELECT industry_key, industry_name
-                   FROM membership_industries
-               )
-               SELECT industry_key AS "key!: String", industry_name AS "name!: String"
-               FROM all_industries
-               ORDER BY industry_name COLLATE NOCASE"#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to load theme filter industries")
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| ThemeTickerIndustry {
-                    key: row.key,
-                    name: row.name,
-                })
-                .collect()
-        })
     }
 
     pub async fn replace_theme_assignments(
@@ -908,7 +844,10 @@ fn stored_theme(theme: StoredTheme) -> anyhow::Result<Theme> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::theme_tickers::load_industry_names;
+    use crate::services::theme_tickers::remove_ticker;
     use crate::services::theme_tickers::{load_theme_tickers, select_theme_symbols};
+    use themes::ThemeTickerIndustry;
 
     use market_types::{CompanyProfile, Exchange, TickerSymbol};
 
@@ -1035,7 +974,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.theme_filter_industries().await.unwrap(),
+            load_industry_names(&store).await.unwrap(),
             [ThemeTickerIndustry {
                 key: "hiddenindustry".to_owned(),
                 name: "Hidden Industry".to_owned(),
@@ -1403,7 +1342,7 @@ mod tests {
             .unwrap();
 
         let changes = store.subscribe_memberships();
-        assert!(store.delete_ticker(&ticker("DELETE")).await.unwrap());
+        assert!(remove_ticker(&store, &ticker("DELETE")).await.unwrap());
         assert!(changes.has_changed().unwrap());
         assert!(
             store
@@ -1413,6 +1352,6 @@ mod tests {
                 .is_none()
         );
         assert!(load_theme_tickers(&store).await.unwrap().is_empty());
-        assert!(store.theme_filter_industries().await.unwrap().is_empty());
+        assert!(load_industry_names(&store).await.unwrap().is_empty());
     }
 }

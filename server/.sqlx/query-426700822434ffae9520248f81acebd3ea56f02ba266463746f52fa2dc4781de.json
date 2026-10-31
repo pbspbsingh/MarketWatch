@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH industry_tickers AS (\n                    SELECT DISTINCT symbol FROM industry_membership_tickers\n                 )\n                 SELECT\n                    (SELECT COUNT(*) FROM industry_tickers) AS \"industry_mapped_tickers!: i64\",\n                    COUNT(*) AS \"latest_candle_tickers!: i64\"\n                 FROM industry_tickers\n                 JOIN daily_candles\n                   ON daily_candles.symbol = industry_tickers.symbol\n                  AND daily_candles.market_date = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "industry_mapped_tickers!: i64",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "latest_candle_tickers!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "426700822434ffae9520248f81acebd3ea56f02ba266463746f52fa2dc4781de"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM industry_memberships WHERE NOT EXISTS (SELECT 1 FROM industry_membership_tickers WHERE industry_membership_tickers.industry_key = industry_memberships.industry_key)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "e9f5435430a71eb09a11ea48a782dfa02ef79bea745d08d05b60a1a6efc61797"
+}

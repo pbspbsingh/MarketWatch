@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM fundamental_assessments WHERE symbol = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "71571739b7f4fd48314aa84305cb5a2658a75cdce5b2e56b8d885e65308b327b"
+}

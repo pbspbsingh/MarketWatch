@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT industry_membership_tickers.symbol\n             FROM industry_membership_tickers\n             WHERE NOT EXISTS (\n                SELECT 1\n                FROM daily_candles\n                WHERE daily_candles.symbol = industry_membership_tickers.symbol\n                  AND daily_candles.market_date = ?\n             )\n             ORDER BY industry_membership_tickers.symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_membership_tickers",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "538dd090670ac05c25db2286a6aecaef9a90562abb6a6051afd36d545a400aeb"
+}

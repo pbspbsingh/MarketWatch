@@ -2,7 +2,7 @@ use super::Store;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 
-pub use crate::contracts::industry::IndustryClassification;
+pub use market_types::IndustryClassification;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct IndustryRankings {

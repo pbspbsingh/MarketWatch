@@ -11,7 +11,54 @@ pub struct TickerIndustryMembership {
     pub symbol: TickerSymbol,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct IndustryName {
+    pub key: String,
+    pub name: String,
+}
+
 impl Store {
+    pub async fn industry_names(&self) -> anyhow::Result<Vec<IndustryName>> {
+        sqlx::query!(
+            r#"WITH current_rankings AS (
+                   SELECT industry_key, industry_name
+                   FROM industry_rankings
+               ),
+               membership_industries AS (
+                   SELECT industry_memberships.industry_key,
+                          COALESCE(
+                              current_rankings.industry_name,
+                              industry_memberships.industry_name,
+                              industry_memberships.industry_key
+                          ) AS industry_name
+                   FROM industry_memberships
+                   LEFT JOIN current_rankings
+                     ON current_rankings.industry_key = industry_memberships.industry_key
+               ),
+               all_industries AS (
+                   SELECT industry_key, industry_name
+                   FROM current_rankings
+                   UNION
+                   SELECT industry_key, industry_name
+                   FROM membership_industries
+               )
+               SELECT industry_key AS "key!: String", industry_name AS "name!: String"
+               FROM all_industries
+               ORDER BY industry_name COLLATE NOCASE"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load industry names")
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| IndustryName {
+                    key: row.key,
+                    name: row.name,
+                })
+                .collect()
+        })
+    }
+
     pub async fn ticker_has_industry(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
         let symbol = symbol.as_str();
         sqlx::query_scalar!(
@@ -151,13 +198,11 @@ impl Store {
         Ok(())
     }
 
-    pub async fn known_tickers(&self) -> anyhow::Result<Vec<TickerSymbol>> {
+    pub async fn market_symbols(&self) -> anyhow::Result<Vec<TickerSymbol>> {
         let symbols = sqlx::query_scalar!(
             "SELECT symbol FROM tickers
              UNION
              SELECT symbol FROM industry_membership_tickers
-             UNION
-             SELECT symbol FROM theme_stocks
              ORDER BY symbol"
         )
         .fetch_all(&self.pool)
@@ -174,7 +219,7 @@ impl Store {
         industry_keys: &[String],
     ) -> anyhow::Result<Vec<TickerSymbol>> {
         if industry_keys.is_empty() {
-            return self.known_tickers().await;
+            return self.market_symbols().await;
         }
 
         let mut query = QueryBuilder::<Sqlite>::new(
@@ -352,7 +397,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.known_tickers().await.unwrap(),
+            store.market_symbols().await.unwrap(),
             ["AMD", "NVDA", "SMCI"]
         );
         assert_eq!(
@@ -428,7 +473,7 @@ mod tests {
                 .await
                 .unwrap()
         );
-        assert_eq!(store.known_tickers().await.unwrap(), ["TICKER"]);
+        assert_eq!(store.market_symbols().await.unwrap(), ["TICKER"]);
         assert_eq!(
             store
                 .all_industries_for_symbols(std::iter::once(

@@ -6,14 +6,7 @@ use ts_rs::TS;
 pub const MEMBERSHIP_FRESH_DAYS: i64 = 30;
 pub use market_types::ETF_INDUSTRY_KEY;
 
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-pub struct IndustryClassification {
-    pub industry_key: String,
-    pub industry_name: String,
-    pub sector_key: String,
-    pub sector_name: String,
-    pub ticker_count: i64,
-}
+pub use market_types::IndustryClassification;
 
 #[derive(Clone, Debug, Serialize, TS)]
 pub struct IndustryCatalogEntry {

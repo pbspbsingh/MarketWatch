@@ -29,6 +29,37 @@ pub struct CompanyText {
 }
 
 impl Store {
+    pub async fn delete_market_ticker(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+        let symbol = symbol.as_str();
+        let mut tx = self.pool.begin().await?;
+        let result = async {
+            let mut deleted = sqlx::query!("DELETE FROM industry_membership_tickers WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM tickers WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM n_factor_reports WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            deleted += sqlx::query!("DELETE FROM fundamental_assessments WHERE symbol = ?", symbol)
+                .execute(&mut *tx).await?.rows_affected();
+            sqlx::query!("DELETE FROM industry_memberships WHERE NOT EXISTS (SELECT 1 FROM industry_membership_tickers WHERE industry_membership_tickers.industry_key = industry_memberships.industry_key)")
+                .execute(&mut *tx).await?;
+            Ok::<_, anyhow::Error>(deleted > 0)
+        }.await;
+        match result {
+            Ok(deleted) => {
+                tx.commit().await?;
+                self.membership_changes.send_replace(());
+                Ok(deleted)
+            }
+            Err(error) => {
+                tx.rollback()
+                    .await
+                    .context("failed to roll back market ticker deletion")?;
+                Err(error)
+            }
+        }
+    }
+
     pub async fn has_nyse_holidays_for_year(&self, year: i32) -> anyhow::Result<bool> {
         let start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid calendar year");
         let end = NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid calendar year");
@@ -44,7 +75,7 @@ impl Store {
     }
 
     pub async fn nyse_holidays(&self) -> anyhow::Result<Vec<NaiveDate>> {
-        sqlx::query_scalar("SELECT market_date FROM nyse_holidays ORDER BY market_date")
+        sqlx::query_scalar!(r#"SELECT market_date AS "market_date!: NaiveDate" FROM nyse_holidays ORDER BY market_date"#)
             .fetch_all(&self.pool)
             .await
             .context("failed to load NYSE holiday calendar")
