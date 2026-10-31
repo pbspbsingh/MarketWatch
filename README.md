@@ -24,22 +24,27 @@ or database dependencies. Feature workflows still run in the server and receive 
 stores where needed. No database depends on the server or another database.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
-`cargo run` from the repository root; `config.toml` and `.env` are read from
-that directory. Run `cargo test --workspace` and
+`cargo run` from the repository root; runtime configuration is read from
+`config.toml`. Run `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` to check every crate.
 
 ## Configuration
 
-Create the local configuration files before starting the backend:
+Create the runtime configuration and data directory before starting the backend:
 
 ```bash
 cp config.example.toml config.toml
-cp .env.example .env
+mkdir -p data
 ```
 
-Set absolute SQLite paths in the root `.env`. It supplies `MARKET_DATABASE_URL`,
-`USER_DATABASE_URL`, and `INSTITUTIONAL_DATABASE_URL` to both the application and SQLx. Environment
-variables override file values; database URLs are not configured in `config.toml`.
+Configure runtime database URLs in the `[databases]` section of `config.toml`.
+The example stores all three files in `data/`.
+This applies to development and production. The application does not read `.env`
+or database URL environment variables.
+
+The root `.env` is only for SQLx compile-time query validation and migration
+commands. Create it from `.env.example` when using those tools, with absolute
+paths to development databases using the same schemas.
 
 When `config.toml` is missing, the backend prints the template and exits.
 
@@ -176,7 +181,7 @@ The Institutions tab loads only when opened. Enable SEC access with
 unique OS temporary directory, imported one at a time, and removed after use.
 Failed updates also clean up their temporary files. Initial preparation downloads
 about 3.7 GB and imports it into `institutional.sqlite` beside the market and user databases.
-Set `INSTITUTIONAL_DATABASE_URL` in the root `.env` to change its location.
+Set `databases.institutional_url` in `config.toml` to change its runtime location.
 The first import takes time; later ticker views use indexed queries without
 opening ZIPs. Source ETags and modification dates survive restarts in SQLite,
 allowing conditional checks without keeping the ZIPs. Deleting the database
@@ -203,24 +208,21 @@ With `SQLX_OFFLINE=true`, Cargo checks static SQL against the committed metadata
 without requiring running databases. This can be supplied by a global Cargo
 override; the repository does not provide a project-level `.cargo` configuration.
 Set `SQLX_OFFLINE=false` when regenerating metadata against the actual databases.
-Runtime database paths come from that same `.env`. Apply migrations to the local databases
-before checking new queries:
+Runtime database paths come exclusively from `config.toml`. To prepare SQLx
+queries, initialize the development databases selected by the build-time `.env`:
 
 ```bash
-cd crates/db/market
-cargo sqlx database setup
-cd ../user
-cargo sqlx database setup
-cd ../institutional
-cargo sqlx database setup
-cd ../../..
+./scripts/init_db.sh
 SQLX_OFFLINE=false cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline
 ```
 
-Use absolute database URLs when preparing queries so paths are independent of
-the owning crate directory. Run database commands from the owning crate
-directory so SQLx reads its variable selection. All three schemas initialize without SEC records. The application
+The setup script creates `data/` and invokes `cargo sqlx database setup` in each
+of the three database crates.
+It uses the build-time root `.env`, independently of runtime `config.toml`.
+Use absolute SQLx database URLs pointing into the project’s `data/` folder so
+paths are independent of the crate directory. All three schemas initialize without
+SEC records. The application
 also applies migrations when opening each database. Commit refreshed `.sqlx`
 metadata after changing queries; offline builds use it without live databases.
 The migration CLI needs SQLx 0.9 with the `sqlite,sqlx-toml` features:

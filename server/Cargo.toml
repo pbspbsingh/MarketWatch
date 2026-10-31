@@ -13,7 +13,6 @@ sqlite-unbundled = ["market_db/sqlite-unbundled", "user_db/sqlite-unbundled", "o
 [dependencies]
 market_db.workspace = true
 user_db.workspace = true
-dotenvy.workspace = true
 journal.workspace = true
 collections.workspace = true
 themes.workspace = true

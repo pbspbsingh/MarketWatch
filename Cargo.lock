@@ -1652,7 +1652,6 @@ dependencies = [
  "chrono-tz",
  "collections",
  "comrak",
- "dotenvy",
  "fastrand",
  "finviz",
  "futures-util",

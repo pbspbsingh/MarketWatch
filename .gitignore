@@ -1,12 +1,10 @@
 /target/
-/market.sqlite*
-/user.sqlite*
-/institutional.sqlite*
 .env
 /frontend/node_modules/
 /frontend/dist/
 /frontend/*.tsbuildinfo
 /artifacts/
+/data/
 *.log
 *.db
 config.toml

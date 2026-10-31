@@ -1,4 +1,3 @@
-# Database URLs are configured in the root .env; see .env.example.
 [server]
 address = "127.0.0.1:8080"
 compression = true
@@ -10,6 +9,11 @@ compression = true
 username = "marketwatch"
 # Generate with `cargo run --bin hash_password` and paste the output here.
 password_hash = "REPLACE_WITH_ARGON2ID_HASH"
+
+[databases]
+market_url = "sqlite://data/market.sqlite?mode=rwc"
+user_url = "sqlite://data/user.sqlite?mode=rwc"
+institutional_url = "sqlite://data/institutional.sqlite?mode=rwc"
 
 [market]
 timezone = "America/Los_Angeles"

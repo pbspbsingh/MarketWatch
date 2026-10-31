@@ -4,7 +4,7 @@ use chrono_tz::Tz;
 use market_types::TickerSymbol;
 use research::n_factor::NewsSource;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
 
@@ -32,6 +32,7 @@ pub(crate) fn sector_name(key: &str) -> Option<&'static str> {
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
+    pub databases: DatabaseConfig,
     pub market: MarketConfig,
     pub home: HomeConfig,
     pub providers: ProviderConfig,
@@ -127,7 +128,8 @@ impl std::fmt::Debug for AuthConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     pub market_url: String,
     pub user_url: String,
@@ -135,25 +137,18 @@ pub struct DatabaseConfig {
 }
 
 impl DatabaseConfig {
-    pub fn load() -> anyhow::Result<Self> {
-        let values = dotenvy::from_path_iter(".env")
-            .context("failed to read root .env; create it from .env.example")?
-            .collect::<Result<HashMap<_, _>, _>>()
-            .context("failed to parse root .env")?;
-        Self::from_values(|key| std::env::var(key).ok().or_else(|| values.get(key).cloned()))
-    }
-
-    fn from_values(mut get: impl FnMut(&str) -> Option<String>) -> anyhow::Result<Self> {
-        let mut required = |key| {
-            get(key)
-                .filter(|value| !value.trim().is_empty())
-                .with_context(|| format!("{key} is required in root .env"))
-        };
-        Ok(Self {
-            market_url: required("MARKET_DATABASE_URL")?,
-            user_url: required("USER_DATABASE_URL")?,
-            institutional_url: required("INSTITUTIONAL_DATABASE_URL")?,
-        })
+    fn validate(&self) -> anyhow::Result<()> {
+        for (name, value) in [
+            ("market_url", &self.market_url),
+            ("user_url", &self.user_url),
+            ("institutional_url", &self.institutional_url),
+        ] {
+            anyhow::ensure!(
+                !value.trim().is_empty(),
+                "databases.{name} must not be empty"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -193,6 +188,7 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        self.databases.validate()?;
         self.server.auth.validate()?;
         self.market
             .timezone
@@ -309,35 +305,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn database_configuration_requires_all_three_shared_urls() {
-        let values = dotenvy::from_read_iter(
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env.example")).as_slice(),
-        )
-        .collect::<Result<HashMap<_, _>, _>>()
-        .unwrap();
-        let config = DatabaseConfig::from_values(|key| values.get(key).cloned()).unwrap();
-        assert_eq!(config.market_url, values["MARKET_DATABASE_URL"]);
-        assert_eq!(config.user_url, values["USER_DATABASE_URL"]);
-        assert_eq!(
-            config.institutional_url,
-            values["INSTITUTIONAL_DATABASE_URL"]
-        );
-
-        for missing in [
-            "MARKET_DATABASE_URL",
-            "USER_DATABASE_URL",
-            "INSTITUTIONAL_DATABASE_URL",
-        ] {
-            for replacement in [None, Some(""), Some("  ")] {
-                let error = DatabaseConfig::from_values(|key| {
-                    if key == missing {
-                        replacement.map(str::to_owned)
-                    } else {
-                        values.get(key).cloned()
-                    }
-                })
-                .unwrap_err();
-                assert!(error.to_string().contains(missing));
+    fn database_configuration_requires_all_three_toml_urls() {
+        let input = "market_url = \"sqlite::memory:\"\nuser_url = \"sqlite::memory:\"\ninstitutional_url = \"sqlite::memory:\"\n";
+        let config: DatabaseConfig = toml::from_str(input).unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.market_url, "sqlite::memory:");
+        assert_eq!(config.user_url, "sqlite::memory:");
+        assert_eq!(config.institutional_url, "sqlite::memory:");
+        for key in ["market_url", "user_url", "institutional_url"] {
+            let missing = input
+                .lines()
+                .filter(|line| !line.starts_with(key))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(toml::from_str::<DatabaseConfig>(&missing).is_err());
+            for value in ["", "  "] {
+                let invalid = input.replace(
+                    &format!("{key} = \"sqlite::memory:\""),
+                    &format!("{key} = \"{value}\""),
+                );
+                let config: DatabaseConfig = toml::from_str(&invalid).unwrap();
+                assert!(config.validate().unwrap_err().to_string().contains(key));
             }
         }
     }
@@ -494,7 +482,7 @@ mod tests {
             "/../config.example.toml"
         ));
         let start = example.find("\n[server.auth]\n").unwrap() + 1;
-        let end = example.find("\n[market]\n").unwrap() + 1;
+        let end = example.find("\n[databases]\n").unwrap() + 1;
         format!("{}{replacement}{}", &example[..start], &example[end..])
     }
 

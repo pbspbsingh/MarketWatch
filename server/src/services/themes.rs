@@ -931,7 +931,7 @@ pub(crate) fn strip_code_fence(response: &str) -> &str {
 mod live_tests {
 
     use super::*;
-    use crate::config::{Config, DatabaseConfig};
+    use crate::config::Config;
     use anyhow::Context;
     #[derive(Deserialize)]
     struct LiveThemeSuggestion {
@@ -948,8 +948,7 @@ mod live_tests {
             .context("OPENAI_COMPATIBLE_JOB_ID must be an integer")?;
         let config = Config::load("config.toml")?;
         let ai = config.ai.as_ref().context("AI must be configured")?;
-        let databases = DatabaseConfig::load()?;
-        let user_store = UserStore::connect(&databases.user_url).await?;
+        let user_store = UserStore::connect(&config.databases.user_url).await?;
         let job = user_store
             .theme_ai_job(job_id)
             .await?

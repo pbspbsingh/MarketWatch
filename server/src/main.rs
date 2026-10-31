@@ -19,7 +19,7 @@ mod test_support;
 mod utils;
 
 use anyhow::Context;
-use config::{Config, DatabaseConfig};
+use config::Config;
 use std::path::Path;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt::time::ChronoLocal};
@@ -59,9 +59,8 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("config.toml is required");
     }
     let config = Config::load(config_path).context("failed to load configuration")?;
-    let databases = DatabaseConfig::load().context("failed to load database configuration")?;
     let address = config.server.address;
-    let app = app::build(config, databases).await?;
+    let app = app::build(config).await?;
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .with_context(|| format!("failed to bind server to {address}"))?;
