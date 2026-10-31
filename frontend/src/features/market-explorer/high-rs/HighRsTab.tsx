@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import {
   Button,
@@ -9,7 +10,7 @@ import {
   Typography,
   type SelectChangeEvent,
 } from "@mui/material";
-import { fetchHomeCharts } from "../../../api/home";
+import { homeChartsQueryOptions } from "../../home/homeQuery";
 import {
   fetchMarketExplorerHighRs,
   type HighRsResult,
@@ -27,6 +28,7 @@ import "./high-rs-tab.css";
 
 const storagePrefix = "market-watch.market-explorer.high-rs.";
 const defaultMetricSort = { metricId: "percent-from-top", direction: "asc" } as const;
+const emptyBenchmarks: string[] = [];
 
 export function HighRsTab({
   toolbarContainer,
@@ -36,38 +38,25 @@ export function HighRsTab({
   asOf: string;
 }) {
   const [settings, setSettings] = useState(() => readSettings(asOf));
-  const [benchmarks, setBenchmarks] = useState<string[]>([]);
+  const homeQuery = useQuery(homeChartsQueryOptions());
+  const benchmarks = homeQuery.data?.tickers ?? emptyBenchmarks;
+  const [dismissedHomeError, setDismissedHomeError] = useState<Error | null>(null);
+  const homeError = homeQuery.error !== dismissedHomeError ? homeQuery.error?.message : undefined;
   const groupFilters = useMarketExplorerGroupFilters();
   const [result, setResult] = useState<HighRsResult>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
 
+  const benchmark = benchmarks.includes(settings.benchmark) ? settings.benchmark : benchmarks[0] ?? "";
   useEffect(() => {
-    const controller = new AbortController();
-    fetchHomeCharts(controller.signal)
-      .then(({ tickers }) => {
-        if (controller.signal.aborted) return;
-        setBenchmarks(tickers);
-        setSettings((current) => {
-          const benchmark = tickers.includes(current.benchmark) ? current.benchmark : tickers[0];
-          if (benchmark === current.benchmark) return current;
-          localStorage.setItem(`${storagePrefix}benchmark`, benchmark);
-          return { ...current, benchmark };
-        });
-      })
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
-          setLoading(false);
-        }
-      });
-    return () => controller.abort();
-  }, []);
+    if (benchmark !== "") localStorage.setItem(`${storagePrefix}benchmark`, benchmark);
+  }, [benchmark]);
 
   const requestSettings = useMemo<HighRsSettings>(() => ({
     ...settings,
+    benchmark,
     ...groupFilters.selection,
-  }), [groupFilters.selection, settings]);
+  }), [benchmark, groupFilters.selection, settings]);
 
   useEffect(() => {
     if (!groupFilters.ready || !benchmarks.includes(requestSettings.benchmark)) return;
@@ -120,7 +109,7 @@ export function HighRsTab({
     },
   }], [eventsBySymbol, result]);
   const symbols = result?.events.map((event) => event.symbol) ?? [];
-  const busy = groupFilters.loading || (groupFilters.ready && loading);
+  const busy = homeQuery.isLoading || groupFilters.loading || (groupFilters.ready && homeQuery.data !== undefined && loading);
   const commitIndustrySelection = (selected: Set<string>) => {
     groupFilters.commitIndustrySelection(selected);
     setError(undefined);
@@ -189,7 +178,7 @@ export function HighRsTab({
             <Select
               size="small"
               variant="standard"
-              value={settings.benchmark}
+              value={benchmark}
               inputProps={{ "aria-label": "RS benchmark" }}
               onChange={(event: SelectChangeEvent) => update("benchmark", event.target.value)}
             >
@@ -246,9 +235,10 @@ export function HighRsTab({
         />
       )}
       <Toast
-        message={error ?? groupFilters.error}
+        message={error ?? homeError ?? groupFilters.error}
         onClose={() => {
           setError(undefined);
+          setDismissedHomeError(homeQuery.error);
           groupFilters.clearError();
         }}
       />

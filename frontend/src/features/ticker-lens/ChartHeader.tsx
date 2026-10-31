@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -12,7 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 import type { ChartSummary } from "../../api/chart";
-import { fetchNextEarningsDate, type NextEarnings } from "../../api/details";
+import type { NextEarnings } from "../../api/details";
+import { nextEarningsQueryOptions } from "../charts/earningsQuery";
 import {
   ImageExportMenu,
   type ImageExportAction,
@@ -61,28 +62,7 @@ export function ChartHeader({
   exportingChartPanel = false,
   contextLabel,
 }: ChartHeaderProps) {
-  const [earningsState, setEarningsState] = useState<{
-    symbol: string;
-    earnings: NextEarnings | null;
-  }>();
-  const nextEarnings = earningsState !== undefined
-    && earningsState.symbol === selectedTicker
-    ? earningsState.earnings
-    : undefined;
-
-  useEffect(() => {
-    if (selectedTicker === undefined) return;
-    const controller = new AbortController();
-    void fetchNextEarningsDate(selectedTicker, controller.signal)
-      .then((earnings) => {
-        setEarningsState({
-          symbol: selectedTicker,
-          earnings,
-        });
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [selectedTicker]);
+  const { data: nextEarnings } = useQuery(nextEarningsQueryOptions(selectedTicker));
 
   return (
     <header className="panel-header chart-header">

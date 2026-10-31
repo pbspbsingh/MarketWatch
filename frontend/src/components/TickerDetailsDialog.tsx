@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import {
   CircularProgress,
+  Alert,
+  Button,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -10,10 +13,8 @@ import {
   Tabs,
   Typography,
 } from "@mui/material";
-import {
-  fetchTickerDetails,
-  type TickerDetails,
-} from "../api/details";
+import type { TickerDetails } from "../api/details";
+import { refreshTickerDetails, tickerDetailsQueryOptions } from "../shared/tickerDetailsQuery";
 import {
   fetchAiCapability,
   fetchThemeTicker,
@@ -69,7 +70,14 @@ function OpenTickerDetailsDialog({
   onClose,
   onThemeChanged,
 }: Omit<TickerDetailsDialogProps, "open" | "symbol"> & { symbol: string }) {
-  const [details, setDetails] = useState<TickerDetails>();
+  const client = useQueryClient();
+  const detailsQuery = useQuery(tickerDetailsQueryOptions(client, symbol));
+  const details = detailsQuery.data;
+  const refreshMutation = useMutation({ mutationFn: () => refreshTickerDetails(client, symbol) });
+  const { mutate: refresh, isPending: refreshing } = refreshMutation;
+  const [dismissedDetailsError, setDismissedDetailsError] = useState<Error | null>(null);
+  const detailsError = detailsQuery.error ?? refreshMutation.error;
+  const detailsErrorMessage = detailsError === dismissedDetailsError || isCancelledError(detailsError) ? undefined : detailsError?.message;
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeTicker, setThemeTicker] = useState<ThemeTicker>();
   const [draftThemeIds, setDraftThemeIds] = useState<number[]>([]);
@@ -81,8 +89,7 @@ function OpenTickerDetailsDialog({
   });
   const [tab, setTab] = useState<TickerDetailsTab>(initialTab ?? "fundamentals");
   const [institutionsToolbar, setInstitutionsToolbar] = useState<HTMLDivElement | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const loading = detailsQuery.isLoading;
   const [savingThemes, setSavingThemes] = useState(false);
   const [suggestingThemes, setSuggestingThemes] = useState(false);
   const [error, setError] = useState<string>();
@@ -91,7 +98,6 @@ function OpenTickerDetailsDialog({
     "success",
   );
   const [suggestions, setSuggestions] = useState<ThemeSuggestion[]>([]);
-  const requestRef = useRef<AbortController | undefined>(undefined);
   const suggestionRequestRef = useRef<AbortController | undefined>(undefined);
   const [liveReasoning, setLiveReasoning] = useState("");
   const [liveResponse, setLiveResponse] = useState("");
@@ -99,27 +105,10 @@ function OpenTickerDetailsDialog({
 
   const refreshDetails = useCallback(() => {
     if (details === undefined || refreshing) return;
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setRefreshing(true);
-    fetchTickerDetails(symbol, true, controller.signal)
-      .then(setDetails)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      });
-  }, [details, refreshing, symbol]);
+    refresh();
+  }, [details, refresh, refreshing]);
 
   const close = useCallback(() => {
-    requestRef.current?.abort();
     suggestionRequestRef.current?.abort();
     onClose();
   }, [onClose]);
@@ -169,22 +158,6 @@ function OpenTickerDetailsDialog({
       setError(errorMessage(loadError));
     }
   };
-
-  useEffect(() => {
-    const controller = new AbortController();
-    requestRef.current = controller;
-    fetchTickerDetails(symbol, false, controller.signal)
-      .then(setDetails)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setError(requestError.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [symbol]);
 
   useEffect(() => {
     if (tab !== "profile-themes") return;
@@ -350,6 +323,8 @@ function OpenTickerDetailsDialog({
               <CircularProgress size="1rem" />
               <Typography color="text.secondary">Loading ticker details</Typography>
             </div>
+          ) : detailsQuery.isError && details === undefined ? (
+            <Alert severity="error" action={<Button onClick={() => { void detailsQuery.refetch(); }}>Retry</Button>}>{detailsQuery.error.message}</Alert>
           ) : details !== undefined ? (
             <>
               {tab === "profile-themes" ? (
@@ -377,7 +352,10 @@ function OpenTickerDetailsDialog({
           ) : null}
         </DialogContent>
       </Dialog>
-      <Toast message={error} onClose={() => setError(undefined)} />
+      <Toast message={error ?? detailsErrorMessage} onClose={() => {
+        if (error !== undefined) setError(undefined);
+        else setDismissedDetailsError(detailsError);
+      }} />
       <Toast
         message={message}
         severity={messageSeverity}

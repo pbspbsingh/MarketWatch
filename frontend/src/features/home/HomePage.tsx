@@ -1,12 +1,15 @@
 import {
   CircularProgress,
+  Alert,
+  Button,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchChartSummary, type ChartSummary } from "../../api/chart";
-import { fetchHomeCharts } from "../../api/home";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { chartSummaryQueryOptions } from "../charts/chartSummaryQuery";
+import { homeChartsQueryOptions } from "./homeQuery";
 import type { MarketChartInterval } from "../../api/marketChart";
 import { Toast } from "../../components/Toast";
 import {
@@ -21,10 +24,6 @@ import {
 } from "../../components/lightweight-chart/chartViewportStorage";
 import { HomeChartPane } from "./HomeChartPane";
 import "./home.css";
-
-interface ChartState {
-  summary?: ChartSummary;
-}
 
 const homeChartViewportStorageKey = "market-watch.home-chart-viewport";
 const homeChartIntervalStorageKey = "market-watch.home-chart-interval";
@@ -44,9 +43,13 @@ function homeChartViewportKey(interval: MarketChartInterval) {
 }
 
 export function HomePage() {
-  const [tickers, setTickers] = useState<string[]>();
-  const [charts, setCharts] = useState<Record<string, ChartState>>({});
-  const [error, setError] = useState<string>();
+  const homeQuery = useQuery(homeChartsQueryOptions());
+  const tickers = homeQuery.data?.tickers;
+  const summaries = useQueries({ queries: tickers?.map(symbol => chartSummaryQueryOptions(symbol, [])) ?? [] });
+  const [dismissedQueryErrors, setDismissedQueryErrors] = useState<Set<Error>>(() => new Set());
+  const queryError = [homeQuery.error, ...summaries.map(query => query.error)]
+    .find(cause => cause !== null && !dismissedQueryErrors.has(cause));
+  const error = queryError?.message;
   const [chartErrors, setChartErrors] = useState<Record<string, string>>({});
   const [chartContexts, setChartContexts] = useState<Record<string, ChartSyncTarget | null>>({});
   const [crosshairOwner, setCrosshairOwner] = useState<string>();
@@ -59,41 +62,10 @@ export function HomePage() {
     () => readStoredChartViewport(homeChartViewportKey(interval)),
     [interval],
   );
-  const firstChartError = Object.entries(chartErrors)[0];
+  const firstChartError = Object.entries(chartErrors).find(([symbol]) => tickers?.includes(symbol));
   const activeCrosshairOwner = tickers?.includes(crosshairOwner ?? "")
     ? crosshairOwner
     : tickers?.[0];
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchHomeCharts(controller.signal)
-      .then(({ tickers: configuredTickers }) => setTickers(configuredTickers))
-      .catch((loadError: unknown) => {
-        if (!(loadError instanceof Error && loadError.name === "AbortError")) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load home charts");
-        }
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    if (tickers === undefined) return;
-    const controller = new AbortController();
-    for (const symbol of tickers) {
-      fetchChartSummary(symbol, [], controller.signal)
-        .then((summary) => {
-          setCharts((current) => ({
-            ...current,
-            [symbol]: { ...current[symbol], summary },
-          }));
-        })
-        .catch((loadError: unknown) => {
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : `Failed to load ${symbol}`);
-        });
-    }
-    return () => controller.abort();
-  }, [tickers]);
 
   useEffect(() => {
     if (tickers === undefined) return;
@@ -101,7 +73,10 @@ export function HomePage() {
     if (targets.some((target) => target === null || target === undefined)) return;
     return synchronizeChartGroup(
       targets as ChartSyncTarget[],
-      (source) => source === chartContexts[viewportOwnerRef.current ?? tickers[0]],
+      (source) => {
+        const owner = viewportOwnerRef.current;
+        return source === chartContexts[owner !== undefined && tickers.includes(owner) ? owner : tickers[0]];
+      },
     );
   }, [chartContexts, tickers]);
 
@@ -127,6 +102,9 @@ export function HomePage() {
   }, [activeCrosshairOwner, chartContexts, tickers]);
 
   if (tickers === undefined) {
+    if (homeQuery.isError) return <div className="panel-status">
+      <Alert severity="error" action={<Button onClick={() => { void homeQuery.refetch(); }}>Retry</Button>}>{homeQuery.error.message}</Alert>
+    </div>;
     return (
       <div className="panel-status">
         <CircularProgress size="1rem" />
@@ -138,11 +116,11 @@ export function HomePage() {
   return (
     <main className="home-page">
       <div className="home-chart-grid">
-        {tickers.map((symbol) => (
+        {tickers.map((symbol, index) => (
           <HomeChartPane
             key={symbol}
             symbol={symbol}
-            summary={charts[symbol]?.summary}
+            summary={summaries[index]?.data}
             interval={interval}
             rightPriceScaleVisible={rightPriceScaleVisible}
             initialViewport={initialViewport}
@@ -206,8 +184,8 @@ export function HomePage() {
       <Toast
         message={error ?? firstChartError?.[1]}
         onClose={() => {
-          if (error !== undefined) {
-            setError(undefined);
+          if (queryError !== undefined && queryError !== null) {
+            setDismissedQueryErrors(current => new Set(current).add(queryError));
           } else if (firstChartError !== undefined) {
             setChartErrors((current) => {
               const next = { ...current };
