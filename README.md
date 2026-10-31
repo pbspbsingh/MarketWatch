@@ -103,13 +103,7 @@ Run the backend API:
 cargo run
 ```
 
-The default build bundles SQLite. To link against the system SQLite library instead:
-
-```bash
-cargo run --no-default-features --features sqlite-unbundled
-```
-
-The unbundled build requires SQLite development files and libclang.
+SQLite is bundled with the backend.
 
 Run the frontend development server in a second terminal:
 

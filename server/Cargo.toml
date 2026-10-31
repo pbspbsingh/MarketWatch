@@ -5,11 +5,6 @@ edition.workspace = true
 publish.workspace = true
 default-run = "market_watch"
 
-[features]
-default = ["sqlite-bundled"]
-sqlite-bundled = ["market_db/sqlite-bundled", "user_db/sqlite-bundled", "ownership/sqlite-bundled"]
-sqlite-unbundled = ["market_db/sqlite-unbundled", "user_db/sqlite-unbundled", "ownership/sqlite-unbundled"]
-
 [dependencies]
 market_db.workspace = true
 user_db.workspace = true

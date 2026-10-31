@@ -5,9 +5,6 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-default = ["sqlite-bundled"]
-sqlite-bundled = ["sqlx/sqlite-bundled"]
-sqlite-unbundled = ["sqlx/sqlite-unbundled"]
 test-support = []
 
 [dependencies]

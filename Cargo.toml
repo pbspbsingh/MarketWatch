@@ -36,8 +36,8 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Workspace crates
-market_db = { path = "crates/db/market", default-features = false }
-user_db = { path = "crates/db/user", default-features = false }
+market_db = { path = "crates/db/market" }
+user_db = { path = "crates/db/user" }
 journal = { path = "crates/journal" }
 collections = { path = "crates/collections" }
 themes = { path = "crates/themes" }
@@ -51,8 +51,8 @@ provider_http = { path = "crates/providers/http" }
 yahoo = { path = "crates/providers/yahoo" }
 nyse = { path = "crates/providers/nyse" }
 market_types = { path = "crates/market_types" }
-institutional = { path = "crates/db/institutional", default-features = false }
-ownership = { path = "crates/ownership", default-features = false }
+institutional = { path = "crates/db/institutional" }
+ownership = { path = "crates/ownership" }
 
 # Application and runtime
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -71,7 +71,7 @@ argon2 = "0.6.0"
 rpassword = "7.5.4"
 
 # Persistence
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "macros", "migrate", "chrono"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "macros", "migrate", "chrono", "sqlite-bundled"] }
 
 # Content
 comrak = { version = "0.55.0", default-features = false }
