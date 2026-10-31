@@ -1,0 +1,685 @@
+use super::chart::{MarketChartInterval, market_week_start};
+use chrono::{Datelike, Months, NaiveDate};
+use market_types::DailyCandle;
+use serde::Serialize;
+use std::collections::BTreeMap;
+use thiserror::Error;
+use ts_rs::TS;
+
+const DAILY_LINE_SMOOTHING_PERIOD: usize = 5;
+const WEEKLY_LINE_SMOOTHING_PERIOD: usize = 3;
+const SWING_REVERSAL_RATIO: f64 = 0.025;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChartDateRange {
+    pub start: NaiveDate,
+    pub end: NaiveDate,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+pub struct RelativeStrengthCalculation {
+    pub moving_average_period: usize,
+    pub points: Vec<RelativeStrengthCalculationPoint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+pub struct RelativeStrengthCalculationPoint {
+    pub date: NaiveDate,
+    pub value: f64,
+    pub ticker_return_percent: Option<f64>,
+    pub comparison_return_percent: Option<f64>,
+    pub relative_return_percent: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthSwingKind {
+    High,
+    Low,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum RelativeStrengthTrend {
+    Uptrend,
+    Downtrend,
+    Unclear,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+pub struct RelativeStrengthSwing {
+    pub date: NaiveDate,
+    pub value: f64,
+    pub kind: RelativeStrengthSwingKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+pub struct RelativeStrengthStructure {
+    pub confirmed: Vec<RelativeStrengthSwing>,
+    pub provisional: Option<RelativeStrengthSwing>,
+    pub trend: RelativeStrengthTrend,
+}
+
+#[derive(Clone, Copy)]
+struct SwingCandidate {
+    index: usize,
+    date: NaiveDate,
+    value: f64,
+}
+
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum RelativeStrengthCalculationError {
+    #[error("invalid relative-strength average period")]
+    InvalidPeriod,
+    #[error("relative-strength range must be increasing")]
+    InvalidRange,
+    #[error("ticker and comparison have no overlapping prices")]
+    NoOverlappingPrices,
+    #[error("invalid relative-strength normalization range")]
+    InvalidNormalizationRange,
+    #[error("relative-strength normalization range has no valid prices")]
+    NoValidNormalizationPrices,
+}
+
+pub fn calculate_relative_strength_line(
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: MarketChartInterval,
+    range: ChartDateRange,
+) -> Result<RelativeStrengthCalculation, RelativeStrengthCalculationError> {
+    let period = match interval {
+        MarketChartInterval::Daily => DAILY_LINE_SMOOTHING_PERIOD,
+        MarketChartInterval::Weekly => WEEKLY_LINE_SMOOTHING_PERIOD,
+    };
+    calculate_relative_strength_line_with_period(ticker, comparison, interval, range, period)
+}
+
+/// Chart preferences are request-scoped; screening retains its original defaults.
+pub fn chart_relative_strength_period(
+    interval: MarketChartInterval,
+    requested: Option<usize>,
+) -> Result<usize, RelativeStrengthCalculationError> {
+    let (default, allowed): (usize, &[usize]) = match interval {
+        MarketChartInterval::Daily => (5, &[5, 10, 20, 50, 100]),
+        MarketChartInterval::Weekly => (2, &[1, 2, 4, 10, 20]),
+    };
+    let period = requested.unwrap_or(default);
+    allowed
+        .contains(&period)
+        .then_some(period)
+        .ok_or(RelativeStrengthCalculationError::InvalidPeriod)
+}
+
+pub fn calculate_relative_strength_line_with_period(
+    ticker: &[DailyCandle],
+    comparison: &[DailyCandle],
+    interval: MarketChartInterval,
+    range: ChartDateRange,
+    moving_average_period: usize,
+) -> Result<RelativeStrengthCalculation, RelativeStrengthCalculationError> {
+    if moving_average_period == 0 || moving_average_period > 100 {
+        return Err(RelativeStrengthCalculationError::InvalidPeriod);
+    }
+    validate_range(range)?;
+    let complete_ticker = closes_by_period(ticker, interval, None);
+    let complete_comparison = closes_by_period(comparison, interval, None);
+    let complete_aligned = align_closes(&complete_ticker, &complete_comparison);
+    let latest_common_date = complete_aligned
+        .last()
+        .map(|(date, _, _)| *date)
+        .ok_or(RelativeStrengthCalculationError::NoOverlappingPrices)?;
+    let normalization_start = latest_common_date
+        .checked_sub_months(Months::new(12))
+        .ok_or(RelativeStrengthCalculationError::InvalidNormalizationRange)?;
+    let normalization_ratios = complete_aligned
+        .iter()
+        .filter(|(date, _, _)| *date >= normalization_start)
+        .map(|(_, ticker_close, comparison_close)| (ticker_close / comparison_close).ln())
+        .collect::<Vec<_>>();
+    let geometric_mean = (!normalization_ratios.is_empty())
+        .then(|| {
+            (normalization_ratios.iter().sum::<f64>() / normalization_ratios.len() as f64).exp()
+        })
+        .filter(|mean| mean.is_finite() && *mean > 0.0)
+        .ok_or(RelativeStrengthCalculationError::NoValidNormalizationPrices)?;
+    let ticker = closes_by_period(ticker, interval, Some(range.end));
+    let comparison = closes_by_period(comparison, interval, Some(range.end));
+    let aligned = align_closes(&ticker, &comparison);
+    let normalized = aligned
+        .iter()
+        .map(|(date, ticker_close, comparison_close)| {
+            (
+                *date,
+                ticker_close / comparison_close / geometric_mean * 100.0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let points = relative_strength_points(&aligned, &normalized, moving_average_period)
+        .into_iter()
+        .filter(|point| range.contains(point.date))
+        .collect();
+
+    Ok(RelativeStrengthCalculation {
+        moving_average_period,
+        points,
+    })
+}
+
+pub fn analyze_relative_strength_structure(
+    points: &[RelativeStrengthCalculationPoint],
+) -> RelativeStrengthStructure {
+    let Some(first) = points
+        .first()
+        .filter(|point| valid_swing_value(point.value))
+    else {
+        return RelativeStrengthStructure {
+            confirmed: Vec::new(),
+            provisional: None,
+            trend: RelativeStrengthTrend::Unclear,
+        };
+    };
+    let first = SwingCandidate {
+        index: 0,
+        date: first.date,
+        value: first.value,
+    };
+    let mut confirmed = Vec::new();
+    let mut direction = None;
+    let mut high = first;
+    let mut low = first;
+
+    for (index, point) in points.iter().enumerate().skip(1) {
+        if !valid_swing_value(point.value) {
+            continue;
+        }
+        let candidate = SwingCandidate {
+            index,
+            date: point.date,
+            value: point.value,
+        };
+        match direction {
+            None => {
+                if point.value > high.value {
+                    high = candidate;
+                }
+                if point.value < low.value {
+                    low = candidate;
+                }
+                if point.value <= high.value * (1.0 - SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, high, RelativeStrengthSwingKind::High);
+                    direction = Some(RelativeStrengthSwingKind::Low);
+                    low = candidate;
+                } else if point.value >= low.value * (1.0 + SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, low, RelativeStrengthSwingKind::Low);
+                    direction = Some(RelativeStrengthSwingKind::High);
+                    high = candidate;
+                }
+            }
+            Some(RelativeStrengthSwingKind::High) => {
+                if point.value >= high.value {
+                    high = candidate;
+                } else if point.value <= high.value * (1.0 - SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, high, RelativeStrengthSwingKind::High);
+                    direction = Some(RelativeStrengthSwingKind::Low);
+                    low = candidate;
+                }
+            }
+            Some(RelativeStrengthSwingKind::Low) => {
+                if point.value <= low.value {
+                    low = candidate;
+                } else if point.value >= low.value * (1.0 + SWING_REVERSAL_RATIO) {
+                    add_confirmed_swing(&mut confirmed, low, RelativeStrengthSwingKind::Low);
+                    direction = Some(RelativeStrengthSwingKind::High);
+                    high = candidate;
+                }
+            }
+        }
+    }
+
+    let provisional = direction.map(|kind| {
+        swing_point(
+            match kind {
+                RelativeStrengthSwingKind::High => high,
+                RelativeStrengthSwingKind::Low => low,
+            },
+            kind,
+        )
+    });
+    let trend = classify_relative_strength_trend(&confirmed, provisional.as_ref());
+    RelativeStrengthStructure {
+        confirmed,
+        provisional,
+        trend,
+    }
+}
+
+fn valid_swing_value(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn add_confirmed_swing(
+    swings: &mut Vec<RelativeStrengthSwing>,
+    candidate: SwingCandidate,
+    kind: RelativeStrengthSwingKind,
+) {
+    if candidate.index > 0 {
+        swings.push(swing_point(candidate, kind));
+    }
+}
+
+fn swing_point(
+    candidate: SwingCandidate,
+    kind: RelativeStrengthSwingKind,
+) -> RelativeStrengthSwing {
+    RelativeStrengthSwing {
+        date: candidate.date,
+        value: candidate.value,
+        kind,
+    }
+}
+
+fn classify_relative_strength_trend(
+    confirmed: &[RelativeStrengthSwing],
+    provisional: Option<&RelativeStrengthSwing>,
+) -> RelativeStrengthTrend {
+    let swings = confirmed.iter().chain(provisional);
+    let highs = last_two_swing_values(swings.clone(), RelativeStrengthSwingKind::High);
+    let lows = last_two_swing_values(swings, RelativeStrengthSwingKind::Low);
+    let (Some((previous_high, latest_high)), Some((previous_low, latest_low))) = (highs, lows)
+    else {
+        return RelativeStrengthTrend::Unclear;
+    };
+    if latest_high > previous_high && latest_low > previous_low {
+        RelativeStrengthTrend::Uptrend
+    } else if latest_high < previous_high && latest_low < previous_low {
+        RelativeStrengthTrend::Downtrend
+    } else {
+        RelativeStrengthTrend::Unclear
+    }
+}
+
+fn last_two_swing_values<'a>(
+    swings: impl Iterator<Item = &'a RelativeStrengthSwing>,
+    kind: RelativeStrengthSwingKind,
+) -> Option<(f64, f64)> {
+    let mut previous = None;
+    let mut latest = None;
+    for swing in swings.filter(|swing| swing.kind == kind) {
+        previous = latest;
+        latest = Some(swing.value);
+    }
+    previous.zip(latest)
+}
+
+impl ChartDateRange {
+    fn contains(self, date: NaiveDate) -> bool {
+        date >= self.start && date < self.end
+    }
+}
+
+fn validate_range(range: ChartDateRange) -> Result<(), RelativeStrengthCalculationError> {
+    if range.start >= range.end {
+        return Err(RelativeStrengthCalculationError::InvalidRange);
+    }
+    Ok(())
+}
+
+fn closes_by_period(
+    candles: &[DailyCandle],
+    interval: MarketChartInterval,
+    end: Option<NaiveDate>,
+) -> BTreeMap<(i32, u32), (NaiveDate, f64)> {
+    candles
+        .iter()
+        .filter(|candle| end.is_none_or(|end| candle.market_date < end))
+        .map(|candle| {
+            let period = match interval {
+                MarketChartInterval::Daily => {
+                    (candle.market_date.year(), candle.market_date.ordinal())
+                }
+                MarketChartInterval::Weekly => {
+                    let week = candle.market_date.iso_week();
+                    (week.year(), week.week())
+                }
+            };
+            let date = match interval {
+                MarketChartInterval::Daily => candle.market_date,
+                MarketChartInterval::Weekly => market_week_start(candle.market_date),
+            };
+            (period, (date, candle.close))
+        })
+        .collect()
+}
+
+fn align_closes(
+    ticker: &BTreeMap<(i32, u32), (NaiveDate, f64)>,
+    comparison: &BTreeMap<(i32, u32), (NaiveDate, f64)>,
+) -> Vec<(NaiveDate, f64, f64)> {
+    ticker
+        .iter()
+        .filter_map(|(period, (date, ticker_close))| {
+            let (_, comparison_close) = comparison.get(period)?;
+            (ticker_close.is_finite()
+                && *ticker_close > 0.0
+                && comparison_close.is_finite()
+                && *comparison_close > 0.0)
+                .then_some((*date, *ticker_close, *comparison_close))
+        })
+        .collect()
+}
+
+fn relative_strength_points(
+    aligned: &[(NaiveDate, f64, f64)],
+    normalized: &[(NaiveDate, f64)],
+    period: usize,
+) -> Vec<RelativeStrengthCalculationPoint> {
+    (period..aligned.len())
+        .map(|index| {
+            let (date, ticker_close, comparison_close) = aligned[index];
+            let (_, previous_ticker_close, previous_comparison_close) = aligned[index - period];
+            let ticker_return = ticker_close / previous_ticker_close - 1.0;
+            let comparison_return = comparison_close / previous_comparison_close - 1.0;
+            RelativeStrengthCalculationPoint {
+                date,
+                value: normalized[index + 1 - period..=index]
+                    .iter()
+                    .map(|(_, value)| value)
+                    .sum::<f64>()
+                    / period as f64,
+                ticker_return_percent: Some(ticker_return * 100.0),
+                comparison_return_percent: Some(comparison_return * 100.0),
+                relative_return_percent: Some(
+                    ((1.0 + ticker_return) / (1.0 + comparison_return) - 1.0) * 100.0,
+                ),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Days;
+
+    #[test]
+    fn chart_period_defaults_and_presets_are_validated() {
+        for (interval, default, presets) in [
+            (MarketChartInterval::Daily, 5, vec![5, 10, 20, 50, 100]),
+            (MarketChartInterval::Weekly, 2, vec![1, 2, 4, 10, 20]),
+        ] {
+            assert_eq!(chart_relative_strength_period(interval, None), Ok(default));
+            for period in presets {
+                assert_eq!(
+                    chart_relative_strength_period(interval, Some(period)),
+                    Ok(period)
+                );
+            }
+            for invalid in [0, 3, 101, usize::MAX] {
+                assert_eq!(
+                    chart_relative_strength_period(interval, Some(invalid)),
+                    Err(RelativeStrengthCalculationError::InvalidPeriod)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_chart_preset_uses_the_selected_sma_and_return_lookback() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let ticker = candles(start, 900, 2.0);
+        let comparison = candles(start, 900, 0.5);
+        for (interval, presets) in [
+            (MarketChartInterval::Daily, vec![5, 10, 20, 50, 100]),
+            (MarketChartInterval::Weekly, vec![1, 2, 4, 10, 20]),
+        ] {
+            let range = range(start, 900);
+            let raw = calculate_relative_strength_line_with_period(
+                &ticker,
+                &comparison,
+                interval,
+                range,
+                1,
+            )
+            .unwrap();
+            let aligned = align_closes(
+                &closes_by_period(&ticker, interval, None),
+                &closes_by_period(&comparison, interval, None),
+            );
+            for period in presets {
+                let line = calculate_relative_strength_line_with_period(
+                    &ticker,
+                    &comparison,
+                    interval,
+                    range,
+                    period,
+                )
+                .unwrap();
+                assert_eq!(line.moving_average_period, period);
+                assert_eq!(line.points.len(), aligned.len() - period);
+                let latest = line.points.last().unwrap();
+                let expected = raw
+                    .points
+                    .iter()
+                    .rev()
+                    .take(period)
+                    .map(|point| point.value)
+                    .sum::<f64>()
+                    / period as f64;
+                assert!((latest.value - expected).abs() < 1e-10);
+                let (_, close, benchmark) = aligned[aligned.len() - 1];
+                let (_, previous, previous_benchmark) = aligned[aligned.len() - 1 - period];
+                let expected_return =
+                    ((close / previous) / (benchmark / previous_benchmark) - 1.0) * 100.0;
+                assert!((latest.relative_return_percent.unwrap() - expected_return).abs() < 1e-10);
+            }
+        }
+        for invalid in [0, 101] {
+            assert_eq!(
+                calculate_relative_strength_line_with_period(
+                    &ticker,
+                    &comparison,
+                    MarketChartInterval::Daily,
+                    range(start, 900),
+                    invalid
+                ),
+                Err(RelativeStrengthCalculationError::InvalidPeriod)
+            );
+        }
+    }
+
+    fn candles(start: NaiveDate, count: u64, ratio_step: f64) -> Vec<DailyCandle> {
+        (0..count)
+            .map(|index| {
+                let close = 100.0 + index as f64 * ratio_step;
+                DailyCandle {
+                    market_date: start + Days::new(index),
+                    open: close,
+                    high: close,
+                    low: close,
+                    close,
+                    volume: 1_000,
+                }
+            })
+            .collect()
+    }
+
+    fn range(start: NaiveDate, days: u64) -> ChartDateRange {
+        ChartDateRange {
+            start,
+            end: start + Days::new(days),
+        }
+    }
+
+    fn calculation_points(values: &[f64]) -> Vec<RelativeStrengthCalculationPoint> {
+        let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| RelativeStrengthCalculationPoint {
+                date: start + Days::new(index as u64),
+                value: *value,
+                ticker_return_percent: None,
+                comparison_return_percent: None,
+                relative_return_percent: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn detects_confirmed_and_provisional_swings() {
+        let structure = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 105.0, 108.0, 112.0,
+        ]));
+
+        assert_eq!(structure.confirmed.len(), 4);
+        assert_eq!(structure.confirmed[0].kind, RelativeStrengthSwingKind::High);
+        assert_eq!(structure.confirmed[0].value, 103.0);
+        assert_eq!(structure.confirmed[3].kind, RelativeStrengthSwingKind::Low);
+        assert_eq!(structure.confirmed[3].value, 105.0);
+        assert_eq!(
+            structure.provisional,
+            Some(RelativeStrengthSwing {
+                date: NaiveDate::from_ymd_opt(2026, 1, 9).unwrap(),
+                value: 112.0,
+                kind: RelativeStrengthSwingKind::High,
+            })
+        );
+    }
+
+    #[test]
+    fn classifies_higher_lower_and_mixed_swing_structures() {
+        let uptrend = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 105.0, 108.0, 112.0,
+        ]));
+        let downtrend = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 97.0, 100.0, 97.0, 90.0, 93.0, 95.0, 92.0, 88.0,
+        ]));
+        let unclear = analyze_relative_strength_structure(&calculation_points(&[
+            100.0, 103.0, 100.0, 103.0, 110.0, 107.0, 95.0, 98.0, 112.0,
+        ]));
+
+        assert_eq!(uptrend.trend, RelativeStrengthTrend::Uptrend);
+        assert_eq!(downtrend.trend, RelativeStrengthTrend::Downtrend);
+        assert_eq!(unclear.trend, RelativeStrengthTrend::Unclear);
+    }
+
+    #[test]
+    fn expanded_line_keeps_overlapping_recent_values() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let ticker = candles(start, 700, 0.2);
+        let comparison = candles(start, 700, 0.05);
+        let latest = ticker.last().unwrap().market_date;
+        let recent_start = latest.checked_sub_months(Months::new(12)).unwrap();
+        let recent_ticker = ticker
+            .iter()
+            .filter(|candle| candle.market_date >= recent_start)
+            .cloned()
+            .collect::<Vec<_>>();
+        let recent_comparison = comparison
+            .iter()
+            .filter(|candle| candle.market_date >= recent_start)
+            .cloned()
+            .collect::<Vec<_>>();
+        let recent_range = ChartDateRange {
+            start: recent_start,
+            end: latest.succ_opt().unwrap(),
+        };
+        for interval in [MarketChartInterval::Daily, MarketChartInterval::Weekly] {
+            let recent = calculate_relative_strength_line(
+                &recent_ticker,
+                &recent_comparison,
+                interval,
+                recent_range,
+            )
+            .unwrap();
+            let expanded = calculate_relative_strength_line(
+                &ticker,
+                &comparison,
+                interval,
+                ChartDateRange {
+                    start,
+                    end: latest.succ_opt().unwrap(),
+                },
+            )
+            .unwrap();
+            let expanded_recent = expanded
+                .points
+                .iter()
+                .filter(|point| point.date >= recent_start)
+                .collect::<Vec<_>>();
+
+            assert!(expanded_recent.len() >= recent.points.len());
+            for recent in &recent.points {
+                assert_eq!(
+                    Some(recent),
+                    expanded_recent
+                        .iter()
+                        .copied()
+                        .find(|expanded| expanded.date == recent.date)
+                );
+            }
+            assert!(expanded.points.first().unwrap().date < recent_start);
+        }
+    }
+
+    #[test]
+    fn weekly_line_returns_older_requested_dates_after_warmup() {
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let ticker = candles(start, 700, 0.2);
+        let comparison = candles(start, 700, 0.05);
+        let requested = range(start, 300);
+
+        let line = calculate_relative_strength_line(
+            &ticker,
+            &comparison,
+            MarketChartInterval::Weekly,
+            requested,
+        )
+        .unwrap();
+
+        assert_eq!(line.moving_average_period, WEEKLY_LINE_SMOOTHING_PERIOD);
+        assert!(!line.points.is_empty());
+        assert!(
+            line.points
+                .iter()
+                .all(|point| requested.contains(point.date))
+        );
+        assert!(
+            line.points
+                .iter()
+                .all(|point| point.date.weekday() == chrono::Weekday::Mon)
+        );
+        assert_eq!(
+            line.points.last().unwrap().date,
+            market_week_start(requested.end.pred_opt().unwrap())
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_ranges_and_missing_overlap() {
+        let date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let invalid = ChartDateRange {
+            start: date,
+            end: date,
+        };
+        assert_eq!(
+            calculate_relative_strength_line(
+                &candles(date, 10, 0.1),
+                &candles(date, 10, 0.0),
+                MarketChartInterval::Daily,
+                invalid,
+            ),
+            Err(RelativeStrengthCalculationError::InvalidRange)
+        );
+
+        assert_eq!(
+            calculate_relative_strength_line(
+                &candles(date, 10, 0.1),
+                &candles(date + Days::new(20), 10, 0.0),
+                MarketChartInterval::Daily,
+                range(date, 30),
+            ),
+            Err(RelativeStrengthCalculationError::NoOverlappingPrices)
+        );
+    }
+}

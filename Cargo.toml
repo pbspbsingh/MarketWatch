@@ -1,17 +1,12 @@
-[package]
-name = "market_watch"
-version = "3.0.0"
-edition = "2024"
-default-run = "market_watch"
-
 [workspace]
-members = ["crates/institutions"]
+members = ["server", "crates/market_types", "crates/institutions"]
+default-members = ["server"]
 resolver = "3"
 
-[features]
-default = ["sqlite-bundled"]
-sqlite-bundled = ["sqlx/sqlite-bundled", "institutions/sqlite-bundled"]
-sqlite-unbundled = ["sqlx/sqlite-unbundled", "institutions/sqlite-unbundled"]
+[workspace.package]
+version = "3.0.0"
+edition = "2024"
+publish = false
 
 [profile.release]
 opt-level = "s"
@@ -20,7 +15,11 @@ lto = true
 strip = true
 codegen-units = 1
 
-[dependencies]
+[workspace.dependencies]
+# Workspace crates
+market_types = { path = "crates/market_types" }
+institutions = { path = "crates/institutions", default-features = false }
+
 # Application and runtime
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
@@ -39,7 +38,6 @@ rpassword = "7.5.4"
 
 # Persistence
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "macros", "migrate", "chrono"] }
-institutions = { path = "crates/institutions", default-features = false }
 
 # Content
 comrak = { version = "0.55.0", default-features = false }
@@ -70,5 +68,9 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "chrono"] }
 subtle = "2.6.1"
 
-[dev-dependencies]
+# Institution archive parsing
+csv = "1.4.0"
+zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# Test support
 tower = { version = "0.5.3", features = ["util"] }

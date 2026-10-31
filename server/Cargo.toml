@@ -1,0 +1,47 @@
+[package]
+name = "market_watch"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+default-run = "market_watch"
+
+[features]
+default = ["sqlite-bundled"]
+sqlite-bundled = ["sqlx/sqlite-bundled", "institutions/sqlite-bundled"]
+sqlite-unbundled = ["sqlx/sqlite-unbundled", "institutions/sqlite-unbundled"]
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+include_dir.workspace = true
+argon2.workspace = true
+rpassword.workspace = true
+sqlx.workspace = true
+institutions.workspace = true
+comrak.workspace = true
+regex.workspace = true
+sha2.workspace = true
+image.workspace = true
+base64.workspace = true
+fastrand.workspace = true
+futures-util.workspace = true
+prost.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+tokio-tungstenite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+subtle.workspace = true
+market_types.workspace = true
+
+[dev-dependencies]
+tower.workspace = true

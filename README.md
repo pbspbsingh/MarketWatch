@@ -2,6 +2,18 @@
 
 Local market-analysis web application.
 
+## Workspace
+
+- `frontend/`: React client.
+- `server/`: application composition, HTTP/WebSocket endpoints, services, and application storage.
+- `crates/market_types/`: shared symbols, exchange identifiers, candles, profiles, and fundamentals; no HTTP, runtime, or database dependencies.
+- `crates/institutions/`: institutional ownership persistence and archive ingestion.
+
+Dependency versions and release settings live in the root Cargo workspace. Run
+`cargo run` from the repository root; configuration and runtime database paths
+remain relative to that working directory. Run `cargo test --workspace` and
+`cargo clippy --workspace --all-targets -- -D warnings` to check every crate.
+
 ## Configuration
 
 Create `config.toml` from the provided template before starting the backend:
@@ -159,23 +171,30 @@ SQLite WAL transactions. Normal visits return imported history while checking
 for updates in the background; Refresh waits for the update. Each report is
 calculated from stored filings and holdings rather than a saved report cache.
 
-The `institutions` workspace crate owns its migrations and SQLx queries.
-Its `sqlx.toml` uses `INSTITUTIONS_DATABASE_URL` from that crate's `.env`;
-SQLx checks for the application crate use `DATABASE_URL` from the root `.env`.
+The server owns `server/migrations/` and `server/.sqlx/`. The `institutions`
+crate owns its migrations and SQLx metadata. Its `sqlx.toml` uses
+`INSTITUTIONS_DATABASE_URL` from that crate's `.env`; the server uses
+`DATABASE_URL` from the root `.env`.
+With `SQLX_OFFLINE=true`, Cargo checks static SQL against the committed metadata
+without requiring running databases. This can be supplied by a global Cargo
+override; the repository does not provide a project-level `.cargo` configuration.
+Set `SQLX_OFFLINE=false` when regenerating metadata against the actual databases.
 Runtime paths come from `config.toml`. Apply migrations to the local databases
 before checking new queries:
 
 ```bash
-cargo sqlx database setup           # main database, using the root .env
+cargo sqlx database setup --source server/migrations  # main database, root .env
 cd crates/institutions
 cp .env.example .env                # first setup only; set your absolute DB path
 cargo sqlx database setup           # ownership database, using this crate's .env
 cd ../..
-cargo sqlx prepare --workspace -- --all-targets
+SQLX_OFFLINE=false cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline
 ```
 
-Run SQLx from the owning crate directory so it reads the local configuration.
+Use absolute database URLs when preparing queries so paths are independent of
+the owning crate directory. Run institution database commands from that crate
+directory so SQLx reads its local configuration.
 Both schemas work without SEC records. The application
 also applies migrations when opening each database. Commit refreshed `.sqlx`
 metadata after changing queries; offline builds use it without live databases.
@@ -214,7 +233,7 @@ Run the backend checks:
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+cargo test --workspace
 ```
 
 Run the frontend checks:
