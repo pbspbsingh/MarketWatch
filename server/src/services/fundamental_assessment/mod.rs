@@ -23,6 +23,7 @@ use super::{
 
 use crate::config::FundamentalsBackgroundConfig;
 use crate::services::fundamentals_background::select_fundamentals_candidate;
+use crate::services::theme_tickers::load_theme_ticker;
 use crate::store::Store;
 use ai::AiClient;
 use ai::AiStreamDelta;
@@ -366,7 +367,7 @@ impl FundamentalAssessmentService {
     }
 
     async fn context(&self, symbol: &TickerSymbol) -> anyhow::Result<AssessmentContext> {
-        let Some(ticker) = self.store.theme_ticker(symbol).await? else {
+        let Some(ticker) = load_theme_ticker(&self.store, symbol).await? else {
             return Ok(AssessmentContext::default());
         };
         let mut context = AssessmentContext {

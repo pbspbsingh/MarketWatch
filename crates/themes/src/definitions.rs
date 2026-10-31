@@ -21,6 +21,13 @@ pub struct ThemeTicker {
     pub automatic_processed: bool,
 }
 
+/// User-owned assignments and processing state, independent of market metadata.
+pub struct TickerThemeState {
+    pub symbol: TickerSymbol,
+    pub assignments: Vec<ThemeAssignment>,
+    pub automatic_processed: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ThemeTickerIndustry {
     pub key: String,

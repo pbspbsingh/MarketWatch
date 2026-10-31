@@ -17,6 +17,7 @@ pub mod sector_analysis;
 pub mod study;
 pub mod theme_analysis;
 pub mod theme_audits;
+pub(crate) mod theme_tickers;
 pub mod themes;
 pub mod ticker_collections;
 pub mod tickers;

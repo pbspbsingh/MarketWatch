@@ -1,0 +1,105 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH known_symbols(symbol) AS (\n                   SELECT CAST(value AS TEXT) FROM json_each(?1)\n                   UNION SELECT symbol FROM theme_stocks\n               )\n               SELECT known_symbols.symbol AS \"symbol!: String\",\n                      themes.id AS \"theme_id?: i64\", themes.name AS theme_name,\n                      theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,\n                      theme_stocks.assigned_at AS \"assigned_at?: NaiveDateTime\",\n                      EXISTS (\n                          SELECT 1 FROM theme_ai_processed_symbols\n                          WHERE theme_ai_processed_symbols.symbol = known_symbols.symbol\n                      ) AS \"automatic_processed!: bool\"\n               FROM known_symbols\n               LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol\n               LEFT JOIN themes ON themes.id = theme_stocks.theme_id\n               WHERE (?2 IS NULL OR known_symbols.symbol = ?2)\n               ORDER BY known_symbols.symbol, themes.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "theme_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "theme_name",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "themes",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "source",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "name": "reasoning",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "reasoning"
+          }
+        }
+      },
+      {
+        "name": "model",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "name": "assigned_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "assigned_at"
+          }
+        }
+      },
+      {
+        "name": "automatic_processed!: bool",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "33ae4c4fcdd6d22103b4d79f6098a3c816c3020a64638465cf08d987274545d7"
+}

@@ -1,3 +1,4 @@
+use crate::services::theme_tickers::{load_theme_ticker, load_theme_tickers};
 use crate::services::themes::{MAX_THEMES_PER_TICKER, strip_code_fence};
 use crate::store::{NewThemeAudit, Store};
 use ai::AiClient;
@@ -514,9 +515,7 @@ impl ThemeAuditService {
             .themes()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
-        let ticker = self
-            .store
-            .theme_ticker(symbol)
+        let ticker = load_theme_ticker(&self.store, symbol)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .ok_or_else(|| {
@@ -615,8 +614,7 @@ impl ThemeAuditService {
             .map_err(ThemeAuditServiceError::Persistence)?
             .into_iter()
             .collect::<HashSet<_>>();
-        self.store
-            .theme_tickers()
+        load_theme_tickers(&self.store)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .into_iter()

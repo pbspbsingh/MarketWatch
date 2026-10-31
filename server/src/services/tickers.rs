@@ -2,6 +2,7 @@ use crate::config::MarketConfig;
 use crate::contracts::industry::{ETF_INDUSTRY_KEY, MEMBERSHIP_FRESH_DAYS};
 use crate::contracts::tickers::TickerSelection;
 use crate::models::TickerRanking;
+use crate::services::theme_tickers::select_theme_symbols;
 use crate::services::yahoo::YahooService;
 use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
@@ -173,9 +174,7 @@ impl TickerCatalogService {
             theme_ids.iter().all(|id| *id > 0),
             "theme IDs must be positive"
         );
-        self.store
-            .tickers_for_themes(theme_ids, include_unassigned)
-            .await
+        select_theme_symbols(&self.store, theme_ids, include_unassigned).await
     }
 
     pub async fn industries_for_symbols(

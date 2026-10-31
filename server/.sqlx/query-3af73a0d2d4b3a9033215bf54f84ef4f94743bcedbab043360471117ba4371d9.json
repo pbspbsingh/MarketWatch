@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH known_symbols(symbol) AS (\n                   SELECT CAST(value AS TEXT) FROM json_each(?1)\n                   UNION SELECT symbol FROM theme_stocks\n               )\n               SELECT DISTINCT known_symbols.symbol AS \"symbol!: String\"\n               FROM known_symbols\n               LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol\n               WHERE (json_array_length(?2) = 0 AND NOT ?3)\n                   OR theme_stocks.theme_id IN (SELECT value FROM json_each(?2))\n                   OR (?3 AND theme_stocks.symbol IS NULL)\n               ORDER BY known_symbols.symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_stocks",
+            "name": "symbol"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3af73a0d2d4b3a9033215bf54f84ef4f94743bcedbab043360471117ba4371d9"
+}

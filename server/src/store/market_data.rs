@@ -22,6 +22,12 @@ struct StoredSymbolCandle {
     volume: i64,
 }
 
+pub struct CompanyText {
+    pub symbol: TickerSymbol,
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
 impl Store {
     pub async fn has_nyse_holidays_for_year(&self, year: i32) -> anyhow::Result<bool> {
         let start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid calendar year");
@@ -66,6 +72,35 @@ impl Store {
             .commit()
             .await
             .context("failed to commit NYSE holiday calendar")
+    }
+
+    pub async fn company_texts(
+        &self,
+        symbols: &[TickerSymbol],
+    ) -> anyhow::Result<Vec<CompanyText>> {
+        let symbols = serde_json::to_string(symbols)?;
+        sqlx::query!(
+            "SELECT symbol, name, description FROM tickers WHERE symbol IN (SELECT value FROM json_each(?))",
+            symbols,
+        ).fetch_all(&self.pool).await.context("failed to load company descriptions")?
+            .into_iter().map(|row| Ok(CompanyText {
+                symbol: TickerSymbol::try_from(row.symbol)?,
+                name: row.name,
+                description: row.description,
+            })).collect()
+    }
+
+    pub async fn known_market_ticker(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+        let symbol = symbol.as_str();
+        Ok(sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM tickers WHERE symbol = ?1
+                   UNION ALL SELECT 1 FROM industry_membership_tickers WHERE symbol = ?1
+               ) AS "known!: bool""#,
+            symbol,
+        )
+        .fetch_one(&self.pool)
+        .await?)
     }
 
     pub async fn company_profile(

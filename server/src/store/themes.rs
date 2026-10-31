@@ -11,8 +11,8 @@ use themes::ThemeAiJobSummary;
 use themes::ThemeAssignment;
 use themes::ThemeSuggestion;
 use themes::ThemeSuggestionError;
-use themes::ThemeTicker;
 use themes::ThemeTickerIndustry;
+use themes::TickerThemeState;
 
 struct StoredTheme {
     id: i64,
@@ -29,8 +29,6 @@ struct StoredThemeEtf {
 
 struct StoredThemeTicker {
     symbol: String,
-    name: Option<String>,
-    description: Option<String>,
     theme_id: Option<i64>,
     theme_name: Option<String>,
     source: Option<String>,
@@ -197,53 +195,36 @@ impl Store {
         themes.into_iter().map(stored_theme).collect()
     }
 
-    pub async fn tickers_for_themes(
+    pub async fn theme_symbols(
         &self,
+        known_symbols: &[TickerSymbol],
         theme_ids: &[i64],
         include_unassigned: bool,
     ) -> anyhow::Result<Vec<TickerSymbol>> {
-        if theme_ids.is_empty() && !include_unassigned {
-            return self.known_tickers().await;
-        }
-
-        let mut query = QueryBuilder::<Sqlite>::new(
-            "WITH known_symbols AS (
-                 SELECT symbol FROM tickers
-                 UNION
-                 SELECT symbol FROM industry_membership_tickers
-                 UNION
-                 SELECT symbol FROM theme_stocks
-             )
-             SELECT DISTINCT known_symbols.symbol
-             FROM known_symbols
-             LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
-             WHERE ",
-        );
-        if theme_ids.is_empty() {
-            query.push("theme_stocks.symbol IS NULL");
-        } else {
-            query.push("theme_stocks.theme_id IN (");
-            {
-                let mut separated = query.separated(", ");
-                for theme_id in theme_ids {
-                    separated.push_bind(theme_id);
-                }
-            }
-            query.push(")");
-            if include_unassigned {
-                query.push(" OR theme_stocks.symbol IS NULL");
-            }
-        }
-        query.push(" ORDER BY known_symbols.symbol");
-        let symbols = query
-            .build_query_scalar::<String>()
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to load tickers for themes")?;
-        symbols
-            .into_iter()
-            .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
-            .collect()
+        let known = serde_json::to_string(known_symbols)?;
+        let ids = serde_json::to_string(theme_ids)?;
+        sqlx::query_scalar!(
+            r#"WITH known_symbols(symbol) AS (
+                   SELECT CAST(value AS TEXT) FROM json_each(?1)
+                   UNION SELECT symbol FROM theme_stocks
+               )
+               SELECT DISTINCT known_symbols.symbol AS "symbol!: String"
+               FROM known_symbols
+               LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
+               WHERE (json_array_length(?2) = 0 AND NOT ?3)
+                   OR theme_stocks.theme_id IN (SELECT value FROM json_each(?2))
+                   OR (?3 AND theme_stocks.symbol IS NULL)
+               ORDER BY known_symbols.symbol"#,
+            known,
+            ids,
+            include_unassigned,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load tickers for themes")?
+        .into_iter()
+        .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+        .collect()
     }
 
     pub async fn themes_for_symbols(
@@ -357,18 +338,21 @@ impl Store {
         Ok(deleted)
     }
 
-    pub async fn theme_tickers(&self) -> anyhow::Result<Vec<ThemeTicker>> {
+    pub async fn theme_ticker_states(
+        &self,
+        known_symbols: &[TickerSymbol],
+        symbol: Option<&TickerSymbol>,
+    ) -> anyhow::Result<Vec<TickerThemeState>> {
+        let known = serde_json::to_string(known_symbols)?;
+        let symbol = symbol.map(TickerSymbol::as_str);
         let rows = sqlx::query_as!(
             StoredThemeTicker,
-            r#"WITH known_symbols AS (
-                   SELECT symbol FROM tickers
-                   UNION
-                   SELECT symbol FROM industry_membership_tickers
-                   UNION
-                   SELECT symbol FROM theme_stocks
+            r#"WITH known_symbols(symbol) AS (
+                   SELECT CAST(value AS TEXT) FROM json_each(?1)
+                   UNION SELECT symbol FROM theme_stocks
                )
-               SELECT known_symbols.symbol, tickers.name, tickers.description,
-                      themes.id AS theme_id, themes.name AS theme_name,
+               SELECT known_symbols.symbol AS "symbol!: String",
+                      themes.id AS "theme_id?: i64", themes.name AS theme_name,
                       theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,
                       theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime",
                       EXISTS (
@@ -376,17 +360,17 @@ impl Store {
                           WHERE theme_ai_processed_symbols.symbol = known_symbols.symbol
                       ) AS "automatic_processed!: bool"
                FROM known_symbols
-               LEFT JOIN tickers ON tickers.symbol = known_symbols.symbol
                LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
                LEFT JOIN themes ON themes.id = theme_stocks.theme_id
+               WHERE (?2 IS NULL OR known_symbols.symbol = ?2)
                ORDER BY known_symbols.symbol, themes.name COLLATE NOCASE"#,
+            known,
+            symbol,
         )
         .fetch_all(&self.pool)
         .await
-        .context("failed to load theme tickers")?;
-
-        self.with_ticker_industries(theme_tickers_from_rows(rows)?)
-            .await
+        .context("failed to load theme ticker state")?;
+        theme_tickers_from_rows(rows)
     }
 
     pub async fn theme_filter_industries(&self) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
@@ -428,63 +412,6 @@ impl Store {
                 })
                 .collect()
         })
-    }
-
-    pub async fn theme_ticker(&self, symbol: &TickerSymbol) -> anyhow::Result<Option<ThemeTicker>> {
-        let symbol = symbol.as_str();
-        let rows = sqlx::query_as!(
-            StoredThemeTicker,
-            r#"WITH known_symbols AS (
-                   SELECT symbol FROM tickers WHERE symbol = ?
-                   UNION
-                   SELECT symbol FROM industry_membership_tickers WHERE symbol = ?
-                   UNION
-                   SELECT symbol FROM theme_stocks WHERE symbol = ?
-               )
-               SELECT known_symbols.symbol, tickers.name, tickers.description,
-                      themes.id AS theme_id, themes.name AS theme_name,
-                      theme_stocks.source, theme_stocks.reasoning, theme_stocks.model,
-                      theme_stocks.assigned_at AS "assigned_at?: NaiveDateTime",
-                      EXISTS (
-                          SELECT 1 FROM theme_ai_processed_symbols
-                          WHERE theme_ai_processed_symbols.symbol = known_symbols.symbol
-                      ) AS "automatic_processed!: bool"
-               FROM known_symbols
-               LEFT JOIN tickers ON tickers.symbol = known_symbols.symbol
-               LEFT JOIN theme_stocks ON theme_stocks.symbol = known_symbols.symbol
-               LEFT JOIN themes ON themes.id = theme_stocks.theme_id
-               ORDER BY known_symbols.symbol, themes.name COLLATE NOCASE"#,
-            symbol,
-            symbol,
-            symbol,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to load theme ticker")?;
-
-        self.with_ticker_industries(theme_tickers_from_rows(rows)?)
-            .await
-            .map(|tickers| tickers.into_iter().next())
-    }
-
-    async fn with_ticker_industries(
-        &self,
-        mut tickers: Vec<ThemeTicker>,
-    ) -> anyhow::Result<Vec<ThemeTicker>> {
-        let industries = self
-            .all_industries_for_symbols(tickers.iter().map(|ticker| &ticker.symbol))
-            .await?;
-        for ticker in &mut tickers {
-            ticker.industries = industries
-                .iter()
-                .filter(|industry| industry.symbol == ticker.symbol)
-                .map(|industry| ThemeTickerIndustry {
-                    key: industry.industry_key.clone(),
-                    name: industry.industry_name.clone(),
-                })
-                .collect();
-        }
-        Ok(tickers)
     }
 
     pub async fn replace_theme_assignments(
@@ -935,16 +862,13 @@ fn parse_source(source: Option<&str>) -> anyhow::Result<AssignmentSource> {
     }
 }
 
-fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<ThemeTicker>> {
-    let mut tickers = Vec::<ThemeTicker>::new();
+fn theme_tickers_from_rows(rows: Vec<StoredThemeTicker>) -> anyhow::Result<Vec<TickerThemeState>> {
+    let mut tickers = Vec::<TickerThemeState>::new();
     for row in rows {
         let symbol = TickerSymbol::try_from(row.symbol.clone())?;
         if tickers.last().is_none_or(|ticker| ticker.symbol != symbol) {
-            tickers.push(ThemeTicker {
+            tickers.push(TickerThemeState {
                 symbol,
-                name: row.name,
-                description: row.description,
-                industries: Vec::new(),
                 assignments: Vec::new(),
                 automatic_processed: row.automatic_processed,
             });
@@ -984,6 +908,8 @@ fn stored_theme(theme: StoredTheme) -> anyhow::Result<Theme> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::theme_tickers::{load_theme_tickers, select_theme_symbols};
+
     use market_types::{CompanyProfile, Exchange, TickerSymbol};
 
     fn ticker(value: &str) -> TickerSymbol {
@@ -1027,8 +953,7 @@ mod tests {
                 .is_some()
         );
         assert!(
-            store
-                .theme_tickers()
+            load_theme_tickers(&store)
                 .await
                 .unwrap()
                 .into_iter()
@@ -1070,15 +995,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.tickers_for_themes(&[theme_id], false).await.unwrap(),
+            select_theme_symbols(&store, &[theme_id], false)
+                .await
+                .unwrap(),
             ["NVDA"]
         );
         assert_eq!(
-            store.tickers_for_themes(&[], true).await.unwrap(),
+            select_theme_symbols(&store, &[], true).await.unwrap(),
             ["AAPL", "MSFT"]
         );
         assert_eq!(
-            store.tickers_for_themes(&[theme_id], true).await.unwrap(),
+            select_theme_symbols(&store, &[theme_id], true)
+                .await
+                .unwrap(),
             ["AAPL", "MSFT", "NVDA"]
         );
         assert_eq!(
@@ -1170,7 +1099,7 @@ mod tests {
         let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
         assert!(matches!(job.status, ThemeAiJobStatus::PartiallyFailed));
         assert_eq!(job.validation_errors.len(), 1);
-        let tickers = store.theme_tickers().await.unwrap();
+        let tickers = load_theme_tickers(&store).await.unwrap();
         assert!(
             !tickers
                 .iter()
@@ -1207,7 +1136,7 @@ mod tests {
 
         let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
         assert!(matches!(job.status, ThemeAiJobStatus::Applied));
-        let tickers = store.theme_tickers().await.unwrap();
+        let tickers = load_theme_tickers(&store).await.unwrap();
         assert!(
             tickers
                 .iter()
@@ -1253,8 +1182,7 @@ mod tests {
                 .is_err()
         );
         assert_eq!(
-            store
-                .theme_tickers()
+            load_theme_tickers(&store)
                 .await
                 .unwrap()
                 .into_iter()
@@ -1313,8 +1241,7 @@ mod tests {
 
         let job = store.theme_ai_job(ids[0]).await.unwrap().unwrap();
         assert!(matches!(job.status, ThemeAiJobStatus::Completed));
-        let ticker = store
-            .theme_tickers()
+        let ticker = load_theme_tickers(&store)
             .await
             .unwrap()
             .into_iter()
@@ -1369,8 +1296,7 @@ mod tests {
         assert_eq!(store.delete_applied_theme_ai_jobs().await.unwrap(), 1);
         assert!(store.theme_ai_job(ids[0]).await.unwrap().is_none());
         assert!(store.theme_ai_job(ids[1]).await.unwrap().is_some());
-        let ticker = store
-            .theme_tickers()
+        let ticker = load_theme_tickers(&store)
             .await
             .unwrap()
             .into_iter()
@@ -1486,7 +1412,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        assert!(store.theme_tickers().await.unwrap().is_empty());
+        assert!(load_theme_tickers(&store).await.unwrap().is_empty());
         assert!(store.theme_filter_industries().await.unwrap().is_empty());
     }
 }

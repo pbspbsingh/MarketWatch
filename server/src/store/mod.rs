@@ -32,6 +32,7 @@ pub(crate) mod trade_logs;
 mod watchlists;
 
 pub use industries::{IndustryClassification, IndustryRankingRow, IndustryRankings};
+pub use market_data::CompanyText;
 pub use market_explorer::MarketExplorerCandleSummary;
 pub use memberships::TickerIndustryMembership;
 pub(crate) use theme_audits::NewThemeAudit;

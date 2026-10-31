@@ -1,3 +1,4 @@
+use crate::services::theme_tickers::{load_theme_ticker, load_theme_tickers};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use ai::AiClient;
@@ -172,8 +173,7 @@ impl ThemeService {
     }
 
     pub async fn tickers(&self) -> Result<Vec<ThemeTicker>, ThemeServiceError> {
-        self.store
-            .theme_tickers()
+        load_theme_tickers(&self.store)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
@@ -196,8 +196,7 @@ impl ThemeService {
 
     pub async fn ticker(&self, symbol: &TickerSymbol) -> Result<ThemeTicker, ThemeServiceError> {
         self.ensure_ticker(symbol).await?;
-        self.store
-            .theme_ticker(symbol)
+        load_theme_ticker(&self.store, symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .ok_or_else(|| ThemeServiceError::Validation(format!("ticker {symbol} does not exist")))

@@ -1,3 +1,4 @@
+use crate::services::theme_tickers::select_theme_symbols;
 use crate::store::Store;
 use market_types::TickerSymbol;
 use std::collections::HashSet;
@@ -29,8 +30,7 @@ pub async fn selected_symbols(
         let theme_symbols = if theme_ids.is_empty() {
             HashSet::new()
         } else {
-            store
-                .tickers_for_themes(theme_ids, false)
+            select_theme_symbols(store, theme_ids, false)
                 .await?
                 .into_iter()
                 .collect()

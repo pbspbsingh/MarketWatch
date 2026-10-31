@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS (\n                   SELECT 1 FROM tickers WHERE symbol = ?1\n                   UNION ALL SELECT 1 FROM industry_membership_tickers WHERE symbol = ?1\n               ) AS \"known!: bool\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "known!: bool",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d0d45db23fe7cf6082125b7e958946e22cb1d6f962f33b72209882ee68b95cf"
+}
