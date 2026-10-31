@@ -1,10 +1,10 @@
 use super::{Filter, TradeLogsError, TradeLogsService};
-use crate::models::trade_logs::Valuation;
-use crate::models::trade_logs::parse_decimal;
-use crate::models::trade_logs::value_open_trade;
 use crate::services::yahoo::YahooService;
 use chrono::{Duration, Utc};
 use futures_util::{StreamExt, stream};
+use journal::trade_logs::Valuation;
+use journal::trade_logs::parse_decimal;
+use journal::trade_logs::value_open_trade;
 use market_types::TickerSymbol;
 use serde::Serialize;
 use std::{

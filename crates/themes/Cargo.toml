@@ -1,0 +1,10 @@
+[package]
+name = "themes"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+market_types.workspace = true
+serde.workspace = true

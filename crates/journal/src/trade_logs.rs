@@ -487,38 +487,11 @@ pub fn calculate(id: i64, revision: i64, trade: &ValidatedTrade) -> Result<Trade
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
+    use crate::test_support::input;
     use chrono::Duration;
 
-    pub fn input(legs: &[(Side, &str, &str, &str)]) -> TradeInput {
-        TradeInput {
-            revision: None,
-            symbol: TickerSymbol::parse("AAPL").unwrap(),
-            direction: Direction::Long,
-            notes: String::new(),
-            tag_ids: vec![],
-            executions: legs
-                .iter()
-                .enumerate()
-                .map(|(index, (side, quantity, price, fee))| ExecutionInput {
-                    id: None,
-                    executed_at: DateTime::parse_from_rfc3339(&format!(
-                        "2025-01-{:02}T16:00:00Z",
-                        index + 1
-                    ))
-                    .unwrap()
-                    .with_timezone(&Utc),
-                    side: *side,
-                    quantity: (*quantity).into(),
-                    price: (*price).into(),
-                    fee: (*fee).into(),
-                    notes: String::new(),
-                    tag_ids: vec![],
-                })
-                .collect(),
-        }
-    }
     fn result(input: TradeInput) -> Trade {
         calculate(1, 1, &validate(input).unwrap()).unwrap()
     }

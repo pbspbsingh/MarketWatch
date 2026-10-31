@@ -1,6 +1,6 @@
 use super::Store;
-use crate::models::TopStockScreen;
 use anyhow::Context;
+use collections::TopStockScreen;
 
 impl Store {
     pub async fn top_stock_screens(&self) -> anyhow::Result<Vec<TopStockScreen>> {

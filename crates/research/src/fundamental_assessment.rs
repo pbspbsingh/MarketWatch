@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use market_types::{Fundamentals, TickerSymbol};
 
-pub(crate) const RUBRIC_VERSION: u32 = 3;
+pub const RUBRIC_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AssessmentContext {

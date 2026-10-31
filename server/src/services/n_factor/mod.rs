@@ -19,26 +19,26 @@ use super::{
     themes::strip_code_fence,
 };
 use crate::config::FundamentalsBackgroundConfig;
-use crate::models::fundamentals_background::FundamentalsFeature;
-use crate::models::n_factor::NFactorFinding;
-use crate::models::n_factor::NFactorJob;
-use crate::models::n_factor::NFactorJobProgress;
-use crate::models::n_factor::NFactorPhase;
-use crate::models::n_factor::NFactorReport;
-use crate::models::n_factor::NewsCoverage;
-use crate::models::n_factor::NewsItem;
-use crate::models::n_factor::NewsSource;
-use crate::models::n_factor::NewsStopReason;
 use crate::store::Store;
 use ai::AiClient;
 use ai::AiError;
 use ai::AiStreamDelta;
 use ai::UserAiJob;
 use finviz::FinvizClient;
+use market_types::NewsCoverage;
+use market_types::NewsItem;
+use market_types::NewsStopReason;
 use market_types::TickerSymbol;
 use news::NewsBatch;
 use news::NewsProgress;
 use news::StockTitanClient;
+use research::fundamentals_background::FundamentalsFeature;
+use research::n_factor::NFactorFinding;
+use research::n_factor::NFactorJob;
+use research::n_factor::NFactorJobProgress;
+use research::n_factor::NFactorPhase;
+use research::n_factor::NFactorReport;
+use research::n_factor::NewsSource;
 
 const PROMPT_VERSION: u32 = 3;
 const MAX_FINDINGS: usize = 2;

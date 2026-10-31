@@ -1,8 +1,8 @@
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use market_types::ETF_INDUSTRY_KEY;
+use market_types::NewsStopReason;
 use market_types::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
-use news::NewsStopReason;
 use news::{NewsBatch, limit_finviz_news, parse_finviz_news};
 use provider_http::BROWSER_USER_AGENT;
 use provider_http::ProviderConfig;

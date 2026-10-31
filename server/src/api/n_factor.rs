@@ -9,11 +9,11 @@ use serde_json::{Value, json};
 use tracing::error;
 
 use crate::app::AppState;
-use crate::models::n_factor::NFactorJob;
-use crate::models::n_factor::NewsSource;
 use crate::services::n_factor::NFactorStartError;
 use crate::services::n_factor::NFactorState;
 use market_types::TickerSymbol;
+use research::n_factor::NFactorJob;
+use research::n_factor::NewsSource;
 
 type ApiError = (StatusCode, Json<Value>);
 

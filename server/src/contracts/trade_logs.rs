@@ -12,8 +12,9 @@ pub struct TradeLogSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::trade_logs::{Side, calculate, tests::input, validate};
     use crate::services::trade_logs::statistics;
+    use journal::test_support::input;
+    use journal::trade_logs::{Side, calculate, validate};
 
     #[test]
     fn snapshot_keeps_flattened_fields_and_existing_enum_values() {

@@ -235,7 +235,6 @@ pub(super) async fn forward(
 mod tests {
     use super::*;
     use crate::contracts::tickers::{EnabledFilter, MinimumFilter};
-    use crate::models::AssignmentSource;
     use crate::services::industry_data::tests::client;
     use crate::services::industry_data::tests::fixture;
     use crate::services::industry_data::tests::seed_catalog;
@@ -244,6 +243,7 @@ mod tests {
     use market_types::{CompanyProfile, DailyCandle, Exchange, TickerSymbol};
     use std::collections::BTreeSet;
     use std::time::Duration;
+    use themes::AssignmentSource;
     use tokio::sync::mpsc::Receiver;
 
     async fn selected_rows(

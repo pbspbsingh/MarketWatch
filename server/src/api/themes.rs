@@ -1,6 +1,5 @@
 use crate::app::AppState;
-use crate::models::AssignmentSource;
-use crate::models::ThemeSuggestion;
+use crate::models::ThemeRanking;
 use crate::services::themes::{AiCapability, ThemeServiceError, ThemeSuggestionStreamEvent};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
@@ -11,6 +10,13 @@ use futures_util::stream;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use serde_json::json;
+use themes::AssignmentSource;
+use themes::Theme;
+use themes::ThemeAiJob;
+use themes::ThemeAiJobSummary;
+use themes::ThemeSuggestion;
+use themes::ThemeTicker;
+use themes::ThemeTickerIndustry;
 use tracing::error;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;
@@ -72,13 +78,13 @@ pub fn router() -> Router<AppState> {
         .route("/theme-ai/apply", post(apply))
 }
 
-async fn themes(State(state): State<AppState>) -> ApiResult<Vec<crate::models::Theme>> {
+async fn themes(State(state): State<AppState>) -> ApiResult<Vec<Theme>> {
     state.themes.themes().await.map(Json).map_err(api_error)
 }
 
 async fn theme_rankings(
     State(state): State<AppState>,
-) -> Result<Json<Vec<crate::models::ThemeRanking>>, StatusCode> {
+) -> Result<Json<Vec<ThemeRanking>>, StatusCode> {
     state
         .theme_analysis
         .rankings()
@@ -132,13 +138,11 @@ async fn remove(
         .map_err(api_error)
 }
 
-async fn tickers(State(state): State<AppState>) -> ApiResult<Vec<crate::models::ThemeTicker>> {
+async fn tickers(State(state): State<AppState>) -> ApiResult<Vec<ThemeTicker>> {
     state.themes.tickers().await.map(Json).map_err(api_error)
 }
 
-async fn filter_industries(
-    State(state): State<AppState>,
-) -> ApiResult<Vec<crate::models::ThemeTickerIndustry>> {
+async fn filter_industries(State(state): State<AppState>) -> ApiResult<Vec<ThemeTickerIndustry>> {
     state
         .themes
         .filter_industries()
@@ -150,7 +154,7 @@ async fn filter_industries(
 async fn ticker(
     State(state): State<AppState>,
     Path(symbol): Path<TickerSymbol>,
-) -> ApiResult<crate::models::ThemeTicker> {
+) -> ApiResult<ThemeTicker> {
     state
         .themes
         .ticker(&symbol)
@@ -255,16 +259,11 @@ async fn suggest_stream(
         .expect("stream response headers are valid"))
 }
 
-async fn ai_jobs(
-    State(state): State<AppState>,
-) -> ApiResult<Vec<crate::models::ThemeAiJobSummary>> {
+async fn ai_jobs(State(state): State<AppState>) -> ApiResult<Vec<ThemeAiJobSummary>> {
     state.themes.ai_jobs().await.map(Json).map_err(api_error)
 }
 
-async fn ai_job(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> ApiResult<crate::models::ThemeAiJob> {
+async fn ai_job(State(state): State<AppState>, Path(id): Path<i64>) -> ApiResult<ThemeAiJob> {
     state.themes.ai_job(id).await.map(Json).map_err(api_error)
 }
 

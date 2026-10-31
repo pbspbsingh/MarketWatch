@@ -1,8 +1,8 @@
 use super::Store;
-use crate::models::trade_logs::{
+use chrono::{DateTime, SecondsFormat, Utc};
+use journal::trade_logs::{
     Direction, ExecutionInput, ExecutionValue, Side, TradeInput, ValidatedTrade, decimal,
 };
-use chrono::{DateTime, SecondsFormat, Utc};
 use market_types::TickerSymbol;
 use std::collections::{HashMap, HashSet};
 
@@ -334,9 +334,8 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::trade_logs::{
-        ExecutionAction, TradeStatus, calculate, tests::input, validate,
-    };
+    use journal::test_support::input;
+    use journal::trade_logs::{ExecutionAction, TradeStatus, calculate, validate};
 
     #[tokio::test]
     async fn short_direction_round_trips_and_can_be_corrected_with_its_legs() {

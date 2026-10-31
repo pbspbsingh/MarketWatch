@@ -8,10 +8,10 @@ use serde_json::{Value, json};
 use tracing::error;
 
 use crate::app::AppState;
-use crate::models::fundamental_assessment::AssessmentJob;
 use crate::services::fundamental_assessment::AssessmentStartError;
 use crate::services::fundamental_assessment::AssessmentState;
 use market_types::TickerSymbol;
+use research::fundamental_assessment::AssessmentJob;
 
 type ApiError = (StatusCode, Json<Value>);
 

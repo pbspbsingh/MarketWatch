@@ -1,6 +1,4 @@
 use crate::app::AppState;
-use crate::models::TickerCollection;
-use crate::models::TickerCollectionGroups;
 use crate::services::ticker_collections::{
     TickerCollectionError, TickerCollectionGroupMode, UploadedTickerFile,
 };
@@ -8,6 +6,8 @@ use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use collections::ticker_collection::TickerCollection;
+use collections::ticker_collection::TickerCollectionGroups;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use tracing::{error, info};

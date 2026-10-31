@@ -1,12 +1,3 @@
-use crate::models::Theme;
-use crate::models::ThemeAuditAcceptance;
-use crate::models::ThemeAuditBatchProgress;
-use crate::models::ThemeAuditOverview;
-use crate::models::ThemeAuditProgress;
-use crate::models::ThemeAuditRunStatus;
-use crate::models::ThemeAuditStatus;
-use crate::models::ThemeAuditTheme;
-use crate::models::ThemeTicker;
 use crate::services::themes::{MAX_THEMES_PER_TICKER, strip_code_fence};
 use crate::store::{NewThemeAudit, Store};
 use ai::AiClient;
@@ -20,6 +11,15 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::Arc;
+use themes::Theme;
+use themes::ThemeAuditAcceptance;
+use themes::ThemeAuditBatchProgress;
+use themes::ThemeAuditOverview;
+use themes::ThemeAuditProgress;
+use themes::ThemeAuditRunStatus;
+use themes::ThemeAuditStatus;
+use themes::ThemeAuditTheme;
+use themes::ThemeTicker;
 use thiserror::Error;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{error, info, warn};
@@ -897,7 +897,7 @@ fn append_bounded(target: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AssignmentSource, ThemeAssignment, ThemeTickerIndustry};
+    use themes::{AssignmentSource, ThemeAssignment, ThemeTickerIndustry};
 
     fn theme(id: i64, name: &str) -> Theme {
         Theme {

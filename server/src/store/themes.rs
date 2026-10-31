@@ -1,18 +1,18 @@
 use super::Store;
-use crate::models::AssignmentSource;
-use crate::models::Theme;
-use crate::models::ThemeAiJob;
-use crate::models::ThemeAiJobStatus;
-use crate::models::ThemeAiJobSummary;
-use crate::models::ThemeAssignment;
-use crate::models::ThemeSuggestion;
-use crate::models::ThemeSuggestionError;
-use crate::models::ThemeTicker;
-use crate::models::ThemeTickerIndustry;
 use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
 use market_types::TickerSymbol;
 use sqlx::{QueryBuilder, Sqlite};
+use themes::AssignmentSource;
+use themes::Theme;
+use themes::ThemeAiJob;
+use themes::ThemeAiJobStatus;
+use themes::ThemeAiJobSummary;
+use themes::ThemeAssignment;
+use themes::ThemeSuggestion;
+use themes::ThemeSuggestionError;
+use themes::ThemeTicker;
+use themes::ThemeTickerIndustry;
 
 struct StoredTheme {
     id: i64,

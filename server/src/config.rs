@@ -1,8 +1,8 @@
-use crate::models::n_factor::NewsSource;
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Tz;
 use market_types::TickerSymbol;
+use research::n_factor::NewsSource;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;

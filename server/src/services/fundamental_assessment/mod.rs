@@ -22,22 +22,22 @@ use super::{
 };
 
 use crate::config::FundamentalsBackgroundConfig;
-use crate::models::fundamental_assessment::AssessmentContext;
-use crate::models::fundamental_assessment::AssessmentJob;
-use crate::models::fundamental_assessment::AssessmentPhase;
-use crate::models::fundamental_assessment::AssessmentResult;
-use crate::models::fundamental_assessment::AssessmentRow;
-use crate::models::fundamental_assessment::AssessmentScores;
-use crate::models::fundamental_assessment::AssessmentSnapshot;
-use crate::models::fundamental_assessment::FundamentalAssessment;
-use crate::models::fundamental_assessment::RUBRIC_VERSION;
-use crate::models::fundamentals_background::FundamentalsFeature;
 use crate::store::Store;
 use ai::AiClient;
 use ai::AiStreamDelta;
 use input::fingerprint;
 use market_types::{Fundamentals, TickerSymbol};
 use provider_http::is_http_not_found;
+use research::fundamental_assessment::AssessmentContext;
+use research::fundamental_assessment::AssessmentJob;
+use research::fundamental_assessment::AssessmentPhase;
+use research::fundamental_assessment::AssessmentResult;
+use research::fundamental_assessment::AssessmentRow;
+use research::fundamental_assessment::AssessmentScores;
+use research::fundamental_assessment::AssessmentSnapshot;
+use research::fundamental_assessment::FundamentalAssessment;
+use research::fundamental_assessment::RUBRIC_VERSION;
+use research::fundamentals_background::FundamentalsFeature;
 
 const PROMPT_VERSION: u32 = 3;
 const MAX_ACTIVE_JOBS: usize = 8;

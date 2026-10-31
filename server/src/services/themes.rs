@@ -1,11 +1,3 @@
-use crate::models::AssignmentSource;
-use crate::models::Theme;
-use crate::models::ThemeAiJob;
-use crate::models::ThemeAiJobStatus;
-use crate::models::ThemeAiJobSummary;
-use crate::models::ThemeSuggestion;
-use crate::models::ThemeSuggestionError;
-use crate::models::ThemeTicker;
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
 use ai::AiClient;
@@ -16,6 +8,15 @@ use market_types::TickerSymbol;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use themes::AssignmentSource;
+use themes::Theme;
+use themes::ThemeAiJob;
+use themes::ThemeAiJobStatus;
+use themes::ThemeAiJobSummary;
+use themes::ThemeSuggestion;
+use themes::ThemeSuggestionError;
+use themes::ThemeTicker;
+use themes::ThemeTickerIndustry;
 use thiserror::Error;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{error, trace};
@@ -177,9 +178,7 @@ impl ThemeService {
             .map_err(ThemeServiceError::Persistence)
     }
 
-    pub async fn filter_industries(
-        &self,
-    ) -> Result<Vec<crate::models::ThemeTickerIndustry>, ThemeServiceError> {
+    pub async fn filter_industries(&self) -> Result<Vec<ThemeTickerIndustry>, ThemeServiceError> {
         self.store
             .theme_filter_industries()
             .await

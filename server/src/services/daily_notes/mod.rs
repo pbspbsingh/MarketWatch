@@ -1,8 +1,8 @@
-use crate::models::DailyNote;
 use crate::store::{DailyNoteImage, DailyNoteUpdate, Store};
 use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
+use journal::DailyNote;
 use serde::Serialize;
 use thiserror::Error;
 

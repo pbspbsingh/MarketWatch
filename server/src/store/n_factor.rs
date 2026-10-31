@@ -1,7 +1,7 @@
 use super::Store;
-use crate::models::n_factor::{NFactorReport, NewsSource};
 use anyhow::Context;
 use market_types::TickerSymbol;
+use research::n_factor::{NFactorReport, NewsSource};
 
 impl Store {
     pub async fn n_factor_reports(
@@ -58,9 +58,9 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::AssignmentSource;
-    use crate::models::fundamentals_background::{FundamentalsFeature, FundamentalsTask};
     use chrono::Utc;
+    use research::fundamentals_background::{FundamentalsFeature, FundamentalsTask};
+    use themes::AssignmentSource;
 
     #[tokio::test]
     async fn candidates_require_industry_mapping_exclude_etfs_and_preserve_watchlist_membership() {

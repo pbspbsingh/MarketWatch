@@ -1,7 +1,7 @@
 use super::{DailyNoteImage, DailyNoteListRow, DailyNoteUpdate, Store};
-use crate::models::DailyNote;
 use anyhow::Context;
 use chrono::{NaiveDate, NaiveDateTime};
+use journal::DailyNote;
 use std::collections::HashMap;
 
 impl Store {

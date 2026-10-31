@@ -20,7 +20,7 @@ impl NewsSource {
     }
 }
 
-pub use news::{NewsCoverage, NewsItem, NewsStopReason};
+use market_types::{NewsCoverage, NewsItem};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

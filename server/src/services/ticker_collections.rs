@@ -1,12 +1,12 @@
-use crate::models::TickerCollection;
-use crate::models::TickerCollectionFile;
-use crate::models::TickerCollectionGroup;
-use crate::models::TickerCollectionGroups;
-use crate::models::TickerCollectionSource;
 use crate::services::industry_analysis::{IndustryAnalysisError, IndustryAnalysisService};
 use crate::services::theme_analysis::{ThemeAnalysisError, ThemeAnalysisService};
 use crate::services::tickers::TickerCatalogService;
 use chrono::Utc;
+use collections::ticker_collection::TickerCollection;
+use collections::ticker_collection::TickerCollectionFile;
+use collections::ticker_collection::TickerCollectionGroup;
+use collections::ticker_collection::TickerCollectionGroups;
+use collections::ticker_collection::TickerCollectionSource;
 use market_types::TickerSymbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -100,7 +100,7 @@ impl TickerCollectionService {
                 Err(error) => {
                     warn!(%symbol, %error, "Ticker import rejected: industry membership or profile could not be verified");
                     collection.rejected_symbols.push(
-                        crate::models::ticker_collection::RejectedTicker {
+                        collections::ticker_collection::RejectedTicker {
                             symbol,
                             reason: "Could not verify ticker and industry membership".into(),
                         },

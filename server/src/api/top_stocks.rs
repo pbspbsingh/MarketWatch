@@ -1,5 +1,4 @@
 use crate::app::AppState;
-use crate::models::TopStockScreen;
 use crate::services::top_stocks::{
     TopStockScreenInput, TopStocksError, TopStocksSnapshot, TopStocksSource,
 };
@@ -7,6 +6,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use collections::TopStockScreen;
 use serde_json::{Value, json};
 use tracing::error;
 

@@ -14,3 +14,6 @@ pub use yahoo_symbol::{InvalidYahooSymbol, YahooSymbol};
 
 /// Stable industry identity used for exchange-traded funds.
 pub const ETF_INDUSTRY_KEY: &str = "exchangetradedfund";
+
+mod news;
+pub use news::{NewsCoverage, NewsItem, NewsStopReason};

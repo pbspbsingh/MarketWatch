@@ -1,6 +1,6 @@
 use crate::config::FinvizConfig;
-use crate::models::TopStockScreen;
 use crate::store::Store;
+use collections::TopStockScreen;
 use finviz::FinvizClient;
 use market_types::TickerSymbol;
 use reqwest::Url;

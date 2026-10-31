@@ -1,6 +1,5 @@
 use crate::app::AppState;
 use crate::contracts::trade_logs::TradeLogSnapshot;
-use crate::models::trade_logs::{TagInput, TradeInput};
 use crate::services::trade_logs::{Filter, TradeLogsError, TradeLogsService};
 use crate::store::trade_logs::WriteError;
 use axum::{
@@ -9,6 +8,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post, put},
 };
+use journal::trade_logs::{TagInput, TradeInput};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

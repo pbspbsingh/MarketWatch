@@ -2,10 +2,10 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 
 use super::Store;
-use crate::models::fundamental_assessment::RUBRIC_VERSION;
-use crate::models::fundamentals_background::FundamentalsFeature;
-use crate::models::fundamentals_background::FundamentalsTask;
 use market_types::TickerSymbol;
+use research::fundamental_assessment::RUBRIC_VERSION;
+use research::fundamentals_background::FundamentalsFeature;
+use research::fundamentals_background::FundamentalsTask;
 
 pub(crate) struct FundamentalsCandidate {
     pub task: FundamentalsTask,

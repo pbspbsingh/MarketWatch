@@ -11,6 +11,10 @@ sqlite-bundled = ["sqlx/sqlite-bundled", "ownership/sqlite-bundled"]
 sqlite-unbundled = ["sqlx/sqlite-unbundled", "ownership/sqlite-unbundled"]
 
 [dependencies]
+journal.workspace = true
+collections.workspace = true
+themes.workspace = true
+research.workspace = true
 market_analysis.workspace = true
 ai.workspace = true
 sec.workspace = true
@@ -49,6 +53,7 @@ subtle.workspace = true
 market_types.workspace = true
 
 [dev-dependencies]
+journal = { workspace = true, features = ["test-support"] }
 ai = { workspace = true, features = ["test-support"] }
 finviz = { workspace = true, features = ["test-support"] }
 tower.workspace = true

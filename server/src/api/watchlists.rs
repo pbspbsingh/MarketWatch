@@ -1,10 +1,11 @@
 use crate::app::AppState;
-use crate::models::Watchlist;
 use crate::services::watchlists::WatchlistServiceError;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, put};
 use axum::{Json, Router};
+use collections::TickerWatchlists;
+use collections::Watchlist;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use serde_json::json;
@@ -152,7 +153,7 @@ async fn clear_symbol(
 async fn memberships(
     State(state): State<AppState>,
     Json(input): Json<SymbolsInput>,
-) -> ApiResult<Vec<crate::models::TickerWatchlists>> {
+) -> ApiResult<Vec<TickerWatchlists>> {
     state
         .watchlists
         .memberships(&input.symbols)

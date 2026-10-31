@@ -1,7 +1,7 @@
 use super::Store;
-use crate::models::TickerWatchlists;
-use crate::models::Watchlist;
 use anyhow::Context;
+use collections::TickerWatchlists;
+use collections::Watchlist;
 use market_types::TickerSymbol;
 use sqlx::{QueryBuilder, Row};
 use std::collections::HashMap;

@@ -7,8 +7,8 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
-use crate::models::DailyNote;
 use chrono::NaiveDate;
+use journal::DailyNote;
 use market_types::TickerSymbol;
 
 const MAX_CONNECTIONS: u32 = 8;

@@ -1,7 +1,7 @@
-use crate::models::TickerWatchlists;
-use crate::models::Watchlist;
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
+use collections::TickerWatchlists;
+use collections::Watchlist;
 use market_types::TickerSymbol;
 use std::collections::HashSet;
 use std::sync::Arc;

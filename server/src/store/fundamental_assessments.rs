@@ -1,9 +1,9 @@
 use anyhow::Context;
 
 use super::Store;
-use crate::models::fundamental_assessment::AssessmentResult;
-use crate::models::fundamental_assessment::RUBRIC_VERSION;
 use market_types::{Fundamentals, TickerSymbol};
+use research::fundamental_assessment::AssessmentResult;
+use research::fundamental_assessment::RUBRIC_VERSION;
 
 impl Store {
     /// Inspect the persisted shape before deserialization erases the distinction

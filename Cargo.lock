@@ -394,6 +394,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
+name = "collections"
+version = "3.0.0"
+dependencies = [
+ "chrono",
+ "market_analysis",
+ "market_types",
+ "serde",
+ "ts-rs",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1502,6 +1513,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "journal"
+version = "3.0.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "market_types",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1613,12 +1636,14 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "chrono-tz",
+ "collections",
  "comrak",
  "fastrand",
  "finviz",
  "futures-util",
  "image",
  "include_dir",
+ "journal",
  "market_analysis",
  "market_types",
  "news",
@@ -1627,6 +1652,7 @@ dependencies = [
  "provider_http",
  "regex",
  "reqwest",
+ "research",
  "rpassword",
  "sec",
  "serde",
@@ -1634,6 +1660,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "subtle",
+ "themes",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -1774,7 +1801,6 @@ dependencies = [
  "provider_http",
  "reqwest",
  "scraper",
- "serde",
  "serde_json",
  "thiserror",
  "tokio",
@@ -2334,6 +2360,15 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+]
+
+[[package]]
+name = "research"
+version = "3.0.0"
+dependencies = [
+ "chrono",
+ "market_types",
+ "serde",
 ]
 
 [[package]]
@@ -3097,6 +3132,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "themes"
+version = "3.0.0"
+dependencies = [
+ "chrono",
+ "market_types",
+ "serde",
 ]
 
 [[package]]

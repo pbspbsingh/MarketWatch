@@ -1,6 +1,4 @@
 use crate::app::AppState;
-use crate::models::ThemeAuditAcceptance;
-use crate::models::ThemeAuditOverview;
 use crate::services::theme_audits::ThemeAuditServiceError;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -9,6 +7,8 @@ use axum::{Json, Router};
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use serde_json::json;
+use themes::ThemeAuditAcceptance;
+use themes::ThemeAuditOverview;
 use tracing::error;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<serde_json::Value>)>;

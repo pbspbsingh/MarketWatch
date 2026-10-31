@@ -10,7 +10,16 @@ Local market-analysis web application.
 - `crates/market_analysis/`: pure candle aggregation, indicators, relative strength, and performance calculations.
 - `crates/db/institutional/`: institutional persistence, migrations, and checked SQL.
 - `crates/ownership/`: SEC archive ingestion, source updates, and ownership reports.
+- `crates/journal/`: journal records, exact trade arithmetic, validation, and valuations.
+- `crates/collections/`: watchlist, screen, and imported-universe records.
+- `crates/themes/`: theme definitions, assignments, AI-job records, and audits.
+- `crates/research/`: assessment, N-factor, and background-task records.
 - `crates/providers/`: Yahoo, Finviz, NYSE, SEC, news, and AI adapters. Shared HTTP options and throttling live in `http/`; adapters have no server or database dependencies.
+
+Feature crates own their domain types; database crates may use those types without
+depending on the server. Journal calculations and domain records have no provider
+or database dependencies. Remaining feature workflows still run in the server
+while market and user persistence are separated.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
 `cargo run` from the repository root; configuration and runtime database paths

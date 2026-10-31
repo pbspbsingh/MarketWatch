@@ -1,5 +1,4 @@
 use crate::app::AppState;
-use crate::models::DailyNote;
 use crate::services::daily_notes::{
     DailyNoteImageCrop, DailyNoteImageUpload, DailyNoteSummary, DailyNotesError, RenderedMarkdown,
 };
@@ -9,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::NaiveDate;
+use journal::DailyNote;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::hash_map::DefaultHasher;

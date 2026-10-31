@@ -10,6 +10,7 @@ use ai::test_support::probe_wait_for_completion;
 use axum::{Json, Router, extract::State, routing::post};
 use market_types::FundamentalPeriod;
 use serde_json::{Value, json};
+use themes::AssignmentSource;
 use tokio::sync::Notify;
 
 use crate::config::AiConfig;
@@ -491,7 +492,7 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
         .replace_theme_assignments(
             &data.symbol,
             &[theme_id],
-            crate::models::AssignmentSource::Manual,
+            AssignmentSource::Manual,
             None,
             None,
         )
@@ -1214,11 +1215,11 @@ async fn manual_request_promotes_background_assessment_waiting_for_ai() {
 
 #[tokio::test]
 async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
-    use crate::models::n_factor::NewsSource;
     use crate::services::fundamentals_background::FundamentalsBackgroundService;
     use crate::services::n_factor::NFactorService;
     use finviz::FinvizClient;
     use news::StockTitanClient;
+    use research::n_factor::NewsSource;
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let symbol = fixture().symbol;
     seed(&store, &fixture()).await;

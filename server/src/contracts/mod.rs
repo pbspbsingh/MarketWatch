@@ -7,10 +7,6 @@ pub mod tickers;
 pub mod tracker;
 pub mod trade_logs;
 
-use crate::models::trade_logs::{
-    Direction, Execution, ExecutionAction, ExecutionInput, Side, Tag, TagInput, Trade, TradeInput,
-    TradeStatus, TradeSummary, Valuation,
-};
 use crate::services::chart::{
     ChartIndustry, ChartSectorBenchmark, ChartSummary, ChartThemeBenchmark,
 };
@@ -24,6 +20,10 @@ use crate::services::study::{
 use crate::services::trade_logs::market::{HourlyCandle, HourlyChart};
 use crate::services::trade_logs::{Snapshot, Statistics, TagStatistics};
 use crate::services::volume_run_rate::VolumeRunRate;
+use journal::trade_logs::{
+    Direction, Execution, ExecutionAction, ExecutionInput, Side, Tag, TagInput, Trade, TradeInput,
+    TradeStatus, TradeSummary, Valuation,
+};
 use live::{
     LiveChartDelta, LiveCommand, LiveEvent, LiveSessionDelta, LiveSessionKind, RawLiveChartRequest,
 };
@@ -43,12 +43,12 @@ use market_types::{Forecast, FundamentalPeriod, Fundamentals, TradingViewSymbol,
 use trade_logs::TradeLogSnapshot;
 
 use crate::models::ThemeRanking;
-use crate::models::TickerCollection;
-use crate::models::TickerCollectionFile;
-use crate::models::TickerCollectionSource;
 use crate::models::TickerRanking;
-use crate::models::ticker_collection::RejectedTicker;
 use chart::{GroupSummary, GroupSummaryItem, HomeCharts, NextEarnings};
+use collections::ticker_collection::RejectedTicker;
+use collections::ticker_collection::TickerCollection;
+use collections::ticker_collection::TickerCollectionFile;
+use collections::ticker_collection::TickerCollectionSource;
 use events::{ApplicationCommand, ApplicationEvent, ApplicationResource, ApplicationSnapshot};
 use industry::{
     IndustryCatalogEntry, IndustryClassification, IndustryData, IndustryResource, IndustryState,

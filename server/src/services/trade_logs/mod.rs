@@ -1,9 +1,9 @@
-use crate::models::trade_logs::{
-    Direction, Tag, TagInput, Trade, TradeInput, TradeStatus, calculate, cash, validate,
-};
 use crate::store::{Store, trade_logs::WriteError};
 use chrono::NaiveDate;
 use chrono_tz::America::New_York;
+use journal::trade_logs::{
+    Direction, Tag, TagInput, Trade, TradeInput, TradeStatus, calculate, cash, validate,
+};
 use serde::{Deserialize, Serialize};
 use std::{cmp::Reverse, fmt::Display, str::FromStr};
 use ts_rs::TS;
@@ -344,8 +344,9 @@ impl TradeLogsService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::trade_logs::{Side, tests::input};
     use chrono::{DateTime, Utc};
+    use journal::test_support::input;
+    use journal::trade_logs::Side;
     use std::iter::once;
 
     #[tokio::test]
@@ -443,7 +444,7 @@ mod tests {
 
     #[test]
     fn outcome_filters_use_final_net_profit_and_combine_with_position_status() {
-        use crate::models::trade_logs::Direction::{Long, Short};
+        use journal::trade_logs::Direction::{Long, Short};
         let trades: Vec<_> = [
             (
                 Long,

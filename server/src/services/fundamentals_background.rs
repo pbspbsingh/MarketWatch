@@ -10,10 +10,10 @@ use super::{
     n_factor::{NFactorService, NFactorStartError},
 };
 use crate::config::FundamentalsBackgroundConfig;
-use crate::models::fundamentals_background::FundamentalsFeature;
-use crate::models::fundamentals_background::FundamentalsTask;
 use crate::store::Store;
 use ai::AiClient;
+use research::fundamentals_background::FundamentalsFeature;
+use research::fundamentals_background::FundamentalsTask;
 
 const FAILURE_BACKOFF: Duration = Duration::minutes(5);
 const NON_WATCHLIST_DELAY: StdDuration = StdDuration::from_secs(10);
