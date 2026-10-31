@@ -299,7 +299,7 @@ impl Store {
         description: Option<&str>,
     ) -> anyhow::Result<i64> {
         let etf_symbol = etf_symbol.as_str();
-        sqlx::query!(
+        let id = sqlx::query!(
             "INSERT INTO themes (name, etf_symbol, description) VALUES (?, ?, ?)",
             name,
             etf_symbol,
@@ -308,7 +308,9 @@ impl Store {
         .execute(&self.pool)
         .await
         .context("failed to create theme")
-        .map(|result| result.last_insert_rowid())
+        .map(|result| result.last_insert_rowid())?;
+        self.membership_changes.send_replace(());
+        Ok(id)
     }
 
     pub async fn update_theme(
@@ -319,7 +321,7 @@ impl Store {
         description: Option<&str>,
     ) -> anyhow::Result<bool> {
         let etf_symbol = etf_symbol.as_str();
-        sqlx::query!(
+        let updated = sqlx::query!(
             "UPDATE themes SET name = ?, etf_symbol = ?, description = ? WHERE id = ?",
             name,
             etf_symbol,
@@ -329,7 +331,11 @@ impl Store {
         .execute(&self.pool)
         .await
         .context("failed to update theme")
-        .map(|result| result.rows_affected() > 0)
+        .map(|result| result.rows_affected() > 0)?;
+        if updated {
+            self.membership_changes.send_replace(());
+        }
+        Ok(updated)
     }
 
     pub async fn delete_theme(&self, id: i64) -> anyhow::Result<bool> {

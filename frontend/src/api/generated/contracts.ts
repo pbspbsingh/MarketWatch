@@ -130,10 +130,20 @@ export type IndustryData = { "type": "catalog", industries: Array<IndustryCatalo
 
 export type IndustryState = { data: IndustryData, fetched_at: string | null, expires_at: string | null, loading: boolean, error: string | null, };
 
-export type ApplicationResource = { "domain": "industry", "resource": IndustryResource } | { "domain": "tickers", "resource": TickerMetricsResource };
+export type ApplicationResource = { "domain": "industry", "resource": IndustryResource } | { "domain": "tickers", "resource": TickerMetricsResource } | { "domain": "tracker", "resource": TrackerResource };
+
+export type TrackerMode = "theme" | "sector";
+
+export type TrackerResource = { mode: TrackerMode, };
+
+export type TrackerRow = { key: string, name: string, etf_symbol: TickerSymbol, industry_keys: Array<string>, performance: PerformancePeriods | null, previous_close: number | null, loading: boolean, error: string | null, };
+
+export type TrackerUpdate = { "type": "catalog", mode: TrackerMode, rows: Array<TrackerRow>, } | { "type": "row", mode: TrackerMode, row: TrackerRow, } | { "type": "complete", mode: TrackerMode, };
+
+export type MarketHours = { market_date: string, time_zone: string, is_trading_day: boolean, closes_at: string, day_ends_at: string, server_time: string, };
 
 export type ApplicationCommand = { "type": "subscribe", subscription_id: string, resource: ApplicationResource, } | { "type": "unsubscribe", subscription_id: string, };
 
-export type ApplicationSnapshot = { "domain": "industry", "state": IndustryState } | { "domain": "tickers", "state": TickerMetricsUpdate };
+export type ApplicationSnapshot = { "domain": "industry", "state": IndustryState } | { "domain": "tickers", "state": TickerMetricsUpdate } | { "domain": "tracker", "state": TrackerUpdate };
 
 export type ApplicationEvent = { "type": "snapshot", subscription_id: string, payload: ApplicationSnapshot, } | { "type": "error", subscription_id: string, message: string, };

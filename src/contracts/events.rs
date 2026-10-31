@@ -1,5 +1,6 @@
 use super::industry::{IndustryResource, IndustryState};
 use super::tickers::{TickerMetricsResource, TickerMetricsUpdate};
+use super::tracker::{TrackerResource, TrackerUpdate};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -13,6 +14,7 @@ use ts_rs::TS;
 pub enum ApplicationResource {
     Industry(IndustryResource),
     Tickers(TickerMetricsResource),
+    Tracker(TrackerResource),
 }
 
 #[derive(Deserialize, TS)]
@@ -32,6 +34,7 @@ pub enum ApplicationCommand {
 pub enum ApplicationSnapshot {
     Industry(IndustryState),
     Tickers(TickerMetricsUpdate),
+    Tracker(TrackerUpdate),
 }
 
 #[derive(Serialize, TS)]
@@ -95,6 +98,23 @@ mod tests {
             r#"{"type":"refresh","subscription_id":"test"}"#,
         ] {
             assert!(serde_json::from_str::<ApplicationCommand>(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn tracker_only_accepts_theme_and_sector_subscriptions() {
+        for mode in ["theme", "sector"] {
+            let command = json!({"type":"subscribe", "subscription_id":"tracker",
+                "resource":{"domain":"tracker", "resource":{"mode":mode}}});
+            assert!(serde_json::from_value::<ApplicationCommand>(command).is_ok());
+        }
+        for resource in [
+            json!({"mode":"industry"}),
+            json!({"mode":"theme", "refresh":true}),
+        ] {
+            let command = json!({"type":"subscribe", "subscription_id":"tracker",
+                "resource":{"domain":"tracker", "resource":resource}});
+            assert!(serde_json::from_value::<ApplicationCommand>(command).is_err());
         }
     }
 }

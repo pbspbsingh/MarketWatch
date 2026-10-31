@@ -27,6 +27,7 @@ use crate::services::themes::ThemeService;
 use crate::services::ticker_collections::TickerCollectionService;
 use crate::services::tickers::TickerCatalogService;
 use crate::services::top_stocks::TopStocksService;
+use crate::services::tracker::TrackerService;
 use crate::services::trade_logs::{TradeLogsService, market::TradeLogMarketService};
 use crate::services::volume_run_rate::VolumeRunRateService;
 use crate::services::watchlists::WatchlistService;
@@ -117,6 +118,7 @@ pub struct AppState {
     pub trade_logs: Arc<TradeLogsService>,
     pub trade_log_market: Arc<TradeLogMarketService>,
     pub yahoo_live: YahooLiveHandle,
+    pub tracker: Arc<TrackerService>,
 }
 
 pub async fn build(config: Config) -> anyhow::Result<Router> {
@@ -257,6 +259,12 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         industry_refresh,
         ticker_catalog.clone(),
     ));
+    let tracker = Arc::new(TrackerService::new(
+        store.clone(),
+        yahoo.clone(),
+        market_schedule.clone(),
+        &config.market,
+    )?);
     maintenance::spawn(store);
     let state = AppState {
         industry_data,
@@ -284,6 +292,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
         trade_logs,
         trade_log_market,
         yahoo_live,
+        tracker,
     };
 
     let router = Router::new().nest("/api", api::router());

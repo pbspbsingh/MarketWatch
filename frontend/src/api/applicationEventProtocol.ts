@@ -18,8 +18,21 @@ export function isApplicationEvent(value: unknown): value is ApplicationEvent {
   switch (value.payload.domain) {
     case "industry": return validIndustryState(value.payload.state);
     case "tickers": return validTickerUpdate(value.payload.state);
+    case "tracker": return validTrackerUpdate(value.payload.state);
     default: return false;
   }
+}
+
+function validTrackerUpdate(value: unknown) {
+  if (!record(value) || (value.mode !== "theme" && value.mode !== "sector")) return false;
+  const row = (item: unknown) => record(item) && typeof item.key === "string" && item.key.length > 0
+    && typeof item.name === "string" && typeof item.etf_symbol === "string" && item.etf_symbol.length > 0
+    && Array.isArray(item.industry_keys) && item.industry_keys.every(key => typeof key === "string")
+    && validPerformance(item.performance) && (item.previous_close === null
+      || typeof item.previous_close === "number" && Number.isFinite(item.previous_close) && item.previous_close > 0)
+    && typeof item.loading === "boolean" && (item.error === null || typeof item.error === "string");
+  return value.type === "complete" || (value.type === "catalog" && Array.isArray(value.rows) && value.rows.every(row))
+    || (value.type === "row" && row(value.row));
 }
 
 function validTickerUpdate(value: unknown) {
@@ -68,5 +81,6 @@ export function snapshotMatchesResource(resource: ApplicationResource, payload: 
       if (payload.domain !== "industry") return false;
       return payload.state.data.type === resource.resource.type;
     }
+    case "tracker": return payload.domain === "tracker" && payload.state.mode === resource.resource.mode;
   }
 }

@@ -5,7 +5,7 @@ import { SplitPane } from "../../components/SplitPane";
 import { TradeDetails, type TradeExecutionSelection } from "./TradeDetails";
 import { TradeHourlyChart } from "./TradeHourlyChart";
 import { TradeLogChart } from "./TradeLogChart";
-import { restoreChartSplit, saveChartSplit } from "./chartLayout";
+import { restoreChartSplit, saveChartSplit } from "../../shared/chartLayout";
 
 const dailyWidthKey = "market-watch.trade-logs-overlay-daily-width-percent";
 

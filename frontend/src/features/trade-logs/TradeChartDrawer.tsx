@@ -5,7 +5,7 @@ import { SplitPane } from "../../components/SplitPane";
 import { TradeLogChart } from "./TradeLogChart";
 import { TradeDetails, type TradeExecutionSelection } from "./TradeDetails";
 import { TradeChartsOverlay } from "./TradeChartsOverlay";
-import { restoreChartSplit, saveChartSplit } from "./chartLayout";
+import { restoreChartSplit, saveChartSplit } from "../../shared/chartLayout";
 
 const chartHeightKey = "market-watch.trade-logs-chart-height-percent";
 

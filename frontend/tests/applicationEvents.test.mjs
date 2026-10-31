@@ -50,6 +50,26 @@ function setup() {
 }
 function snapshot(socket, id, value) { socket.receive({ type: "snapshot", subscription_id: id, payload: { domain: "industry", state: value } }); }
 
+test("tracker updates share the application socket and retired modes cannot deliver late rows", () => {
+  const { events, socket } = setup();
+  const industryUpdates = []; const trackerUpdates = [];
+  const releaseIndustry = events.observe({ domain: "industry", resource }, value => industryUpdates.push(value));
+  const industryId = socket.sent.at(-1).subscription_id;
+  const releaseTheme = events.observe({ domain: "tracker", resource: { mode: "theme" } }, value => trackerUpdates.push(value));
+  const themeId = socket.sent.at(-1).subscription_id;
+  const deliver = (id, mode) => socket.receive({ type: "snapshot", subscription_id: id,
+    payload: { domain: "tracker", state: { type: "complete", mode } } });
+  deliver(themeId, "theme");
+  releaseTheme();
+  const releaseSector = events.observe({ domain: "tracker", resource: { mode: "sector" } }, value => trackerUpdates.push(value));
+  const sectorId = socket.sent.at(-1).subscription_id;
+  deliver(themeId, "theme"); deliver(sectorId, "sector"); snapshot(socket, industryId, state(false));
+  assert.deepEqual(trackerUpdates.map(value => value.state.mode), ["theme", "sector"]);
+  assert.equal(industryUpdates.length, 1); assert.equal(socket.readyState, Socket.OPEN);
+  assert.equal(Socket.instances.at(-1), socket);
+  releaseSector(); releaseIndustry(); events.stop();
+});
+
 test("a view joining during refresh shares reconciliation after the earlier view releases", () => {
   const { events, socket } = setup();
   const metrics = new TickerMetricsSubscriptions(events);

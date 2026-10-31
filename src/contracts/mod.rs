@@ -1,7 +1,9 @@
 pub mod events;
 pub mod industry;
 pub mod live;
+pub mod market;
 pub mod tickers;
+pub mod tracker;
 pub mod trade_logs;
 
 use crate::models::chart::{
@@ -36,11 +38,13 @@ use events::{ApplicationCommand, ApplicationEvent, ApplicationResource, Applicat
 use industry::{
     IndustryCatalogEntry, IndustryClassification, IndustryData, IndustryResource, IndustryState,
 };
+use market::MarketHours;
 use std::path::Path;
 use tickers::{
     EnabledFilter, MinimumFilter, TickerFilterExclusions, TickerFilters, TickerMetricsResource,
     TickerMetricsUpdate, TickerSelection,
 };
+use tracker::{TrackerMode, TrackerResource, TrackerRow, TrackerUpdate};
 use ts_rs::{Config, TS};
 
 pub fn export(check: bool) -> anyhow::Result<()> {
@@ -113,6 +117,11 @@ pub fn export(check: bool) -> anyhow::Result<()> {
         IndustryData::decl(&config),
         IndustryState::decl(&config),
         ApplicationResource::decl(&config),
+        TrackerMode::decl(&config),
+        TrackerResource::decl(&config),
+        TrackerRow::decl(&config),
+        TrackerUpdate::decl(&config),
+        MarketHours::decl(&config),
         ApplicationCommand::decl(&config),
         ApplicationSnapshot::decl(&config),
         ApplicationEvent::decl(&config),

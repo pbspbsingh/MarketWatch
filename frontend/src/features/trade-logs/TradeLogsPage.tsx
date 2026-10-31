@@ -17,7 +17,7 @@ import { TradeEditor } from "./TradeEditor";
 import { TradeStatistics } from "./TradeStatistics";
 import { TradeTags } from "./TradeTags";
 import { TradeFilterSelect } from "./TradeFilterSelect";
-import { restoreChartSplit, saveChartSplit } from "./chartLayout";
+import { restoreChartSplit, saveChartSplit } from "../../shared/chartLayout";
 import { tradeIdFromSearch } from "./tradeLinks";
 import { initialFilters, restoreFilters, saveFilters } from "./filterStorage";
 import { draftFromTrade, errorMessage, newDraft, payload } from "./format";

@@ -2,6 +2,7 @@ use crate::app::AppState;
 use crate::contracts::events::{ApplicationCommand, ApplicationEvent, ApplicationResource};
 use crate::services::industry_data::IndustryDataService;
 use crate::services::tickers::TickerCatalogService;
+use crate::services::tracker::TrackerService;
 use axum::{
     Router,
     extract::{
@@ -20,10 +21,12 @@ use tokio::{
 
 mod industry;
 mod tickers;
+mod tracker;
 
 struct EventServices {
     industry: Arc<IndustryDataService>,
     tickers: Arc<TickerCatalogService>,
+    tracker: Arc<TrackerService>,
 }
 
 const SUBSCRIPTION_LIMIT: usize = 256;
@@ -52,6 +55,7 @@ async fn upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> Respons
                 Arc::new(EventServices {
                     industry: state.industry_data,
                     tickers: state.ticker_catalog,
+                    tracker: state.tracker,
                 }),
             )
         })
@@ -139,13 +143,18 @@ async fn forward(
             )
             .await;
         }
+        ApplicationResource::Tracker(resource) => {
+            tracker::forward(services, id, resource, sender, generation).await
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use crate::contracts::tickers::TickerFilters;
+    use crate::utils::MarketSchedule;
     use crate::{
         models::TickerSymbol,
         services::industry_data::tests::{client, fixture, seed_catalog},
@@ -169,10 +178,21 @@ mod tests {
             )
             .await
             .unwrap();
-        let (service, tickers, _) = fixture(store.clone(), client("http://127.0.0.1:1/"));
+        let (service, tickers, yahoo) = fixture(store.clone(), client("http://127.0.0.1:1/"));
+        let config: Config = toml::from_str(include_str!("../../../config.example.toml")).unwrap();
+        let tracker = Arc::new(
+            TrackerService::new(
+                store.clone(),
+                yahoo,
+                MarketSchedule::new(&config.market, Duration::ZERO).unwrap(),
+                &config.market,
+            )
+            .unwrap(),
+        );
         let service = Arc::new(EventServices {
             industry: Arc::new(service),
             tickers,
+            tracker,
         });
         let app = Router::new().route(
             "/events",
