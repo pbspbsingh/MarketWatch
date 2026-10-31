@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::sync::{AcquireError, Mutex, Semaphore, SemaphorePermit};
 use tokio::time::{Instant, sleep};
 
-pub(super) struct RequestThrottle {
+pub struct RequestThrottle {
     min_delay: Duration,
     max_delay: Duration,
     permit: Semaphore,

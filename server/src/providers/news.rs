@@ -9,11 +9,11 @@ use tokio::time::Instant;
 use tracing::{info, warn};
 
 use crate::config::ProviderConfig;
-use crate::constants::BROWSER_USER_AGENT;
 use crate::models::n_factor::NewsCoverage;
 use crate::models::n_factor::NewsItem;
 use crate::models::n_factor::NewsStopReason;
 use market_types::TickerSymbol;
+use provider_http::BROWSER_USER_AGENT;
 
 const MAX_NEWS_ITEMS: usize = 50;
 

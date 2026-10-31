@@ -18,7 +18,7 @@ const INITIAL_RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
 
 #[derive(Clone, PartialEq, ProstMessage)]
-pub(crate) struct PricingData {
+pub struct PricingData {
     #[prost(string, optional, tag = "1")]
     pub id: Option<String>,
     #[prost(float, optional, tag = "2")]
@@ -52,7 +52,7 @@ struct SubscriptionCommand<'a> {
     unsubscribe: Option<&'a [YahooSymbol]>,
 }
 
-pub(crate) fn spawn_transport(
+pub fn spawn_transport(
     desired: watch::Receiver<Vec<YahooSymbol>>,
     pricing: mpsc::Sender<PricingData>,
 ) {

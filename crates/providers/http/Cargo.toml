@@ -1,0 +1,10 @@
+[package]
+name = "provider_http"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+tokio.workspace = true
+fastrand.workspace = true

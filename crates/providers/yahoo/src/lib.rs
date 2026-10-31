@@ -1,16 +1,17 @@
 mod de;
 mod error;
-pub(crate) mod live;
+mod live;
+pub use live::{PricingData, spawn_transport};
 
 pub use error::YahooError;
 
-use crate::config::ProviderConfig;
-use crate::constants::BROWSER_USER_AGENT;
-use crate::providers::request_throttle::RequestThrottle;
 use chrono::Timelike;
 use chrono::{DateTime, Utc};
 use de::{ChartResponse, QuoteSummaryResponse};
 use market_types::{CompanyProfile, Exchange, TickerSymbol, YahooSymbol};
+use provider_http::BROWSER_USER_AGENT;
+use provider_http::ProviderConfig;
+use provider_http::RequestThrottle;
 use reqwest::{Client, StatusCode, Url, header};
 use serde::de::DeserializeOwned;
 use std::fmt;
@@ -146,7 +147,7 @@ impl YahooClient {
         Ok(profile)
     }
 
-    pub(crate) async fn stock_splits(
+    pub async fn stock_splits(
         &self,
         symbol: &TickerSymbol,
         start: chrono::NaiveDate,
@@ -569,7 +570,25 @@ fn invalid(message: String) -> YahooError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    fn live_client() -> YahooClient {
+        #[derive(serde::Deserialize)]
+        struct Configuration {
+            providers: ProviderConfig,
+        }
+        let path = std::env::var_os("MARKET_WATCH_CONFIG")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../config.toml"
+                ))
+            });
+        let config: Configuration = toml::from_str(
+            &std::fs::read_to_string(path).expect("read live provider configuration"),
+        )
+        .expect("parse live provider configuration");
+        YahooClient::new(&config.providers)
+    }
     use chrono::{NaiveDate, TimeZone};
     #[test]
     fn normalizes_yahoo_exchanges_for_tradingview() {
@@ -724,8 +743,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_chart_and_profile() -> Result<(), YahooError> {
-        let config = Config::load("config.toml").expect("default config is valid");
-        let client = YahooClient::new(&config.providers);
+        let client = live_client();
         let end = Utc::now();
         let start = end - chrono::Duration::days(10);
 
@@ -752,8 +770,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_fetches_dell_earnings_date() -> Result<(), YahooError> {
-        let config = Config::load("config.toml").expect("default config is valid");
-        let client = YahooClient::new(&config.providers);
+        let client = live_client();
         let date = client
             .earnings_date(&TickerSymbol::parse("DELL").unwrap())
             .await?;
@@ -766,8 +783,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "calls live Yahoo Finance endpoints"]
     async fn live_includes_june_26_2026_daily_candle() -> Result<(), YahooError> {
-        let config = Config::load("config.toml").expect("default config is valid");
-        let client = YahooClient::new(&config.providers);
+        let client = live_client();
         let start = Utc.with_ymd_and_hms(2026, 6, 15, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2026, 6, 27, 0, 0, 0).unwrap();
         let expected_date = NaiveDate::from_ymd_opt(2026, 6, 26).unwrap();

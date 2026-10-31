@@ -1,9 +1,8 @@
 mod ai;
 mod finviz;
 pub(crate) mod news;
-mod request_throttle;
 pub(crate) mod sec;
-mod yahoo;
+pub use yahoo;
 
 #[cfg(test)]
 pub(crate) use ai::tests::{
@@ -12,8 +11,8 @@ pub(crate) use ai::tests::{
 pub use ai::{AiClient, AiError};
 pub(crate) use ai::{AiStreamDelta, BackgroundAiRequest, UserAiJob};
 pub use finviz::{FinvizClient, IndustryClassification};
-pub(crate) use yahoo::live::{PricingData, spawn_transport};
 pub use yahoo::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
+pub(crate) use yahoo::{PricingData, spawn_transport};
 
 pub(crate) fn is_http_not_found(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {

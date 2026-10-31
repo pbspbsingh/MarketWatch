@@ -166,14 +166,7 @@ pub struct HomeConfig {
     pub tickers: [TickerSymbol; 4],
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProviderConfig {
-    pub connect_timeout_secs: u64,
-    pub request_timeout_secs: u64,
-    pub min_delay_ms: u64,
-    pub max_delay_ms: u64,
-}
+pub use provider_http::ProviderConfig;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

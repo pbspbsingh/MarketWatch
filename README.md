@@ -8,6 +8,7 @@ Local market-analysis web application.
 - `server/`: application composition, HTTP/WebSocket endpoints, services, and application storage.
 - `crates/market_types/`: shared symbols, exchange identifiers, candles, profiles, and fundamentals; no HTTP, runtime, or database dependencies.
 - `crates/institutions/`: institutional ownership persistence and archive ingestion.
+- `crates/providers/`: provider adapters, with shared HTTP options and throttling in `http/`; Yahoo REST/live transport and NYSE calendar fetching are extracted first.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
 `cargo run` from the repository root; configuration and runtime database paths

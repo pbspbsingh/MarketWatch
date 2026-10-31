@@ -1,5 +1,12 @@
 [workspace]
-members = ["server", "crates/market_types", "crates/institutions"]
+members = [
+    "server",
+    "crates/market_types",
+    "crates/institutions",
+    "crates/providers/http",
+    "crates/providers/yahoo",
+    "crates/providers/nyse",
+]
 default-members = ["server"]
 resolver = "3"
 
@@ -17,6 +24,9 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Workspace crates
+provider_http = { path = "crates/providers/http" }
+yahoo = { path = "crates/providers/yahoo" }
+nyse = { path = "crates/providers/nyse" }
 market_types = { path = "crates/market_types" }
 institutions = { path = "crates/institutions", default-features = false }
 

@@ -1576,7 +1576,8 @@ dependencies = [
  "include_dir",
  "institutions",
  "market_types",
- "prost",
+ "nyse",
+ "provider_http",
  "regex",
  "reqwest",
  "rpassword",
@@ -1595,6 +1596,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ts-rs",
+ "yahoo",
 ]
 
 [[package]]
@@ -1755,6 +1757,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "nyse"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "provider_http",
+ "reqwest",
+ "scraper",
+ "tracing",
 ]
 
 [[package]]
@@ -1981,6 +1995,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "provider_http"
+version = "3.0.0"
+dependencies = [
+ "fastrand",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -3801,6 +3824,27 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "yahoo"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "chrono",
+ "futures-util",
+ "market_types",
+ "prost",
+ "provider_http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+]
 
 [[package]]
 name = "yoke"

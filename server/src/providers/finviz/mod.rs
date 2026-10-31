@@ -1,12 +1,12 @@
 use crate::config::{FinvizConfig, ProviderConfig};
-use crate::constants::BROWSER_USER_AGENT;
 use crate::contracts::industry::ETF_INDUSTRY_KEY;
 use crate::models::n_factor::NewsStopReason;
 use crate::providers::news::{NewsBatch, limit_finviz_news, parse_finviz_news};
-use crate::providers::request_throttle::RequestThrottle;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use market_types::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
+use provider_http::BROWSER_USER_AGENT;
+use provider_http::RequestThrottle;
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
 use serde::Deserialize;
