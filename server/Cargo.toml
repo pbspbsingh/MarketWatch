@@ -11,6 +11,7 @@ sqlite-bundled = ["sqlx/sqlite-bundled", "ownership/sqlite-bundled"]
 sqlite-unbundled = ["sqlx/sqlite-unbundled", "ownership/sqlite-unbundled"]
 
 [dependencies]
+dotenvy.workspace = true
 journal.workspace = true
 collections.workspace = true
 themes.workspace = true

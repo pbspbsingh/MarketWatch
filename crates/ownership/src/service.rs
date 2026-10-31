@@ -47,7 +47,11 @@ pub struct InstitutionsService {
 }
 
 impl InstitutionsService {
-    pub fn new(config: &InstitutionsConfig, yahoo: Arc<YahooClient>) -> Result<Self> {
+    pub fn new(
+        config: &InstitutionsConfig,
+        database_url: String,
+        yahoo: Arc<YahooClient>,
+    ) -> Result<Self> {
         let agent = std::env::var("SEC_USER_AGENT")
             .ok()
             .or_else(|| config.user_agent.clone());
@@ -56,7 +60,7 @@ impl InstitutionsService {
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| SecClient::new(&s))
                 .transpose()?,
-            database_url: config.database_url.clone(),
+            database_url,
             yahoo,
             workflow: Arc::new(Semaphore::new(1)),
             last_attempt: Mutex::new(None),

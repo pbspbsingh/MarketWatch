@@ -1,6 +1,6 @@
 use crate::api;
 use crate::auth;
-use crate::config::{AuthConfig, Config};
+use crate::config::{AuthConfig, Config, DatabaseConfig};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
@@ -123,9 +123,9 @@ pub struct AppState {
     pub tracker: Arc<TrackerService>,
 }
 
-pub async fn build(config: Config) -> anyhow::Result<Router> {
+pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<Router> {
     let auth = config.server.auth.clone().into_basic();
-    let store = Store::connect(&config.database.url).await?;
+    let store = Store::connect(&databases.main_url).await?;
     let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
     let trade_logs = Arc::new(TradeLogsService::new(store.clone()));
     store.fail_interrupted_theme_ai_jobs().await?;
@@ -136,6 +136,7 @@ pub async fn build(config: Config) -> anyhow::Result<Router> {
     let yahoo_client = Arc::new(YahooClient::new(&config.providers));
     let institutions = Arc::new(InstitutionsService::new(
         &config.institutions,
+        databases.institutional_url,
         yahoo_client.clone(),
     )?);
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);

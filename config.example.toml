@@ -1,3 +1,4 @@
+# Database URLs are configured in the root .env; see .env.example.
 [server]
 address = "127.0.0.1:8080"
 compression = true
@@ -9,9 +10,6 @@ compression = true
 username = "marketwatch"
 # Generate with `cargo run --bin hash_password` and paste the output here.
 password_hash = "REPLACE_WITH_ARGON2ID_HASH"
-
-[database]
-url = "sqlite://market_watch.db?mode=rwc"
 
 [market]
 timezone = "America/Los_Angeles"
@@ -56,7 +54,6 @@ default_source = "stock_titan" # "stock_titan" or "finviz"
 # Set SEC_USER_AGENT in the environment, or supply an application/contact below.
 # [institutions]
 # user_agent = "MarketWatch/3.0 you@your-domain.com"
-# database_url = "sqlite://institutions.sqlite?mode=rwc"
 # SEC files are downloaded into the OS temp directory and removed after import.
 
 # Optional: refresh Assessment and N-Factor reports while user-started AI work is idle.

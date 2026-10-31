@@ -22,17 +22,22 @@ or database dependencies. Remaining feature workflows still run in the server
 while market and user persistence are separated.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
-`cargo run` from the repository root; configuration and runtime database paths
-remain relative to that working directory. Run `cargo test --workspace` and
+`cargo run` from the repository root; `config.toml` and `.env` are read from
+that directory. Run `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` to check every crate.
 
 ## Configuration
 
-Create `config.toml` from the provided template before starting the backend:
+Create the local configuration files before starting the backend:
 
 ```bash
 cp config.example.toml config.toml
+cp .env.example .env
 ```
+
+Set absolute SQLite paths in the root `.env`. It supplies `DATABASE_URL` and
+`INSTITUTIONS_DATABASE_URL` to both the application and SQLx. Environment
+variables override file values; database URLs are not configured in `config.toml`.
 
 When `config.toml` is missing, the backend prints the template and exits.
 
@@ -169,7 +174,7 @@ The Institutions tab loads only when opened. Enable SEC access with
 unique OS temporary directory, imported one at a time, and removed after use.
 Failed updates also clean up their temporary files. Initial preparation downloads
 about 3.7 GB and imports it into `institutions.sqlite` beside the main database.
-Set `institutions.database_url` to change the database location.
+Set `INSTITUTIONS_DATABASE_URL` in the root `.env` to change its location.
 The first import takes time; later ticker views use indexed queries without
 opening ZIPs. Source ETags and modification dates survive restarts in SQLite,
 allowing conditional checks without keeping the ZIPs. Deleting the database
@@ -185,20 +190,19 @@ calculated from stored filings and holdings rather than a saved report cache.
 
 The server owns `server/migrations/` and `server/.sqlx/`. The `institutional`
 crate owns its migrations and SQLx metadata. Its `sqlx.toml` uses
-`INSTITUTIONS_DATABASE_URL` from that crate's `.env`; the server uses
-`DATABASE_URL` from the root `.env`.
+`INSTITUTIONS_DATABASE_URL`; the server uses `DATABASE_URL`. Both read the single
+root `.env`, including when commands run from a crate directory.
 With `SQLX_OFFLINE=true`, Cargo checks static SQL against the committed metadata
 without requiring running databases. This can be supplied by a global Cargo
 override; the repository does not provide a project-level `.cargo` configuration.
 Set `SQLX_OFFLINE=false` when regenerating metadata against the actual databases.
-Runtime paths come from `config.toml`. Apply migrations to the local databases
+Runtime database paths come from that same `.env`. Apply migrations to the local databases
 before checking new queries:
 
 ```bash
 cargo sqlx database setup --source server/migrations  # main database, root .env
 cd crates/db/institutional
-cp .env.example .env                # first setup only; set your absolute DB path
-cargo sqlx database setup           # ownership database, using this crate's .env
+cargo sqlx database setup           # ownership database, using the root .env
 cd ../../..
 SQLX_OFFLINE=false cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline

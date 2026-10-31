@@ -4,7 +4,7 @@ use chrono_tz::Tz;
 use market_types::TickerSymbol;
 use research::n_factor::NewsSource;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
 
@@ -32,7 +32,6 @@ pub(crate) fn sector_name(key: &str) -> Option<&'static str> {
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
-    pub database: DatabaseConfig,
     pub market: MarketConfig,
     pub home: HomeConfig,
     pub providers: ProviderConfig,
@@ -128,10 +127,32 @@ impl std::fmt::Debug for AuthConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct DatabaseConfig {
-    pub url: String,
+    pub main_url: String,
+    pub institutional_url: String,
+}
+
+impl DatabaseConfig {
+    pub fn load() -> anyhow::Result<Self> {
+        let values = dotenvy::from_path_iter(".env")
+            .context("failed to read root .env; create it from .env.example")?
+            .collect::<Result<HashMap<_, _>, _>>()
+            .context("failed to parse root .env")?;
+        Self::from_values(|key| std::env::var(key).ok().or_else(|| values.get(key).cloned()))
+    }
+
+    fn from_values(mut get: impl FnMut(&str) -> Option<String>) -> anyhow::Result<Self> {
+        let mut required = |key| {
+            get(key)
+                .filter(|value| !value.trim().is_empty())
+                .with_context(|| format!("{key} is required in root .env"))
+        };
+        Ok(Self {
+            main_url: required("DATABASE_URL")?,
+            institutional_url: required("INSTITUTIONS_DATABASE_URL")?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -286,6 +307,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn database_configuration_requires_both_shared_urls() {
+        let values = dotenvy::from_read_iter(
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env.example")).as_slice(),
+        )
+        .collect::<Result<HashMap<_, _>, _>>()
+        .unwrap();
+        let config = DatabaseConfig::from_values(|key| values.get(key).cloned()).unwrap();
+        assert_eq!(config.main_url, values["DATABASE_URL"]);
+        assert_eq!(
+            config.institutional_url,
+            values["INSTITUTIONS_DATABASE_URL"]
+        );
+
+        for missing in ["DATABASE_URL", "INSTITUTIONS_DATABASE_URL"] {
+            for replacement in [None, Some(""), Some("  ")] {
+                let error = DatabaseConfig::from_values(|key| {
+                    if key == missing {
+                        replacement.map(str::to_owned)
+                    } else {
+                        values.get(key).cloned()
+                    }
+                })
+                .unwrap_err();
+                assert!(error.to_string().contains(missing));
+            }
+        }
+    }
+
+    #[test]
     fn n_factor_default_source_accepts_supported_sources_and_defaults_to_stock_titan() {
         let absent: NFactorConfig = toml::from_str("").unwrap();
         assert_eq!(absent.default_source, NewsSource::StockTitan);
@@ -437,7 +487,7 @@ mod tests {
             "/../config.example.toml"
         ));
         let start = example.find("\n[server.auth]\n").unwrap() + 1;
-        let end = example.find("\n[database]\n").unwrap() + 1;
+        let end = example.find("\n[market]\n").unwrap() + 1;
         format!("{}{replacement}{}", &example[..start], &example[end..])
     }
 
