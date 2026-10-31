@@ -10,6 +10,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::warn;
+use ts_rs::TS;
 
 pub struct ChartService {
     store: Store,
@@ -20,7 +21,7 @@ pub struct ChartService {
     average_volume_sessions: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct ChartSummary {
     symbol: TickerSymbol,
     company_name: Option<String>,
@@ -37,13 +38,13 @@ pub struct ChartSummary {
     average_volume: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct ChartIndustry {
     key: String,
     name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct ChartThemeBenchmark {
     theme_name: String,
     etf_symbol: TickerSymbol,
@@ -51,7 +52,7 @@ pub struct ChartThemeBenchmark {
     company_name: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct ChartSectorBenchmark {
     sector_key: String,
     sector_name: String,

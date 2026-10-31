@@ -1,8 +1,10 @@
 use super::{Exchange, TickerSymbol};
 use serde::{Serialize, Serializer};
 use std::fmt;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, TS)]
+#[ts(type = "string")]
 pub struct TradingViewSymbol {
     exchange: Exchange,
     ticker: TickerSymbol,
@@ -32,10 +34,15 @@ impl Serialize for TradingViewSymbol {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ts_rs::Config;
 
     #[test]
     fn serializes_as_tradingview_identifier() {
         let symbol = TradingViewSymbol::new(Exchange::Nasdaq, TickerSymbol::parse("aapl").unwrap());
         assert_eq!(serde_json::to_string(&symbol).unwrap(), r#""NASDAQ:AAPL""#);
+        assert_eq!(
+            TradingViewSymbol::decl(&Config::default()),
+            "type TradingViewSymbol = string;"
+        );
     }
 }

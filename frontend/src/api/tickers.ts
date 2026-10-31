@@ -1,17 +1,5 @@
-
-import type { TickerRanking } from "./generated/contracts";
-export type { TickerRanking } from "./generated/contracts";
-
-export interface TickerGroupSummaryItem {
-  key: string;
-  name: string;
-  ticker_count: number;
-}
-
-export interface TickerGroupSummary {
-  selected_groups: TickerGroupSummaryItem[];
-  related_groups: TickerGroupSummaryItem[];
-}
+import type { TickerGroupSummary, TickerRanking } from "./generated/contracts";
+export type { TickerGroupSummary, TickerGroupSummaryItem, TickerRanking } from "./generated/contracts";
 
 export async function fetchTickerRanking(
   symbol: string,

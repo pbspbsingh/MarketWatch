@@ -1,14 +1,8 @@
 use crate::app::AppState;
-use crate::models::TickerSymbol;
+use crate::contracts::chart::HomeCharts;
 use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct HomeCharts {
-    tickers: [TickerSymbol; 4],
-}
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/home", get(home))

@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::contracts::chart::{GroupSummary, GroupSummaryItem};
 use crate::models::{TickerRanking, TickerSymbol};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::{TickerIndustryMembership, TickerThemeMembership};
@@ -6,7 +7,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use tracing::error;
 
@@ -31,19 +32,6 @@ struct GroupSummaryRequest {
         deserialize_with = "super::deserialize_optional_valid_ticker_symbols"
     )]
     symbols: Option<Vec<TickerSymbol>>,
-}
-
-#[derive(Serialize)]
-struct GroupSummary {
-    selected_groups: Vec<GroupSummaryItem>,
-    related_groups: Vec<GroupSummaryItem>,
-}
-
-#[derive(Clone, Serialize)]
-struct GroupSummaryItem {
-    key: String,
-    name: String,
-    ticker_count: usize,
 }
 
 pub fn router() -> Router<AppState> {

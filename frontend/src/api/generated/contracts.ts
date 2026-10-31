@@ -2,6 +2,46 @@
 
 export type TickerSymbol = string;
 
+export type TradingViewSymbol = string;
+
+export type ChartIndustry = { key: string, name: string, };
+
+export type ChartSectorBenchmark = { sector_key: string, sector_name: string, etf_symbol: TickerSymbol, tradingview_symbol: TradingViewSymbol, company_name: string | null, };
+
+export type ChartThemeBenchmark = { theme_name: string, etf_symbol: TickerSymbol, tradingview_symbol: TradingViewSymbol, company_name: string | null, };
+
+export type ChartSummary = { symbol: TickerSymbol, company_name: string | null, description: string | null, industry: ChartIndustry | null, themes: Array<string>, theme_benchmarks: Array<ChartThemeBenchmark>, sector_benchmark: ChartSectorBenchmark | null, tradingview_symbol: TradingViewSymbol, benchmark_symbol: TradingViewSymbol, benchmark_company_name: string | null, adr_percent: number, extension_from_50_sma: number | null, average_volume: number, };
+
+export type HomeCharts = { tickers: [TickerSymbol, TickerSymbol, TickerSymbol, TickerSymbol], };
+
+export type NextEarnings = { date: string, trading_days_until: number, };
+
+export type TickerGroupSummaryItem = { key: string, name: string, ticker_count: number, };
+
+export type TickerGroupSummary = { selected_groups: Array<TickerGroupSummaryItem>, related_groups: Array<TickerGroupSummaryItem>, };
+
+export type FundamentalPeriod = { fiscal_period: string, earnings_release_date: string | null, earnings_per_share: number | null, earnings_per_share_estimate: number | null, gaap_earnings_per_share: number | null, gaap_earnings_per_share_estimate: number | null, revenue: number | null, revenue_estimate: number | null, };
+
+export type FundamentalForecast = { fiscal_period: string | null, earnings_release_date: string | null, earnings_per_share: number | null, gaap_earnings_per_share: number | null, revenue: number | null, };
+
+export type Fundamentals = { symbol: TickerSymbol, currency: string | null, quarters: Array<FundamentalPeriod>,
+/**
+ * None identifies cached payloads written before annual data was supported.
+ */
+annual: Array<FundamentalPeriod> | null, next_quarter: FundamentalForecast, quarter_forecasts: Array<FundamentalForecast>, fetched_at: string, };
+
+export type FundamentalGrowthPoint = { period: string, value: number | null, growth: number | null, sma_2: number | null, };
+
+export type FundamentalGrowthSeries = { historical: Array<FundamentalGrowthPoint>, forecasts: Array<FundamentalGrowthPoint>, };
+
+export type FundamentalGrowthMetric = { qoq: FundamentalGrowthSeries, yoy: FundamentalGrowthSeries, annual: FundamentalGrowthSeries, };
+
+export type FundamentalGrowthDetails = { earnings_per_share: FundamentalGrowthMetric, gaap_earnings_per_share: FundamentalGrowthMetric, revenue: FundamentalGrowthMetric, };
+
+export type ProfileDetails = { symbol: TickerSymbol, name: string | null, exchange: string, description: string | null, };
+
+export type TickerDetails = { profile: ProfileDetails, fundamentals: Fundamentals, fundamental_growth: FundamentalGrowthDetails, stale_fundamentals: boolean, };
+
 export type YahooSymbol = string;
 
 export type VolumeEventKind = "history_high" | "year_high";

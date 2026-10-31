@@ -1,3 +1,4 @@
+pub mod chart;
 pub mod events;
 pub mod industry;
 pub mod live;
@@ -15,8 +16,16 @@ use crate::models::trade_logs::{
     TradeStatus, TradeSummary, Valuation,
 };
 use crate::models::{
-    RelativeStrengthCalculation, RelativeStrengthCalculationPoint, RelativeStrengthStructure,
-    RelativeStrengthSwing, RelativeStrengthSwingKind, RelativeStrengthTrend, YahooSymbol,
+    Forecast, FundamentalPeriod, Fundamentals, RelativeStrengthCalculation,
+    RelativeStrengthCalculationPoint, RelativeStrengthStructure, RelativeStrengthSwing,
+    RelativeStrengthSwingKind, RelativeStrengthTrend, TradingViewSymbol, YahooSymbol,
+};
+use crate::services::chart::{
+    ChartIndustry, ChartSectorBenchmark, ChartSummary, ChartThemeBenchmark,
+};
+use crate::services::details::{
+    FundamentalGrowthDetails, FundamentalGrowthMetric, FundamentalGrowthPoint,
+    FundamentalGrowthSeries, ProfileDetails, TickerDetails,
 };
 use crate::services::study::{
     StudyCandle, StudyMovingAverage, StudyMovingAveragePoint, StudyResult, StudySeries,
@@ -34,6 +43,7 @@ use crate::models::{
     PerformancePeriods, ThemeRanking, TickerCollection, TickerCollectionFile,
     TickerCollectionSource, TickerRanking, TickerSymbol,
 };
+use chart::{GroupSummary, GroupSummaryItem, HomeCharts, NextEarnings};
 use events::{ApplicationCommand, ApplicationEvent, ApplicationResource, ApplicationSnapshot};
 use industry::{
     IndustryCatalogEntry, IndustryClassification, IndustryData, IndustryResource, IndustryState,
@@ -52,6 +62,24 @@ pub fn export(check: bool) -> anyhow::Result<()> {
     let config = Config::default().with_large_int("number");
     let declarations = [
         TickerSymbol::decl(&config),
+        TradingViewSymbol::decl(&config),
+        ChartIndustry::decl(&config),
+        ChartSectorBenchmark::decl(&config),
+        ChartThemeBenchmark::decl(&config),
+        ChartSummary::decl(&config),
+        HomeCharts::decl(&config),
+        NextEarnings::decl(&config),
+        GroupSummaryItem::decl(&config),
+        GroupSummary::decl(&config),
+        FundamentalPeriod::decl(&config),
+        Forecast::decl(&config),
+        Fundamentals::decl(&config),
+        FundamentalGrowthPoint::decl(&config),
+        FundamentalGrowthSeries::decl(&config),
+        FundamentalGrowthMetric::decl(&config),
+        FundamentalGrowthDetails::decl(&config),
+        ProfileDetails::decl(&config),
+        TickerDetails::decl(&config),
         YahooSymbol::decl(&config),
         VolumeEventKind::decl(&config),
         MarketChartInterval::decl(&config),
@@ -132,6 +160,12 @@ pub fn export(check: bool) -> anyhow::Result<()> {
             .map(|value| format!("export {value}"))
             .join("\n\n")
     );
+    let source = source
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/src/api/generated/contracts.ts");
     if check {

@@ -1,63 +1,8 @@
-interface FundamentalPeriod {
-  fiscal_period: string;
-  earnings_release_date: string | null;
-  earnings_per_share: number | null;
-  earnings_per_share_estimate: number | null;
-  gaap_earnings_per_share: number | null;
-  gaap_earnings_per_share_estimate: number | null;
-  revenue: number | null;
-  revenue_estimate: number | null;
-}
-
-export type QuarterFundamentals = FundamentalPeriod;
-
-export interface Fundamentals {
-  symbol: string;
-  currency: string | null;
-  quarters: QuarterFundamentals[];
-  annual: FundamentalPeriod[] | null;
-  next_quarter: FundamentalForecast;
-  quarter_forecasts: FundamentalForecast[];
-  fetched_at: string;
-}
-
-export interface FundamentalForecast {
-  fiscal_period: string | null;
-  earnings_release_date: string | null;
-  earnings_per_share: number | null;
-  gaap_earnings_per_share: number | null;
-  revenue: number | null;
-}
-
-interface FundamentalGrowthPoint {
-  period: string;
-  value: number | null;
-  growth: number | null;
-  sma_2: number | null;
-}
-
-export interface FundamentalGrowthSeries {
-  historical: FundamentalGrowthPoint[];
-  forecasts: FundamentalGrowthPoint[];
-}
-
-interface FundamentalGrowthMetric {
-  qoq: FundamentalGrowthSeries;
-  yoy: FundamentalGrowthSeries;
-  annual: FundamentalGrowthSeries;
-}
-
-export interface TickerDetails {
-  profile: {
-    symbol: string;
-    name: string | null;
-    exchange: string;
-    description: string | null;
-  };
-  fundamentals: Fundamentals;
-  fundamental_growth: Record<"earnings_per_share" | "gaap_earnings_per_share" | "revenue", FundamentalGrowthMetric>;
-  stale_fundamentals: boolean;
-}
+import type { NextEarnings, TickerDetails } from "./generated/contracts";
+export type {
+  FundamentalForecast, FundamentalGrowthSeries, Fundamentals, NextEarnings, TickerDetails,
+  FundamentalPeriod as QuarterFundamentals,
+} from "./generated/contracts";
 
 export async function fetchTickerDetails(
   symbol: string,
@@ -72,11 +17,6 @@ export async function fetchTickerDetails(
     throw new Error(`Failed to load ticker details: HTTP ${response.status}`);
   }
   return response.json() as Promise<TickerDetails>;
-}
-
-export interface NextEarnings {
-  date: string;
-  trading_days_until: number;
 }
 
 export async function fetchNextEarningsDate(

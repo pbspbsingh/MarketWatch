@@ -1,12 +1,12 @@
 use crate::app::AppState;
+use crate::contracts::chart::NextEarnings;
 use crate::models::TickerSymbol;
 use crate::services::details::TickerDetails;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{NaiveDate, Utc};
-use serde::Serialize;
+use chrono::Utc;
 use tracing::error;
 
 pub fn router() -> Router<AppState> {
@@ -33,12 +33,6 @@ async fn next_earnings(
         date,
         trading_days_until: state.market_schedule.trading_days_until(market_date, date),
     })))
-}
-
-#[derive(Serialize)]
-struct NextEarnings {
-    date: NaiveDate,
-    trading_days_until: usize,
 }
 
 async fn details(

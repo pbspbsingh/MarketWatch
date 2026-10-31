@@ -1,6 +1,4 @@
-interface HomeCharts {
-  tickers: [string, string, string, string];
-}
+import type { HomeCharts } from "./generated/contracts";
 
 export async function fetchHomeCharts(signal?: AbortSignal): Promise<HomeCharts> {
   const response = await fetch("/api/home", { signal });

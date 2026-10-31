@@ -1,8 +1,9 @@
 use super::TickerSymbol;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 pub struct Fundamentals {
     pub symbol: TickerSymbol,
     pub currency: Option<String>,
@@ -16,7 +17,7 @@ pub struct Fundamentals {
     pub fetched_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 pub struct FundamentalPeriod {
     pub fiscal_period: String,
     pub earnings_release_date: Option<DateTime<Utc>>,
@@ -30,7 +31,8 @@ pub struct FundamentalPeriod {
 
 pub type QuarterFundamentals = FundamentalPeriod;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, TS)]
+#[ts(rename = "FundamentalForecast")]
 pub struct Forecast {
     pub fiscal_period: Option<String>,
     pub earnings_release_date: Option<DateTime<Utc>>,

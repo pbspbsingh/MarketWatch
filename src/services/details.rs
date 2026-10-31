@@ -11,6 +11,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
 use tracing::warn;
+use ts_rs::TS;
 
 const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -24,7 +25,7 @@ pub struct TickerDetailsService {
     fundamentals_locks: KeyedLock<TickerSymbol>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct TickerDetails {
     pub profile: ProfileDetails,
     pub fundamentals: Fundamentals,
@@ -32,27 +33,27 @@ pub struct TickerDetails {
     pub stale_fundamentals: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct FundamentalGrowthDetails {
     pub earnings_per_share: FundamentalGrowthMetric,
     pub gaap_earnings_per_share: FundamentalGrowthMetric,
     pub revenue: FundamentalGrowthMetric,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct FundamentalGrowthMetric {
     pub qoq: FundamentalGrowthSeries,
     pub yoy: FundamentalGrowthSeries,
     pub annual: FundamentalGrowthSeries,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct FundamentalGrowthSeries {
     pub historical: Vec<FundamentalGrowthPoint>,
     pub forecasts: Vec<FundamentalGrowthPoint>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct FundamentalGrowthPoint {
     pub period: String,
     pub value: Option<f64>,
@@ -60,7 +61,7 @@ pub struct FundamentalGrowthPoint {
     pub sma_2: Option<f64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 pub struct ProfileDetails {
     symbol: TickerSymbol,
     name: Option<String>,
