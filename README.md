@@ -5,10 +5,12 @@ Local market-analysis web application.
 ## Workspace
 
 - `frontend/`: React client.
-- `server/`: application composition, HTTP/WebSocket endpoints, services, and application storage.
+- `server/`: application composition, HTTP/WebSocket endpoints and feature services.
 - `crates/market_types/`: shared symbols, exchange identifiers, candles, profiles, and fundamentals; no HTTP, runtime, or database dependencies.
 - `crates/market_analysis/`: pure candle aggregation, indicators, relative strength, and performance calculations.
-- `crates/db/institutional/`: institutional persistence, migrations, and checked SQL.
+- `crates/db/market/`: ticker profiles, candles, fundamentals, industry catalog/membership, calendar, and cached research.
+- `crates/db/user/`: themes, watchlists, screens, journal trades/tags, daily notes, and images.
+- `crates/db/institutional/`: SEC source state, filings, holdings, issuer identifiers, and share counts.
 - `crates/ownership/`: SEC archive ingestion, source updates, and ownership reports.
 - `crates/journal/`: journal records, exact trade arithmetic, validation, and valuations.
 - `crates/collections/`: watchlist, screen, and imported-universe records.
@@ -18,8 +20,8 @@ Local market-analysis web application.
 
 Feature crates own their domain types; database crates may use those types without
 depending on the server. Journal calculations and domain records have no provider
-or database dependencies. Remaining feature workflows still run in the server
-while market and user persistence are separated.
+or database dependencies. Feature workflows still run in the server and receive explicit market and user
+stores where needed. No database depends on the server or another database.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
 `cargo run` from the repository root; `config.toml` and `.env` are read from
@@ -35,8 +37,8 @@ cp config.example.toml config.toml
 cp .env.example .env
 ```
 
-Set absolute SQLite paths in the root `.env`. It supplies `DATABASE_URL` and
-`INSTITUTIONS_DATABASE_URL` to both the application and SQLx. Environment
+Set absolute SQLite paths in the root `.env`. It supplies `MARKET_DATABASE_URL`,
+`USER_DATABASE_URL`, and `INSTITUTIONAL_DATABASE_URL` to both the application and SQLx. Environment
 variables override file values; database URLs are not configured in `config.toml`.
 
 When `config.toml` is missing, the backend prints the template and exits.
@@ -173,8 +175,8 @@ The Institutions tab loads only when opened. Enable SEC access with
 `institutions.user_agent` in local `config.toml`. SEC files are downloaded into a
 unique OS temporary directory, imported one at a time, and removed after use.
 Failed updates also clean up their temporary files. Initial preparation downloads
-about 3.7 GB and imports it into `institutions.sqlite` beside the main database.
-Set `INSTITUTIONS_DATABASE_URL` in the root `.env` to change its location.
+about 3.7 GB and imports it into `institutional.sqlite` beside the market and user databases.
+Set `INSTITUTIONAL_DATABASE_URL` in the root `.env` to change its location.
 The first import takes time; later ticker views use indexed queries without
 opening ZIPs. Source ETags and modification dates survive restarts in SQLite,
 allowing conditional checks without keeping the ZIPs. Deleting the database
@@ -188,10 +190,15 @@ SQLite WAL transactions. Normal visits return imported history while checking
 for updates in the background; Refresh waits for the update. Each report is
 calculated from stored filings and holdings rather than a saved report cache.
 
-The server owns `server/migrations/` and `server/.sqlx/`. The `institutional`
-crate owns its migrations and SQLx metadata. Its `sqlx.toml` uses
-`INSTITUTIONS_DATABASE_URL`; the server uses `DATABASE_URL`. Both read the single
-root `.env`, including when commands run from a crate directory.
+Each database crate owns its migrations and `.sqlx` metadata. Its `sqlx.toml`
+selects the corresponding URL from the single root `.env`:
+
+| Crate | Environment variable |
+| --- | --- |
+| `crates/db/market` | `MARKET_DATABASE_URL` |
+| `crates/db/user` | `USER_DATABASE_URL` |
+| `crates/db/institutional` | `INSTITUTIONAL_DATABASE_URL` |
+
 With `SQLX_OFFLINE=true`, Cargo checks static SQL against the committed metadata
 without requiring running databases. This can be supplied by a global Cargo
 override; the repository does not provide a project-level `.cargo` configuration.
@@ -200,18 +207,20 @@ Runtime database paths come from that same `.env`. Apply migrations to the local
 before checking new queries:
 
 ```bash
-cargo sqlx database setup --source server/migrations  # main database, root .env
-cd crates/db/institutional
-cargo sqlx database setup           # ownership database, using the root .env
+cd crates/db/market
+cargo sqlx database setup
+cd ../user
+cargo sqlx database setup
+cd ../institutional
+cargo sqlx database setup
 cd ../../..
 SQLX_OFFLINE=false cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline
 ```
 
 Use absolute database URLs when preparing queries so paths are independent of
-the owning crate directory. Run institution database commands from that crate
-directory so SQLx reads its local configuration.
-Both schemas work without SEC records. The application
+the owning crate directory. Run database commands from the owning crate
+directory so SQLx reads its variable selection. All three schemas initialize without SEC records. The application
 also applies migrations when opening each database. Commit refreshed `.sqlx`
 metadata after changing queries; offline builds use it without live databases.
 The migration CLI needs SQLx 0.9 with the `sqlite,sqlx-toml` features:

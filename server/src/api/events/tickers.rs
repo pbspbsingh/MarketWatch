@@ -238,7 +238,7 @@ mod tests {
     use crate::services::industry_data::tests::client;
     use crate::services::industry_data::tests::fixture;
     use crate::services::industry_data::tests::seed_catalog;
-    use crate::store::Store;
+    use crate::test_support::TestDatabases;
     use chrono::{TimeDelta, Utc};
     use market_types::{CompanyProfile, DailyCandle, Exchange, TickerSymbol};
     use std::collections::BTreeSet;
@@ -287,7 +287,7 @@ mod tests {
     #[tokio::test]
     async fn industry_theme_and_unassigned_selections_reconcile_membership_and_counts() {
         for kind in ["industries", "themes", "unassigned"] {
-            let store = Store::connect("sqlite::memory:").await.unwrap();
+            let store = TestDatabases::new().await.unwrap();
             seed_catalog(&store).await;
             let (industry, service, yahoo) = fixture(store.clone(), client("http://127.0.0.1:1/"));
             let date = yahoo.latest_completed_candle_date();
@@ -295,10 +295,12 @@ mod tests {
             let amd = TickerSymbol::parse("AMD").unwrap();
             for symbol in [&nvda, &amd] {
                 store
+                    .market
                     .add_ticker_industry("semiconductors", "Semiconductors", symbol)
                     .await
                     .unwrap();
                 store
+                    .market
                     .upsert_company_profile(&CompanyProfile {
                         symbol: symbol.clone(),
                         name: Some(symbol.to_string()),
@@ -317,6 +319,7 @@ mod tests {
                     volume: 100,
                 };
                 store
+                    .market
                     .upsert_daily_candles(
                         symbol,
                         &[candle(date - TimeDelta::days(800)), candle(date)],
@@ -325,16 +328,19 @@ mod tests {
                     .unwrap();
             }
             let theme = store
+                .user
                 .create_theme("AI", &TickerSymbol::parse("AIQ").unwrap(), None)
                 .await
                 .unwrap();
             let other = store
+                .user
                 .create_theme("Chips", &TickerSymbol::parse("SMH").unwrap(), None)
                 .await
                 .unwrap();
             let selection = match kind {
                 "industries" => {
                     store
+                        .market
                         .replace_industry_membership(
                             "semiconductors",
                             Utc::now(),
@@ -348,6 +354,7 @@ mod tests {
                 }
                 "themes" => {
                     store
+                        .user
                         .replace_theme_assignments(
                             &nvda,
                             &[theme, other],
@@ -364,6 +371,7 @@ mod tests {
                 }
                 _ => {
                     store
+                        .user
                         .replace_theme_assignments(
                             &amd,
                             &[theme],
@@ -401,6 +409,7 @@ mod tests {
             assert_eq!(visible, BTreeSet::from(["NVDA".into()]), "{kind}");
             match kind {
                 "industries" => store
+                    .market
                     .replace_industry_membership(
                         "semiconductors",
                         Utc::now(),
@@ -409,10 +418,12 @@ mod tests {
                     .await
                     .unwrap(),
                 "themes" => store
+                    .user
                     .replace_theme_assignments(&amd, &[other], AssignmentSource::Manual, None, None)
                     .await
                     .unwrap(),
                 _ => store
+                    .user
                     .replace_theme_assignments(&amd, &[], AssignmentSource::Manual, None, None)
                     .await
                     .unwrap(),
@@ -429,6 +440,7 @@ mod tests {
             );
             match kind {
                 "industries" => store
+                    .market
                     .replace_industry_membership(
                         "semiconductors",
                         Utc::now(),
@@ -437,10 +449,12 @@ mod tests {
                     .await
                     .unwrap(),
                 "themes" => store
+                    .user
                     .replace_theme_assignments(&nvda, &[], AssignmentSource::Manual, None, None)
                     .await
                     .unwrap(),
                 _ => store
+                    .user
                     .replace_theme_assignments(
                         &nvda,
                         &[theme],
@@ -458,13 +472,14 @@ mod tests {
             );
             assert_eq!(visible, BTreeSet::from(["AMD".into()]), "{kind}");
             if kind == "unassigned" {
-                store.delete_theme(theme).await.unwrap();
+                store.user.delete_theme(theme).await.unwrap();
                 assert_eq!(selected_rows(&mut receiver, &mut visible).await, 2);
                 assert_eq!(visible, BTreeSet::from(["AMD".into(), "NVDA".into()]));
             }
-            let notifications = store.subscribe_memberships();
+            let notifications = store.market.subscribe_memberships();
             assert!(
                 store
+                    .user
                     .replace_theme_assignments(
                         &amd,
                         &[i64::MAX],
@@ -485,13 +500,15 @@ mod tests {
 
     #[tokio::test]
     async fn metrics_remain_subscribed_after_completion_and_push_committed_candles() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let symbol = TickerSymbol::parse("NVDA").unwrap();
         store
+            .market
             .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
             .await
             .unwrap();
         store
+            .market
             .upsert_company_profile(&CompanyProfile {
                 symbol: symbol.clone(),
                 name: Some("Nvidia".into()),
@@ -512,6 +529,7 @@ mod tests {
             volume: 100,
         };
         store
+            .market
             .upsert_daily_candles(
                 &symbol,
                 &[
@@ -590,6 +608,7 @@ mod tests {
         );
         assert_eq!(excluded.unwrap().dollar_volume, 1);
         store
+            .market
             .upsert_daily_candles(&symbol, &[candle(date, 120.0)])
             .await
             .unwrap();
@@ -616,6 +635,7 @@ mod tests {
             "Filter-only metrics stay on the server"
         );
         store
+            .market
             .upsert_daily_candles(&symbol, &[candle(date, 90.0)])
             .await
             .unwrap();

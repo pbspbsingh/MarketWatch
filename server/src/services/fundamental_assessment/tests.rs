@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TestDatabases;
 #[cfg(test)]
 use ai::test_support::TestAiServer;
 #[cfg(test)]
@@ -16,12 +17,15 @@ use tokio::sync::Notify;
 use crate::config::AiConfig;
 use market_types::{CompanyProfile, Exchange};
 
-fn assessment_service(store: Store, ai: Option<Arc<AiClient>>) -> FundamentalAssessmentService {
+fn assessment_service(
+    store: TestDatabases,
+    ai: Option<Arc<AiClient>>,
+) -> FundamentalAssessmentService {
     service_with_source(store, ai, "http://127.0.0.1:1/stock")
 }
 
 fn service_with_source(
-    store: Store,
+    store: TestDatabases,
     ai: Option<Arc<AiClient>>,
     url: &str,
 ) -> FundamentalAssessmentService {
@@ -45,7 +49,7 @@ fn service_with_source(
     );
     let yahoo = Arc::new(
         YahooService::new(
-            store.clone(),
+            store.market.clone(),
             Arc::new(YahooClient::new(&config.providers)),
             Arc::new(FinvizClient::new(&config.finviz, &config.providers).unwrap()),
             &config.market,
@@ -57,12 +61,12 @@ fn service_with_source(
         MarketSchedule::with_holidays(&config.market, std::time::Duration::ZERO, HashSet::new())
             .unwrap();
     let details = Arc::new(TickerDetailsService::new(
-        store.clone(),
+        store.market.clone(),
         finviz,
         yahoo,
         schedule,
     ));
-    FundamentalAssessmentService::new(store, ai, details)
+    FundamentalAssessmentService::new(store.market, store.user, ai, details)
 }
 
 struct MockFundamentals {
@@ -127,8 +131,9 @@ fn fixture() -> Fundamentals {
         .remove(0)
 }
 
-async fn save_report(store: &Store, report: &FundamentalAssessment) {
+async fn save_report(store: &TestDatabases, report: &FundamentalAssessment) {
     store
+        .market
         .save_fundamental_assessment(
             &report.symbol,
             &AssessmentResult::Report(Box::new(report.clone())),
@@ -137,13 +142,14 @@ async fn save_report(store: &Store, report: &FundamentalAssessment) {
         .unwrap();
 }
 
-async fn seed(store: &Store, data: &Fundamentals) {
+async fn seed(store: &TestDatabases, data: &Fundamentals) {
     seed_profile(store, data).await;
-    store.upsert_fundamentals(data).await.unwrap();
+    store.market.upsert_fundamentals(data).await.unwrap();
 }
 
-async fn seed_profile(store: &Store, data: &Fundamentals) {
+async fn seed_profile(store: &TestDatabases, data: &Fundamentals) {
     store
+        .market
         .upsert_company_profile(&CompanyProfile {
             symbol: data.symbol.clone(),
             name: None,
@@ -330,7 +336,7 @@ fn fingerprint_ignores_fetch_dates_and_order_but_tracks_financial_changes() {
 
 #[tokio::test]
 async fn state_exposes_full_active_jobs_for_other_tickers() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let data = fixture();
     seed(&store, &data).await;
     let service = assessment_service(store, None);
@@ -397,7 +403,7 @@ async fn state_exposes_full_active_jobs_for_other_tickers() {
 
 #[tokio::test]
 async fn persisted_financial_floats_preserve_fingerprints_and_fresh_scores() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let mut data = fixture();
     // APPN's revenue estimate changed on JSON reload without float_roundtrip.
     data.quarters[0].revenue_estimate = Some(131_417_200.000_000_01);
@@ -407,9 +413,15 @@ async fn persisted_financial_floats_preserve_fingerprints_and_fresh_scores() {
     save_report(&store, &saved).await;
 
     for reloaded in [
-        store.fundamentals(&data.symbol).await.unwrap().unwrap(),
         store
-            .assessment_fundamentals(&data.symbol)
+            .market
+            .fundamentals(&data.symbol)
+            .await
+            .unwrap()
+            .unwrap(),
+        store
+            .market
+            .fundamentals(&data.symbol)
             .await
             .unwrap()
             .unwrap(),
@@ -438,7 +450,7 @@ async fn persisted_financial_floats_preserve_fingerprints_and_fresh_scores() {
 
 #[tokio::test]
 async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timestamps() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let mut data = fixture();
     seed(&store, &data).await;
     let saved = report(data.clone());
@@ -446,10 +458,10 @@ async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timesta
     let service = assessment_service(store.clone(), None);
     assert!(!service.state(&data.symbol).await.unwrap().stale);
     data.fetched_at += chrono::Duration::days(1);
-    store.upsert_fundamentals(&data).await.unwrap();
+    store.market.upsert_fundamentals(&data).await.unwrap();
     assert!(!service.state(&data.symbol).await.unwrap().stale);
     data.quarter_forecasts[0].revenue = Some(1.0);
-    store.upsert_fundamentals(&data).await.unwrap();
+    store.market.upsert_fundamentals(&data).await.unwrap();
     let state = service.state(&data.symbol).await.unwrap();
     assert!(state.stale);
     assert_eq!(state.report.unwrap().generated_at, saved.generated_at);
@@ -465,7 +477,7 @@ async fn persisted_scores_track_financial_changes_and_versions_not_fetch_timesta
 
 #[tokio::test]
 async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assessments() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let data = fixture();
     seed(&store, &data).await;
     let service = assessment_service(store.clone(), None);
@@ -473,6 +485,7 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
     save_report(&store, &saved).await;
     assert!(!service.state(&data.symbol).await.unwrap().stale);
     store
+        .market
         .add_ticker_industry(
             "softwareapplication",
             "Software - Application",
@@ -481,6 +494,7 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
         .await
         .unwrap();
     let theme_id = store
+        .user
         .themes()
         .await
         .unwrap()
@@ -489,6 +503,7 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
         .unwrap()
         .id;
     store
+        .user
         .replace_theme_assignments(
             &data.symbol,
             &[theme_id],
@@ -509,7 +524,7 @@ async fn saved_industry_and_theme_context_is_supplied_and_invalidates_old_assess
 }
 
 struct MockAi {
-    store: Store,
+    store: TestDatabases,
     entered: Notify,
     release: Notify,
     response: Mutex<String>,
@@ -523,7 +538,8 @@ async fn mock_ai(State(mock): State<Arc<MockAi>>, Json(request): Json<Value>) ->
     let data: Fundamentals = serde_json::from_value(raw).unwrap();
     let fetched = mock
         .store
-        .assessment_fundamentals(&data.symbol)
+        .market
+        .fundamentals(&data.symbol)
         .await
         .unwrap()
         .unwrap();
@@ -577,7 +593,7 @@ async fn wait_for_job(
 
 #[tokio::test]
 async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on_failure() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let data = fixture();
     seed_profile(&store, &data).await;
     let mut response = ai_response();
@@ -669,7 +685,7 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
     assert!(!preview.job_stale);
     let mut changed = data.clone();
     changed.quarters[0].revenue = Some(1.0);
-    store.upsert_fundamentals(&changed).await.unwrap();
+    store.market.upsert_fundamentals(&changed).await.unwrap();
     assert!(service.state(&data.symbol).await.unwrap().job_stale);
     assert_eq!(service.start(data.symbol.clone()).await.unwrap().id, job.id);
     mock.release.notify_one();
@@ -688,7 +704,7 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
         data.quarters[0].revenue
     );
     *mock.response.lock().unwrap() = "not JSON".into();
-    store.upsert_fundamentals(&data).await.unwrap();
+    store.market.upsert_fundamentals(&data).await.unwrap();
     let mut outdated = saved.clone();
     outdated.prompt_version = 0;
     save_report(&store, &outdated).await;
@@ -709,7 +725,7 @@ async fn ai_job_streams_without_precomputed_scores_and_preserves_saved_report_on
 
 #[tokio::test]
 async fn disabled_ai_is_rejected_and_failed_refresh_does_not_create_a_report() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let data = fixture();
     let service = Arc::new(assessment_service(store.clone(), None));
     assert!(matches!(
@@ -747,15 +763,17 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
     use std::sync::atomic::Ordering;
     for background in [false, true] {
         for had_report in [false, true] {
-            let store = Store::connect("sqlite::memory:").await.unwrap();
+            let store = TestDatabases::new().await.unwrap();
             let data = fixture();
             seed(&store, &data).await;
-            let watchlist = store.watchlists().await.unwrap().remove(0);
+            let watchlist = store.user.watchlists().await.unwrap().remove(0);
             store
+                .user
                 .add_watchlist_symbol(watchlist.id, &data.symbol)
                 .await
                 .unwrap();
             store
+                .market
                 .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
                 .await
                 .unwrap();
@@ -786,6 +804,7 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
             assert!(!state.stale);
             let not_found_at = state.not_found_at.unwrap();
             let result = store
+                .market
                 .fundamental_assessment(&data.symbol)
                 .await
                 .unwrap()
@@ -820,7 +839,8 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
             // Check the interval boundary without waiting for wall-clock days.
             assert!(
                 select_fundamentals_candidate(
-                    &store,
+                    &store.market,
+                    &store.user,
                     false,
                     not_found_at - Duration::seconds(1),
                     &[],
@@ -833,7 +853,8 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
             );
             assert!(
                 select_fundamentals_candidate(
-                    &store,
+                    &store.market,
+                    &store.user,
                     false,
                     not_found_at,
                     &[],
@@ -870,7 +891,7 @@ fn background_config() -> FundamentalsBackgroundConfig {
 
 #[tokio::test]
 async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_clock() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let (url, financials, server) = fundamentals_server().await;
     let service = Arc::new(service_with_source(
         store.clone(),
@@ -879,12 +900,14 @@ async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_cl
     ));
     let symbol = fixture().symbol;
     seed(&store, &fixture()).await;
-    let watchlist = store.watchlists().await.unwrap().remove(0);
+    let watchlist = store.user.watchlists().await.unwrap().remove(0);
     store
+        .user
         .add_watchlist_symbol(watchlist.id, &symbol)
         .await
         .unwrap();
     store
+        .market
         .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
         .await
         .unwrap();
@@ -904,6 +927,7 @@ async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_cl
             .unwrap()
     );
     let checked = store
+        .market
         .fundamental_assessment(&symbol)
         .await
         .unwrap()
@@ -962,6 +986,7 @@ async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_cl
 
     // A provider failure cannot fall back to the fresh cache or move the clock.
     let before_failure = store
+        .market
         .fundamental_assessment(&symbol)
         .await
         .unwrap()
@@ -976,6 +1001,7 @@ async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_cl
             .unwrap()
     );
     let after_failure = store
+        .market
         .fundamental_assessment(&symbol)
         .await
         .unwrap()
@@ -1006,7 +1032,7 @@ async fn unchanged_refreshed_inputs_reuse_analysis_and_advance_only_the_check_cl
 
 #[tokio::test]
 async fn reuse_requires_matching_financials_context_and_assessment_settings() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let service = assessment_service(store, Some(unreachable_ai()));
     let data = fixture();
     let saved = report(data.clone());
@@ -1037,14 +1063,16 @@ async fn reuse_requires_matching_financials_context_and_assessment_settings() {
 
 #[tokio::test]
 async fn background_preemption_preserves_saved_assessment_and_allows_retry() -> anyhow::Result<()> {
-    let store = Store::connect("sqlite::memory:").await?;
+    let store = TestDatabases::new().await?;
     let data = fixture();
     seed(&store, &data).await;
-    let watchlist = store.watchlists().await?.remove(0);
+    let watchlist = store.user.watchlists().await?.remove(0);
     store
+        .user
         .add_watchlist_symbol(watchlist.id, &data.symbol)
         .await?;
     store
+        .market
         .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
         .await?;
     let mut saved = report(data.clone());
@@ -1108,14 +1136,16 @@ async fn background_preemption_preserves_saved_assessment_and_allows_retry() -> 
 
 #[tokio::test]
 async fn promotion_protects_an_already_running_assessment_from_preemption() -> anyhow::Result<()> {
-    let store = Store::connect("sqlite::memory:").await?;
+    let store = TestDatabases::new().await?;
     let data = fixture();
     seed(&store, &data).await;
-    let watchlist = store.watchlists().await?.remove(0);
+    let watchlist = store.user.watchlists().await?.remove(0);
     store
+        .user
         .add_watchlist_symbol(watchlist.id, &data.symbol)
         .await?;
     store
+        .market
         .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
         .await?;
     let provider = TestAiServer::new(1, Some(ai_response().to_string())).await?;
@@ -1156,19 +1186,21 @@ async fn promotion_protects_an_already_running_assessment_from_preemption() -> a
 
 #[tokio::test]
 async fn manual_request_promotes_background_assessment_waiting_for_ai() {
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let (url, financials, server) = fundamentals_server().await;
     let ai = unreachable_ai();
     let user_job = ai.user_job();
     let service = Arc::new(service_with_source(store.clone(), Some(ai.clone()), &url));
     let symbol = fixture().symbol;
     seed(&store, &fixture()).await;
-    let watchlist = store.watchlists().await.unwrap().remove(0);
+    let watchlist = store.user.watchlists().await.unwrap().remove(0);
     store
+        .user
         .add_watchlist_symbol(watchlist.id, &symbol)
         .await
         .unwrap();
     store
+        .market
         .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
         .await
         .unwrap();
@@ -1220,15 +1252,17 @@ async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
     use finviz::FinvizClient;
     use news::StockTitanClient;
     use research::n_factor::NewsSource;
-    let store = Store::connect("sqlite::memory:").await.unwrap();
+    let store = TestDatabases::new().await.unwrap();
     let symbol = fixture().symbol;
     seed(&store, &fixture()).await;
     store
+        .market
         .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
         .await
         .unwrap();
-    let watchlist = store.watchlists().await.unwrap().remove(0);
+    let watchlist = store.user.watchlists().await.unwrap().remove(0);
     store
+        .user
         .add_watchlist_symbol(watchlist.id, &symbol)
         .await
         .unwrap();
@@ -1257,7 +1291,8 @@ async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
     config.providers.min_delay_ms = 0;
     config.providers.max_delay_ms = 0;
     let n_factor = Arc::new(NFactorService::new(
-        store.clone(),
+        store.market.clone(),
+        store.user.clone(),
         Arc::new(
             FinvizClient::new(&config.finviz, &config.providers)
                 .unwrap()
@@ -1269,7 +1304,8 @@ async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
     ));
     let (membership, changes) = watch::channel(());
     FundamentalsBackgroundService::spawn(
-        store.clone(),
+        store.market.clone(),
+        store.user.clone(),
         Some(ai),
         assessment.clone(),
         n_factor,
@@ -1280,6 +1316,7 @@ async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
         loop {
             let state = assessment.state(&symbol).await.unwrap();
             let news = store
+                .market
                 .n_factor_report(&symbol, NewsSource::Finviz)
                 .await
                 .unwrap();

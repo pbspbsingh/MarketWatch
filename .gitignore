@@ -1,6 +1,7 @@
 /target/
-/market_watch.sqlite*
-/institutions.sqlite*
+/market.sqlite*
+/user.sqlite*
+/institutional.sqlite*
 .env
 /frontend/node_modules/
 /frontend/dist/

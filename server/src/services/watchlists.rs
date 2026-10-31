@@ -1,5 +1,6 @@
 use crate::services::tickers::TickerCatalogService;
-use crate::store::Store;
+use user_db::Store as UserStore;
+
 use collections::TickerWatchlists;
 use collections::Watchlist;
 use market_types::TickerSymbol;
@@ -52,7 +53,7 @@ pub const WATCHLIST_ICONS: &[&str] = &[
 ];
 
 pub struct WatchlistService {
-    store: Store,
+    user_store: UserStore,
     ticker_catalog: Arc<TickerCatalogService>,
     membership_changes: watch::Sender<()>,
 }
@@ -74,9 +75,9 @@ pub enum WatchlistServiceError {
 }
 
 impl WatchlistService {
-    pub fn new(store: Store, ticker_catalog: Arc<TickerCatalogService>) -> Self {
+    pub fn new(user_store: UserStore, ticker_catalog: Arc<TickerCatalogService>) -> Self {
         Self {
-            store,
+            user_store,
             ticker_catalog,
             membership_changes: watch::channel(()).0,
         }
@@ -87,7 +88,7 @@ impl WatchlistService {
     }
 
     pub async fn watchlists(&self) -> Result<Vec<Watchlist>, WatchlistServiceError> {
-        self.store
+        self.user_store
             .watchlists()
             .await
             .map_err(WatchlistServiceError::Persistence)
@@ -101,7 +102,7 @@ impl WatchlistService {
         let (name, icon_key) = validate_input(name, icon_key)?;
         self.ensure_unique(None, &name, icon_key).await?;
         let id = self
-            .store
+            .user_store
             .create_watchlist(&name, icon_key)
             .await
             .map_err(map_write_error)?;
@@ -127,7 +128,7 @@ impl WatchlistService {
         let (name, icon_key) = validate_input(name, icon_key)?;
         self.ensure_unique(Some(id), &name, icon_key).await?;
         if !self
-            .store
+            .user_store
             .update_watchlist(id, &name, icon_key)
             .await
             .map_err(map_write_error)?
@@ -145,7 +146,7 @@ impl WatchlistService {
             return Err(WatchlistServiceError::DefaultImmutable);
         }
         let result = self
-            .store
+            .user_store
             .delete_watchlist(id)
             .await
             .map_err(WatchlistServiceError::Persistence)?
@@ -189,7 +190,7 @@ impl WatchlistService {
                 "watchlist does not exist".to_owned(),
             ));
         }
-        self.store
+        self.user_store
             .watchlist_symbols_union(&unique_ids)
             .await
             .map_err(WatchlistServiceError::Persistence)
@@ -206,7 +207,7 @@ impl WatchlistService {
             .await
             .map_err(WatchlistServiceError::TickerCatalog)?;
         let result = self
-            .store
+            .user_store
             .add_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
@@ -225,7 +226,7 @@ impl WatchlistService {
     ) -> Result<(), WatchlistServiceError> {
         validate_id(id)?;
         let result = self
-            .store
+            .user_store
             .remove_watchlist_symbol(id, symbol)
             .await
             .map_err(WatchlistServiceError::Persistence)?
@@ -239,7 +240,7 @@ impl WatchlistService {
 
     pub async fn clear_symbol(&self, symbol: &TickerSymbol) -> Result<(), WatchlistServiceError> {
         let result = self
-            .store
+            .user_store
             .clear_symbol_watchlists(symbol)
             .await
             .map_err(WatchlistServiceError::Persistence);
@@ -253,7 +254,7 @@ impl WatchlistService {
         &self,
         symbols: &[TickerSymbol],
     ) -> Result<Vec<TickerWatchlists>, WatchlistServiceError> {
-        self.store
+        self.user_store
             .ticker_watchlists(symbols)
             .await
             .map_err(WatchlistServiceError::Persistence)

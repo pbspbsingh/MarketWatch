@@ -1,7 +1,6 @@
 use crate::app::AppState;
 use crate::contracts::trade_logs::TradeLogSnapshot;
 use crate::services::trade_logs::{Filter, TradeLogsError, TradeLogsService};
-use crate::store::trade_logs::WriteError;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -11,6 +10,7 @@ use axum::{
 use journal::trade_logs::{TagInput, TradeInput};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use user_db::trade_logs::WriteError;
 
 type Result<T> = std::result::Result<Json<T>, (StatusCode, Json<Value>)>;
 #[derive(Deserialize)]

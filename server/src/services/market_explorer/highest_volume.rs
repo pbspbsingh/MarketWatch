@@ -1,4 +1,6 @@
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use chrono::{Months, NaiveDate};
 use market_types::{DailyCandle, TickerSymbol};
 use serde::{Deserialize, Serialize};
@@ -90,12 +92,16 @@ pub enum HighestVolumeError {
 }
 
 pub struct HighestVolumeService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
 }
 
 impl HighestVolumeService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(market_store: MarketStore, user_store: UserStore) -> Self {
+        Self {
+            market_store,
+            user_store,
+        }
     }
 
     pub async fn scan(
@@ -109,7 +115,7 @@ impl HighestVolumeService {
         let scan_start = subtract_months(as_of, request.scan_range.months())?;
         let earliest_lookback = subtract_months(scan_start, request.lookback.months())?;
         let fetch_start = subtract_months(earliest_lookback, HISTORY_PADDING_MONTHS)?;
-        let selected_symbols = selected_symbols(&self.store, &selection)
+        let selected_symbols = selected_symbols(&self.market_store, &self.user_store, &selection)
             .await
             .map_err(HighestVolumeError::Persistence)?;
         if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
@@ -131,7 +137,7 @@ impl HighestVolumeService {
         );
         let load_started_at = Instant::now();
         let histories = self
-            .store
+            .market_store
             .market_explorer_daily_candle_histories(fetch_start, as_of, as_of)
             .await
             .map_err(HighestVolumeError::Persistence)?;

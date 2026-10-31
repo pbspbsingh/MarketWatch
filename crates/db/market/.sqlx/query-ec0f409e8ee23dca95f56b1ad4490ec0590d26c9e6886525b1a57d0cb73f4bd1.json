@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "PRAGMA incremental_vacuum(1000)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "ec0f409e8ee23dca95f56b1ad4490ec0590d26c9e6886525b1a57d0cb73f4bd1"
+}

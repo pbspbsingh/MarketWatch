@@ -24,10 +24,11 @@ use super::{
 use crate::config::FundamentalsBackgroundConfig;
 use crate::services::fundamentals_background::select_fundamentals_candidate;
 use crate::services::theme_tickers::load_theme_ticker;
-use crate::store::Store;
+
 use ai::AiClient;
 use ai::AiStreamDelta;
 use input::fingerprint;
+use market_db::Store as MarketStore;
 use market_types::{Fundamentals, TickerSymbol};
 use provider_http::is_http_not_found;
 use research::fundamental_assessment::AssessmentContext;
@@ -40,13 +41,15 @@ use research::fundamental_assessment::AssessmentSnapshot;
 use research::fundamental_assessment::FundamentalAssessment;
 use research::fundamental_assessment::RUBRIC_VERSION;
 use research::fundamentals_background::FundamentalsFeature;
+use user_db::Store as UserStore;
 
 const PROMPT_VERSION: u32 = 3;
 const MAX_ACTIVE_JOBS: usize = 8;
 const MAX_RETAINED_JOBS: usize = 128;
 
 pub struct FundamentalAssessmentService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     ai: Option<Arc<AiClient>>,
     details: Arc<TickerDetailsService>,
     jobs: Mutex<HashMap<TickerSymbol, JobEntry>>,
@@ -100,12 +103,14 @@ impl Analysis {
 
 impl FundamentalAssessmentService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         ai: Option<Arc<AiClient>>,
         details: Arc<TickerDetailsService>,
     ) -> Self {
         Self {
-            store,
+            market_store,
+            user_store,
             ai,
             details,
             job_changes: Notify::new(),
@@ -126,12 +131,15 @@ impl FundamentalAssessmentService {
             (job, other_jobs)
         };
         other_jobs.sort_by(|left, right| left.symbol.cmp(&right.symbol));
-        let (report, not_found_at) = match self.store.fundamental_assessment(symbol).await? {
-            Some(AssessmentResult::Report(report)) => (Some(*report), None),
+        let (report, not_found_at) = match self.market_store.fundamental_assessment(symbol).await? {
+            Some(AssessmentResult::Report(report)) if report.rubric_version == RUBRIC_VERSION => {
+                (Some(*report), None)
+            }
+            Some(AssessmentResult::Report(_)) => (None, None),
             Some(AssessmentResult::NotFound { not_found_at }) => (None, Some(not_found_at)),
             None => (None, None),
         };
-        let data = self.store.assessment_fundamentals(symbol).await?;
+        let data = self.market_store.fundamentals(symbol).await?;
         let context = self.context(symbol).await?;
         let current_fingerprint = data.as_ref().map(fingerprint).transpose()?;
         let stale = report
@@ -342,7 +350,8 @@ impl FundamentalAssessmentService {
         config: FundamentalsBackgroundConfig,
     ) -> anyhow::Result<bool> {
         Ok(select_fundamentals_candidate(
-            &self.store,
+            &self.market_store,
+            &self.user_store,
             config.process_non_watchlist,
             Utc::now() - Duration::days(i64::from(config.refresh_days)),
             &[],
@@ -367,7 +376,8 @@ impl FundamentalAssessmentService {
     }
 
     async fn context(&self, symbol: &TickerSymbol) -> anyhow::Result<AssessmentContext> {
-        let Some(ticker) = load_theme_ticker(&self.store, symbol).await? else {
+        let Some(ticker) = load_theme_ticker(&self.market_store, &self.user_store, symbol).await?
+        else {
             return Ok(AssessmentContext::default());
         };
         let mut context = AssessmentContext {
@@ -474,7 +484,7 @@ impl FundamentalAssessmentService {
             });
         });
         let previous = self
-            .store
+            .market_store
             .fundamental_assessment(symbol)
             .await?
             .and_then(AssessmentResult::into_report)
@@ -484,7 +494,7 @@ impl FundamentalAssessmentService {
             // unchanged-data check advances only the background refresh clock.
             report.last_checked_at = Some(Utc::now());
             self.update(symbol, id, AssessmentPhase::Saving, None);
-            self.store
+            self.market_store
                 .save_fundamental_assessment(symbol, &AssessmentResult::Report(Box::new(report)))
                 .await?;
             self.update(symbol, id, AssessmentPhase::Completed, None);
@@ -552,7 +562,7 @@ impl FundamentalAssessmentService {
             summary: analysis.summary,
         };
         self.update(symbol, id, AssessmentPhase::Saving, None);
-        self.store
+        self.market_store
             .save_fundamental_assessment(symbol, &AssessmentResult::Report(Box::new(report)))
             .await?;
         self.update_job(symbol, id, |job| {
@@ -564,7 +574,7 @@ impl FundamentalAssessmentService {
 
     async fn save_unavailable(&self, symbol: &TickerSymbol, id: &str) -> anyhow::Result<()> {
         self.update(symbol, id, AssessmentPhase::Saving, None);
-        self.store
+        self.market_store
             .save_fundamental_assessment(
                 symbol,
                 &AssessmentResult::NotFound {

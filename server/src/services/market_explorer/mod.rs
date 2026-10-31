@@ -1,6 +1,7 @@
 use crate::services::yahoo::YahooService;
-use crate::store::{MarketExplorerCandleSummary, Store};
 use chrono::NaiveDate;
+use market_db::MarketExplorerCandleSummary;
+use market_db::Store as MarketStore;
 use market_types::TickerSymbol;
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
@@ -9,6 +10,7 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::Notify;
 use tracing::warn;
+use user_db::Store as UserStore;
 
 mod high_rs;
 mod highest_return;
@@ -80,7 +82,7 @@ struct CandleFetchJob {
 }
 
 pub struct MarketExplorerService {
-    store: Store,
+    market_store: MarketStore,
     yahoo: Arc<YahooService>,
     highest_return: HighestReturnService,
     highest_volume: HighestVolumeService,
@@ -106,13 +108,13 @@ enum WorkerAction {
 }
 
 impl MarketExplorerService {
-    pub fn new(store: Store, yahoo: Arc<YahooService>) -> Self {
+    pub fn new(market_store: MarketStore, user_store: UserStore, yahoo: Arc<YahooService>) -> Self {
         Self {
-            highest_return: HighestReturnService::new(store.clone()),
-            highest_volume: HighestVolumeService::new(store.clone()),
-            high_rs: HighRsService::new(store.clone(), yahoo.clone()),
-            power_play: PowerPlayService::new(store.clone()),
-            store,
+            highest_return: HighestReturnService::new(market_store.clone(), user_store.clone()),
+            highest_volume: HighestVolumeService::new(market_store.clone(), user_store.clone()),
+            high_rs: HighRsService::new(market_store.clone(), user_store.clone(), yahoo.clone()),
+            power_play: PowerPlayService::new(market_store.clone(), user_store.clone()),
+            market_store,
             yahoo,
             job: Mutex::new(None),
             resumed: Notify::new(),
@@ -264,7 +266,7 @@ impl MarketExplorerService {
 
         let summary = self.summary(target_date).await?;
         let queue = self
-            .store
+            .market_store
             .industry_tickers_requiring_candle(target_date)
             .await
             .map_err(MarketExplorerError::Persistence)?;
@@ -296,7 +298,7 @@ impl MarketExplorerService {
         };
         let summary = self.summary(target_date).await?;
         let queue = self
-            .store
+            .market_store
             .industry_tickers_requiring_candle(target_date)
             .await
             .map_err(MarketExplorerError::Persistence)?
@@ -381,7 +383,7 @@ impl MarketExplorerService {
         &self,
         target_date: NaiveDate,
     ) -> Result<MarketExplorerCandleSummary, MarketExplorerError> {
-        self.store
+        self.market_store
             .market_explorer_candle_summary(target_date)
             .await
             .map_err(MarketExplorerError::Persistence)

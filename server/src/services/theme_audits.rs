@@ -1,11 +1,11 @@
 use crate::services::theme_tickers::{load_theme_ticker, load_theme_tickers};
 use crate::services::themes::{MAX_THEMES_PER_TICKER, strip_code_fence};
-use crate::store::{NewThemeAudit, Store};
 use ai::AiClient;
 use ai::AiError;
 use ai::AiStreamDelta;
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
+use market_db::Store as MarketStore;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -24,6 +24,8 @@ use themes::ThemeTicker;
 use thiserror::Error;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{error, info, warn};
+use user_db::NewThemeAudit;
+use user_db::Store as UserStore;
 
 const MAX_STREAM_BYTES: usize = 64 * 1024;
 const MAX_RECENT_ERRORS: usize = 20;
@@ -120,7 +122,8 @@ enum StreamDelta {
 }
 
 pub struct ThemeAuditService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     ai: Option<Arc<AiClient>>,
     run: RwLock<Option<AuditRunState>>,
     lifecycle: Mutex<()>,
@@ -148,9 +151,14 @@ pub enum ThemeAuditServiceError {
 }
 
 impl ThemeAuditService {
-    pub fn new(store: Store, ai: Option<Arc<AiClient>>) -> Self {
+    pub fn new(
+        market_store: MarketStore,
+        user_store: UserStore,
+        ai: Option<Arc<AiClient>>,
+    ) -> Self {
         Self {
-            store,
+            market_store,
+            user_store,
             ai,
             run: RwLock::new(None),
             lifecycle: Mutex::new(()),
@@ -162,14 +170,14 @@ impl ThemeAuditService {
         include_manual: bool,
     ) -> Result<ThemeAuditOverview, ThemeAuditServiceError> {
         let eligible = self
-            .store
+            .user_store
             .theme_audit_eligible_symbols(include_manual)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .into_iter()
             .collect::<HashSet<_>>();
         let stored_symbols = self
-            .store
+            .user_store
             .theme_audit_symbols()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
@@ -178,7 +186,7 @@ impl ThemeAuditService {
             .filter(|symbol| eligible.contains(*symbol))
             .count();
         let results = self
-            .store
+            .user_store
             .theme_audits()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
@@ -226,13 +234,13 @@ impl ThemeAuditService {
             ));
         }
         let themes = self
-            .store
+            .user_store
             .themes()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
         let candidates = self.candidates(include_manual, !clear_existing).await?;
         if clear_existing {
-            self.store
+            self.user_store
                 .clear_theme_audits()
                 .await
                 .map_err(ThemeAuditServiceError::Persistence)?;
@@ -333,7 +341,11 @@ impl ThemeAuditService {
                                 );
                             }
                         }
-                        match self.store.insert_theme_audits(&validation.audits).await {
+                        match self
+                            .user_store
+                            .insert_theme_audits(&validation.audits)
+                            .await
+                        {
                             Ok(()) => {
                                 info!(
                                     batch_number = index + 1,
@@ -503,7 +515,7 @@ impl ThemeAuditService {
         confirmed_input_fingerprint: Option<&str>,
     ) -> Result<ThemeAuditAcceptance, ThemeAuditServiceError> {
         let pending = self
-            .store
+            .user_store
             .pending_theme_audit(symbol)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
@@ -511,11 +523,11 @@ impl ThemeAuditService {
                 ThemeAuditServiceError::Validation("pending theme audit does not exist".to_owned())
             })?;
         let themes = self
-            .store
+            .user_store
             .themes()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
-        let ticker = load_theme_ticker(&self.store, symbol)
+        let ticker = load_theme_ticker(&self.market_store, &self.user_store, symbol)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .ok_or_else(|| {
@@ -564,7 +576,7 @@ impl ThemeAuditService {
             .map(|theme| theme.id)
             .collect::<Vec<_>>();
         let accepted = self
-            .store
+            .user_store
             .accept_theme_audit(symbol, &current_ids, is_stale)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
@@ -577,7 +589,7 @@ impl ThemeAuditService {
     }
 
     pub async fn ignore(&self, symbol: &TickerSymbol) -> Result<(), ThemeAuditServiceError> {
-        self.store
+        self.user_store
             .ignore_theme_audit(symbol)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
@@ -593,12 +605,12 @@ impl ThemeAuditService {
         remaining_only: bool,
     ) -> Result<Vec<AuditCandidate>, ThemeAuditServiceError> {
         let themes = self
-            .store
+            .user_store
             .themes()
             .await
             .map_err(ThemeAuditServiceError::Persistence)?;
         let audited = if remaining_only {
-            self.store
+            self.user_store
                 .theme_audit_symbols()
                 .await
                 .map_err(ThemeAuditServiceError::Persistence)?
@@ -608,13 +620,13 @@ impl ThemeAuditService {
             HashSet::new()
         };
         let eligible = self
-            .store
+            .user_store
             .theme_audit_eligible_symbols(include_manual)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .into_iter()
             .collect::<HashSet<_>>();
-        load_theme_tickers(&self.store)
+        load_theme_tickers(&self.market_store, &self.user_store)
             .await
             .map_err(ThemeAuditServiceError::Persistence)?
             .into_iter()

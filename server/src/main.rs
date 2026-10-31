@@ -12,7 +12,10 @@ mod constants;
 mod contracts;
 mod models;
 mod services;
-mod store;
+#[cfg(test)]
+mod storage_tests;
+#[cfg(test)]
+mod test_support;
 mod utils;
 
 use anyhow::Context;

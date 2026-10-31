@@ -1,4 +1,6 @@
+use market_db::Store as MarketStore;
 use std::{collections::HashMap, sync::Arc, time::Duration as StdDuration};
+use user_db::Store as UserStore;
 
 use chrono::{DateTime, Duration, Utc};
 use market_types::TickerSymbol;
@@ -13,7 +15,7 @@ use super::{
     n_factor::{NFactorService, NFactorStartError},
 };
 use crate::config::FundamentalsBackgroundConfig;
-use crate::store::Store;
+
 use ai::AiClient;
 use research::fundamentals_background::FundamentalsFeature;
 use research::fundamentals_background::FundamentalsTask;
@@ -25,7 +27,8 @@ const CANDIDATE_RECHECK: StdDuration = StdDuration::from_secs(30 * 60);
 
 /// Coordinates feature jobs; each service owns its inputs, AI work and reports.
 pub(crate) struct FundamentalsBackgroundService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     ai: Arc<AiClient>,
     assessment: Arc<FundamentalAssessmentService>,
     n_factor: Arc<NFactorService>,
@@ -38,7 +41,8 @@ enum StartError {
 
 impl FundamentalsBackgroundService {
     pub(crate) fn spawn(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         ai: Option<Arc<AiClient>>,
         assessment: Arc<FundamentalAssessmentService>,
         n_factor: Arc<NFactorService>,
@@ -52,7 +56,8 @@ impl FundamentalsBackgroundService {
         info!(?config, "Background fundamentals worker enabled");
         tokio::spawn(
             Self {
-                store,
+                market_store,
+                user_store,
                 ai,
                 assessment,
                 n_factor,
@@ -104,7 +109,8 @@ impl FundamentalsBackgroundService {
                     .collect::<Vec<_>>();
             excluded.extend(failures.keys().cloned());
             let candidate = match select_fundamentals_candidate(
-                &self.store,
+                &self.market_store,
+                &self.user_store,
                 config.process_non_watchlist,
                 now - Duration::days(i64::from(config.refresh_days)),
                 &excluded,
@@ -229,15 +235,16 @@ impl FundamentalsBackgroundService {
 
 /// Compose user-owned watchlist scope with market-owned freshness and membership.
 pub(crate) async fn select_fundamentals_candidate(
-    store: &Store,
+    market_store: &MarketStore,
+    user_store: &UserStore,
     process_non_watchlist: bool,
     cutoff: DateTime<Utc>,
     excluded: &[FundamentalsTask],
     symbol: Option<&TickerSymbol>,
     feature: Option<FundamentalsFeature>,
 ) -> anyhow::Result<Option<FundamentalsCandidate>> {
-    let watched_symbols = store.all_watchlist_symbols().await?;
-    store
+    let watched_symbols = user_store.all_watchlist_symbols().await?;
+    market_store
         .market_fundamentals_candidate(&FundamentalsScope {
             process_non_watchlist,
             watched_symbols: &watched_symbols,

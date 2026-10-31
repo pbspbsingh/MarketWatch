@@ -1614,6 +1614,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "market_db"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "futures-util",
+ "market_types",
+ "research",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "market_types"
 version = "3.0.0"
 dependencies = [
@@ -1646,6 +1660,7 @@ dependencies = [
  "include_dir",
  "journal",
  "market_analysis",
+ "market_db",
  "market_types",
  "news",
  "nyse",
@@ -1671,6 +1686,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ts-rs",
+ "user_db",
  "yahoo",
 ]
 
@@ -3604,6 +3620,22 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+]
+
+[[package]]
+name = "user_db"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "collections",
+ "journal",
+ "market_types",
+ "serde_json",
+ "sqlx",
+ "themes",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

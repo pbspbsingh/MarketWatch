@@ -8,7 +8,7 @@ use themes::ThemeAuditStatus;
 use themes::ThemeAuditTheme;
 
 #[derive(Clone, Debug)]
-pub(crate) struct NewThemeAudit {
+pub struct NewThemeAudit {
     pub symbol: TickerSymbol,
     pub current_themes: Vec<ThemeAuditTheme>,
     pub suggested_themes: Vec<ThemeAuditTheme>,
@@ -19,7 +19,7 @@ pub(crate) struct NewThemeAudit {
     pub input_fingerprint: String,
 }
 
-pub(crate) struct PendingThemeAudit {
+pub struct PendingThemeAudit {
     pub current_themes: Vec<ThemeAuditTheme>,
     pub suggested_themes: Vec<ThemeAuditTheme>,
     pub input_fingerprint: String,
@@ -47,7 +47,7 @@ struct StoredAcceptableAudit {
 }
 
 impl Store {
-    pub(crate) async fn theme_audit_eligible_symbols(
+    pub async fn theme_audit_eligible_symbols(
         &self,
         include_manual: bool,
     ) -> anyhow::Result<Vec<TickerSymbol>> {
@@ -75,7 +75,7 @@ impl Store {
         .collect()
     }
 
-    pub(crate) async fn theme_audits(&self) -> anyhow::Result<Vec<ThemeAudit>> {
+    pub async fn theme_audits(&self) -> anyhow::Result<Vec<ThemeAudit>> {
         sqlx::query_as!(
             StoredThemeAudit,
             r#"SELECT symbol,
@@ -106,7 +106,7 @@ impl Store {
         .collect()
     }
 
-    pub(crate) async fn theme_audit_symbols(&self) -> anyhow::Result<Vec<TickerSymbol>> {
+    pub async fn theme_audit_symbols(&self) -> anyhow::Result<Vec<TickerSymbol>> {
         sqlx::query_scalar!("SELECT symbol FROM theme_audits ORDER BY symbol")
             .fetch_all(&self.pool)
             .await
@@ -118,7 +118,7 @@ impl Store {
             .collect()
     }
 
-    pub(crate) async fn clear_theme_audits(&self) -> anyhow::Result<()> {
+    pub async fn clear_theme_audits(&self) -> anyhow::Result<()> {
         sqlx::query!("DELETE FROM theme_audits")
             .execute(&self.pool)
             .await
@@ -126,7 +126,7 @@ impl Store {
         Ok(())
     }
 
-    pub(crate) async fn insert_theme_audits(&self, audits: &[NewThemeAudit]) -> anyhow::Result<()> {
+    pub async fn insert_theme_audits(&self, audits: &[NewThemeAudit]) -> anyhow::Result<()> {
         if audits.is_empty() {
             return Ok(());
         }
@@ -168,7 +168,7 @@ impl Store {
             .context("failed to commit theme audit insertion")
     }
 
-    pub(crate) async fn pending_theme_audit(
+    pub async fn pending_theme_audit(
         &self,
         symbol: &TickerSymbol,
     ) -> anyhow::Result<Option<PendingThemeAudit>> {
@@ -196,7 +196,7 @@ impl Store {
             .transpose()
     }
 
-    pub(crate) async fn accept_theme_audit(
+    pub async fn accept_theme_audit(
         &self,
         symbol: &TickerSymbol,
         expected_current_theme_ids: &[i64],
@@ -297,7 +297,7 @@ impl Store {
         Ok(true)
     }
 
-    pub(crate) async fn ignore_theme_audit(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
+    pub async fn ignore_theme_audit(&self, symbol: &TickerSymbol) -> anyhow::Result<bool> {
         let now = Utc::now().naive_utc();
         sqlx::query!(
             r#"UPDATE theme_audits
@@ -340,22 +340,10 @@ fn parse_theme_audit(audit: StoredThemeAudit) -> anyhow::Result<ThemeAudit> {
 mod tests {
     use super::*;
 
-    async fn insert_ticker(store: &Store, symbol: &str) {
-        sqlx::query!(
-            "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
-            symbol,
-        )
-        .execute(&store.pool)
-        .await
-        .unwrap();
-    }
-
     #[tokio::test]
     async fn eligible_symbols_optionally_include_manual_assignments() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        for symbol in ["AUTO", "MANUAL", "MANAI", "UNPROCESSED"] {
-            insert_ticker(&store, symbol).await;
-        }
+
         let now = Utc::now().naive_utc();
         sqlx::query!(
             "INSERT INTO theme_ai_processed_symbols (symbol, outcome, processed_at) VALUES ('AUTO', 'assigned', ?), ('MANUAL', 'assigned', ?)",
@@ -391,7 +379,6 @@ mod tests {
     #[tokio::test]
     async fn accepting_audit_replaces_assignments_and_marks_result() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        insert_ticker(&store, "TEST").await;
         let now = Utc::now().naive_utc();
         sqlx::query!(
             "INSERT INTO theme_stocks (theme_id, symbol, source, assigned_at) VALUES (1, 'TEST', 'automatic_ai', ?)",
@@ -444,7 +431,6 @@ mod tests {
     #[tokio::test]
     async fn confirmed_stale_audit_replaces_changed_assignments() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
-        insert_ticker(&store, "TEST").await;
         let now = Utc::now().naive_utc();
         sqlx::query!(
             "INSERT INTO theme_stocks (theme_id, symbol, source, assigned_at) VALUES (1, 'TEST', 'automatic_ai', ?)",

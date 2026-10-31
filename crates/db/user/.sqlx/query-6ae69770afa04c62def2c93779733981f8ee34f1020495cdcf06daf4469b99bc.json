@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT job_id FROM theme_ai_processed_symbols WHERE symbol = 'APPLIED'",
+  "query": "SELECT job_id FROM theme_ai_processed_symbols WHERE symbol = ?",
   "describe": {
     "columns": [
       {
@@ -16,11 +16,11 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true
     ]
   },
-  "hash": "012e5001d16a82c2ac0fb939693b8ebe2a642f4e94d7e672fad1fe75a1b9702c"
+  "hash": "6ae69770afa04c62def2c93779733981f8ee34f1020495cdcf06daf4469b99bc"
 }

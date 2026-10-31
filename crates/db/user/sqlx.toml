@@ -1,0 +1,2 @@
+[common]
+database-url-var = "USER_DATABASE_URL"

@@ -1,10 +1,11 @@
-use crate::store::{DailyNoteImage, DailyNoteUpdate, Store};
 use chrono::NaiveDate;
 use comrak::nodes::NodeValue;
 use comrak::{Arena, Options, parse_document};
 use journal::DailyNote;
 use serde::Serialize;
 use thiserror::Error;
+use user_db::Store as UserStore;
+use user_db::{DailyNoteImage, DailyNoteUpdate};
 
 mod markdown;
 
@@ -60,12 +61,12 @@ pub enum DailyNotesError {
 }
 
 pub struct DailyNotesService {
-    store: Store,
+    user_store: UserStore,
 }
 
 impl DailyNotesService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(user_store: UserStore) -> Self {
+        Self { user_store }
     }
 
     pub async fn list(
@@ -78,7 +79,7 @@ impl DailyNotesService {
             )));
         }
         let rows = self
-            .store
+            .user_store
             .daily_notes(query)
             .await
             .map_err(DailyNotesError::Persistence)?;
@@ -102,7 +103,7 @@ impl DailyNotesService {
     }
 
     pub async fn get(&self, date: NaiveDate) -> Result<DailyNote, DailyNotesError> {
-        self.store
+        self.user_store
             .daily_note(date)
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -111,7 +112,7 @@ impl DailyNotesService {
 
     pub async fn create(&self, date: NaiveDate) -> Result<DailyNote, DailyNotesError> {
         if let Some(note) = self
-            .store
+            .user_store
             .daily_note(date)
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -121,11 +122,11 @@ impl DailyNotesService {
                 current_revision: note.revision,
             });
         }
-        match self.store.create_daily_note(date).await {
+        match self.user_store.create_daily_note(date).await {
             Ok(note) => Ok(note),
             Err(error) if is_unique_violation(&error) => {
                 let current = self
-                    .store
+                    .user_store
                     .daily_note(date)
                     .await
                     .map_err(DailyNotesError::Persistence)?;
@@ -155,7 +156,7 @@ impl DailyNotesService {
         let title = extract_title(markdown).unwrap_or_else(|| date.to_string());
         let image_ids = owned_image_ids(markdown);
         match self
-            .store
+            .user_store
             .update_daily_note(date, &title, markdown, expected_revision, &image_ids)
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -172,7 +173,7 @@ impl DailyNotesService {
 
     pub async fn delete(&self, date: NaiveDate) -> Result<(), DailyNotesError> {
         if self
-            .store
+            .user_store
             .delete_daily_note(date)
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -207,7 +208,7 @@ impl DailyNotesService {
         let (width, height) = (decoded.width(), decoded.height());
         let webp = encode_lossless_webp(decoded)?;
         let id = self
-            .store
+            .user_store
             .create_daily_note_image(date, &webp, i64::from(width), i64::from(height))
             .await
             .map_err(DailyNotesError::Persistence)?;
@@ -219,7 +220,7 @@ impl DailyNotesService {
     }
 
     pub async fn image(&self, id: i64) -> Result<DailyNoteImage, DailyNotesError> {
-        self.store
+        self.user_store
             .daily_note_image(id)
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -232,7 +233,7 @@ impl DailyNotesService {
         let (width, height) = (decoded.width(), decoded.height());
         let webp = encode_lossless_webp(decoded)?;
         if !self
-            .store
+            .user_store
             .update_daily_note_image(id, &webp, i64::from(width), i64::from(height))
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -263,7 +264,7 @@ impl DailyNotesService {
         let cropped = image.crop_imm(crop.x, crop.y, crop.width, crop.height);
         let webp = encode_lossless_webp(cropped)?;
         if !self
-            .store
+            .user_store
             .update_daily_note_image(id, &webp, i64::from(crop.width), i64::from(crop.height))
             .await
             .map_err(DailyNotesError::Persistence)?
@@ -386,6 +387,8 @@ fn extract_title(markdown: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
 
     fn date(value: &str) -> NaiveDate {
@@ -426,7 +429,7 @@ mod tests {
 
     #[tokio::test]
     async fn manages_validated_note_lifecycle() {
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let note_date = date("2026-07-03");
         let created = service.create(note_date).await.unwrap();
         assert_eq!(created.title, "2026-07-03");
@@ -475,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn validates_revision_and_search_length() {
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let note_date = date("2026-07-03");
         service.create(note_date).await.unwrap();
         assert!(matches!(
@@ -492,7 +495,7 @@ mod tests {
     async fn validates_and_stores_uploaded_images_as_webp() {
         use image::ImageEncoder;
 
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let note_date = date("2026-07-03");
         service.create(note_date).await.unwrap();
         let mut png = Vec::new();
@@ -540,7 +543,7 @@ mod tests {
             bytes
         }
 
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let note_date = date("2026-07-03");
         service.create(note_date).await.unwrap();
         let source = webp([255, 0, 0, 255]);
@@ -582,7 +585,7 @@ mod tests {
     async fn crops_images_and_validates_bounds() {
         use image::ImageEncoder;
 
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let note_date = date("2026-07-03");
         service.create(note_date).await.unwrap();
         let mut png = Vec::new();
@@ -624,7 +627,7 @@ mod tests {
 
     #[tokio::test]
     async fn copies_cross_note_images_and_rewrites_markdown() {
-        let service = DailyNotesService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = DailyNotesService::new(TestDatabases::new().await.unwrap().user);
         let source_date = date("2026-07-02");
         let target_date = date("2026-07-03");
         service.create(source_date).await.unwrap();

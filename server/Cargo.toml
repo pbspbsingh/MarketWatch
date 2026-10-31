@@ -7,10 +7,12 @@ default-run = "market_watch"
 
 [features]
 default = ["sqlite-bundled"]
-sqlite-bundled = ["sqlx/sqlite-bundled", "ownership/sqlite-bundled"]
-sqlite-unbundled = ["sqlx/sqlite-unbundled", "ownership/sqlite-unbundled"]
+sqlite-bundled = ["market_db/sqlite-bundled", "user_db/sqlite-bundled", "ownership/sqlite-bundled"]
+sqlite-unbundled = ["market_db/sqlite-unbundled", "user_db/sqlite-unbundled", "ownership/sqlite-unbundled"]
 
 [dependencies]
+market_db.workspace = true
+user_db.workspace = true
 dotenvy.workspace = true
 journal.workspace = true
 collections.workspace = true
@@ -54,6 +56,8 @@ subtle.workspace = true
 market_types.workspace = true
 
 [dev-dependencies]
+market_db = { workspace = true, features = ["test-support"] }
+user_db = { workspace = true, features = ["test-support"] }
 journal = { workspace = true, features = ["test-support"] }
 ai = { workspace = true, features = ["test-support"] }
 finviz = { workspace = true, features = ["test-support"] }

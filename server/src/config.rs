@@ -129,7 +129,8 @@ impl std::fmt::Debug for AuthConfig {
 
 #[derive(Clone, Debug)]
 pub struct DatabaseConfig {
-    pub main_url: String,
+    pub market_url: String,
+    pub user_url: String,
     pub institutional_url: String,
 }
 
@@ -149,8 +150,9 @@ impl DatabaseConfig {
                 .with_context(|| format!("{key} is required in root .env"))
         };
         Ok(Self {
-            main_url: required("DATABASE_URL")?,
-            institutional_url: required("INSTITUTIONS_DATABASE_URL")?,
+            market_url: required("MARKET_DATABASE_URL")?,
+            user_url: required("USER_DATABASE_URL")?,
+            institutional_url: required("INSTITUTIONAL_DATABASE_URL")?,
         })
     }
 }
@@ -307,20 +309,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn database_configuration_requires_both_shared_urls() {
+    fn database_configuration_requires_all_three_shared_urls() {
         let values = dotenvy::from_read_iter(
             include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env.example")).as_slice(),
         )
         .collect::<Result<HashMap<_, _>, _>>()
         .unwrap();
         let config = DatabaseConfig::from_values(|key| values.get(key).cloned()).unwrap();
-        assert_eq!(config.main_url, values["DATABASE_URL"]);
+        assert_eq!(config.market_url, values["MARKET_DATABASE_URL"]);
+        assert_eq!(config.user_url, values["USER_DATABASE_URL"]);
         assert_eq!(
             config.institutional_url,
-            values["INSTITUTIONS_DATABASE_URL"]
+            values["INSTITUTIONAL_DATABASE_URL"]
         );
 
-        for missing in ["DATABASE_URL", "INSTITUTIONS_DATABASE_URL"] {
+        for missing in [
+            "MARKET_DATABASE_URL",
+            "USER_DATABASE_URL",
+            "INSTITUTIONAL_DATABASE_URL",
+        ] {
             for replacement in [None, Some(""), Some("  ")] {
                 let error = DatabaseConfig::from_values(|key| {
                     if key == missing {

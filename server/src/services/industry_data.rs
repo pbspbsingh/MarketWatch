@@ -4,7 +4,8 @@ use crate::contracts::industry::{
 };
 use crate::services::industries::IndustryRefreshService;
 use crate::services::tickers::TickerCatalogService;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use chrono::TimeDelta;
 use market_analysis::PerformancePeriods;
 use market_types::TickerSymbol;
@@ -13,19 +14,19 @@ use std::sync::Arc;
 use tokio::sync::watch::Receiver;
 
 pub struct IndustryDataService {
-    store: Store,
+    market_store: MarketStore,
     catalog: Arc<IndustryRefreshService>,
     tickers: Arc<TickerCatalogService>,
 }
 
 impl IndustryDataService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
         catalog: Arc<IndustryRefreshService>,
         tickers: Arc<TickerCatalogService>,
     ) -> Self {
         Self {
-            store,
+            market_store,
             catalog,
             tickers,
         }
@@ -46,7 +47,7 @@ impl IndustryDataService {
         );
         self.catalog.refresh_classifications_if_stale().await?;
         let known = self
-            .store
+            .market_store
             .industry_classifications()
             .await?
             .into_iter()
@@ -61,16 +62,16 @@ impl IndustryDataService {
     }
 
     pub fn changes(&self) -> Receiver<()> {
-        self.store.subscribe_industry_catalog()
+        self.market_store.subscribe_industry_catalog()
     }
 
     pub async fn cached(&self, resource: &IndustryResource) -> anyhow::Result<IndustryState> {
         let (data, fetched_at) = match resource {
             IndustryResource::Catalog => {
                 let (industries, fetched_at) =
-                    self.store.industry_classification_snapshot().await?;
+                    self.market_store.industry_classification_snapshot().await?;
                 let rankings = self
-                    .store
+                    .market_store
                     .current_industry_rankings()
                     .await?
                     .map(|snapshot| {
@@ -125,19 +126,21 @@ impl IndustryDataService {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
     use crate::config::Config;
     use crate::services::yahoo::YahooService;
-    use crate::store::IndustryClassification;
     use chrono::Utc;
     use finviz::FinvizClient;
+    use market_db::IndustryClassification;
     use market_types::TickerSymbol;
     use yahoo::YahooClient;
 
     use tokio::net::TcpListener;
 
     pub(crate) fn fixture(
-        store: Store,
+        store: TestDatabases,
         finviz: Arc<FinvizClient>,
     ) -> (
         IndustryDataService,
@@ -151,7 +154,7 @@ pub(crate) mod tests {
         .unwrap();
         let yahoo = Arc::new(
             YahooService::new(
-                store.clone(),
+                store.market.clone(),
                 Arc::new(YahooClient::new(&config.providers)),
                 finviz.clone(),
                 &config.market,
@@ -160,13 +163,20 @@ pub(crate) mod tests {
             .unwrap(),
         );
         let tickers = Arc::new(
-            TickerCatalogService::new(store.clone(), finviz.clone(), yahoo.clone(), &config.market)
-                .unwrap(),
+            TickerCatalogService::new(
+                store.market.clone(),
+                store.user.clone(),
+                finviz.clone(),
+                yahoo.clone(),
+                &config.market,
+            )
+            .unwrap(),
         );
-        let catalog =
-            Arc::new(IndustryRefreshService::new(store.clone(), finviz, &config.market).unwrap());
+        let catalog = Arc::new(
+            IndustryRefreshService::new(store.market.clone(), finviz, &config.market).unwrap(),
+        );
         (
-            IndustryDataService::new(store, catalog, tickers.clone()),
+            IndustryDataService::new(store.market, catalog, tickers.clone()),
             tickers,
             yahoo,
         )
@@ -188,8 +198,9 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) async fn seed_catalog(store: &Store) {
+    pub(crate) async fn seed_catalog(store: &TestDatabases) {
         store
+            .market
             .replace_industry_classifications(
                 &[IndustryClassification {
                     industry_key: "semiconductors".into(),
@@ -238,9 +249,10 @@ pub(crate) mod tests {
         let _server = Server(tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         }));
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let symbol = TickerSymbol::parse("SPY").unwrap();
         store
+            .market
             .upsert_company_profile(&CompanyProfile {
                 symbol: symbol.clone(),
                 name: Some("SPDR S&P 500 ETF Trust".into()),
@@ -254,6 +266,7 @@ pub(crate) mod tests {
         catalog.ensure_ticker_symbol(&symbol).await.unwrap();
         assert!(
             store
+                .market
                 .ticker_has_industry_membership(&symbol, ETF_INDUSTRY_KEY)
                 .await
                 .unwrap()
@@ -264,8 +277,9 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn open_universe_does_not_resolve_or_stream_known_tickers() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         store
+            .market
             .add_ticker_industry(
                 "semiconductors",
                 "Semiconductors",
@@ -293,10 +307,11 @@ pub(crate) mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         seed_catalog(&store).await;
         let old = Utc::now() - TimeDelta::days(31);
         store
+            .market
             .replace_industry_membership(
                 "semiconductors",
                 old,
@@ -305,6 +320,7 @@ pub(crate) mod tests {
             .await
             .unwrap();
         store
+            .market
             .replace_industry_membership(
                 ETF_INDUSTRY_KEY,
                 old,
@@ -316,6 +332,7 @@ pub(crate) mod tests {
         let keys = [String::from("semiconductors")];
         assert_eq!(
             store
+                .market
                 .industry_membership_fetched_at(&keys[0])
                 .await
                 .unwrap(),
@@ -339,6 +356,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store
+                .market
                 .tickers_for_industries(&["semiconductors".into()])
                 .await
                 .unwrap(),
@@ -351,6 +369,7 @@ pub(crate) mod tests {
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert_eq!(
             store
+                .market
                 .industry_membership_fetched_at(ETF_INDUSTRY_KEY)
                 .await
                 .unwrap(),
@@ -370,10 +389,11 @@ pub(crate) mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         seed_catalog(&store).await;
         let old = Utc::now() - TimeDelta::days(31);
         store
+            .market
             .replace_industry_membership(
                 "semiconductors",
                 old,
@@ -390,6 +410,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store
+                .market
                 .industry_membership_fetched_at("semiconductors")
                 .await
                 .unwrap(),
@@ -397,6 +418,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store
+                .market
                 .tickers_for_industries(&["semiconductors".into()])
                 .await
                 .unwrap(),

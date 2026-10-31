@@ -1,4 +1,6 @@
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use chrono::{Months, NaiveDate};
 use market_types::{DailyCandle, TickerSymbol};
 use serde::Serialize;
@@ -47,12 +49,16 @@ pub enum HighestReturnError {
 }
 
 pub struct HighestReturnService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
 }
 
 impl HighestReturnService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(market_store: MarketStore, user_store: UserStore) -> Self {
+        Self {
+            market_store,
+            user_store,
+        }
     }
 
     pub async fn scan(
@@ -66,14 +72,14 @@ impl HighestReturnService {
             .start_date
             .checked_sub_months(Months::new(HISTORY_PADDING_MONTHS))
             .ok_or_else(|| HighestReturnError::Validation("date range is out of bounds".into()))?;
-        let selected_symbols = selected_symbols(&self.store, &selection)
+        let selected_symbols = selected_symbols(&self.market_store, &self.user_store, &selection)
             .await
             .map_err(HighestReturnError::Persistence)?;
         if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
             return Ok(HighestReturnResult { events: Vec::new() });
         }
         let histories = self
-            .store
+            .market_store
             .market_explorer_daily_candle_histories(
                 fetch_start,
                 request.end_date,

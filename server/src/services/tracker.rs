@@ -1,7 +1,9 @@
 use crate::config::{MarketConfig, sector_name};
 use crate::contracts::tracker::{TrackerMode, TrackerRow};
 use crate::services::yahoo::YahooService;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use crate::utils::MarketSchedule;
 use chrono::Utc;
 use market_analysis::candle_performance;
@@ -10,7 +12,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::{broadcast::Receiver as MarketChanges, watch::Receiver as CatalogChanges};
 
 pub struct TrackerService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     yahoo: Arc<YahooService>,
     schedule: MarketSchedule,
     benchmarks: BTreeMap<String, TickerSymbol>,
@@ -18,7 +21,8 @@ pub struct TrackerService {
 
 impl TrackerService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         yahoo: Arc<YahooService>,
         schedule: MarketSchedule,
         market: &MarketConfig,
@@ -29,7 +33,8 @@ impl TrackerService {
             .map(|(key, symbol)| Ok((key.clone(), TickerSymbol::parse(symbol)?)))
             .collect::<anyhow::Result<_>>()?;
         Ok(Self {
-            store,
+            market_store,
+            user_store,
             yahoo,
             schedule,
             benchmarks,
@@ -37,26 +42,26 @@ impl TrackerService {
     }
 
     pub fn market_changes(&self) -> MarketChanges<TickerSymbol> {
-        self.store.subscribe_market_data()
+        self.market_store.subscribe_market_data()
     }
     pub fn membership_changes(&self) -> CatalogChanges<()> {
-        self.store.subscribe_memberships()
+        self.user_store.subscribe_memberships()
     }
     pub fn catalog_changes(&self) -> CatalogChanges<()> {
-        self.store.subscribe_industry_catalog()
+        self.market_store.subscribe_industry_catalog()
     }
 
     pub async fn catalog(&self, mode: TrackerMode) -> anyhow::Result<Vec<TrackerRow>> {
         let rows = match mode {
             TrackerMode::Theme => self
-                .store
+                .user_store
                 .themes()
                 .await?
                 .into_iter()
                 .map(|theme| Self::row(theme.id.to_string(), theme.name, theme.etf_symbol, vec![]))
                 .collect(),
             TrackerMode::Sector => {
-                let classifications = self.store.industry_classifications().await?;
+                let classifications = self.market_store.industry_classifications().await?;
                 self.benchmarks
                     .iter()
                     .map(|(key, symbol)| {
@@ -124,6 +129,8 @@ impl TrackerService {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
     use crate::config::Config;
     use crate::services::industry_data::tests::{client, fixture, seed_catalog};
@@ -131,11 +138,12 @@ mod tests {
 
     #[tokio::test]
     async fn catalogs_include_empty_themes_and_sector_industry_ids_without_loading_prices() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         seed_catalog(&store).await;
         let symbol = TickerSymbol::parse("QQQ").unwrap();
-        let mut changes = store.subscribe_memberships();
+        let mut changes = store.user.subscribe_memberships();
         let id = store
+            .user
             .create_theme("New theme", &symbol, None)
             .await
             .unwrap();
@@ -148,7 +156,8 @@ mod tests {
         )))
         .unwrap();
         let service = TrackerService::new(
-            store.clone(),
+            store.market.clone(),
+            store.user.clone(),
             yahoo,
             MarketSchedule::new(&config.market, Duration::ZERO).unwrap(),
             &config.market,
@@ -168,6 +177,7 @@ mod tests {
                 .all(|row| row.loading && row.performance.is_none())
         );
         store
+            .user
             .update_theme(id, "Renamed", &symbol, None)
             .await
             .unwrap();

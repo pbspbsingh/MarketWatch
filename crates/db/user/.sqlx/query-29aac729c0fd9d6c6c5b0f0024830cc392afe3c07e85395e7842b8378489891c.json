@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT CAST(\"table\" AS TEXT) AS \"parent!: String\" FROM pragma_foreign_key_list('watchlist_tickers')",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "29aac729c0fd9d6c6c5b0f0024830cc392afe3c07e85395e7842b8378489891c"
+}

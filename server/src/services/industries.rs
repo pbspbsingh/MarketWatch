@@ -1,9 +1,10 @@
 use crate::config::MarketConfig;
 use crate::contracts::industry::MEMBERSHIP_FRESH_DAYS;
-use crate::store::{IndustryClassification, IndustryRankingRow, IndustryRankings, Store};
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, TimeDelta, Utc};
 use finviz::FinvizClient;
+use market_db::Store as MarketStore;
+use market_db::{IndustryClassification, IndustryRankingRow, IndustryRankings};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -13,7 +14,7 @@ const REFRESH_SLEEP_DURATION: Duration = Duration::from_mins(15);
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(20);
 
 pub struct IndustryRefreshService {
-    store: Store,
+    market_store: MarketStore,
     finviz: Arc<FinvizClient>,
     market_schedule: MarketSchedule,
     classification_lock: Mutex<()>,
@@ -28,12 +29,12 @@ enum IndustryRefreshOutcome {
 
 impl IndustryRefreshService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
         finviz: Arc<FinvizClient>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            store,
+            market_store,
             finviz,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             classification_lock: Mutex::new(()),
@@ -56,7 +57,7 @@ impl IndustryRefreshService {
         let _guard = self.classification_lock.lock().await;
         let stale_before = Utc::now() - TimeDelta::days(MEMBERSHIP_FRESH_DAYS);
         if self
-            .store
+            .market_store
             .industry_classifications_fetched_at()
             .await?
             .is_some_and(|fetched_at| fetched_at >= stale_before)
@@ -80,7 +81,7 @@ impl IndustryRefreshService {
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        self.store
+        self.market_store
             .replace_industry_classifications(&classifications, Utc::now())
             .await?;
         info!(
@@ -92,7 +93,7 @@ impl IndustryRefreshService {
 
     async fn refresh_if_stale(&self) -> anyhow::Result<IndustryRefreshOutcome> {
         let now = Utc::now();
-        let latest_date = self.store.industry_rankings_date().await?;
+        let latest_date = self.market_store.industry_rankings_date().await?;
 
         if !self.is_stale(latest_date, now) {
             return Ok(IndustryRefreshOutcome::Fresh);
@@ -119,7 +120,7 @@ impl IndustryRefreshService {
         };
 
         if self
-            .store
+            .market_store
             .replace_industry_rankings_if_newer(&rankings)
             .await?
         {

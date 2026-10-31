@@ -1,6 +1,7 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
 use finviz::FinvizClient;
@@ -24,7 +25,7 @@ const MAX_PROVIDER_ATTEMPTS: u32 = 3;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub struct YahooService {
-    store: Store,
+    market_store: MarketStore,
     yahoo: Arc<YahooClient>,
     finviz: Arc<FinvizClient>,
     market_schedule: MarketSchedule,
@@ -83,14 +84,14 @@ pub enum YahooServiceError {
 
 impl YahooService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
         yahoo: Arc<YahooClient>,
         finviz: Arc<FinvizClient>,
         market: &MarketConfig,
         holidays: HashSet<NaiveDate>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            store,
+            market_store,
             yahoo,
             finviz,
             market_schedule: MarketSchedule::with_holidays(market, POST_CLOSE_DELAY, holidays)?,
@@ -104,7 +105,7 @@ impl YahooService {
         symbol: &TickerSymbol,
     ) -> Result<CompanyProfile, YahooServiceError> {
         if let Some(profile) = self
-            .store
+            .market_store
             .company_profile(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?
@@ -114,7 +115,7 @@ impl YahooService {
 
         let profile = self.fetch_profile(symbol).await?;
         if !self
-            .store
+            .market_store
             .ticker_has_industry(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?
@@ -127,12 +128,12 @@ impl YahooService {
                     symbol: symbol.clone(),
                     source,
                 })?;
-            self.store
+            self.market_store
                 .add_ticker_industry(&industry.key, &industry.name, symbol)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
         }
-        self.store
+        self.market_store
             .upsert_company_profile(&profile)
             .await
             .map_err(YahooServiceError::Persistence)?;
@@ -201,7 +202,7 @@ impl YahooService {
         let (candles, first_trade_at) = self
             .fetch_daily_candles_from_provider(symbol, start, end, Some(latest_session))
             .await?;
-        self.store
+        self.market_store
             .replace_daily_candles(symbol, &candles)
             .await
             .map_err(YahooServiceError::Persistence)?;
@@ -235,7 +236,7 @@ impl YahooService {
             .await?;
 
         let candles = self
-            .store
+            .market_store
             .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)?;
@@ -268,7 +269,7 @@ impl YahooService {
     ) -> Result<Vec<DailyCandle>, YahooServiceError> {
         self.profile(symbol).await?;
         let latest = self
-            .store
+            .market_store
             .latest_daily_candle_date(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?;
@@ -296,7 +297,7 @@ impl YahooService {
                     repair_latest,
                 )
                 .await?;
-            self.store
+            self.market_store
                 .upsert_daily_candles(symbol, &candles)
                 .await
                 .map_err(YahooServiceError::Persistence)?;
@@ -306,7 +307,7 @@ impl YahooService {
         self.backfill_daily_candles_locked(symbol, start, fetch_end_date)
             .await?;
 
-        self.store
+        self.market_store
             .daily_candles(symbol, start, end)
             .await
             .map_err(YahooServiceError::Persistence)
@@ -319,7 +320,7 @@ impl YahooService {
         end: NaiveDate,
     ) -> Result<Option<bool>, YahooServiceError> {
         let stored_start = self
-            .store
+            .market_store
             .earliest_daily_candle_date(symbol)
             .await
             .map_err(YahooServiceError::Persistence)?;
@@ -351,7 +352,7 @@ impl YahooService {
         let has_more_before = first_trade_at
             .map(|timestamp| self.market_schedule.market_date(timestamp) < start)
             .unwrap_or(!fetched.is_empty());
-        self.store
+        self.market_store
             .upsert_daily_candles(symbol, &fetched)
             .await
             .map_err(YahooServiceError::Persistence)?;

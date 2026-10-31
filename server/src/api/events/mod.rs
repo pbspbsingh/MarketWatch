@@ -157,12 +157,12 @@ mod tests {
     use crate::services::industry_data::tests::client;
     use crate::services::industry_data::tests::fixture;
     use crate::services::industry_data::tests::seed_catalog;
-    use crate::store::IndustryRankingRow;
-    use crate::store::IndustryRankings;
-    use crate::store::Store;
+    use crate::test_support::TestDatabases;
     use crate::utils::MarketSchedule;
     use chrono::Utc;
     use futures_util::{SinkExt, StreamExt};
+    use market_db::IndustryRankingRow;
+    use market_db::IndustryRankings;
     use market_types::TickerSymbol;
     use serde_json::{Value, json};
     use tokio::net::TcpListener;
@@ -170,9 +170,10 @@ mod tests {
 
     #[tokio::test]
     async fn connection_multiplexes_updates_and_survives_unsubscription() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         seed_catalog(&store).await;
         store
+            .market
             .replace_industry_membership(
                 "semiconductors",
                 Utc::now(),
@@ -188,7 +189,8 @@ mod tests {
         .unwrap();
         let tracker = Arc::new(
             TrackerService::new(
-                store.clone(),
+                store.market.clone(),
+                store.user.clone(),
                 yahoo,
                 MarketSchedule::new(&config.market, Duration::ZERO).unwrap(),
                 &config.market,
@@ -254,6 +256,7 @@ mod tests {
         // Ranking commits push a new catalog snapshot without polling or a
         // membership acquisition, including updated metric values.
         store
+            .market
             .replace_industry_rankings_if_newer(&IndustryRankings {
                 market_date: Utc::now().date_naive(),
                 fetched_at: Utc::now(),

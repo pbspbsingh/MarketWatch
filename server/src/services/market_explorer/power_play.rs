@@ -1,4 +1,6 @@
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use chrono::{Months, NaiveDate};
 use market_types::{DailyCandle, TickerSymbol};
 use serde::Serialize;
@@ -48,12 +50,16 @@ pub enum PowerPlayError {
 }
 
 pub struct PowerPlayService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
 }
 
 impl PowerPlayService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(market_store: MarketStore, user_store: UserStore) -> Self {
+        Self {
+            market_store,
+            user_store,
+        }
     }
 
     pub async fn scan(
@@ -67,7 +73,7 @@ impl PowerPlayService {
             .checked_sub_months(Months::new(request.lookback_months))
             .ok_or_else(|| PowerPlayError::Validation("date range is out of bounds".into()))?;
         let fetch_start = history_start(window_start)?;
-        let selected = selected_symbols(&self.store, &selection)
+        let selected = selected_symbols(&self.market_store, &self.user_store, &selection)
             .await
             .map_err(PowerPlayError::Persistence)?;
         if selected.as_ref().is_some_and(HashSet::is_empty) {
@@ -78,7 +84,7 @@ impl PowerPlayService {
             });
         }
         let histories = self
-            .store
+            .market_store
             .market_explorer_daily_candle_histories(fetch_start, as_of, as_of)
             .await
             .map_err(PowerPlayError::Persistence)?;

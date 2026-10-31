@@ -1,19 +1,23 @@
 use crate::config::ProviderConfig;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use chrono::{Datelike, NaiveDate, Utc};
 use nyse::fetch_holidays;
 use std::collections::HashSet;
 use tracing::{info, warn};
 
 pub async fn load_holidays(
-    store: &Store,
+    market_store: &MarketStore,
     providers: &ProviderConfig,
 ) -> anyhow::Result<HashSet<NaiveDate>> {
     let current_year = Utc::now().year();
-    if !store.has_nyse_holidays_for_year(current_year).await? {
+    if !market_store
+        .has_nyse_holidays_for_year(current_year)
+        .await?
+    {
         match fetch_holidays(providers).await {
             Ok(holidays) => {
-                store.upsert_nyse_holidays(&holidays).await?;
+                market_store.upsert_nyse_holidays(&holidays).await?;
                 info!(
                     holiday_count = holidays.len(),
                     "refreshed NYSE holiday calendar"
@@ -25,5 +29,5 @@ pub async fn load_holidays(
         }
     }
 
-    Ok(store.nyse_holidays().await?.into_iter().collect())
+    Ok(market_store.nyse_holidays().await?.into_iter().collect())
 }

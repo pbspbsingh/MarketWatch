@@ -1,7 +1,8 @@
 use crate::config::MarketConfig;
 use crate::models::ThemeRanking;
 use crate::services::yahoo::YahooService;
-use crate::store::Store;
+use user_db::Store as UserStore;
+
 use crate::utils::MarketSchedule;
 use chrono::Utc;
 use market_analysis::candle_performance;
@@ -13,7 +14,7 @@ use tracing::warn;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 
 pub struct ThemeAnalysisService {
-    store: Store,
+    user_store: UserStore,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
 }
@@ -26,12 +27,12 @@ pub enum ThemeAnalysisError {
 
 impl ThemeAnalysisService {
     pub fn new(
-        store: Store,
+        user_store: UserStore,
         yahoo: Arc<YahooService>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            store,
+            user_store,
             yahoo,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
         })
@@ -39,7 +40,7 @@ impl ThemeAnalysisService {
 
     pub async fn rankings(&self) -> Result<Vec<ThemeRanking>, ThemeAnalysisError> {
         let themes = self
-            .store
+            .user_store
             .themes_with_assignments()
             .await
             .map_err(ThemeAnalysisError::Persistence)?;

@@ -1,2 +1,2 @@
 [common]
-database-url-var = "INSTITUTIONS_DATABASE_URL"
+database-url-var = "INSTITUTIONAL_DATABASE_URL"

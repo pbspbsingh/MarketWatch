@@ -219,10 +219,6 @@ mod tests {
     async fn stores_multiple_watchlist_memberships_and_cascades_deleted_lists() {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let symbol = TickerSymbol::parse("TEST").unwrap();
-        sqlx::query!("INSERT INTO tickers (symbol, exchange) VALUES ('TEST', 'NASDAQ')")
-            .execute(&store.pool)
-            .await
-            .unwrap();
         let favourite = store.watchlists().await.unwrap().remove(0);
         let growth = store.create_watchlist("Growth", "rocket").await.unwrap();
 
@@ -274,15 +270,6 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let favourite = store.watchlists().await.unwrap().remove(0);
         let growth = store.create_watchlist("Growth", "rocket").await.unwrap();
-        for symbol in ["BBB", "AAA"] {
-            sqlx::query!(
-                "INSERT INTO tickers (symbol, exchange) VALUES (?, 'NASDAQ')",
-                symbol
-            )
-            .execute(&store.pool)
-            .await
-            .unwrap();
-        }
         for (id, symbol) in [(favourite.id, "BBB"), (growth, "BBB"), (growth, "AAA")] {
             store
                 .add_watchlist_symbol(id, &TickerSymbol::parse(symbol).unwrap())

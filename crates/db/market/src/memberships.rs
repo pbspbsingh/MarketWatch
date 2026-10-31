@@ -367,7 +367,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{IndustryRankingRow, IndustryRankings};
+    use crate::{IndustryRankingRow, IndustryRankings};
     use chrono::NaiveDate;
 
     #[tokio::test]

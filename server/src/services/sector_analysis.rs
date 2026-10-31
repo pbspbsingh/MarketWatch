@@ -1,7 +1,8 @@
 use crate::config::MarketConfig;
 use crate::models::SectorRanking;
 use crate::services::yahoo::YahooService;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use crate::utils::MarketSchedule;
 use chrono::Utc;
 use market_analysis::candle_performance;
@@ -15,7 +16,7 @@ use tracing::warn;
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 
 pub struct SectorAnalysisService {
-    store: Store,
+    market_store: MarketStore,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
     benchmarks: BTreeMap<String, TickerSymbol>,
@@ -29,7 +30,7 @@ pub enum SectorAnalysisError {
 
 impl SectorAnalysisService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
         yahoo: Arc<YahooService>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
@@ -39,7 +40,7 @@ impl SectorAnalysisService {
             .map(|(key, symbol)| Ok((key.clone(), TickerSymbol::parse(symbol)?)))
             .collect::<anyhow::Result<_>>()?;
         Ok(Self {
-            store,
+            market_store,
             yahoo,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
             benchmarks,
@@ -48,7 +49,7 @@ impl SectorAnalysisService {
 
     pub async fn rankings(&self) -> Result<Vec<SectorRanking>, SectorAnalysisError> {
         let names = self
-            .store
+            .market_store
             .industry_classifications()
             .await
             .map_err(SectorAnalysisError::Persistence)?

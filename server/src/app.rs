@@ -29,7 +29,9 @@ use crate::services::volume_run_rate::VolumeRunRateService;
 use crate::services::watchlists::WatchlistService;
 use crate::services::yahoo::YahooService;
 use crate::services::yahoo_live::YahooLiveHandle;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use crate::utils::MarketSchedule;
 use ai::AiClient;
 use axum::Router;
@@ -125,11 +127,12 @@ pub struct AppState {
 
 pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<Router> {
     let auth = config.server.auth.clone().into_basic();
-    let store = Store::connect(&databases.main_url).await?;
-    let daily_notes = Arc::new(DailyNotesService::new(store.clone()));
-    let trade_logs = Arc::new(TradeLogsService::new(store.clone()));
-    store.fail_interrupted_theme_ai_jobs().await?;
-    let nyse_holidays = nyse_calendar::load_holidays(&store, &config.providers).await?;
+    let market_store = MarketStore::connect(&databases.market_url).await?;
+    let user_store = UserStore::connect(&databases.user_url).await?;
+    let daily_notes = Arc::new(DailyNotesService::new(user_store.clone()));
+    let trade_logs = Arc::new(TradeLogsService::new(user_store.clone()));
+    user_store.fail_interrupted_theme_ai_jobs().await?;
+    let nyse_holidays = nyse_calendar::load_holidays(&market_store, &config.providers).await?;
     let market_schedule =
         MarketSchedule::with_holidays(&config.market, Duration::ZERO, nyse_holidays.clone())?;
     let finviz = Arc::new(FinvizClient::new(&config.finviz, &config.providers)?);
@@ -141,7 +144,8 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
     )?);
     let ai = config.ai.as_ref().map(AiClient::new).map(Arc::new);
     let n_factor = Arc::new(NFactorService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         finviz.clone(),
         StockTitanClient::new(&config.providers)?,
         ai.clone(),
@@ -152,7 +156,7 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
             .unwrap_or_default(),
     ));
     let yahoo = Arc::new(YahooService::new(
-        store.clone(),
+        market_store.clone(),
         yahoo_client.clone(),
         finviz.clone(),
         &config.market,
@@ -166,26 +170,32 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
     ));
     let market_repositioning_dates = Arc::new(config.market.market_repositioning_dates.clone());
     let details = Arc::new(TickerDetailsService::new(
-        store.clone(),
+        market_store.clone(),
         finviz.clone(),
         yahoo.clone(),
         market_schedule.clone(),
     ));
     let fundamental_assessment = Arc::new(FundamentalAssessmentService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         ai.clone(),
         details.clone(),
     ));
-    let global_search = Arc::new(GlobalSearchService::new(store.clone()));
-    let industry_analysis = Arc::new(IndustryAnalysisService::new(store.clone()));
+    let global_search = Arc::new(GlobalSearchService::new(
+        market_store.clone(),
+        user_store.clone(),
+    ));
+    let industry_analysis = Arc::new(IndustryAnalysisService::new(market_store.clone()));
     let ticker_catalog = Arc::new(TickerCatalogService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         finviz.clone(),
         yahoo.clone(),
         &config.market,
     )?);
     let chart = Arc::new(ChartService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         yahoo.clone(),
         &config.market,
     )?);
@@ -202,20 +212,29 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
         volume_run_rate,
         &config.market,
     ));
-    let market_explorer = Arc::new(MarketExplorerService::new(store.clone(), yahoo.clone()));
+    let market_explorer = Arc::new(MarketExplorerService::new(
+        market_store.clone(),
+        user_store.clone(),
+        yahoo.clone(),
+    ));
     let sector_analysis = Arc::new(SectorAnalysisService::new(
-        store.clone(),
+        market_store.clone(),
         yahoo.clone(),
         &config.market,
     )?);
-    let theme_audits = Arc::new(ThemeAuditService::new(store.clone(), ai.clone()));
+    let theme_audits = Arc::new(ThemeAuditService::new(
+        market_store.clone(),
+        user_store.clone(),
+        ai.clone(),
+    ));
     let themes = Arc::new(ThemeService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         ai.clone(),
         ticker_catalog.clone(),
     ));
     let theme_analysis = Arc::new(ThemeAnalysisService::new(
-        store.clone(),
+        user_store.clone(),
         yahoo.clone(),
         &config.market,
     )?);
@@ -224,14 +243,18 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
         industry_analysis.clone(),
         theme_analysis.clone(),
     ));
-    let watchlists = Arc::new(WatchlistService::new(store.clone(), ticker_catalog.clone()));
+    let watchlists = Arc::new(WatchlistService::new(
+        user_store.clone(),
+        ticker_catalog.clone(),
+    ));
     if let Some(background) = config
         .fundamentals
         .as_ref()
         .and_then(|config| config.background)
     {
         FundamentalsBackgroundService::spawn(
-            store.clone(),
+            market_store.clone(),
+            user_store.clone(),
             ai,
             fundamental_assessment.clone(),
             n_factor.clone(),
@@ -240,7 +263,7 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
         );
     }
     let top_stocks = Arc::new(TopStocksService::new(
-        store.clone(),
+        user_store.clone(),
         finviz.clone(),
         &config.finviz,
     ));
@@ -252,23 +275,24 @@ pub async fn build(config: Config, databases: DatabaseConfig) -> anyhow::Result<
         &config.market,
     ));
     let industry_refresh = Arc::new(IndustryRefreshService::new(
-        store.clone(),
+        market_store.clone(),
         finviz.clone(),
         &config.market,
     )?);
     industry_refresh.clone().spawn_refresh_task();
     let industry_data = Arc::new(IndustryDataService::new(
-        store.clone(),
+        market_store.clone(),
         industry_refresh,
         ticker_catalog.clone(),
     ));
     let tracker = Arc::new(TrackerService::new(
-        store.clone(),
+        market_store.clone(),
+        user_store.clone(),
         yahoo.clone(),
         market_schedule.clone(),
         &config.market,
     )?);
-    maintenance::spawn(store);
+    maintenance::spawn(market_store, user_store);
     let state = AppState {
         industry_data,
         institutions,

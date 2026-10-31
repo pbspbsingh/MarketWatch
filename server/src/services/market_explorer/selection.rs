@@ -1,5 +1,7 @@
 use crate::services::theme_tickers::select_theme_symbols;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use market_types::TickerSymbol;
 use std::collections::HashSet;
 
@@ -10,7 +12,8 @@ pub struct MarketExplorerSelection {
 }
 
 pub async fn selected_symbols(
-    store: &Store,
+    market_store: &MarketStore,
+    user_store: &UserStore,
     selection: &MarketExplorerSelection,
 ) -> anyhow::Result<Option<HashSet<TickerSymbol>>> {
     let mut selected = None;
@@ -18,7 +21,7 @@ pub async fn selected_symbols(
         let symbols = if industry_keys.is_empty() {
             HashSet::new()
         } else {
-            store
+            market_store
                 .tickers_for_industries(industry_keys)
                 .await?
                 .into_iter()
@@ -30,7 +33,7 @@ pub async fn selected_symbols(
         let theme_symbols = if theme_ids.is_empty() {
             HashSet::new()
         } else {
-            select_theme_symbols(store, theme_ids, false)
+            select_theme_symbols(market_store, user_store, theme_ids, false)
                 .await?
                 .into_iter()
                 .collect()

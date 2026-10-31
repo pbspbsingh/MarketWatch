@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT CAST(\"table\" AS TEXT) AS \"parent!: String\" FROM pragma_foreign_key_list('theme_audits')",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent!: String",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3f6f988a946100389aaa2feebabef8896acd1d892f5d85dc11596c21620c7eda"
+}

@@ -378,7 +378,7 @@ mod tests {
     async fn import_rejects_only_ticker_without_verified_membership() {
         use crate::services::industry_data::tests::client;
         use crate::services::industry_data::tests::fixture;
-        use crate::store::Store;
+        use crate::test_support::TestDatabases;
         use market_types::{CompanyProfile, Exchange};
         let app = axum::Router::new().route(
             "/",
@@ -389,13 +389,15 @@ mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let accepted = TickerSymbol::parse("NVDA").unwrap();
         store
+            .market
             .add_ticker_industry("semiconductors", "Semiconductors", &accepted)
             .await
             .unwrap();
         store
+            .market
             .upsert_company_profile(&CompanyProfile {
                 symbol: accepted.clone(),
                 name: None,
@@ -413,8 +415,8 @@ mod tests {
         .unwrap();
         let service = TickerCollectionService::new(
             catalog,
-            Arc::new(IndustryAnalysisService::new(store.clone())),
-            Arc::new(ThemeAnalysisService::new(store.clone(), yahoo, &config.market).unwrap()),
+            Arc::new(IndustryAnalysisService::new(store.market.clone())),
+            Arc::new(ThemeAnalysisService::new(store.user.clone(), yahoo, &config.market).unwrap()),
         );
         let collection = service.parse_pasted_text("NVDA UNKNOWN NVDA").await;
         assert_eq!(collection.symbols, ["NVDA"]);
@@ -422,12 +424,14 @@ mod tests {
         assert_eq!(collection.rejected_symbols[0].symbol, "UNKNOWN");
         assert!(
             !store
+                .market
                 .ticker_has_industry(&TickerSymbol::parse("UNKNOWN").unwrap())
                 .await
                 .unwrap()
         );
         assert!(
             store
+                .market
                 .company_profile(&TickerSymbol::parse("UNKNOWN").unwrap())
                 .await
                 .unwrap()

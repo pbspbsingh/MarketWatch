@@ -1,5 +1,7 @@
 use crate::services::yahoo::{YahooService, YahooServiceError};
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use chrono::{Months, NaiveDate};
 use market_analysis::chart::MarketChartInterval;
 use market_analysis::{ChartDateRange, calculate_relative_strength_line};
@@ -56,13 +58,18 @@ pub enum HighRsError {
 }
 
 pub struct HighRsService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     yahoo: Arc<YahooService>,
 }
 
 impl HighRsService {
-    pub fn new(store: Store, yahoo: Arc<YahooService>) -> Self {
-        Self { store, yahoo }
+    pub fn new(market_store: MarketStore, user_store: UserStore, yahoo: Arc<YahooService>) -> Self {
+        Self {
+            market_store,
+            user_store,
+            yahoo,
+        }
     }
 
     pub async fn scan(
@@ -78,7 +85,7 @@ impl HighRsService {
         let fetch_end = as_of
             .succ_opt()
             .ok_or_else(|| HighRsError::Validation("date range is out of bounds".to_owned()))?;
-        let selected_symbols = selected_symbols(&self.store, &selection)
+        let selected_symbols = selected_symbols(&self.market_store, &self.user_store, &selection)
             .await
             .map_err(HighRsError::Persistence)?;
         if selected_symbols.as_ref().is_some_and(HashSet::is_empty) {
@@ -95,7 +102,7 @@ impl HighRsService {
             .await
             .map_err(HighRsError::Benchmark)?;
         let histories = self
-            .store
+            .market_store
             .market_explorer_daily_candle_histories(fetch_start, as_of, as_of)
             .await
             .map_err(HighRsError::Persistence)?;

@@ -1,73 +1,3 @@
-CREATE TABLE tickers (
-    symbol TEXT PRIMARY KEY NOT NULL,
-    name TEXT,
-    exchange TEXT NOT NULL,
-    description TEXT,
-    profile_fetched_at DATETIME
-);
-
-CREATE TABLE daily_candles (
-    symbol TEXT NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
-    market_date DATE NOT NULL,
-    open REAL NOT NULL,
-    high REAL NOT NULL,
-    low REAL NOT NULL,
-    close REAL NOT NULL,
-    volume INTEGER NOT NULL,
-    PRIMARY KEY (symbol, market_date)
-);
-
-CREATE TABLE fundamentals (
-    symbol TEXT PRIMARY KEY NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
-    payload JSON NOT NULL,
-    fetched_at DATETIME NOT NULL
-);
-
-CREATE TABLE nyse_holidays (
-    market_date DATE PRIMARY KEY,
-    fetched_at DATETIME NOT NULL
-);
-
-CREATE TABLE industry_rankings (
-    industry_key TEXT PRIMARY KEY NOT NULL,
-    industry_name TEXT NOT NULL,
-    market_date DATE NOT NULL,
-    fetched_at DATETIME NOT NULL,
-    performance_day REAL NOT NULL,
-    performance_week REAL NOT NULL,
-    performance_month REAL NOT NULL,
-    performance_quarter REAL NOT NULL,
-    performance_half_year REAL NOT NULL,
-    performance_year REAL NOT NULL,
-    performance_year_to_date REAL NOT NULL
-);
-
-CREATE TABLE industry_memberships (
-    industry_key TEXT PRIMARY KEY NOT NULL,
-    fetched_at DATETIME NOT NULL,
-    industry_name TEXT
-);
-
-CREATE TABLE industry_membership_tickers (
-    industry_key TEXT NOT NULL REFERENCES industry_memberships(industry_key) ON DELETE CASCADE,
-    symbol TEXT NOT NULL,
-    PRIMARY KEY (industry_key, symbol)
-);
-
-CREATE INDEX industry_membership_tickers_symbol
-    ON industry_membership_tickers (symbol);
-
-CREATE TABLE industry_classifications (
-    industry_key TEXT PRIMARY KEY NOT NULL,
-    industry_name TEXT NOT NULL,
-    sector_key TEXT NOT NULL,
-    sector_name TEXT NOT NULL,
-    fetched_at DATETIME NOT NULL
-);
-
-CREATE INDEX industry_classifications_sector
-    ON industry_classifications (sector_name, industry_name);
-
 CREATE TABLE themes (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -193,7 +123,7 @@ CREATE TABLE watchlists (
 
 CREATE TABLE watchlist_tickers (
     watchlist_id INTEGER NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
-    symbol TEXT NOT NULL COLLATE NOCASE REFERENCES tickers(symbol) ON DELETE CASCADE,
+    symbol TEXT NOT NULL COLLATE NOCASE,
     added_at DATETIME NOT NULL,
     PRIMARY KEY (watchlist_id, symbol)
 );
@@ -280,7 +210,7 @@ CREATE INDEX daily_note_images_detached_at
     WHERE detached_at IS NOT NULL;
 
 CREATE TABLE theme_audits (
-    symbol TEXT PRIMARY KEY NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    symbol TEXT PRIMARY KEY NOT NULL,
     current_themes JSON NOT NULL,
     suggested_themes JSON NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('matched', 'pending', 'accepted', 'ignored')),
@@ -294,18 +224,6 @@ CREATE TABLE theme_audits (
 
 CREATE INDEX theme_audits_status_confidence
     ON theme_audits (status, confidence DESC);
-
-CREATE TABLE n_factor_reports (
-    symbol TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('stock_titan', 'finviz')),
-    payload JSON NOT NULL,
-    PRIMARY KEY (symbol, source)
-);
-
-CREATE TABLE fundamental_assessments (
-    symbol TEXT PRIMARY KEY NOT NULL,
-    payload JSON NOT NULL CHECK (json_valid(payload))
-);
 
 CREATE TABLE trade_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -329,6 +247,7 @@ CREATE TABLE trade_log_executions (
     notes TEXT NOT NULL DEFAULT '',
     UNIQUE (trade_id, sequence)
 );
+
 CREATE INDEX trade_log_executions_trade ON trade_log_executions(trade_id);
 
 CREATE TABLE trade_log_tags (
@@ -343,6 +262,7 @@ CREATE TABLE trade_log_tag_links (
     tag_id INTEGER NOT NULL REFERENCES trade_log_tags(id) ON DELETE CASCADE,
     PRIMARY KEY (trade_id, tag_id)
 );
+
 CREATE INDEX trade_log_tag_links_tag ON trade_log_tag_links(tag_id);
 
 CREATE TABLE trade_log_execution_tags (
@@ -350,4 +270,5 @@ CREATE TABLE trade_log_execution_tags (
     tag_id INTEGER NOT NULL REFERENCES trade_log_tags(id) ON DELETE CASCADE,
     PRIMARY KEY (execution_id, tag_id)
 );
+
 CREATE INDEX trade_log_execution_tags_tag ON trade_log_execution_tags(tag_id);

@@ -1023,7 +1023,7 @@ fn normalize_symbol(symbol: &str) -> Result<YahooSymbol, YahooLiveError> {
 mod tests {
     use super::*;
     use crate::config::{Config, MarketConfig};
-    use crate::store::Store;
+    use crate::test_support::TestDatabases;
     use chrono::{NaiveTime, TimeDelta};
     use finviz::FinvizClient;
     use yahoo::YahooClient;
@@ -1056,7 +1056,7 @@ mod tests {
         let date = schedule.market_date(before);
         let service = Arc::new(
             YahooService::new(
-                Store::connect("sqlite::memory:").await.unwrap(),
+                TestDatabases::new().await.unwrap().market,
                 Arc::new(YahooClient::new(&config.providers)),
                 Arc::new(FinvizClient::new(&config.finviz, &config.providers).unwrap()),
                 &config.market,

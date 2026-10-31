@@ -4,7 +4,6 @@ use crate::contracts::tickers::TickerSelection;
 use crate::models::TickerRanking;
 use crate::services::theme_tickers::select_theme_symbols;
 use crate::services::yahoo::YahooService;
-use crate::store::{Store, TickerIndustryMembership, TickerThemeMembership};
 use crate::utils::{KeyedLock, MarketSchedule};
 use anyhow::Context;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -12,6 +11,8 @@ use finviz::FinvizClient;
 use market_analysis::{
     average_daily_range_percent, average_volume, candle_performance, close_above_sma,
 };
+use market_db::Store as MarketStore;
+use market_db::TickerIndustryMembership;
 use market_types::{DailyCandle, TickerSymbol};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,12 +20,15 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::sync::{broadcast::Receiver, mpsc::Sender};
 use tracing::{info, warn};
+use user_db::Store as UserStore;
+use user_db::TickerThemeMembership;
 
 const POST_CLOSE_DELAY: Duration = Duration::from_mins(5);
 const TWO_HUNDRED_SESSION_SMA: usize = 200;
 
 pub struct TickerCatalogService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     finviz: Arc<FinvizClient>,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
@@ -35,7 +39,25 @@ pub struct TickerCatalogService {
 
 impl TickerCatalogService {
     pub fn membership_changes(&self) -> watch::Receiver<()> {
-        self.store.subscribe_memberships()
+        let mut market = self.market_store.subscribe_memberships();
+        let mut user = self.user_store.subscribe_memberships();
+        let (sender, receiver) = watch::channel(());
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = sender.closed() => break,
+                    result = market.changed() => {
+                        if result.is_err() { break; }
+                        sender.send_replace(());
+                    }
+                    result = user.changed() => {
+                        if result.is_err() { break; }
+                        sender.send_replace(());
+                    }
+                }
+            }
+        });
+        receiver
     }
 
     pub async fn cached_selection_symbols(
@@ -49,7 +71,7 @@ impl TickerCatalogService {
                 if keys.is_empty() {
                     return Ok(Vec::new());
                 }
-                self.store.tickers_for_industries(keys).await
+                self.market_store.tickers_for_industries(keys).await
             }
             TickerSelection::Themes {
                 ids,
@@ -59,7 +81,7 @@ impl TickerCatalogService {
     }
 
     pub fn metric_changes(&self) -> Receiver<TickerSymbol> {
-        self.store.subscribe_market_data()
+        self.market_store.subscribe_market_data()
     }
 
     pub async fn cached_ticker_ranking(
@@ -68,7 +90,7 @@ impl TickerCatalogService {
     ) -> anyhow::Result<TickerRanking> {
         let candles = self.cached_candles(symbol).await?;
         let watchlist_ids = self
-            .store
+            .user_store
             .ticker_watchlists(std::slice::from_ref(symbol))
             .await?
             .into_iter()
@@ -79,7 +101,7 @@ impl TickerCatalogService {
 
     async fn cached_candles(&self, symbol: &TickerSymbol) -> anyhow::Result<Vec<DailyCandle>> {
         let as_of = self.market_schedule.recent_trading_day(Utc::now());
-        self.store
+        self.market_store
             .daily_candles(
                 symbol,
                 as_of - crate::constants::DAILY_CANDLE_HISTORY,
@@ -110,13 +132,15 @@ impl TickerCatalogService {
     }
 
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         finviz: Arc<FinvizClient>,
         yahoo: Arc<YahooService>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            store,
+            market_store,
+            user_store,
             finviz,
             yahoo,
             market_schedule: MarketSchedule::new(market, POST_CLOSE_DELAY)?,
@@ -138,7 +162,7 @@ impl TickerCatalogService {
 
     pub async fn ticker_ranking(&self, symbol: &TickerSymbol) -> anyhow::Result<TickerRanking> {
         let watchlist_ids = self
-            .store
+            .user_store
             .ticker_watchlists(std::slice::from_ref(symbol))
             .await?
             .into_iter()
@@ -159,7 +183,9 @@ impl TickerCatalogService {
         for industry_key in industry_keys {
             self.refresh_membership_if_stale(industry_key).await?;
         }
-        self.store.tickers_for_industries(industry_keys).await
+        self.market_store
+            .tickers_for_industries(industry_keys)
+            .await
     }
 
     pub async fn theme_tickers(
@@ -174,21 +200,27 @@ impl TickerCatalogService {
             theme_ids.iter().all(|id| *id > 0),
             "theme IDs must be positive"
         );
-        select_theme_symbols(&self.store, theme_ids, include_unassigned).await
+        select_theme_symbols(
+            &self.market_store,
+            &self.user_store,
+            theme_ids,
+            include_unassigned,
+        )
+        .await
     }
 
     pub async fn industries_for_symbols(
         &self,
         symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerIndustryMembership>> {
-        self.store.industries_for_symbols(symbols).await
+        self.market_store.industries_for_symbols(symbols).await
     }
 
     pub async fn themes_for_symbols(
         &self,
         symbols: &[TickerSymbol],
     ) -> anyhow::Result<Vec<TickerThemeMembership>> {
-        self.store.themes_for_symbols(symbols).await
+        self.user_store.themes_for_symbols(symbols).await
     }
 
     async fn stream_symbols(
@@ -198,7 +230,7 @@ impl TickerCatalogService {
         sender: &Sender<TickerRanking>,
     ) -> anyhow::Result<()> {
         let watchlists_by_symbol = self
-            .store
+            .user_store
             .ticker_watchlists(&symbols)
             .await?
             .into_iter()
@@ -262,11 +294,14 @@ impl TickerCatalogService {
     }
 
     pub async fn ensure_ticker_symbol(&self, symbol: &TickerSymbol) -> anyhow::Result<()> {
-        if !self.store.ticker_has_industry(symbol).await? {
+        if !self.market_store.ticker_has_industry(symbol).await? {
             let industry = self.finviz.ticker_industry(symbol).await?;
             let missing_stock_ranking = industry.key != ETF_INDUSTRY_KEY
-                && !self.store.has_industry_ranking(&industry.key).await?;
-            self.store
+                && !self
+                    .market_store
+                    .has_industry_ranking(&industry.key)
+                    .await?;
+            self.market_store
                 .add_ticker_industry(&industry.key, &industry.name, symbol)
                 .await?;
             self.yahoo.profile(symbol).await?;
@@ -288,7 +323,7 @@ impl TickerCatalogService {
         let _guard = self.membership_locks.lock(industry_key).await;
         {
             let fetched_at = self
-                .store
+                .market_store
                 .industry_membership_fetched_at(industry_key)
                 .await?;
             let stale_before = Utc::now() - TimeDelta::days(MEMBERSHIP_FRESH_DAYS);
@@ -305,7 +340,7 @@ impl TickerCatalogService {
             .industry_tickers(industry_key)
             .await
             .with_context(|| format!("failed to fetch Finviz membership for {industry_key}"))?;
-        self.store
+        self.market_store
             .replace_industry_membership(industry_key, Utc::now(), &symbols)
             .await
             .context("failed to update industry membership")?;

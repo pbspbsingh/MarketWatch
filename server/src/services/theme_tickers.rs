@@ -1,45 +1,61 @@
+use market_db::Store as MarketStore;
 use std::collections::HashMap;
+use user_db::Store as UserStore;
 
-use crate::store::{CompanyText, IndustryName, Store};
+use market_db::{CompanyText, IndustryName};
 use market_types::TickerSymbol;
 use themes::{ThemeTicker, ThemeTickerIndustry};
 
 pub(crate) async fn select_theme_symbols(
-    store: &Store,
+    market_store: &MarketStore,
+    user_store: &UserStore,
     ids: &[i64],
     include_unassigned: bool,
 ) -> anyhow::Result<Vec<TickerSymbol>> {
-    let known = known_symbols(store).await?;
-    store.theme_symbols(&known, ids, include_unassigned).await
+    let known = known_symbols(market_store, user_store).await?;
+    user_store
+        .theme_symbols(&known, ids, include_unassigned)
+        .await
 }
 
-pub(crate) async fn load_theme_tickers(store: &Store) -> anyhow::Result<Vec<ThemeTicker>> {
-    load(store, None).await
+pub(crate) async fn load_theme_tickers(
+    market_store: &MarketStore,
+    user_store: &UserStore,
+) -> anyhow::Result<Vec<ThemeTicker>> {
+    load(market_store, user_store, None).await
 }
 
 pub(crate) async fn load_theme_ticker(
-    store: &Store,
+    market_store: &MarketStore,
+    user_store: &UserStore,
     symbol: &TickerSymbol,
 ) -> anyhow::Result<Option<ThemeTicker>> {
-    Ok(load(store, Some(symbol)).await?.into_iter().next())
+    Ok(load(market_store, user_store, Some(symbol))
+        .await?
+        .into_iter()
+        .next())
 }
 
-async fn load(store: &Store, only: Option<&TickerSymbol>) -> anyhow::Result<Vec<ThemeTicker>> {
+async fn load(
+    market_store: &MarketStore,
+    user_store: &UserStore,
+    only: Option<&TickerSymbol>,
+) -> anyhow::Result<Vec<ThemeTicker>> {
     let known = match only {
         Some(symbol) => {
-            if store.known_market_ticker(symbol).await? {
+            if market_store.known_market_ticker(symbol).await? {
                 vec![symbol.clone()]
             } else {
                 Vec::new()
             }
         }
-        None => known_symbols(store).await?,
+        None => known_symbols(market_store, user_store).await?,
     };
-    let states = store.theme_ticker_states(&known, only).await?;
+    let states = user_store.theme_ticker_states(&known, only).await?;
     let symbols: Vec<_> = states.iter().map(|state| state.symbol.clone()).collect();
     let (texts, memberships) = tokio::try_join!(
-        store.company_texts(&symbols),
-        store.all_industries_for_symbols(symbols.iter()),
+        market_store.company_texts(&symbols),
+        market_store.all_industries_for_symbols(symbols.iter()),
     )?;
     let mut texts: HashMap<TickerSymbol, CompanyText> = texts
         .into_iter()
@@ -75,17 +91,24 @@ async fn load(store: &Store, only: Option<&TickerSymbol>) -> anyhow::Result<Vec<
 }
 
 /// The open universe includes user assignments even when their market cache is absent.
-pub(crate) async fn known_symbols(store: &Store) -> anyhow::Result<Vec<TickerSymbol>> {
-    let (mut symbols, assigned) =
-        tokio::try_join!(store.market_symbols(), store.assigned_theme_symbols())?;
+pub(crate) async fn known_symbols(
+    market_store: &MarketStore,
+    user_store: &UserStore,
+) -> anyhow::Result<Vec<TickerSymbol>> {
+    let (mut symbols, assigned) = tokio::try_join!(
+        market_store.market_symbols(),
+        user_store.assigned_theme_symbols()
+    )?;
     symbols.extend(assigned);
     symbols.sort();
     symbols.dedup();
     Ok(symbols)
 }
 
-pub(crate) async fn load_industry_names(store: &Store) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
-    Ok(store
+pub(crate) async fn load_industry_names(
+    market_store: &MarketStore,
+) -> anyhow::Result<Vec<ThemeTickerIndustry>> {
+    Ok(market_store
         .industry_names()
         .await?
         .into_iter()
@@ -97,14 +120,20 @@ pub(crate) async fn load_industry_names(store: &Store) -> anyhow::Result<Vec<The
 }
 
 /// Both deletions are idempotent; no transaction spans the independent databases.
-pub(crate) async fn remove_ticker(store: &Store, symbol: &TickerSymbol) -> anyhow::Result<bool> {
-    let user_deleted = store.delete_ticker_references(symbol).await?;
-    let market_deleted = store.delete_market_ticker(symbol).await?;
+pub(crate) async fn remove_ticker(
+    market_store: &MarketStore,
+    user_store: &UserStore,
+    symbol: &TickerSymbol,
+) -> anyhow::Result<bool> {
+    let user_deleted = user_store.delete_ticker_references(symbol).await?;
+    let market_deleted = market_store.delete_market_ticker(symbol).await?;
     Ok(user_deleted || market_deleted)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
     use chrono::Utc;
     use market_types::{CompanyProfile, Exchange};
@@ -112,19 +141,25 @@ mod tests {
 
     #[tokio::test]
     async fn composes_injected_universe_assignments_and_market_metadata() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let assigned = TickerSymbol::parse("ASSIGNED").unwrap();
         let external = TickerSymbol::parse("EXTERNAL").unwrap();
         let theme = store
+            .user
             .create_theme("AI", &TickerSymbol::parse("AIQ").unwrap(), None)
             .await
             .unwrap();
         store
+            .user
             .replace_theme_assignments(&assigned, &[theme], AssignmentSource::Manual, None, None)
             .await
             .unwrap();
         let universe = std::slice::from_ref(&external);
-        let states = store.theme_ticker_states(universe, None).await.unwrap();
+        let states = store
+            .user
+            .theme_ticker_states(universe, None)
+            .await
+            .unwrap();
         assert_eq!(
             states
                 .iter()
@@ -133,20 +168,28 @@ mod tests {
             ["ASSIGNED", "EXTERNAL"]
         );
         assert_eq!(
-            store.theme_symbols(universe, &[theme], true).await.unwrap(),
+            store
+                .user
+                .theme_symbols(universe, &[theme], true)
+                .await
+                .unwrap(),
             ["ASSIGNED", "EXTERNAL"]
         );
-        let ticker = load_theme_ticker(&store, &assigned).await.unwrap().unwrap();
+        let ticker = load_theme_ticker(&store.market, &store.user, &assigned)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(ticker.assignments[0].theme_name, "AI");
         assert!(ticker.name.is_none());
         assert!(
-            load_theme_ticker(&store, &external)
+            load_theme_ticker(&store.market, &store.user, &external)
                 .await
                 .unwrap()
                 .is_none()
         );
 
         store
+            .market
             .upsert_company_profile(&CompanyProfile {
                 symbol: assigned.clone(),
                 name: Some("Assigned company".into()),
@@ -157,11 +200,17 @@ mod tests {
             .await
             .unwrap();
         store
+            .market
             .add_ticker_industry("software", "Software", &assigned)
             .await
             .unwrap();
-        let list = load_theme_tickers(&store).await.unwrap();
-        let ticker = load_theme_ticker(&store, &assigned).await.unwrap().unwrap();
+        let list = load_theme_tickers(&store.market, &store.user)
+            .await
+            .unwrap();
+        let ticker = load_theme_ticker(&store.market, &store.user, &assigned)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(ticker.name.as_deref(), Some("Assigned company"));
         assert_eq!(ticker.description.as_deref(), Some("Company description"));

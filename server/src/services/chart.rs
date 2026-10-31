@@ -1,6 +1,8 @@
 use crate::config::MarketConfig;
 use crate::services::yahoo::YahooService;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use anyhow::Context;
 use market_analysis::{average_daily_range_percent, average_volume, extension_from_50_sma};
 use market_types::{DailyCandle, TickerSymbol, TradingViewSymbol};
@@ -11,7 +13,8 @@ use tracing::warn;
 use ts_rs::TS;
 
 pub struct ChartService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     yahoo: Arc<YahooService>,
     benchmark: TickerSymbol,
     sector_benchmarks: BTreeMap<String, TickerSymbol>,
@@ -61,7 +64,8 @@ pub struct ChartSectorBenchmark {
 
 impl ChartService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         yahoo: Arc<YahooService>,
         market: &MarketConfig,
     ) -> anyhow::Result<Self> {
@@ -77,7 +81,8 @@ impl ChartService {
             })
             .collect::<anyhow::Result<_>>()?;
         Ok(Self {
-            store,
+            market_store,
+            user_store,
             yahoo,
             benchmark: TickerSymbol::parse(&market.benchmark)?,
             sector_benchmarks,
@@ -95,17 +100,21 @@ impl ChartService {
         let benchmark_profile = self.yahoo.profile(&self.benchmark).await?;
         let candles = self.yahoo.daily_candles_for_year(symbol).await?;
         let industry = self
-            .store
+            .market_store
             .industry_for_ticker(symbol, industry_keys)
             .await?;
         let industry = if industry.is_none() && !industry_keys.is_empty() {
-            self.store.industry_for_ticker(symbol, &[]).await?
+            self.market_store.industry_for_ticker(symbol, &[]).await?
         } else {
             industry
         };
         let sector_benchmark = match industry.as_ref() {
             Some((industry_key, _)) => {
-                match self.store.industry_classification(industry_key).await? {
+                match self
+                    .market_store
+                    .industry_classification(industry_key)
+                    .await?
+                {
                     Some(classification) => {
                         let etf_symbol = self
                             .sector_benchmarks
@@ -145,9 +154,9 @@ impl ChartService {
             }
             None => None,
         };
-        let themes = self.store.theme_names_for_ticker(symbol).await?;
+        let themes = self.user_store.theme_names_for_ticker(symbol).await?;
         let mut theme_benchmarks = Vec::new();
-        for theme in self.store.theme_etfs_for_ticker(symbol).await? {
+        for theme in self.user_store.theme_etfs_for_ticker(symbol).await? {
             match self.yahoo.profile(&theme.etf_symbol).await {
                 Ok(profile) => theme_benchmarks.push(ChartThemeBenchmark {
                     theme_name: theme.name,

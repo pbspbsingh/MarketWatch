@@ -2,7 +2,9 @@ use crate::services::theme_tickers::load_industry_names;
 use crate::services::theme_tickers::remove_ticker;
 use crate::services::theme_tickers::{load_theme_ticker, load_theme_tickers};
 use crate::services::tickers::TickerCatalogService;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use ai::AiClient;
 use ai::AiError;
 use ai::AiStreamDelta;
@@ -60,7 +62,8 @@ struct RawThemeSuggestion {
 }
 
 pub struct ThemeService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     ai: Option<Arc<AiClient>>,
     ticker_catalog: Arc<TickerCatalogService>,
     running_streams: RwLock<HashMap<i64, RunningAiStream>>,
@@ -93,12 +96,14 @@ pub enum ThemeServiceError {
 
 impl ThemeService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         ai: Option<Arc<AiClient>>,
         ticker_catalog: Arc<TickerCatalogService>,
     ) -> Self {
         Self {
-            store,
+            market_store,
+            user_store,
             ai,
             ticker_catalog,
             running_streams: RwLock::new(HashMap::new()),
@@ -106,7 +111,7 @@ impl ThemeService {
     }
 
     pub async fn themes(&self) -> Result<Vec<Theme>, ThemeServiceError> {
-        self.store
+        self.user_store
             .themes()
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -129,7 +134,7 @@ impl ThemeService {
                 "theme {name} already exists"
             )));
         }
-        self.store
+        self.user_store
             .create_theme(&name, &etf_symbol, description.as_deref())
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -154,7 +159,7 @@ impl ThemeService {
             )));
         }
         let updated = self
-            .store
+            .user_store
             .update_theme(id, &name, &etf_symbol, description.as_deref())
             .await
             .map_err(ThemeServiceError::Persistence)?;
@@ -165,7 +170,7 @@ impl ThemeService {
 
     pub async fn delete(&self, id: i64) -> Result<(), ThemeServiceError> {
         let deleted = self
-            .store
+            .user_store
             .delete_theme(id)
             .await
             .map_err(ThemeServiceError::Persistence)?;
@@ -175,19 +180,19 @@ impl ThemeService {
     }
 
     pub async fn tickers(&self) -> Result<Vec<ThemeTicker>, ThemeServiceError> {
-        load_theme_tickers(&self.store)
+        load_theme_tickers(&self.market_store, &self.user_store)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
 
     pub async fn filter_industries(&self) -> Result<Vec<ThemeTickerIndustry>, ThemeServiceError> {
-        load_industry_names(&self.store)
+        load_industry_names(&self.market_store)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
 
     pub async fn delete_ticker(&self, symbol: &TickerSymbol) -> Result<(), ThemeServiceError> {
-        remove_ticker(&self.store, symbol)
+        remove_ticker(&self.market_store, &self.user_store, symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .then_some(())
@@ -196,7 +201,7 @@ impl ThemeService {
 
     pub async fn ticker(&self, symbol: &TickerSymbol) -> Result<ThemeTicker, ThemeServiceError> {
         self.ensure_ticker(symbol).await?;
-        load_theme_ticker(&self.store, symbol)
+        load_theme_ticker(&self.market_store, &self.user_store, symbol)
             .await
             .map_err(ThemeServiceError::Persistence)?
             .ok_or_else(|| ThemeServiceError::Validation(format!("ticker {symbol} does not exist")))
@@ -225,7 +230,7 @@ impl ThemeService {
                 "duplicate theme assignment".to_owned(),
             ));
         }
-        self.store
+        self.user_store
             .replace_theme_assignments(symbol, theme_ids, AssignmentSource::Manual, None, None)
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -326,7 +331,7 @@ impl ThemeService {
             })
             .collect::<Vec<_>>();
         let job_ids = self
-            .store
+            .user_store
             .create_theme_ai_jobs(ai.model(), &batches)
             .await
             .map_err(ThemeServiceError::Persistence)?;
@@ -355,7 +360,7 @@ impl ThemeService {
             )));
         }
         if !self
-            .store
+            .user_store
             .retry_theme_ai_job(id)
             .await
             .map_err(ThemeServiceError::Persistence)?
@@ -369,7 +374,7 @@ impl ThemeService {
     }
 
     pub async fn ai_jobs(&self) -> Result<Vec<ThemeAiJobSummary>, ThemeServiceError> {
-        self.store
+        self.user_store
             .theme_ai_jobs()
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -377,7 +382,7 @@ impl ThemeService {
 
     pub async fn ai_job(&self, id: i64) -> Result<ThemeAiJob, ThemeServiceError> {
         let mut job = self
-            .store
+            .user_store
             .theme_ai_job(id)
             .await
             .map_err(ThemeServiceError::Persistence)?
@@ -391,7 +396,7 @@ impl ThemeService {
 
     pub async fn apply_ai_job(&self, id: i64) -> Result<(), ThemeServiceError> {
         let job = self
-            .store
+            .user_store
             .theme_ai_job(id)
             .await
             .map_err(ThemeServiceError::Persistence)?
@@ -411,14 +416,14 @@ impl ThemeService {
             .validate_automatic_suggestions(suggestions, &job.symbols)
             .await?;
         let assignments = self.resolve_suggestions(suggestions).await?;
-        self.store
+        self.user_store
             .apply_theme_ai_job(id, &assignments, &job.model)
             .await
             .map_err(ThemeServiceError::Persistence)
     }
 
     pub async fn delete_ai_job(&self, id: i64) -> Result<(), ThemeServiceError> {
-        self.store
+        self.user_store
             .delete_theme_ai_job(id)
             .await
             .map_err(ThemeServiceError::Persistence)?
@@ -431,7 +436,7 @@ impl ThemeService {
     }
 
     pub async fn delete_applied_ai_jobs(&self) -> Result<u64, ThemeServiceError> {
-        self.store
+        self.user_store
             .delete_applied_theme_ai_jobs()
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -441,7 +446,7 @@ impl ThemeService {
         let ai = self.ai.as_ref().ok_or_else(|| {
             ThemeServiceError::Validation("automatic AI mapping is disabled".into())
         })?;
-        self.store
+        self.user_store
             .set_theme_ai_job_running(id)
             .await
             .map_err(ThemeServiceError::Persistence)?;
@@ -450,7 +455,7 @@ impl ThemeService {
         let validation = self
             .validate_automatic_response(&response, &job.symbols)
             .await?;
-        self.store
+        self.user_store
             .finish_theme_ai_job(id, &response, &validation.suggestions, &validation.errors)
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -530,7 +535,7 @@ impl ThemeService {
             if let Err(job_error) = result {
                 error!(job_id, %job_error, "theme AI job failed");
                 if let Err(persistence_error) = service
-                    .store
+                    .user_store
                     .fail_theme_ai_job(job_id, &job_error.to_string())
                     .await
                 {
@@ -560,7 +565,7 @@ impl ThemeService {
         model: Option<&str>,
     ) -> Result<(), ThemeServiceError> {
         let assignments = self.resolve_suggestions(suggestions).await?;
-        self.store
+        self.user_store
             .replace_theme_assignment_batch(&assignments, source, model)
             .await
             .map_err(ThemeServiceError::Persistence)
@@ -573,7 +578,7 @@ impl ThemeService {
         let mut assignments = Vec::with_capacity(suggestions.len());
         for suggestion in suggestions {
             let ids = self
-                .store
+                .user_store
                 .theme_ids_by_names(&suggestion.themes)
                 .await
                 .map_err(ThemeServiceError::Persistence)?;
@@ -613,7 +618,7 @@ impl ThemeService {
         }
         for ticker in &tickers {
             let profile = self
-                .store
+                .market_store
                 .company_profile(&ticker.symbol)
                 .await
                 .map_err(ThemeServiceError::Persistence)?;
@@ -924,6 +929,7 @@ pub(crate) fn strip_code_fence(response: &str) -> &str {
 
 #[cfg(test)]
 mod live_tests {
+
     use super::*;
     use crate::config::{Config, DatabaseConfig};
     use anyhow::Context;
@@ -943,8 +949,8 @@ mod live_tests {
         let config = Config::load("config.toml")?;
         let ai = config.ai.as_ref().context("AI must be configured")?;
         let databases = DatabaseConfig::load()?;
-        let store = Store::connect(&databases.main_url).await?;
-        let job = store
+        let user_store = UserStore::connect(&databases.user_url).await?;
+        let job = user_store
             .theme_ai_job(job_id)
             .await?
             .with_context(|| format!("theme AI job {job_id} does not exist"))?;
@@ -963,7 +969,7 @@ mod live_tests {
             .iter()
             .map(|suggestion| suggestion.symbol.trim().to_uppercase())
             .collect::<HashSet<_>>();
-        let known_themes = store
+        let known_themes = user_store
             .themes()
             .await?
             .into_iter()

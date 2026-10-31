@@ -1,5 +1,7 @@
 use crate::services::theme_tickers::known_symbols;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+use user_db::Store as UserStore;
+
 use market_types::TickerSymbol;
 use serde::Serialize;
 use std::cmp::Ordering;
@@ -10,7 +12,8 @@ const RESULT_LIMIT: usize = 10;
 const MAX_QUERY_LENGTH: usize = 64;
 
 pub struct GlobalSearchService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
 }
 
 #[derive(Debug, Error)]
@@ -68,8 +71,11 @@ struct TokenMatch {
 }
 
 impl GlobalSearchService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(market_store: MarketStore, user_store: UserStore) -> Self {
+        Self {
+            market_store,
+            user_store,
+        }
     }
 
     pub async fn search(&self, query: &str) -> Result<GlobalSearchResults, GlobalSearchError> {
@@ -79,9 +85,9 @@ impl GlobalSearchService {
         }
 
         let (industry_rankings, themes, tickers) = tokio::try_join!(
-            self.store.current_industry_rankings(),
-            self.store.themes_with_assignments(),
-            known_symbols(&self.store),
+            self.market_store.current_industry_rankings(),
+            self.user_store.themes_with_assignments(),
+            known_symbols(&self.market_store, &self.user_store),
         )
         .map_err(GlobalSearchError::Persistence)?;
 

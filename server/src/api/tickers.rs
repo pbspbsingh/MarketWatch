@@ -2,15 +2,16 @@ use crate::app::AppState;
 use crate::contracts::chart::{GroupSummary, GroupSummaryItem};
 use crate::models::TickerRanking;
 use crate::services::tickers::TickerCatalogService;
-use crate::store::{TickerIndustryMembership, TickerThemeMembership};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
+use market_db::TickerIndustryMembership;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use tracing::error;
+use user_db::TickerThemeMembership;
 
 #[derive(Deserialize)]
 struct TickerRankingRequest {
@@ -266,10 +267,11 @@ mod tests {
     async fn group_summaries_resolve_selected_members_without_open_universe_fallback() {
         use crate::{
             services::industry_data::tests::{client, fixture},
-            store::Store,
+            test_support::TestDatabases,
         };
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         store
+            .market
             .replace_industry_membership(
                 "semiconductors",
                 chrono::Utc::now(),

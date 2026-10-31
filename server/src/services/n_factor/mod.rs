@@ -1,9 +1,11 @@
 #[cfg(test)]
 use ai::test_support::TestAiServer;
+use market_db::Store as MarketStore;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use user_db::Store as UserStore;
 
 use anyhow::{Context, ensure};
 use chrono::{Duration, Utc};
@@ -20,7 +22,7 @@ use super::{
 };
 use crate::config::FundamentalsBackgroundConfig;
 use crate::services::fundamentals_background::select_fundamentals_candidate;
-use crate::store::Store;
+
 use ai::AiClient;
 use ai::AiError;
 use ai::AiStreamDelta;
@@ -50,7 +52,8 @@ const MAX_PREVIEW_BYTES: usize = 20_000;
 type JobKey = (TickerSymbol, NewsSource);
 
 pub struct NFactorService {
-    store: Store,
+    market_store: MarketStore,
+    user_store: UserStore,
     finviz: Arc<FinvizClient>,
     stock_titan: StockTitanClient,
     ai: Option<Arc<AiClient>>,
@@ -100,14 +103,16 @@ struct Analysis {
 
 impl NFactorService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
+        user_store: UserStore,
         finviz: Arc<FinvizClient>,
         stock_titan: StockTitanClient,
         ai: Option<Arc<AiClient>>,
         default_source: NewsSource,
     ) -> Self {
         Self {
-            store,
+            market_store,
+            user_store,
             finviz,
             stock_titan,
             ai,
@@ -147,12 +152,12 @@ impl NFactorService {
         });
         let reports = match source {
             Some(source) => self
-                .store
+                .market_store
                 .n_factor_report(symbol, source)
                 .await?
                 .into_iter()
                 .collect(),
-            None => self.store.n_factor_reports(symbol).await?,
+            None => self.market_store.n_factor_reports(symbol).await?,
         };
         let source = source
             .or_else(|| {
@@ -204,7 +209,8 @@ impl NFactorService {
         config: FundamentalsBackgroundConfig,
     ) -> anyhow::Result<bool> {
         Ok(select_fundamentals_candidate(
-            &self.store,
+            &self.market_store,
+            &self.user_store,
             config.process_non_watchlist,
             Utc::now() - Duration::days(i64::from(config.refresh_days)),
             &[],
@@ -475,7 +481,7 @@ impl NFactorService {
         let coverage = batch.coverage;
         let news_fetched_at = Utc::now();
         let previous = self
-            .store
+            .market_store
             .n_factor_report(&key.0, key.1)
             .await?
             .filter(|report| {
@@ -587,7 +593,7 @@ impl NFactorService {
             coverage: Some(coverage),
         };
         self.update(key, id, |job| job.phase = NFactorPhase::Saving);
-        self.store
+        self.market_store
             .save_n_factor_report(&report)
             .await
             .context("Could not save N-Factor report")?;
@@ -727,6 +733,8 @@ fn validate_analysis(response: &str, news: &[NewsItem]) -> anyhow::Result<Analys
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
     use crate::config::{AiConfig, FinvizConfig, ProviderConfig};
     use market_types::{CompanyProfile, Exchange};
@@ -799,9 +807,10 @@ mod tests {
     async fn unchanged_news_preserves_analysis_and_citations_and_defers_background_refresh() {
         for source in [NewsSource::StockTitan, NewsSource::Finviz] {
             for background in [false, true] {
-                let store = Store::connect("sqlite::memory:").await.unwrap();
+                let store = TestDatabases::new().await.unwrap();
                 let symbol = TickerSymbol::parse("SAME").unwrap();
                 store
+                    .market
                     .upsert_company_profile(&CompanyProfile {
                         symbol: symbol.clone(),
                         name: None,
@@ -811,12 +820,14 @@ mod tests {
                     })
                     .await
                     .unwrap();
-                let watchlist = store.watchlists().await.unwrap().remove(0);
+                let watchlist = store.user.watchlists().await.unwrap().remove(0);
                 store
+                    .user
                     .add_watchlist_symbol(watchlist.id, &symbol)
                     .await
                     .unwrap();
                 store
+                    .market
                     .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
                     .await
                     .unwrap();
@@ -831,7 +842,8 @@ mod tests {
                 }));
                 let (finviz, stock_titan) = clients();
                 let service = NFactorService::new(
-                    store.clone(),
+                    store.market.clone(),
+                    store.user.clone(),
                     finviz,
                     stock_titan,
                     Some(ai.clone()),
@@ -859,7 +871,7 @@ mod tests {
                     news: items,
                     coverage: None,
                 };
-                store.save_n_factor_report(&saved).await.unwrap();
+                store.market.save_n_factor_report(&saved).await.unwrap();
                 let config = FundamentalsBackgroundConfig {
                     idle_delay_secs: 300,
                     refresh_days: 7,
@@ -915,6 +927,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
                 let report = store
+                    .market
                     .n_factor_report(&symbol, source)
                     .await
                     .unwrap()
@@ -947,7 +960,7 @@ mod tests {
                         "prompt" => previous.prompt_version -= 1,
                         _ => unreachable!(),
                     }
-                    store.save_n_factor_report(&previous).await.unwrap();
+                    store.market.save_n_factor_report(&previous).await.unwrap();
                     let error = service
                         .analyze_and_save(
                             &key,
@@ -967,6 +980,7 @@ mod tests {
                         "{change}: {error:#}"
                     );
                     let retained = store
+                        .market
                         .n_factor_report(&symbol, source)
                         .await
                         .unwrap()
@@ -982,8 +996,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_and_unavailable_news_are_saved_without_ai_and_wait_for_refresh() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
-        let watchlist = store.watchlists().await.unwrap().remove(0);
+        let store = TestDatabases::new().await.unwrap();
+        let watchlist = store.user.watchlists().await.unwrap().remove(0);
         let (finviz, stock_titan) = clients();
         // Any AI request would fail, including with configured parallelism.
         let ai = Arc::new(AiClient::new(&AiConfig {
@@ -995,7 +1009,8 @@ mod tests {
             read_timeout_secs: 1,
         }));
         let service = NFactorService::new(
-            store.clone(),
+            store.market.clone(),
+            store.user.clone(),
             finviz,
             stock_titan,
             Some(ai.clone()),
@@ -1022,6 +1037,7 @@ mod tests {
         ] {
             let symbol = TickerSymbol::parse(symbol_text).unwrap();
             store
+                .market
                 .upsert_company_profile(&CompanyProfile {
                     symbol: symbol.clone(),
                     name: None,
@@ -1032,10 +1048,12 @@ mod tests {
                 .await
                 .unwrap();
             store
+                .user
                 .add_watchlist_symbol(watchlist.id, &symbol)
                 .await
                 .unwrap();
             store
+                .market
                 .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
                 .await
                 .unwrap();
@@ -1078,6 +1096,7 @@ mod tests {
             .unwrap()
             .unwrap();
             let mut saved = store
+                .market
                 .n_factor_report(&symbol, source)
                 .await
                 .unwrap()
@@ -1104,12 +1123,13 @@ mod tests {
                     .unwrap()
             );
             store
+                .user
                 .remove_watchlist_symbol(watchlist.id, &symbol)
                 .await
                 .unwrap();
             saved.generated_at = Utc::now() - Duration::days(8);
             saved.news_fetched_at = saved.generated_at;
-            store.save_n_factor_report(&saved).await.unwrap();
+            store.market.save_n_factor_report(&saved).await.unwrap();
             assert!(!service.background_eligible(&symbol, config).await.unwrap());
             assert!(
                 service
@@ -1118,6 +1138,7 @@ mod tests {
                     .unwrap()
             );
             store
+                .market
                 .add_ticker_industry("exchangetradedfund", "Exchange Traded Fund", &symbol)
                 .await
                 .unwrap();
@@ -1159,7 +1180,7 @@ mod tests {
 
     #[tokio::test]
     async fn reports_persist_separately_by_source_and_jobs_are_memory_only() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let symbol = TickerSymbol::parse("ALAB").unwrap();
         let report = NFactorReport {
             symbol: symbol.clone(),
@@ -1186,9 +1207,10 @@ mod tests {
                 .coverage
                 .is_none()
         );
-        store.save_n_factor_report(&report).await.unwrap();
+        store.market.save_n_factor_report(&report).await.unwrap();
         assert!(
             store
+                .market
                 .n_factor_report(&symbol, NewsSource::Finviz)
                 .await
                 .unwrap()
@@ -1196,7 +1218,8 @@ mod tests {
         );
         let (finviz, stock_titan) = clients();
         let service = Arc::new(NFactorService::new(
-            store,
+            store.market,
+            store.user,
             finviz,
             stock_titan,
             None,
@@ -1241,7 +1264,8 @@ mod tests {
             read_timeout_secs: 1,
         };
         let service = Arc::new(NFactorService::new(
-            Store::connect("sqlite::memory:").await.unwrap(),
+            MarketStore::connect("sqlite::memory:").await.unwrap(),
+            UserStore::connect("sqlite::memory:").await.unwrap(),
             finviz,
             stock_titan,
             Some(Arc::new(AiClient::new(&ai_config))),
@@ -1279,7 +1303,7 @@ mod tests {
 
     #[tokio::test]
     async fn latest_source_and_background_progress_are_independent() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let store = TestDatabases::new().await.unwrap();
         let symbol = TickerSymbol::parse("ALAB").unwrap();
         let now = Utc::now();
         let mut report = NFactorReport {
@@ -1295,13 +1319,20 @@ mod tests {
             news: news(),
             coverage: None,
         };
-        store.save_n_factor_report(&report).await.unwrap();
+        store.market.save_n_factor_report(&report).await.unwrap();
         report.source = NewsSource::Finviz;
         report.generated_at = now;
         report.overview = "Recent Finviz report".to_owned();
-        store.save_n_factor_report(&report).await.unwrap();
+        store.market.save_n_factor_report(&report).await.unwrap();
         let (finviz, stock_titan) = clients();
-        let service = NFactorService::new(store, finviz, stock_titan, None, NewsSource::StockTitan);
+        let service = NFactorService::new(
+            store.market,
+            store.user,
+            finviz,
+            stock_titan,
+            None,
+            NewsSource::StockTitan,
+        );
         let job = NFactorJob {
             id: "background".to_owned(),
             symbol: symbol.clone(),
@@ -1350,7 +1381,8 @@ mod tests {
     async fn state_includes_only_other_active_jobs_with_lightweight_progress() {
         let (finviz, stock_titan) = clients();
         let service = NFactorService::new(
-            Store::connect("sqlite::memory:").await.unwrap(),
+            MarketStore::connect("sqlite::memory:").await.unwrap(),
+            UserStore::connect("sqlite::memory:").await.unwrap(),
             finviz,
             stock_titan,
             None,
@@ -1441,9 +1473,10 @@ mod tests {
     #[tokio::test]
     async fn background_preemption_preserves_saved_news_report_and_allows_retry()
     -> anyhow::Result<()> {
-        let store = Store::connect("sqlite::memory:").await?;
+        let store = TestDatabases::new().await?;
         let symbol = TickerSymbol::parse("PREEMPT")?;
         store
+            .market
             .upsert_company_profile(&CompanyProfile {
                 symbol: symbol.clone(),
                 name: None,
@@ -1452,9 +1485,13 @@ mod tests {
                 fetched_at: Utc::now(),
             })
             .await?;
-        let watchlist = store.watchlists().await?.remove(0);
-        store.add_watchlist_symbol(watchlist.id, &symbol).await?;
+        let watchlist = store.user.watchlists().await?.remove(0);
         store
+            .user
+            .add_watchlist_symbol(watchlist.id, &symbol)
+            .await?;
+        store
+            .market
             .add_ticker_industry("semiconductors", "Semiconductors", &symbol)
             .await?;
         let old = Utc::now() - Duration::days(10);
@@ -1471,7 +1508,7 @@ mod tests {
             news: vec![],
             coverage: None,
         };
-        store.save_n_factor_report(&saved).await?;
+        store.market.save_n_factor_report(&saved).await?;
         let date = (Utc::now() - Duration::days(1)).format("%b-%d-%y");
         let html = format!(
             "<table id='news-table'><tr><td>{date} 09:00AM</td><td><a class='tab-link-news' href='https://example.com/product'>New product</a></td></tr></table>"
@@ -1507,7 +1544,8 @@ mod tests {
         let response = json!({"overview":"New product catalyst","findings":[]}).to_string();
         let provider = TestAiServer::new(1, Some(response)).await?;
         let service = Arc::new(NFactorService::new(
-            store.clone(),
+            store.market.clone(),
+            store.user.clone(),
             finviz,
             StockTitanClient::new(&provider_config)?,
             Some(provider.ai.clone()),
@@ -1547,6 +1585,7 @@ mod tests {
         );
         assert_eq!(
             store
+                .market
                 .n_factor_report(&symbol, NewsSource::Finviz)
                 .await?
                 .unwrap()
@@ -1566,6 +1605,7 @@ mod tests {
         );
         assert_eq!(
             store
+                .market
                 .n_factor_report(&symbol, NewsSource::Finviz)
                 .await?
                 .unwrap()
@@ -1588,7 +1628,8 @@ mod tests {
             read_timeout_secs: 1,
         }));
         let service = Arc::new(NFactorService::new(
-            Store::connect("sqlite::memory:").await.unwrap(),
+            MarketStore::connect("sqlite::memory:").await.unwrap(),
+            UserStore::connect("sqlite::memory:").await.unwrap(),
             finviz,
             stock_titan,
             Some(ai.clone()),

@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/db/market",
+    "crates/db/user",
     "crates/journal",
     "crates/collections",
     "crates/themes",
@@ -34,6 +36,8 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Workspace crates
+market_db = { path = "crates/db/market", default-features = false }
+user_db = { path = "crates/db/user", default-features = false }
 journal = { path = "crates/journal" }
 collections = { path = "crates/collections" }
 themes = { path = "crates/themes" }

@@ -1,5 +1,6 @@
 use crate::config::FinvizConfig;
-use crate::store::Store;
+use user_db::Store as UserStore;
+
 use collections::TopStockScreen;
 use finviz::FinvizClient;
 use market_types::TickerSymbol;
@@ -91,7 +92,7 @@ pub enum TopStocksError {
 }
 
 pub struct TopStocksService {
-    store: Store,
+    user_store: UserStore,
     finviz: Arc<FinvizClient>,
     additional_filters: Vec<String>,
     snapshot: Mutex<Option<TopStocksSnapshot>>,
@@ -130,9 +131,13 @@ struct ScreenCacheKey {
 }
 
 impl TopStocksService {
-    pub fn new(store: Store, finviz: Arc<FinvizClient>, finviz_config: &FinvizConfig) -> Self {
+    pub fn new(
+        user_store: UserStore,
+        finviz: Arc<FinvizClient>,
+        finviz_config: &FinvizConfig,
+    ) -> Self {
         Self {
-            store,
+            user_store,
             finviz,
             additional_filters: finviz_config.top_stocks_additional_filters.clone(),
             snapshot: Mutex::new(None),
@@ -192,7 +197,7 @@ impl TopStocksService {
     }
 
     pub async fn screens(&self) -> Result<Vec<TopStockScreen>, TopStocksError> {
-        self.store
+        self.user_store
             .top_stock_screens()
             .await
             .map_err(TopStocksError::Persistence)
@@ -205,7 +210,7 @@ impl TopStocksService {
         let (name, url, count) = validate_screen_input(input)?;
         self.ensure_unique_name(None, &name).await?;
         let id = self
-            .store
+            .user_store
             .create_top_stock_screen(&name, &url, count)
             .await
             .map_err(map_write_error)?;
@@ -221,7 +226,7 @@ impl TopStocksService {
         let (name, url, count) = validate_screen_input(input)?;
         self.ensure_unique_name(Some(id), &name).await?;
         let updated = self
-            .store
+            .user_store
             .update_top_stock_screen(id, &name, &url, count)
             .await
             .map_err(map_write_error)?;
@@ -244,7 +249,7 @@ impl TopStocksService {
 
     pub async fn delete_screen(&self, id: i64) -> Result<(), TopStocksError> {
         if !self
-            .store
+            .user_store
             .delete_top_stock_screen(id)
             .await
             .map_err(TopStocksError::Persistence)?
@@ -365,7 +370,7 @@ impl TopStocksService {
     }
 
     async fn find_screen(&self, id: i64) -> Result<TopStockScreen, TopStocksError> {
-        self.store
+        self.user_store
             .top_stock_screen(id)
             .await
             .map_err(TopStocksError::Persistence)?

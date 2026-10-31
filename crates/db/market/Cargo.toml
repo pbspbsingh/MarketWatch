@@ -1,0 +1,21 @@
+[package]
+name = "market_db"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+default = ["sqlite-bundled"]
+sqlite-bundled = ["sqlx/sqlite-bundled"]
+sqlite-unbundled = ["sqlx/sqlite-unbundled"]
+test-support = []
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+market_types.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["sqlx-toml"] }
+tokio.workspace = true
+futures-util.workspace = true
+research.workspace = true

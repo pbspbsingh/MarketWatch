@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT symbol, outcome FROM theme_ai_processed_symbols ORDER BY symbol",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_processed_symbols",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "outcome",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "theme_ai_processed_symbols",
+            "name": "outcome"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a4c570d84d41b00706e867ac0b1f6e038171405935856a3e9b92cfdbdf8b3ebf"
+}

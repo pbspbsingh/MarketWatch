@@ -1,4 +1,3 @@
-use crate::store::{Store, trade_logs::WriteError};
 use chrono::NaiveDate;
 use chrono_tz::America::New_York;
 use journal::trade_logs::{
@@ -7,6 +6,8 @@ use journal::trade_logs::{
 use serde::{Deserialize, Serialize};
 use std::{cmp::Reverse, fmt::Display, str::FromStr};
 use ts_rs::TS;
+use user_db::Store as UserStore;
+use user_db::trade_logs::WriteError;
 pub mod market;
 
 #[derive(Debug, thiserror::Error)]
@@ -204,14 +205,14 @@ pub struct Snapshot {
 }
 
 pub struct TradeLogsService {
-    store: Store,
+    user_store: UserStore,
 }
 impl TradeLogsService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(user_store: UserStore) -> Self {
+        Self { user_store }
     }
     async fn all(&self) -> Result<(Vec<Trade>, Vec<Tag>), TradeLogsError> {
-        let stored = self.store.trade_logs_snapshot().await?;
+        let stored = self.user_store.trade_logs_snapshot().await?;
         let mut trades = stored
             .trades
             .into_iter()
@@ -302,11 +303,11 @@ impl TradeLogsService {
     }
     pub async fn save(&self, id: Option<i64>, input: TradeInput) -> Result<Trade, TradeLogsError> {
         let validated = validate(input).map_err(TradeLogsError::Validation)?;
-        let id = self.store.save_trade_log(id, &validated).await?;
+        let id = self.user_store.save_trade_log(id, &validated).await?;
         self.get(id).await
     }
     pub async fn delete(&self, id: i64, revision: i64) -> Result<(), TradeLogsError> {
-        Ok(self.store.delete_trade_log(id, revision).await?)
+        Ok(self.user_store.delete_trade_log(id, revision).await?)
     }
     pub async fn save_tag(&self, id: Option<i64>, input: TagInput) -> Result<Tag, TradeLogsError> {
         let name = input.name.trim();
@@ -326,7 +327,7 @@ impl TradeLogsService {
             ));
         }
         let id = self
-            .store
+            .user_store
             .save_trade_log_tag(id, name, description, input.revision)
             .await?;
         self.all()
@@ -337,12 +338,14 @@ impl TradeLogsService {
             .ok_or(WriteError::NotFound.into())
     }
     pub async fn delete_tag(&self, id: i64, revision: i64) -> Result<(), TradeLogsError> {
-        Ok(self.store.delete_trade_log_tag(id, revision).await?)
+        Ok(self.user_store.delete_trade_log_tag(id, revision).await?)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestDatabases;
+
     use super::*;
     use chrono::{DateTime, Utc};
     use journal::test_support::input;
@@ -351,7 +354,7 @@ mod tests {
 
     #[tokio::test]
     async fn tag_descriptions_are_optional_editable_and_revision_checked() {
-        let service = TradeLogsService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = TradeLogsService::new(TestDatabases::new().await.unwrap().user);
         let input: TagInput =
             serde_json::from_value(serde_json::json!({"name": " Entry:Good "})).unwrap();
         let tag = service.save_tag(None, input).await.unwrap();
@@ -405,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn tag_description_limit_counts_unicode_characters_and_rejects_oversized_updates() {
-        let service = TradeLogsService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = TradeLogsService::new(TestDatabases::new().await.unwrap().user);
         let tag = service
             .save_tag(
                 None,
@@ -585,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_tags_and_sources_union_results_without_duplicating_statistics() {
-        let service = TradeLogsService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = TradeLogsService::new(TestDatabases::new().await.unwrap().user);
         let mut ids = vec![];
         for name in ["Entry:Good", "Sale:Early"] {
             ids.push(
@@ -689,7 +692,7 @@ mod tests {
 
     #[tokio::test]
     async fn mixed_long_short_outcomes_and_direction_filters_share_tag_statistics() {
-        let service = TradeLogsService::new(Store::connect("sqlite::memory:").await.unwrap());
+        let service = TradeLogsService::new(TestDatabases::new().await.unwrap().user);
         let tag = service
             .save_tag(
                 None,
@@ -749,8 +752,8 @@ mod tests {
 
     #[tokio::test]
     async fn stats_count_parent_trades_once_and_separate_open_realized_profit() {
-        let store = Store::connect("sqlite::memory:").await.unwrap();
-        let service = TradeLogsService::new(store);
+        let store = TestDatabases::new().await.unwrap();
+        let service = TradeLogsService::new(store.user);
         let tag = service
             .save_tag(
                 None,

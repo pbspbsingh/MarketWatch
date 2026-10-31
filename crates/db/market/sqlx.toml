@@ -1,0 +1,2 @@
+[common]
+database-url-var = "MARKET_DATABASE_URL"

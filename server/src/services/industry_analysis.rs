@@ -1,11 +1,12 @@
 use crate::models::IndustryRanking;
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use market_analysis::PerformancePeriods;
 use std::collections::HashMap;
 use thiserror::Error;
 
 pub struct IndustryAnalysisService {
-    store: Store,
+    market_store: MarketStore,
 }
 
 #[derive(Debug, Error)]
@@ -15,13 +16,13 @@ pub enum IndustryAnalysisError {
 }
 
 impl IndustryAnalysisService {
-    pub fn new(store: Store) -> Self {
-        Self { store }
+    pub fn new(market_store: MarketStore) -> Self {
+        Self { market_store }
     }
 
     pub async fn latest_rankings(&self) -> Result<Vec<IndustryRanking>, IndustryAnalysisError> {
         let Some(rankings) = self
-            .store
+            .market_store
             .current_industry_rankings()
             .await
             .map_err(IndustryAnalysisError::Persistence)?
@@ -29,7 +30,7 @@ impl IndustryAnalysisService {
             return Ok(Vec::new());
         };
         let classifications = self
-            .store
+            .market_store
             .industry_classifications()
             .await
             .map_err(IndustryAnalysisError::Persistence)?

@@ -1,5 +1,6 @@
 use crate::services::yahoo::{YahooService, YahooServiceError};
-use crate::store::Store;
+use market_db::Store as MarketStore;
+
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use finviz::FinvizClient;
@@ -19,7 +20,7 @@ const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const ETF_INDUSTRY_KEY: &str = "exchangetradedfund";
 
 pub struct TickerDetailsService {
-    store: Store,
+    market_store: MarketStore,
     finviz: Arc<FinvizClient>,
     yahoo: Arc<YahooService>,
     market_schedule: MarketSchedule,
@@ -84,13 +85,13 @@ pub enum TickerDetailsError {
 
 impl TickerDetailsService {
     pub fn new(
-        store: Store,
+        market_store: MarketStore,
         finviz: Arc<FinvizClient>,
         yahoo: Arc<YahooService>,
         market_schedule: MarketSchedule,
     ) -> Self {
         Self {
-            store,
+            market_store,
             finviz,
             yahoo,
             market_schedule,
@@ -120,7 +121,7 @@ impl TickerDetailsService {
         symbol: &TickerSymbol,
     ) -> Result<Option<NaiveDate>, TickerDetailsError> {
         let is_etf = self
-            .store
+            .market_store
             .ticker_has_industry_membership(symbol, ETF_INDUSTRY_KEY)
             .await
             .map_err(TickerDetailsError::Persistence)?;
@@ -149,7 +150,7 @@ impl TickerDetailsService {
     ) -> Result<(Fundamentals, bool), TickerDetailsError> {
         let _guard = self.fundamentals_locks.lock(symbol).await;
         let cached = self
-            .store
+            .market_store
             .fundamentals(symbol)
             .await
             .map_err(TickerDetailsError::Persistence)?;
@@ -163,13 +164,13 @@ impl TickerDetailsService {
         }
 
         let is_etf = self
-            .store
+            .market_store
             .ticker_has_industry_membership(symbol, ETF_INDUSTRY_KEY)
             .await
             .map_err(TickerDetailsError::Persistence)?;
         match self.fetch_fundamentals(symbol, is_etf).await {
             Ok(fundamentals) => {
-                self.store
+                self.market_store
                     .upsert_fundamentals(&fundamentals)
                     .await
                     .map_err(TickerDetailsError::Persistence)?;
