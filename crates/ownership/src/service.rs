@@ -1,3 +1,4 @@
+use institutional::Store;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
@@ -13,16 +14,16 @@ use tokio::{
     time::Instant,
 };
 
-use crate::config::InstitutionsConfig;
-use crate::models::institutions::FundOwnership;
-use crate::models::institutions::FundPosition;
-use crate::models::institutions::InstitutionsReport;
-use crate::models::institutions::OwnershipProgress;
-use crate::models::institutions::OwnershipQuarter;
-use crate::models::institutions::ParsedArchive;
-use crate::models::institutions::SourceArchive;
-use crate::models::institutions::SourceFiling;
-use crate::models::institutions::SourcePosition;
+use crate::models::FundOwnership;
+use crate::models::FundPosition;
+use crate::models::InstitutionsReport;
+use crate::models::OwnershipProgress;
+use crate::models::OwnershipQuarter;
+use crate::models::ParsedArchive;
+use crate::models::SourceArchive;
+use crate::models::SourceFiling;
+use crate::models::SourcePosition;
+use crate::{Importer, InstitutionsConfig};
 use market_types::TickerSymbol;
 use sec::FACTS_URL;
 use sec::NPORT_URL;
@@ -41,7 +42,7 @@ pub struct InstitutionsService {
     yahoo: Arc<YahooClient>,
     workflow: Arc<Semaphore>,
     last_attempt: Mutex<Option<Instant>>,
-    store: OnceCell<institutions::Store>,
+    store: OnceCell<Store>,
     warning: RwLock<Option<String>>,
 }
 
@@ -101,15 +102,16 @@ impl InstitutionsService {
         receiver
     }
 
-    async fn store(&self) -> Result<&institutions::Store> {
+    async fn store(&self) -> Result<&Store> {
         self.store
-            .get_or_try_init(|| async { institutions::Store::connect(&self.database_url).await })
+            .get_or_try_init(|| async { Store::connect(&self.database_url).await })
             .await
     }
 
     async fn update_sources(&self, progress: &Progress, refresh: bool) -> Result<()> {
         let sec = self.sec.as_ref().context("Institutions needs SEC_USER_AGENT or institutions.user_agent with an application name and contact email")?;
         let store = self.store().await?;
+        let importer = Importer::new(store.clone());
         let mut last_attempt = self.last_attempt.lock().await;
         if !refresh && last_attempt.is_some_and(|time| time.elapsed() < CHECK_INTERVAL) {
             ensure!(
@@ -143,7 +145,7 @@ impl InstitutionsService {
                 progress.write().unwrap().phase = "importing".into();
                 let path = downloads.0.join(&name);
                 let import_progress = progress.clone();
-                store
+                importer
                     .import_archive(&path, archive.period, move |rows| {
                         import_progress.write().unwrap().positions = rows
                     })
@@ -179,7 +181,7 @@ impl InstitutionsService {
             progress.write().unwrap().phase = "importing".into();
             let path = downloads.0.join("companyfacts.zip");
             let facts_progress = progress.clone();
-            store
+            importer
                 .import_company_facts(&path, move |rows| {
                     facts_progress.write().unwrap().positions = rows
                 })
@@ -195,7 +197,7 @@ impl InstitutionsService {
         }
         let tickers = downloads.0.join("company_tickers.json");
         tokio::fs::write(&tickers, sec.bytes(TICKERS_URL).await?).await?;
-        store.import_tickers(&tickers).await?;
+        importer.import_tickers(&tickers).await?;
         let latest = archives.last().context("No SEC fund archives available")?;
         let source = store
             .source(&archive_filename(latest))

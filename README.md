@@ -8,7 +8,8 @@ Local market-analysis web application.
 - `server/`: application composition, HTTP/WebSocket endpoints, services, and application storage.
 - `crates/market_types/`: shared symbols, exchange identifiers, candles, profiles, and fundamentals; no HTTP, runtime, or database dependencies.
 - `crates/market_analysis/`: pure candle aggregation, indicators, relative strength, and performance calculations.
-- `crates/institutions/`: institutional ownership persistence and archive ingestion.
+- `crates/db/institutional/`: institutional persistence, migrations, and checked SQL.
+- `crates/ownership/`: SEC archive ingestion, source updates, and ownership reports.
 - `crates/providers/`: Yahoo, Finviz, NYSE, SEC, news, and AI adapters. Shared HTTP options and throttling live in `http/`; adapters have no server or database dependencies.
 
 Dependency versions and release settings live in the root Cargo workspace. Run
@@ -173,7 +174,7 @@ SQLite WAL transactions. Normal visits return imported history while checking
 for updates in the background; Refresh waits for the update. Each report is
 calculated from stored filings and holdings rather than a saved report cache.
 
-The server owns `server/migrations/` and `server/.sqlx/`. The `institutions`
+The server owns `server/migrations/` and `server/.sqlx/`. The `institutional`
 crate owns its migrations and SQLx metadata. Its `sqlx.toml` uses
 `INSTITUTIONS_DATABASE_URL` from that crate's `.env`; the server uses
 `DATABASE_URL` from the root `.env`.
@@ -186,10 +187,10 @@ before checking new queries:
 
 ```bash
 cargo sqlx database setup --source server/migrations  # main database, root .env
-cd crates/institutions
+cd crates/db/institutional
 cp .env.example .env                # first setup only; set your absolute DB path
 cargo sqlx database setup           # ownership database, using this crate's .env
-cd ../..
+cd ../../..
 SQLX_OFFLINE=false cargo sqlx prepare --workspace -- --all-targets
 SQLX_OFFLINE=true cargo test --workspace --locked --offline
 ```

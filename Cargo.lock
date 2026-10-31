@@ -1396,17 +1396,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "institutions"
+name = "institutional"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "csv",
- "serde",
  "serde_json",
  "sqlx",
  "tokio",
- "zip",
 ]
 
 [[package]]
@@ -1622,11 +1619,11 @@ dependencies = [
  "futures-util",
  "image",
  "include_dir",
- "institutions",
  "market_analysis",
  "market_types",
  "news",
  "nyse",
+ "ownership",
  "provider_http",
  "regex",
  "reqwest",
@@ -1853,6 +1850,25 @@ name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+
+[[package]]
+name = "ownership"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "csv",
+ "fastrand",
+ "institutional",
+ "market_types",
+ "sec",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "yahoo",
+ "zip",
+]
 
 [[package]]
 name = "parking"

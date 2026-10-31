@@ -10,7 +10,6 @@ use crate::services::global_search::GlobalSearchService;
 use crate::services::industries::IndustryRefreshService;
 use crate::services::industry_analysis::IndustryAnalysisService;
 use crate::services::industry_data::IndustryDataService;
-use crate::services::institutions::InstitutionsService;
 use crate::services::maintenance;
 use crate::services::market_chart::MarketChartService;
 use crate::services::market_explorer::MarketExplorerService;
@@ -48,6 +47,7 @@ use include_dir::Dir;
 use include_dir::include_dir;
 use market_types::TickerSymbol;
 use news::StockTitanClient;
+use ownership::InstitutionsService;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::{

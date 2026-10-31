@@ -3,7 +3,8 @@ members = [
     "crates/market_analysis",
     "server",
     "crates/market_types",
-    "crates/institutions",
+    "crates/db/institutional",
+    "crates/ownership",
     "crates/providers/http",
     "crates/providers/yahoo",
     "crates/providers/nyse",
@@ -38,7 +39,8 @@ provider_http = { path = "crates/providers/http" }
 yahoo = { path = "crates/providers/yahoo" }
 nyse = { path = "crates/providers/nyse" }
 market_types = { path = "crates/market_types" }
-institutions = { path = "crates/institutions", default-features = false }
+institutional = { path = "crates/db/institutional", default-features = false }
+ownership = { path = "crates/ownership", default-features = false }
 
 # Application and runtime
 chrono = { version = "0.4.45", features = ["serde"] }

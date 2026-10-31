@@ -68,4 +68,4 @@ pub struct FundPosition {
 
 pub(crate) use sec::SourceArchive;
 
-pub(crate) use institutions::{ParsedArchive, SourceFiling, SourcePosition};
+pub(crate) use institutional::{ParsedArchive, SourceFiling, SourcePosition};

@@ -8,7 +8,8 @@ use std::{
 use chrono::{NaiveDate, Utc};
 use zip::{ZipWriter, write::SimpleFileOptions};
 
-use crate::Store;
+use crate::Importer;
+use institutional::Store;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const LATEST: i32 = 2026 * 4 + 2;
@@ -107,19 +108,19 @@ async fn resolves_identifiers_across_archives_and_reads_without_source_files() {
         .await
         .unwrap();
     assert!(
-        store
+        Importer::new(store.clone())
             .import_archive(&older, LATEST - 2, |_| {})
             .await
             .unwrap()
     );
     assert!(
-        store
+        Importer::new(store.clone())
             .import_archive(&newer, LATEST - 1, |_| {})
             .await
             .unwrap()
     );
     assert!(
-        !store
+        !Importer::new(store.clone())
             .import_archive(&older, LATEST - 2, |_| panic!("unchanged archive was read"))
             .await
             .unwrap()
@@ -130,7 +131,7 @@ async fn resolves_identifiers_across_archives_and_reads_without_source_files() {
         .await
         .unwrap();
     store.publish(LATEST, now).await.unwrap();
-    store.pool.close().await;
+    store.close().await;
     std::fs::remove_file(older).unwrap();
     std::fs::remove_file(newer).unwrap();
     let reopened = Store::connect(&format!("sqlite://{}", path.display()))
@@ -162,7 +163,7 @@ async fn resolves_identifiers_across_archives_and_reads_without_source_files() {
             .iter()
             .all(|a| a.positions.is_empty() && a.cusips.is_empty())
     );
-    reopened.pool.close().await;
+    reopened.close().await;
 }
 
 #[tokio::test]
@@ -176,14 +177,14 @@ async fn failed_reimport_rolls_back_already_written_batches() {
     ))
     .await
     .unwrap();
-    store
+    Importer::new(store.clone())
         .import_archive(&path, LATEST - 1, |_| {})
         .await
         .unwrap();
     store.publish(LATEST, Utc::now()).await.unwrap();
     archive(&path, "broken", "30-JUN-2026", "EX", 200.0, true);
     assert!(
-        store
+        Importer::new(store.clone())
             .import_archive(&path, LATEST - 1, |_| {})
             .await
             .is_err()
@@ -193,10 +194,20 @@ async fn failed_reimport_rolls_back_already_written_batches() {
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].accession, "good");
     assert_eq!(positions[0].shares, 100.0);
+    // A panicking parser must also roll back batches sent before it stopped.
+    archive(&path, "panicked", "30-JUN-2026", "EX", 250.0, false);
+    let error = Importer::new(store.clone())
+        .import_archive(&path, LATEST - 1, |_| panic!("parser interrupted"))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("archive parser task failed"));
+    let data = store.load("EX").await.unwrap().unwrap();
+    assert_eq!(data.archives[1].positions[0].accession, "good");
+    assert_eq!(data.archives[1].positions[0].shares, 100.0);
     // A successful replacement replaces rather than appends the previous rows.
     archive(&path, "replacement", "30-JUN-2026", "EX", 300.0, false);
     assert!(
-        store
+        Importer::new(store.clone())
             .import_archive(&path, LATEST - 1, |_| {})
             .await
             .unwrap()
@@ -204,7 +215,7 @@ async fn failed_reimport_rolls_back_already_written_batches() {
     let data = store.load("EX").await.unwrap().unwrap();
     assert_eq!(data.archives[1].positions[0].shares, 300.0);
     assert_eq!(data.archives[1].positions.len(), 1);
-    store.pool.close().await;
+    store.close().await;
 }
 
 #[tokio::test]
@@ -231,11 +242,26 @@ async fn imports_issuer_share_counts_and_multiple_classes() {
     ))
     .await
     .unwrap();
-    assert!(store.import_tickers(&tickers).await.unwrap());
-    assert!(!store.import_tickers(&tickers).await.unwrap());
-    assert!(store.import_company_facts(&facts, |_| {}).await.unwrap());
     assert!(
-        !store
+        Importer::new(store.clone())
+            .import_tickers(&tickers)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !Importer::new(store.clone())
+            .import_tickers(&tickers)
+            .await
+            .unwrap()
+    );
+    assert!(
+        Importer::new(store.clone())
+            .import_company_facts(&facts, |_| {})
+            .await
+            .unwrap()
+    );
+    assert!(
+        !Importer::new(store.clone())
             .import_company_facts(&facts, |_| panic!("unchanged facts were read"))
             .await
             .unwrap()
@@ -254,7 +280,10 @@ async fn imports_issuer_share_counts_and_multiple_classes() {
         r#"{"0":{"ticker":"STRING_CIK","cik_str":2},"1":{"ticker":"MISSING_CIK","cik_str":3}}"#,
     )
     .unwrap();
-    store.import_tickers(&tickers).await.unwrap();
+    Importer::new(store.clone())
+        .import_tickers(&tickers)
+        .await
+        .unwrap();
     let issuer = store
         .load("STRING_CIK")
         .await
@@ -277,7 +306,7 @@ async fn imports_issuer_share_counts_and_multiple_classes() {
         issuer.counts[&NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()],
         75.0
     );
-    store.pool.close().await;
+    store.close().await;
 }
 
 #[tokio::test]
@@ -293,7 +322,7 @@ async fn imports_complete_sec_company_facts_archive() {
     ))
     .await
     .unwrap();
-    store
+    Importer::new(store.clone())
         .import_company_facts(&path, |index| {
             if index.is_multiple_of(1000) {
                 eprintln!("Read {index} issuer records");
@@ -304,7 +333,10 @@ async fn imports_complete_sec_company_facts_archive() {
     assert!(store.source("companyfacts.zip").await.unwrap().is_some());
     let tickers = fixture.path("company_tickers.json");
     std::fs::write(&tickers, r#"{"0":{"ticker":"AIR","cik_str":1750}}"#).unwrap();
-    store.import_tickers(&tickers).await.unwrap();
+    Importer::new(store.clone())
+        .import_tickers(&tickers)
+        .await
+        .unwrap();
     store.publish(LATEST, Utc::now()).await.unwrap();
     assert!(
         !store
@@ -317,7 +349,7 @@ async fn imports_complete_sec_company_facts_archive() {
             .counts
             .is_empty()
     );
-    store.pool.close().await;
+    store.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -331,7 +363,7 @@ async fn readers_see_previous_data_during_import() {
     ))
     .await
     .unwrap();
-    store
+    Importer::new(store.clone())
         .import_archive(&path, LATEST - 1, |_| {})
         .await
         .unwrap();
@@ -342,7 +374,7 @@ async fn readers_see_previous_data_during_import() {
     let (release, blocked) = std::sync::mpsc::channel();
     let writer = store.clone();
     let task = tokio::spawn(async move {
-        writer
+        Importer::new(writer.clone())
             .import_archive(&path, LATEST - 1, move |_| {
                 if let Some(started) = started.lock().unwrap().take() {
                     let _ = started.send(());
@@ -361,5 +393,5 @@ async fn readers_see_previous_data_during_import() {
     task.await.unwrap();
     let data = store.load("EX").await.unwrap().unwrap();
     assert_eq!(data.archives[1].positions[0].shares, 200.0);
-    store.pool.close().await;
+    store.close().await;
 }

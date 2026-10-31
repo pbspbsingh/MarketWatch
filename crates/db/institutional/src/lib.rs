@@ -1,7 +1,8 @@
 //! Rebuildable SEC ownership data. ZIP files are read only by the importer;
 //! reports use indexed SQLite records and a consistent read transaction.
 
-mod import;
+mod write;
+pub use write::Batch;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -69,6 +70,10 @@ pub struct ParsedArchive {
 }
 
 impl Store {
+    pub async fn close(&self) {
+        self.pool.close().await;
+    }
+
     pub async fn connect(database_url: &str) -> Result<Self> {
         let options = SqliteConnectOptions::from_str(database_url)
             .context("invalid institutions database URL")?
@@ -247,9 +252,6 @@ impl Store {
     }
 }
 
-fn normalize_ticker(value: &str) -> String {
+pub fn normalize_ticker(value: &str) -> String {
     value.trim().to_ascii_uppercase().replace('.', "-")
 }
-
-#[cfg(test)]
-mod tests;

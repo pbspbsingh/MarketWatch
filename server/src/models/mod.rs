@@ -1,7 +1,6 @@
 mod daily_notes;
 pub mod fundamental_assessment;
 pub(crate) mod fundamentals_background;
-pub(crate) mod institutions;
 pub mod n_factor;
 mod performance;
 mod theme_audits;

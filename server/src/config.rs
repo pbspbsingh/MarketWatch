@@ -47,21 +47,7 @@ pub struct Config {
     pub institutions: InstitutionsConfig,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct InstitutionsConfig {
-    pub user_agent: Option<String>,
-    pub database_url: String,
-}
-
-impl Default for InstitutionsConfig {
-    fn default() -> Self {
-        Self {
-            user_agent: None,
-            database_url: "sqlite://institutions.sqlite?mode=rwc".into(),
-        }
-    }
-}
+pub use ownership::InstitutionsConfig;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

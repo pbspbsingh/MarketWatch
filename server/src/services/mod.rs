@@ -8,7 +8,6 @@ pub mod global_search;
 pub mod industries;
 pub mod industry_analysis;
 pub mod industry_data;
-pub mod institutions;
 pub mod maintenance;
 pub mod market_chart;
 pub mod market_explorer;

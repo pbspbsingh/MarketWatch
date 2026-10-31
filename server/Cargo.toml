@@ -7,8 +7,8 @@ default-run = "market_watch"
 
 [features]
 default = ["sqlite-bundled"]
-sqlite-bundled = ["sqlx/sqlite-bundled", "institutions/sqlite-bundled"]
-sqlite-unbundled = ["sqlx/sqlite-unbundled", "institutions/sqlite-unbundled"]
+sqlite-bundled = ["sqlx/sqlite-bundled", "ownership/sqlite-bundled"]
+sqlite-unbundled = ["sqlx/sqlite-unbundled", "ownership/sqlite-unbundled"]
 
 [dependencies]
 market_analysis.workspace = true
@@ -30,7 +30,7 @@ include_dir.workspace = true
 argon2.workspace = true
 rpassword.workspace = true
 sqlx.workspace = true
-institutions.workspace = true
+ownership.workspace = true
 comrak.workspace = true
 regex.workspace = true
 sha2.workspace = true

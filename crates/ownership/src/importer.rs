@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -7,24 +7,23 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::{Store, normalize_ticker};
+use institutional::{Batch, Store, normalize_ticker};
 
 const BATCH_SIZE: usize = 4096;
-// Bounded batches keep memory independent of archive size. The blocking parser
-// stops automatically if the async writer is dropped or rejects a batch.
-enum Batch {
-    Filings(String),
-    Identifiers(String),
-    Holdings(String),
-    Counts(String),
-}
 
-impl Store {
+#[derive(Clone)]
+pub struct Importer {
+    store: Store,
+}
+impl Importer {
+    pub fn new(store: Store) -> Self {
+        Self { store }
+    }
     pub async fn import_archive(
         &self,
         path: &Path,
@@ -55,7 +54,11 @@ impl Store {
 
     pub async fn import_tickers(&self, path: &Path) -> Result<bool> {
         let fingerprint = fingerprint(path).await?;
-        if self.imported("company_tickers.json", &fingerprint).await? {
+        if self
+            .store
+            .imported("company_tickers.json", &fingerprint)
+            .await?
+        {
             return Ok(false);
         }
         let value: HashMap<String, Company> =
@@ -65,30 +68,8 @@ impl Store {
             .into_values()
             .map(|row| (normalize_ticker(&row.ticker), row.cik_str))
             .collect();
-        let json = serde_json::to_string(&rows)?;
-        let mut tx = self.pool.begin().await?;
-        sqlx::query!("DELETE FROM issuers")
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query!(
-            "INSERT INTO issuers (ticker, cik) SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)",
-            json
-        ).execute(&mut *tx).await?;
-        let imported_at = Utc::now();
-        sqlx::query!(
-            "INSERT INTO imported_sources (name, fingerprint, imported_at) VALUES ('company_tickers.json', ?, ?)
-             ON CONFLICT (name) DO UPDATE SET fingerprint = excluded.fingerprint, imported_at = excluded.imported_at",
-            fingerprint, imported_at
-        ).execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(true)
+        self.store.replace_issuers(&fingerprint, &rows).await
     }
-
-    async fn imported(&self, name: &str, fingerprint: &str) -> Result<bool> {
-        Ok(sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM imported_sources WHERE name = ? AND fingerprint = ?) AS \"exists!: bool\"", name, fingerprint)
-            .fetch_one(&self.pool).await?)
-    }
-
     async fn import_source(
         &self,
         path: &Path,
@@ -97,74 +78,27 @@ impl Store {
         parser: impl FnOnce(PathBuf, mpsc::Sender<Batch>) -> Result<()> + Send + 'static,
     ) -> Result<bool> {
         let fingerprint = fingerprint(path).await?;
-        if self.imported(name, &fingerprint).await? {
+        if self.store.imported(name, &fingerprint).await? {
             return Ok(false);
         }
-        let mut tx = self.pool.begin().await?;
-        if let Some(period) = period {
-            sqlx::query!("DELETE FROM holdings WHERE archive_period = ?", period)
-                .execute(&mut *tx)
-                .await?;
-            sqlx::query!("DELETE FROM identifiers WHERE archive_period = ?", period)
-                .execute(&mut *tx)
-                .await?;
-            sqlx::query!("DELETE FROM filings WHERE archive_period = ?", period)
-                .execute(&mut *tx)
-                .await?;
-        } else {
-            sqlx::query!("DELETE FROM share_counts")
-                .execute(&mut *tx)
-                .await?;
-        }
-        let (sender, mut receiver) = mpsc::channel(2);
+        let (sender, receiver) = mpsc::channel(2);
+        let finish = sender.clone();
         let path = path.to_owned();
         let parsed = tokio::task::spawn_blocking(move || parser(path, sender));
-        while let Some(batch) = receiver.recv().await {
-            match batch {
-                Batch::Filings(json) => {
-                    sqlx::query!(
-                        "INSERT INTO filings (archive_period, accession, fund_id, fund_name, registrant_name, cik, report_date, filing_date, has_omissions)
-                         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
-                             json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'),
-                             json_extract(value, '$[6]'), json_extract(value, '$[7]') FROM json_each(?)",
-                        period, json
-                    ).execute(&mut *tx).await?;
-                }
-                Batch::Identifiers(json) => {
-                    sqlx::query!(
-                        "INSERT OR IGNORE INTO identifiers (archive_period, holding_id, ticker)
-                         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)",
-                        period, json
-                    ).execute(&mut *tx).await?;
-                }
-                Batch::Holdings(json) => {
-                    sqlx::query!(
-                        "INSERT INTO holdings (archive_period, holding_id, accession, cusip, currency, shares, portfolio_weight, depositary_receipt)
-                         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
-                             json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'),
-                             json_extract(value, '$[6]') FROM json_each(?)",
-                        period, json
-                    ).execute(&mut *tx).await?;
-                }
-                Batch::Counts(json) => {
-                    sqlx::query!(
-                        "INSERT INTO share_counts (cik, as_of, shares)
-                         SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]') FROM json_each(?)",
-                        json
-                    ).execute(&mut *tx).await?;
-                }
-            }
-        }
-        // Never publish partial imports, including a parser error after earlier batches.
-        parsed.await??;
-        let imported_at = Utc::now();
-        sqlx::query!(
-            "INSERT INTO imported_sources (name, fingerprint, imported_at) VALUES (?, ?, ?)
-             ON CONFLICT (name) DO UPDATE SET fingerprint = excluded.fingerprint, imported_at = excluded.imported_at",
-            name, fingerprint, imported_at
-        ).execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(true)
+        let completion = tokio::spawn(async move {
+            let result = match parsed.await {
+                Ok(Ok(())) => Batch::Complete,
+                Ok(Err(error)) => Batch::Failed(format!("{error:#}")),
+                Err(error) => Batch::Failed(format!("archive parser task failed: {error}")),
+            };
+            let _ = finish.send(result).await;
+        });
+        let result = self
+            .store
+            .import_batches(name, &fingerprint, period, receiver)
+            .await;
+        completion.await.context("archive completion task failed")?;
+        result
     }
 }
 
@@ -252,7 +186,7 @@ fn parse_archive(
         .deserialize::<Registrant>()
         .map(|r| r.map(|s| (s.accession_number.clone(), s)))
         .collect::<std::result::Result<HashMap<_, _>, _>>()?;
-    let mut accessions = std::collections::HashSet::new();
+    let mut accessions = HashSet::new();
     let mut rows = Vec::with_capacity(BATCH_SIZE);
     for fund in reader(archive.by_name("FUND_REPORTED_INFO.tsv")?).deserialize::<Fund>() {
         let fund = fund?;
