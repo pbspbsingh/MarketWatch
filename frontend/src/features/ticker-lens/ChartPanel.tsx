@@ -8,15 +8,15 @@ import {
   useState,
 } from "react";
 import { Button, Checkbox, CircularProgress, Typography } from "@mui/material";
-import { fetchChartSummary, type ChartSummary } from "../../api/chart";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  fetchTickerGroupSummary,
   type TickerGroupSummary,
   type TickerGroupSummaryItem,
 } from "../../api/tickers";
 import { TickerDetailsDialog, type TickerDetailsTab } from "../../components/TickerDetailsDialog";
 import { Toast } from "../../components/Toast";
 import type { MarketChartDateMarker } from "../charts/MarketChart";
+import { chartSummaryQueryOptions, refreshChartSummaries } from "../charts/chartSummaryQuery";
 import type { ImageExportAction } from "../../components/ImageExportMenu";
 import {
   copyElementAsPng,
@@ -29,6 +29,7 @@ import {
   chartThemeEtfKey,
 } from "./constants";
 import { ChartHeader } from "./ChartHeader";
+import { groupSummaryQueryOptions } from "./groupSummaryQuery";
 import type {
   ChartBenchmarkMode,
   ChartBenchmarkSelection,
@@ -67,12 +68,6 @@ interface ChartPanelProps {
   forceSystemBenchmark?: boolean;
 }
 
-interface RequestState<T> {
-  key: string;
-  value?: T;
-  error?: string;
-}
-
 export function ChartPanel({
   overlayContainer,
   mode,
@@ -88,8 +83,9 @@ export function ChartPanel({
   const panelRef = useRef<HTMLElement>(null);
   const [chartStageElement, setChartStageElement] = useState<HTMLDivElement | null>(null);
   const [weeklyChartContext, setWeeklyChartContext] = useState<ChartSyncTarget | null>(null);
-  const [summaryState, setSummaryState] = useState<RequestState<ChartSummary>>({ key: "" });
-  const [groupSummaryState, setGroupSummaryState] = useState<RequestState<TickerGroupSummary>>({ key: "" });
+  const queryClient = useQueryClient();
+  const [dismissedSummaryError, setDismissedSummaryError] = useState<Error | null>(null);
+  const [dismissedGroupSummaryError, setDismissedGroupSummaryError] = useState<Error | null>(null);
   const [interval, setInterval] = useState<"D" | "W">(() =>
     readChartInterval(chartIntervalKey),
   );
@@ -115,27 +111,17 @@ export function ChartPanel({
     initialTab: TickerDetailsTab;
   }>();
   const closeDetails = useCallback(() => setDetailsSelection(undefined), []);
-  const [summaryVersion, setSummaryVersion] = useState(0);
-  const groupKeysKey = [...groupKeys].sort().join("\0");
-  const industryKeysKey = [...industryKeys].sort().join("\0");
-  const symbolsProvided = symbols !== undefined;
-  const symbolsKey = symbols?.join("\0") ?? "";
-  const summaryRequestKey = selectedTicker === undefined
-    ? undefined
-    : `${selectedTicker}\0${industryKeysKey}\0${summaryVersion}`;
-  const groupSummaryRequestKey = selectedTicker === undefined
-    ? `${mode}\0${groupKeysKey}\0${symbolsProvided ? symbolsKey : "undefined"}`
-    : undefined;
-  const summary = summaryState.key === summaryRequestKey ? summaryState.value : undefined;
-  const groupSummary = groupSummaryState.key === groupSummaryRequestKey
-    ? groupSummaryState.value
-    : undefined;
-  const summaryLoading = summaryRequestKey !== undefined && summaryState.key !== summaryRequestKey;
-  const groupSummaryLoading = groupSummaryRequestKey !== undefined
-    && groupSummaryState.key !== groupSummaryRequestKey;
-  const summaryError = summaryState.key === summaryRequestKey ? summaryState.error : undefined;
-  const groupSummaryError = groupSummaryState.key === groupSummaryRequestKey
-    ? groupSummaryState.error
+  const summaryQuery = useQuery(chartSummaryQueryOptions(selectedTicker, industryKeys));
+  const groupSummaryOptions = groupSummaryQueryOptions(mode, groupKeys, symbols);
+  const groupSummaryQuery = useQuery({ ...groupSummaryOptions, enabled: selectedTicker === undefined });
+  const groupSummaryRequestKey = JSON.stringify(groupSummaryOptions.queryKey);
+  const summary = summaryQuery.data;
+  const groupSummary = groupSummaryQuery.data;
+  const summaryLoading = summaryQuery.isLoading;
+  const groupSummaryLoading = groupSummaryQuery.isLoading;
+  const summaryError = summaryQuery.error !== dismissedSummaryError ? summaryQuery.error?.message : undefined;
+  const groupSummaryError = selectedTicker === undefined && groupSummaryQuery.error !== dismissedGroupSummaryError
+    ? groupSummaryQuery.error?.message
     : undefined;
   const detailsOpen = detailsSelection?.tickerSelection === tickerSelection && selectedTicker !== undefined;
   const selectedThemeEtf = themeSelection?.ticker === selectedTicker ? themeSelection?.etf : undefined;
@@ -343,60 +329,12 @@ export function ChartPanel({
   }, [closeDetails, detailsOpen, horizontalDetailsNavigation, selectedTicker, tickerSelection]);
 
   useEffect(() => {
-    if (selectedTicker === undefined) {
-      onSelectedTickerContext(undefined);
-      return;
-    }
-
-    const controller = new AbortController();
-    onSelectedTickerContext(undefined);
-    fetchChartSummary(
-      selectedTicker,
-      industryKeysKey === "" ? [] : industryKeysKey.split("\0"),
-      controller.signal,
-    )
-      .then((chartSummary) => {
-        if (controller.signal.aborted || summaryRequestKey === undefined) return;
-        setSummaryState({ key: summaryRequestKey, value: chartSummary });
-        onSelectedTickerContext({
-          symbol: selectedTicker,
-          industry: chartSummary.industry,
-          themeNames: chartSummary.themes,
-        });
-      })
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          if (summaryRequestKey !== undefined) {
-            setSummaryState({ key: summaryRequestKey, error: requestError.message });
-          }
-          onSelectedTickerContext(undefined);
-        }
-      });
-    return () => controller.abort();
-  }, [industryKeysKey, onSelectedTickerContext, selectedTicker, summaryRequestKey]);
-
-  useEffect(() => {
-    if (groupSummaryRequestKey === undefined) return;
-
-    const controller = new AbortController();
-    fetchTickerGroupSummary(
-      mode,
-      groupKeysKey === "" ? [] : groupKeysKey.split("\0"),
-      symbolsProvided ? symbolsKey === "" ? [] : symbolsKey.split("\0") : undefined,
-      controller.signal,
-    )
-      .then((nextSummary) => {
-        if (!controller.signal.aborted) {
-          setGroupSummaryState({ key: groupSummaryRequestKey, value: nextSummary });
-        }
-      })
-      .catch((requestError: unknown) => {
-        if (requestError instanceof Error && requestError.name !== "AbortError") {
-          setGroupSummaryState({ key: groupSummaryRequestKey, error: requestError.message });
-        }
-      });
-    return () => controller.abort();
-  }, [groupKeysKey, groupSummaryRequestKey, mode, symbolsKey, symbolsProvided]);
+    onSelectedTickerContext(selectedTicker === undefined || summary === undefined ? undefined : {
+      symbol: selectedTicker,
+      industry: summary.industry,
+      themeNames: summary.themes,
+    });
+  }, [onSelectedTickerContext, selectedTicker, summary]);
 
   return (
     <section ref={panelRef} className="workspace-panel ticker-lens-chart-panel">
@@ -477,10 +415,10 @@ export function ChartPanel({
       <Toast
         message={summaryError ?? groupSummaryError ?? chartError}
         onClose={() => {
-          if (summaryError !== undefined && summaryRequestKey !== undefined) {
-            setSummaryState({ key: summaryRequestKey });
-          } else if (groupSummaryError !== undefined && groupSummaryRequestKey !== undefined) {
-            setGroupSummaryState({ key: groupSummaryRequestKey });
+          if (summaryError !== undefined) {
+            setDismissedSummaryError(summaryQuery.error);
+          } else if (groupSummaryError !== undefined) {
+            setDismissedGroupSummaryError(groupSummaryQuery.error);
           }
           else if (chartErrors.top !== undefined) handleChartError("top", undefined);
           else handleChartError("bottom", undefined);
@@ -501,7 +439,9 @@ export function ChartPanel({
         open={detailsOpen}
         initialTab={detailsSelection?.initialTab}
         onClose={closeDetails}
-        onThemeChanged={() => setSummaryVersion((version) => version + 1)}
+        onThemeChanged={() => {
+          if (selectedTicker !== undefined) void refreshChartSummaries(queryClient, selectedTicker);
+        }}
       />
     </section>
   );
