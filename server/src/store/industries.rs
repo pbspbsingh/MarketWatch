@@ -205,7 +205,7 @@ impl Store {
 
         let fetched_at = rankings.fetched_at.naive_utc();
         for industry in &rankings.rows {
-            sqlx::query!(
+            let inserted = sqlx::query!(
                 "INSERT INTO industry_rankings (
                     industry_key, industry_name, market_date, fetched_at, performance_day,
                     performance_week, performance_month, performance_quarter,
@@ -225,8 +225,14 @@ impl Store {
                 industry.performance_year_to_date,
             )
             .execute(&mut *transaction)
-            .await
-            .context("failed to insert industry ranking")?;
+            .await;
+            if let Err(error) = inserted {
+                transaction
+                    .rollback()
+                    .await
+                    .context("failed to roll back industry rankings")?;
+                return Err(error).context("failed to insert industry ranking");
+            }
         }
 
         transaction
