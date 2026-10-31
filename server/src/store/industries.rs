@@ -95,7 +95,7 @@ impl Store {
             .context("failed to clear industry classifications")?;
         let fetched_at = fetched_at.naive_utc();
         for classification in classifications {
-            sqlx::query!(
+            let inserted = sqlx::query!(
                 "INSERT INTO industry_classifications (
                     industry_key, industry_name, sector_key, sector_name, ticker_count, fetched_at
                  ) VALUES (?, ?, ?, ?, ?, ?)",
@@ -107,8 +107,14 @@ impl Store {
                 fetched_at,
             )
             .execute(&mut *transaction)
-            .await
-            .context("failed to insert industry classification")?;
+            .await;
+            if let Err(error) = inserted {
+                transaction
+                    .rollback()
+                    .await
+                    .context("failed to roll back industry classifications")?;
+                return Err(error).context("failed to insert industry classification");
+            }
         }
         transaction
             .commit()
