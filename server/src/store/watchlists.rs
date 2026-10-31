@@ -78,6 +78,18 @@ impl Store {
         Ok(result.rows_affected() == 1)
     }
 
+    pub async fn all_watchlist_symbols(&self) -> anyhow::Result<Vec<TickerSymbol>> {
+        sqlx::query_scalar!(
+            "SELECT DISTINCT symbol FROM watchlist_tickers ORDER BY symbol COLLATE NOCASE"
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load watchlist symbols")?
+        .into_iter()
+        .map(|symbol| TickerSymbol::try_from(symbol).map_err(anyhow::Error::new))
+        .collect()
+    }
+
     pub async fn watchlist_symbols_union(&self, ids: &[i64]) -> anyhow::Result<Vec<TickerSymbol>> {
         if ids.is_empty() {
             return Ok(Vec::new());

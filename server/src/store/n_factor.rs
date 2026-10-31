@@ -58,6 +58,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::fundamentals_background::select_fundamentals_candidate;
     use chrono::Utc;
     use research::fundamentals_background::{FundamentalsFeature, FundamentalsTask};
     use themes::AssignmentSource;
@@ -116,30 +117,42 @@ mod tests {
             .await
             .unwrap();
         let cutoff = Utc::now() - chrono::Duration::days(7);
-        let watch = store
-            .fundamentals_candidate(false, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-            .await
-            .unwrap()
-            .unwrap();
+        let watch = select_fundamentals_candidate(
+            &store,
+            false,
+            cutoff,
+            &[],
+            None,
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(watch.task.symbol.as_str(), "WATCH");
         assert!(watch.in_watchlist);
-        let all = store
-            .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-            .await
-            .unwrap()
-            .unwrap();
+        let all = select_fundamentals_candidate(
+            &store,
+            true,
+            cutoff,
+            &[],
+            None,
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(all.task.symbol.as_str(), "WATCH");
-        let other = store
-            .fundamentals_candidate(
-                true,
-                cutoff,
-                std::slice::from_ref(&watch.task),
-                None,
-                Some(FundamentalsFeature::NFactor),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+        let other = select_fundamentals_candidate(
+            &store,
+            true,
+            cutoff,
+            std::slice::from_ref(&watch.task),
+            None,
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(other.task.symbol.as_str(), "INDUSTRY");
         assert!(!other.in_watchlist);
         // Rechecking picks up watchlist changes and newly learned ETF mappings.
@@ -148,25 +161,31 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[],
-                    None,
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
         assert!(
-            !store
-                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-                .await
-                .unwrap()
-                .unwrap()
-                .in_watchlist
+            !select_fundamentals_candidate(
+                &store,
+                true,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .in_watchlist
         );
         store
             .add_ticker_industry(
@@ -177,17 +196,17 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            store
-                .fundamentals_candidate(
-                    true,
-                    cutoff,
-                    &[],
-                    Some(&other.task.symbol),
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
+            select_fundamentals_candidate(
+                &store,
+                true,
+                cutoff,
+                &[],
+                Some(&other.task.symbol),
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
         // A newly added watchlist ticker is selected on the very next query.
         store
@@ -195,19 +214,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[],
-                    None,
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .unwrap()
-                .task
-                .symbol,
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .task
+            .symbol,
             watch.task.symbol
         );
     }
@@ -293,69 +312,75 @@ mod tests {
         report.news_fetched_at = now;
         store.save_n_factor_report(&report).await.unwrap();
         let cutoff = now - chrono::Duration::days(7);
-        let missing = store
-            .fundamentals_candidate(false, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-            .await
-            .unwrap()
-            .unwrap();
+        let missing = select_fundamentals_candidate(
+            &store,
+            false,
+            cutoff,
+            &[],
+            None,
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(missing.task.symbol.as_str(), "BBB");
         assert!(missing.checked_at.is_none());
         assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[missing.task],
-                    None,
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &[missing.task],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
         assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[],
-                    Some(&symbol),
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &[],
+                Some(&symbol),
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
         // An unchanged-news check defers refresh without changing the AI analysis date.
         report.generated_at = now - chrono::Duration::days(8);
         store.save_n_factor_report(&report).await.unwrap();
         assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[],
-                    Some(&symbol),
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
-        );
-        // Both sources must be due for a news check before the ticker is eligible again.
-        report.news_fetched_at = report.generated_at;
-        store.save_n_factor_report(&report).await.unwrap();
-        let stale = store
-            .fundamentals_candidate(
+            select_fundamentals_candidate(
+                &store,
                 false,
                 cutoff,
                 &[],
                 Some(&symbol),
-                Some(FundamentalsFeature::NFactor),
+                Some(FundamentalsFeature::NFactor)
             )
             .await
             .unwrap()
-            .unwrap();
+            .is_none()
+        );
+        // Both sources must be due for a news check before the ticker is eligible again.
+        report.news_fetched_at = report.generated_at;
+        store.save_n_factor_report(&report).await.unwrap();
+        let stale = select_fundamentals_candidate(
+            &store,
+            false,
+            cutoff,
+            &[],
+            Some(&symbol),
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(stale.checked_at, Some(report.news_fetched_at));
         assert_eq!(store.n_factor_reports(&symbol).await.unwrap().len(), 2);
     }
@@ -408,13 +433,19 @@ mod tests {
         store.save_n_factor_report(&report).await.unwrap();
         // A stale watchlist report outranks a missing non-watchlist report.
         assert_eq!(
-            store
-                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-                .await
-                .unwrap()
-                .unwrap()
-                .task
-                .symbol,
+            select_fundamentals_candidate(
+                &store,
+                true,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .task
+            .symbol,
             watch
         );
         // Running jobs and failures in backoff are excluded in SQL.
@@ -422,43 +453,49 @@ mod tests {
             symbol: watch.clone(),
             feature: FundamentalsFeature::NFactor,
         }];
-        let fallback = store
-            .fundamentals_candidate(
-                true,
+        let fallback = select_fundamentals_candidate(
+            &store,
+            true,
+            cutoff,
+            &excluded,
+            None,
+            Some(FundamentalsFeature::NFactor),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(fallback.task.symbol.as_str(), "OTHER");
+        assert!(
+            select_fundamentals_candidate(
+                &store,
+                false,
                 cutoff,
                 &excluded,
                 None,
-                Some(FundamentalsFeature::NFactor),
+                Some(FundamentalsFeature::NFactor)
             )
             .await
             .unwrap()
-            .unwrap();
-        assert_eq!(fallback.task.symbol.as_str(), "OTHER");
-        assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &excluded,
-                    None,
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_none()
+            .is_none()
         );
         // The oldest eligible watchlist report wins.
         report.generated_at = now - chrono::Duration::days(20);
         report.news_fetched_at = report.generated_at;
         store.save_n_factor_report(&report).await.unwrap();
         assert_eq!(
-            store
-                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-                .await
-                .unwrap()
-                .unwrap()
-                .task
-                .symbol,
+            select_fundamentals_candidate(
+                &store,
+                true,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .task
+            .symbol,
             fresh
         );
         // Report expiry includes the exact refresh boundary.
@@ -466,17 +503,17 @@ mod tests {
         report.news_fetched_at = cutoff;
         store.save_n_factor_report(&report).await.unwrap();
         assert!(
-            store
-                .fundamentals_candidate(
-                    false,
-                    cutoff,
-                    &[],
-                    Some(&fresh),
-                    Some(FundamentalsFeature::NFactor)
-                )
-                .await
-                .unwrap()
-                .is_some()
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &[],
+                Some(&fresh),
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .is_some()
         );
         // A new watchlist addition with no report takes priority immediately.
         let newcomer = fallback.task.symbol;
@@ -485,13 +522,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            store
-                .fundamentals_candidate(true, cutoff, &[], None, Some(FundamentalsFeature::NFactor))
-                .await
-                .unwrap()
-                .unwrap()
-                .task
-                .symbol,
+            select_fundamentals_candidate(
+                &store,
+                true,
+                cutoff,
+                &[],
+                None,
+                Some(FundamentalsFeature::NFactor)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .task
+            .symbol,
             newcomer
         );
     }

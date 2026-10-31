@@ -819,30 +819,30 @@ async fn assert_unavailable_fundamentals(response: (axum::http::StatusCode, Stri
 
             // Check the interval boundary without waiting for wall-clock days.
             assert!(
-                store
-                    .fundamentals_candidate(
-                        false,
-                        not_found_at - Duration::seconds(1),
-                        &[],
-                        Some(&data.symbol),
-                        Some(FundamentalsFeature::Assessment)
-                    )
-                    .await
-                    .unwrap()
-                    .is_none()
+                select_fundamentals_candidate(
+                    &store,
+                    false,
+                    not_found_at - Duration::seconds(1),
+                    &[],
+                    Some(&data.symbol),
+                    Some(FundamentalsFeature::Assessment)
+                )
+                .await
+                .unwrap()
+                .is_none()
             );
             assert!(
-                store
-                    .fundamentals_candidate(
-                        false,
-                        not_found_at,
-                        &[],
-                        Some(&data.symbol),
-                        Some(FundamentalsFeature::Assessment)
-                    )
-                    .await
-                    .unwrap()
-                    .is_some()
+                select_fundamentals_candidate(
+                    &store,
+                    false,
+                    not_found_at,
+                    &[],
+                    Some(&data.symbol),
+                    Some(FundamentalsFeature::Assessment)
+                )
+                .await
+                .unwrap()
+                .is_some()
             );
             server.abort();
         }

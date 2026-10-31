@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc, time::Duration as StdDuration};
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
+use market_types::TickerSymbol;
+use research::fundamental_assessment::RUBRIC_VERSION;
+use research::fundamentals_background::{FundamentalsCandidate, FundamentalsScope};
 use tokio::sync::watch;
 use tracing::{Instrument, info, info_span, warn};
 
@@ -100,16 +103,15 @@ impl FundamentalsBackgroundService {
                     }))
                     .collect::<Vec<_>>();
             excluded.extend(failures.keys().cloned());
-            let candidate = match self
-                .store
-                .fundamentals_candidate(
-                    config.process_non_watchlist,
-                    now - Duration::days(i64::from(config.refresh_days)),
-                    &excluded,
-                    None,
-                    None,
-                )
-                .await
+            let candidate = match select_fundamentals_candidate(
+                &self.store,
+                config.process_non_watchlist,
+                now - Duration::days(i64::from(config.refresh_days)),
+                &excluded,
+                None,
+                None,
+            )
+            .await
             {
                 Ok(candidate) => candidate,
                 Err(error) => {
@@ -223,4 +225,27 @@ impl FundamentalsBackgroundService {
                 }),
         }
     }
+}
+
+/// Compose user-owned watchlist scope with market-owned freshness and membership.
+pub(crate) async fn select_fundamentals_candidate(
+    store: &Store,
+    process_non_watchlist: bool,
+    cutoff: DateTime<Utc>,
+    excluded: &[FundamentalsTask],
+    symbol: Option<&TickerSymbol>,
+    feature: Option<FundamentalsFeature>,
+) -> anyhow::Result<Option<FundamentalsCandidate>> {
+    let watched_symbols = store.all_watchlist_symbols().await?;
+    store
+        .market_fundamentals_candidate(&FundamentalsScope {
+            process_non_watchlist,
+            watched_symbols: &watched_symbols,
+            cutoff,
+            excluded,
+            symbol,
+            feature,
+            rubric_version: RUBRIC_VERSION,
+        })
+        .await
 }

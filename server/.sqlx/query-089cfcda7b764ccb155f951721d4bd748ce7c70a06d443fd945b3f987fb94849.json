@@ -1,0 +1,47 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH features(feature) AS (VALUES ('assessment'), ('n_factor')),\n               candidates AS (\n                   SELECT DISTINCT c.symbol, f.feature,\n                       c.symbol IN (SELECT value FROM json_each(?7)) AS in_watchlist,\n                       CASE f.feature WHEN 'assessment' THEN\n                           (SELECT COALESCE(json_extract(a.payload, '$.not_found_at'), json_extract(a.payload, '$.last_checked_at'), json_extract(a.payload, '$.generated_at'))\n                            FROM fundamental_assessments a WHERE a.symbol = c.symbol\n                                AND (json_extract(a.payload, '$.rubric_version') = ?6\n                                    OR json_extract(a.payload, '$.not_found_at') IS NOT NULL))\n                       ELSE\n                           (SELECT COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))\n                            FROM n_factor_reports r WHERE r.symbol = c.symbol\n                            ORDER BY julianday(COALESCE(json_extract(r.payload, '$.news_fetched_at'), json_extract(r.payload, '$.generated_at'))) DESC\n                            LIMIT 1)\n                       END AS checked_at\n                   FROM industry_membership_tickers c CROSS JOIN features f\n                   WHERE (?1 OR c.symbol IN (SELECT value FROM json_each(?7)))\n                       AND (?4 IS NULL OR c.symbol = ?4)\n                       AND (?5 IS NULL OR f.feature = ?5)\n                       AND NOT EXISTS (\n                           SELECT 1 FROM industry_membership_tickers im\n                           WHERE im.symbol = c.symbol AND im.industry_key = 'exchangetradedfund'\n                       )\n                       AND NOT EXISTS (\n                           SELECT 1 FROM json_each(?3)\n                           WHERE json_extract(value, '$.symbol') = c.symbol\n                               AND json_extract(value, '$.feature') = f.feature\n                       )\n               )\n               SELECT symbol AS \"symbol!\", feature AS \"feature!\", in_watchlist AS \"in_watchlist!: bool\",\n                   checked_at AS \"checked_at?: String\"\n               FROM candidates\n               WHERE checked_at IS NULL OR julianday(checked_at) <= julianday(?2)\n               ORDER BY in_watchlist DESC, julianday(checked_at), RANDOM()\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "symbol!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "industry_membership_tickers",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "feature!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "in_watchlist!: bool",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "checked_at?: String",
+        "ordinal": 3,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "089cfcda7b764ccb155f951721d4bd748ce7c70a06d443fd945b3f987fb94849"
+}

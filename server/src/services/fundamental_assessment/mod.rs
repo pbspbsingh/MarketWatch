@@ -22,6 +22,7 @@ use super::{
 };
 
 use crate::config::FundamentalsBackgroundConfig;
+use crate::services::fundamentals_background::select_fundamentals_candidate;
 use crate::store::Store;
 use ai::AiClient;
 use ai::AiStreamDelta;
@@ -339,17 +340,16 @@ impl FundamentalAssessmentService {
         symbol: &TickerSymbol,
         config: FundamentalsBackgroundConfig,
     ) -> anyhow::Result<bool> {
-        Ok(self
-            .store
-            .fundamentals_candidate(
-                config.process_non_watchlist,
-                Utc::now() - Duration::days(i64::from(config.refresh_days)),
-                &[],
-                Some(symbol),
-                Some(FundamentalsFeature::Assessment),
-            )
-            .await?
-            .is_some())
+        Ok(select_fundamentals_candidate(
+            &self.store,
+            config.process_non_watchlist,
+            Utc::now() - Duration::days(i64::from(config.refresh_days)),
+            &[],
+            Some(symbol),
+            Some(FundamentalsFeature::Assessment),
+        )
+        .await?
+        .is_some())
     }
 
     fn update(

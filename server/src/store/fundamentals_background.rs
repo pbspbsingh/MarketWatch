@@ -1,38 +1,29 @@
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 
 use super::Store;
 use market_types::TickerSymbol;
-use research::fundamental_assessment::RUBRIC_VERSION;
 use research::fundamentals_background::FundamentalsFeature;
-use research::fundamentals_background::FundamentalsTask;
-
-pub(crate) struct FundamentalsCandidate {
-    pub task: FundamentalsTask,
-    pub checked_at: Option<DateTime<Utc>>,
-    pub in_watchlist: bool,
-}
+use research::fundamentals_background::{
+    FundamentalsCandidate, FundamentalsScope, FundamentalsTask,
+};
 
 impl Store {
     /// Selection and in-flight eligibility checks share scope and freshness rules.
-    pub(crate) async fn fundamentals_candidate(
+    pub(crate) async fn market_fundamentals_candidate(
         &self,
-        process_non_watchlist: bool,
-        cutoff: DateTime<Utc>,
-        excluded: &[FundamentalsTask],
-        symbol: Option<&TickerSymbol>,
-        feature: Option<FundamentalsFeature>,
+        scope: &FundamentalsScope<'_>,
     ) -> anyhow::Result<Option<FundamentalsCandidate>> {
-        let cutoff = cutoff.to_rfc3339();
-        let excluded = serde_json::to_string(excluded)?;
-        let symbol = symbol.map(TickerSymbol::as_str);
-        let feature = feature.map(FundamentalsFeature::as_str);
-        let rubric_version = i64::from(RUBRIC_VERSION);
+        let cutoff = scope.cutoff.to_rfc3339();
+        let excluded = serde_json::to_string(scope.excluded)?;
+        let watched = serde_json::to_string(scope.watched_symbols)?;
+        let symbol = scope.symbol.map(TickerSymbol::as_str);
+        let feature = scope.feature.map(FundamentalsFeature::as_str);
+        let rubric_version = i64::from(scope.rubric_version);
         let row = sqlx::query!(
             r#"WITH features(feature) AS (VALUES ('assessment'), ('n_factor')),
                candidates AS (
                    SELECT DISTINCT c.symbol, f.feature,
-                       EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol) AS in_watchlist,
+                       c.symbol IN (SELECT value FROM json_each(?7)) AS in_watchlist,
                        CASE f.feature WHEN 'assessment' THEN
                            (SELECT COALESCE(json_extract(a.payload, '$.not_found_at'), json_extract(a.payload, '$.last_checked_at'), json_extract(a.payload, '$.generated_at'))
                             FROM fundamental_assessments a WHERE a.symbol = c.symbol
@@ -45,7 +36,7 @@ impl Store {
                             LIMIT 1)
                        END AS checked_at
                    FROM industry_membership_tickers c CROSS JOIN features f
-                   WHERE (?1 OR EXISTS(SELECT 1 FROM watchlist_tickers wt WHERE wt.symbol = c.symbol))
+                   WHERE (?1 OR c.symbol IN (SELECT value FROM json_each(?7)))
                        AND (?4 IS NULL OR c.symbol = ?4)
                        AND (?5 IS NULL OR f.feature = ?5)
                        AND NOT EXISTS (
@@ -64,12 +55,13 @@ impl Store {
                WHERE checked_at IS NULL OR julianday(checked_at) <= julianday(?2)
                ORDER BY in_watchlist DESC, julianday(checked_at), RANDOM()
                LIMIT 1"#,
-            process_non_watchlist,
+            scope.process_non_watchlist,
             cutoff,
             excluded,
             symbol,
             feature,
             rubric_version,
+            watched,
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -99,7 +91,50 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::fundamentals_background::select_fundamentals_candidate;
+    use chrono::{DateTime, Utc};
     use market_types::{CompanyProfile, Exchange};
+    use research::fundamental_assessment::RUBRIC_VERSION;
+
+    #[tokio::test]
+    async fn market_selection_uses_supplied_watchlist_scope() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = seed(&store, "SCOPE").await;
+        let scope = FundamentalsScope {
+            process_non_watchlist: false,
+            watched_symbols: std::slice::from_ref(&symbol),
+            cutoff: Utc::now(),
+            excluded: &[],
+            symbol: Some(&symbol),
+            feature: Some(FundamentalsFeature::Assessment),
+            rubric_version: RUBRIC_VERSION,
+        };
+        let candidate = store
+            .market_fundamentals_candidate(&scope)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidate.task.symbol, symbol);
+        assert!(candidate.in_watchlist);
+
+        // Persisted user membership must not override the supplied snapshot.
+        let watchlist = store.watchlists().await.unwrap().remove(0);
+        store
+            .add_watchlist_symbol(watchlist.id, &symbol)
+            .await
+            .unwrap();
+        let empty_scope = FundamentalsScope {
+            watched_symbols: &[],
+            ..scope
+        };
+        assert!(
+            store
+                .market_fundamentals_candidate(&empty_scope)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 
     async fn seed(store: &Store, symbol: &str) -> TickerSymbol {
         let symbol = TickerSymbol::parse(symbol).unwrap();
@@ -168,17 +203,17 @@ mod tests {
             "INSERT INTO fundamental_assessments (symbol, payload) VALUES (?, ?) ON CONFLICT (symbol) DO UPDATE SET payload = excluded.payload",
             symbol_str, payload,
         ).execute(&store.pool).await.unwrap();
-        let candidate = store
-            .fundamentals_candidate(
-                true,
-                now - chrono::Duration::days(7),
-                &[],
-                Some(&symbol),
-                Some(FundamentalsFeature::Assessment),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+        let candidate = select_fundamentals_candidate(
+            &store,
+            true,
+            now - chrono::Duration::days(7),
+            &[],
+            Some(&symbol),
+            Some(FundamentalsFeature::Assessment),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(candidate.task.symbol, symbol);
         assert!(candidate.checked_at.is_none());
     }
@@ -197,16 +232,14 @@ mod tests {
         let assessment = FundamentalsFeature::Assessment;
         let n_factor = FundamentalsFeature::NFactor;
         save_check(&store, &symbol, n_factor, now, Some(now)).await;
-        let candidate = store
-            .fundamentals_candidate(false, cutoff, &[], None, None)
+        let candidate = select_fundamentals_candidate(&store, false, cutoff, &[], None, None)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(candidate.task.feature, assessment);
         assert!(candidate.checked_at.is_none());
         assert!(
-            store
-                .fundamentals_candidate(false, cutoff, &[candidate.task], None, None)
+            select_fundamentals_candidate(&store, false, cutoff, &[candidate.task], None, None)
                 .await
                 .unwrap()
                 .is_none()
@@ -215,16 +248,14 @@ mod tests {
         // An unchanged-data recheck can be fresh while its AI analysis is old.
         save_check(&store, &symbol, assessment, cutoff, Some(now)).await;
         assert!(
-            store
-                .fundamentals_candidate(false, cutoff, &[], None, None)
+            select_fundamentals_candidate(&store, false, cutoff, &[], None, None)
                 .await
                 .unwrap()
                 .is_none()
         );
         // Missing check metadata falls back to the saved analysis timestamp.
         save_check(&store, &symbol, assessment, cutoff, None).await;
-        let candidate = store
-            .fundamentals_candidate(false, cutoff, &[], None, None)
+        let candidate = select_fundamentals_candidate(&store, false, cutoff, &[], None, None)
             .await
             .unwrap()
             .unwrap();
@@ -232,8 +263,7 @@ mod tests {
         assert_eq!(candidate.checked_at, Some(cutoff));
         save_check(&store, &symbol, assessment, now, Some(now)).await;
         save_check(&store, &symbol, n_factor, cutoff, Some(cutoff)).await;
-        let candidate = store
-            .fundamentals_candidate(false, cutoff, &[], None, None)
+        let candidate = select_fundamentals_candidate(&store, false, cutoff, &[], None, None)
             .await
             .unwrap()
             .unwrap();
@@ -244,11 +274,17 @@ mod tests {
             feature: assessment,
         }];
         assert!(
-            store
-                .fundamentals_candidate(false, cutoff, &excluded, Some(&symbol), Some(n_factor))
-                .await
-                .unwrap()
-                .is_some()
+            select_fundamentals_candidate(
+                &store,
+                false,
+                cutoff,
+                &excluded,
+                Some(&symbol),
+                Some(n_factor)
+            )
+            .await
+            .unwrap()
+            .is_some()
         );
     }
 
@@ -267,19 +303,25 @@ mod tests {
             FundamentalsFeature::Assessment,
             FundamentalsFeature::NFactor,
         ] {
-            let candidate = store
-                .fundamentals_candidate(true, cutoff, &[], None, Some(feature))
-                .await
-                .unwrap()
-                .unwrap();
+            let candidate =
+                select_fundamentals_candidate(&store, true, cutoff, &[], None, Some(feature))
+                    .await
+                    .unwrap()
+                    .unwrap();
             assert_eq!(candidate.task.symbol, watched);
             assert!(candidate.in_watchlist);
             assert!(
-                store
-                    .fundamentals_candidate(false, cutoff, &[], Some(&other), Some(feature))
-                    .await
-                    .unwrap()
-                    .is_none()
+                select_fundamentals_candidate(
+                    &store,
+                    false,
+                    cutoff,
+                    &[],
+                    Some(&other),
+                    Some(feature)
+                )
+                .await
+                .unwrap()
+                .is_none()
             );
         }
         store
@@ -291,15 +333,20 @@ mod tests {
             FundamentalsFeature::NFactor,
         ] {
             assert!(
-                store
-                    .fundamentals_candidate(true, cutoff, &[], Some(&watched), Some(feature))
-                    .await
-                    .unwrap()
-                    .is_none()
+                select_fundamentals_candidate(
+                    &store,
+                    true,
+                    cutoff,
+                    &[],
+                    Some(&watched),
+                    Some(feature)
+                )
+                .await
+                .unwrap()
+                .is_none()
             );
             assert_eq!(
-                store
-                    .fundamentals_candidate(true, cutoff, &[], None, Some(feature))
+                select_fundamentals_candidate(&store, true, cutoff, &[], None, Some(feature))
                     .await
                     .unwrap()
                     .unwrap()
