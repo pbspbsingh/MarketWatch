@@ -1,7 +1,10 @@
 use tokio::sync::watch;
 use tracing::info;
 
-use crate::providers::{AiClient, AiError, BackgroundAiRequest, UserAiJob};
+use ai::AiClient;
+use ai::AiError;
+use ai::BackgroundAiRequest;
+use ai::UserAiJob;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AiJobOutcome {

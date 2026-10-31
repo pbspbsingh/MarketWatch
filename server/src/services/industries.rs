@@ -1,9 +1,9 @@
 use crate::config::MarketConfig;
 use crate::contracts::industry::MEMBERSHIP_FRESH_DAYS;
-use crate::providers::FinvizClient;
 use crate::store::{IndustryClassification, IndustryRankingRow, IndustryRankings, Store};
 use crate::utils::MarketSchedule;
 use chrono::{NaiveDate, TimeDelta, Utc};
+use finviz::FinvizClient;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;

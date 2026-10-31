@@ -1,5 +1,22 @@
 use super::*;
-use crate::config::Config;
+use std::path::{Path, PathBuf};
+#[derive(Deserialize)]
+struct Config {
+    finviz: FinvizConfig,
+    providers: ProviderConfig,
+}
+impl Config {
+    fn load(path: &str) -> anyhow::Result<Self> {
+        let path = std::env::var_os("MARKET_WATCH_CONFIG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../..")
+                    .join(path)
+            });
+        Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
+    }
+}
 use axum::{Router, extract::Query, http::StatusCode, routing::get};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -43,47 +60,6 @@ fn etf_membership_requires_explicit_provider_asset_metadata() {
             "<h1>ETF investment company</h1><div class=\"quote-header_meta\"></div>"
         )
         .is_err()
-    );
-}
-
-#[tokio::test]
-async fn importing_spy_records_etf_membership_once_without_a_stock_industry_link() {
-    use crate::services::industry_data::tests::fixture;
-    use crate::store::Store;
-    use market_types::{CompanyProfile, Exchange};
-    let mock = MockFinviz::start(|parameters| {
-        assert_eq!(parameters["t"], "SPY");
-        (
-            StatusCode::OK,
-            include_str!("fixtures/etf_quote.html").into(),
-        )
-    })
-    .await;
-    let store = Store::connect("sqlite::memory:").await.unwrap();
-    let symbol = TickerSymbol::parse("SPY").unwrap();
-    store
-        .upsert_company_profile(&CompanyProfile {
-            symbol: symbol.clone(),
-            name: Some("SPDR S&P 500 ETF Trust".into()),
-            exchange: Exchange::Nyse,
-            description: None,
-            fetched_at: Utc::now(),
-        })
-        .await
-        .unwrap();
-    let (_, catalog, _) = fixture(store.clone(), Arc::new(mock.client()));
-    catalog.ensure_ticker_symbol(&symbol).await.unwrap();
-    assert!(
-        store
-            .ticker_has_industry_membership(&symbol, ETF_INDUSTRY_KEY)
-            .await
-            .unwrap()
-    );
-    catalog.ensure_ticker_symbol(&symbol).await.unwrap();
-    assert_eq!(
-        mock.requests.lock().unwrap().len(),
-        1,
-        "Verified ETF assignment is reused"
     );
 }
 

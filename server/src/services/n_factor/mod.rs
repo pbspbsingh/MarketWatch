@@ -1,3 +1,5 @@
+#[cfg(test)]
+use ai::test_support::TestAiServer;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -27,16 +29,16 @@ use crate::models::n_factor::NewsCoverage;
 use crate::models::n_factor::NewsItem;
 use crate::models::n_factor::NewsSource;
 use crate::models::n_factor::NewsStopReason;
-use crate::providers::AiClient;
-use crate::providers::AiError;
-use crate::providers::AiStreamDelta;
-use crate::providers::FinvizClient;
-use crate::providers::UserAiJob;
-use crate::providers::news::NewsBatch;
-use crate::providers::news::NewsProgress;
-use crate::providers::news::StockTitanClient;
 use crate::store::Store;
+use ai::AiClient;
+use ai::AiError;
+use ai::AiStreamDelta;
+use ai::UserAiJob;
+use finviz::FinvizClient;
 use market_types::TickerSymbol;
+use news::NewsBatch;
+use news::NewsProgress;
+use news::StockTitanClient;
 
 const PROMPT_VERSION: u32 = 3;
 const MAX_FINDINGS: usize = 2;
@@ -1503,7 +1505,7 @@ mod tests {
         let finviz =
             Arc::new(FinvizClient::new(&finviz_config, &provider_config)?.with_stock_url(&url));
         let response = json!({"overview":"New product catalyst","findings":[]}).to_string();
-        let provider = crate::providers::TestAiServer::new(1, Some(response)).await?;
+        let provider = TestAiServer::new(1, Some(response)).await?;
         let service = Arc::new(NFactorService::new(
             store.clone(),
             finviz,

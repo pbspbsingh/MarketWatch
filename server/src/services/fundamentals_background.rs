@@ -9,12 +9,11 @@ use super::{
     fundamental_assessment::{AssessmentStartError, FundamentalAssessmentService},
     n_factor::{NFactorService, NFactorStartError},
 };
-use crate::{
-    config::FundamentalsBackgroundConfig,
-    models::fundamentals_background::{FundamentalsFeature, FundamentalsTask},
-    providers::AiClient,
-    store::Store,
-};
+use crate::config::FundamentalsBackgroundConfig;
+use crate::models::fundamentals_background::FundamentalsFeature;
+use crate::models::fundamentals_background::FundamentalsTask;
+use crate::store::Store;
+use ai::AiClient;
 
 const FAILURE_BACKOFF: Duration = Duration::minutes(5);
 const NON_WATCHLIST_DELAY: StdDuration = StdDuration::from_secs(10);

@@ -1,3 +1,5 @@
+use anyhow::Error;
+use reqwest::{Error as HttpError, StatusCode};
 mod throttle;
 
 use serde::Deserialize;
@@ -13,4 +15,12 @@ pub struct ProviderConfig {
     pub request_timeout_secs: u64,
     pub min_delay_ms: u64,
     pub max_delay_ms: u64,
+}
+
+pub fn is_http_not_found(error: &Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<HttpError>()
+            .is_some_and(|error| error.status() == Some(StatusCode::NOT_FOUND))
+    })
 }

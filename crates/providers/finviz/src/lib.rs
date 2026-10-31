@@ -1,11 +1,11 @@
-use crate::config::{FinvizConfig, ProviderConfig};
-use crate::contracts::industry::ETF_INDUSTRY_KEY;
-use crate::models::n_factor::NewsStopReason;
-use crate::providers::news::{NewsBatch, limit_finviz_news, parse_finviz_news};
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use market_types::ETF_INDUSTRY_KEY;
 use market_types::{Forecast, FundamentalPeriod, Fundamentals, QuarterFundamentals, TickerSymbol};
+use news::NewsStopReason;
+use news::{NewsBatch, limit_finviz_news, parse_finviz_news};
 use provider_http::BROWSER_USER_AGENT;
+use provider_http::ProviderConfig;
 use provider_http::RequestThrottle;
 use reqwest::{Client, Url};
 use scraper::{ElementRef, Html, Selector};
@@ -21,6 +21,14 @@ const SCREENER_OVERVIEW_VIEW: &str = "111";
 const FUNDAMENTAL_QUARTERS: usize = 16;
 const FORECAST_QUARTERS: usize = 2;
 const FINVIZ_SECTOR_COUNT: usize = 11;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FinvizConfig {
+    pub top_stocks_base_filters: Vec<String>,
+    #[serde(default)]
+    pub top_stocks_additional_filters: Vec<String>,
+}
 
 pub struct FinvizClient {
     http: Client,
@@ -128,8 +136,8 @@ struct ScreenerRowText {
 }
 
 impl FinvizClient {
-    #[cfg(test)]
-    pub(crate) fn with_screener_url(mut self, url: &str) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_screener_url(mut self, url: &str) -> Self {
         self.screener_url = Url::parse(url).expect("valid test screener URL");
         self
     }
@@ -866,9 +874,9 @@ fn selector(value: &str) -> anyhow::Result<Selector> {
     Selector::parse(value).map_err(|_| anyhow::anyhow!("invalid internal CSS selector: {value}"))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl FinvizClient {
-    pub(crate) fn with_stock_url(mut self, url: &str) -> Self {
+    pub fn with_stock_url(mut self, url: &str) -> Self {
         self.stock_url = Url::parse(url).expect("valid test stock URL");
         self
     }

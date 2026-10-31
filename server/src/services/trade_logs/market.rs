@@ -2,7 +2,6 @@ use super::{Filter, TradeLogsError, TradeLogsService};
 use crate::models::trade_logs::Valuation;
 use crate::models::trade_logs::parse_decimal;
 use crate::models::trade_logs::value_open_trade;
-use crate::providers::{ChartInterval, YahooClient};
 use crate::services::yahoo::YahooService;
 use chrono::{Duration, Utc};
 use futures_util::{StreamExt, stream};
@@ -13,6 +12,8 @@ use std::{
     sync::Arc,
 };
 use ts_rs::TS;
+use yahoo::ChartInterval;
+use yahoo::YahooClient;
 
 pub struct TradeLogMarketService {
     logs: Arc<TradeLogsService>,

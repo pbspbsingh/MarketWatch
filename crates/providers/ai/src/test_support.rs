@@ -18,6 +18,7 @@ use tokio::{
 };
 
 const SHORT_PROMPT: &str = "Reply with exactly OK and nothing else.";
+#[cfg(test)]
 const LONG_PROMPT: &str = "Write a detailed numbered list of 500 distinct tips for maintaining a garden. Give each tip a full sentence. Start immediately with item 1, do not summarize, and continue through item 500.";
 
 // JoinHandle's own Drop detaches the task. Always abort on early exits, including
@@ -101,7 +102,7 @@ impl Drop for Generation {
     }
 }
 
-pub(crate) struct TestAiServer {
+pub struct TestAiServer {
     pub ai: Arc<AiClient>,
     state: Arc<MockServer>,
     server: JoinHandle<()>,
@@ -499,7 +500,7 @@ async fn measured_request(
 
 /// Exercises real prompts supplied by the feature, without changing their
 /// instructions or request settings. The feature validates every complete result.
-pub(crate) async fn probe_cancellation(
+pub async fn probe_cancellation(
     config: &AiConfig,
     original: &(String, String),
     replacement: &(String, String),
@@ -693,7 +694,7 @@ pub(crate) async fn probe_cancellation(
 
 /// Compare the observed abort timings with the application's actual FIFO wait:
 /// both requests use the same client and its single permit, and neither is aborted.
-pub(crate) async fn probe_wait_for_completion(
+pub async fn probe_wait_for_completion(
     config: &AiConfig,
     original: &(String, String),
     replacement: &(String, String),
@@ -770,7 +771,7 @@ pub(crate) async fn probe_wait_for_completion(
 
 /// Submit a user assessment through the same full client without explicitly
 /// aborting anything. Production admission must cancel only its background stream.
-pub(crate) async fn probe_automatic_preemption(
+pub async fn probe_automatic_preemption(
     config: &AiConfig,
     original: &(String, String),
     replacement: &(String, String),

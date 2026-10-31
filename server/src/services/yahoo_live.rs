@@ -1,4 +1,3 @@
-use crate::providers::{PricingData, spawn_transport};
 use crate::services::yahoo::{IntradayCandle, IntradaySessionSeed, YahooService};
 use crate::utils::{MarketSchedule, MarketSession};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
@@ -12,6 +11,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior, sleep, sleep_until};
 use tracing::warn;
+use yahoo::PricingData;
+use yahoo::spawn_transport;
 
 pub(crate) const MAX_ACTIVE_SYMBOLS: usize = 128;
 const PRICING_BUFFER_SIZE: usize = 256;
@@ -1022,9 +1023,10 @@ fn normalize_symbol(symbol: &str) -> Result<YahooSymbol, YahooLiveError> {
 mod tests {
     use super::*;
     use crate::config::{Config, MarketConfig};
-    use crate::providers::{FinvizClient, YahooClient};
     use crate::store::Store;
     use chrono::{NaiveTime, TimeDelta};
+    use finviz::FinvizClient;
+    use yahoo::YahooClient;
 
     fn yahoo(value: &str) -> YahooSymbol {
         YahooSymbol::parse(value).unwrap()

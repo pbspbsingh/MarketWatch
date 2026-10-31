@@ -570,18 +570,17 @@ fn invalid(message: String) -> YahooError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
     fn live_client() -> YahooClient {
         #[derive(serde::Deserialize)]
         struct Configuration {
             providers: ProviderConfig,
         }
         let path = std::env::var_os("MARKET_WATCH_CONFIG")
-            .map(std::path::PathBuf::from)
+            .map(PathBuf::from)
             .unwrap_or_else(|| {
-                std::path::PathBuf::from(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../config.toml"
-                ))
+                PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../config.toml"))
             });
         let config: Configuration = toml::from_str(
             &std::fs::read_to_string(path).expect("read live provider configuration"),

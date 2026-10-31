@@ -18,6 +18,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -808,6 +824,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
 
 [[package]]
+name = "finviz"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "market_types",
+ "news",
+ "provider_http",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1563,6 +1598,7 @@ dependencies = [
 name = "market_watch"
 version = "3.0.0"
 dependencies = [
+ "ai",
  "anyhow",
  "argon2",
  "axum",
@@ -1571,17 +1607,19 @@ dependencies = [
  "chrono-tz",
  "comrak",
  "fastrand",
+ "finviz",
  "futures-util",
  "image",
  "include_dir",
  "institutions",
  "market_types",
+ "news",
  "nyse",
  "provider_http",
  "regex",
  "reqwest",
  "rpassword",
- "scraper",
+ "sec",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1712,6 +1750,27 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "news"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "chrono-tz",
+ "fastrand",
+ "futures-util",
+ "market_types",
+ "provider_http",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "nix"
@@ -2001,7 +2060,9 @@ dependencies = [
 name = "provider_http"
 version = "3.0.0"
 dependencies = [
+ "anyhow",
  "fastrand",
+ "reqwest",
  "serde",
  "tokio",
 ]
@@ -2421,6 +2482,22 @@ dependencies = [
  "precomputed-hash",
  "selectors",
  "tendril",
+]
+
+[[package]]
+name = "sec"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "fastrand",
+ "regex",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -1,8 +1,4 @@
-use std::{
-    path::Path,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{path::Path, time::Duration};
 
 use anyhow::{Result, ensure};
 use chrono::{DateTime, Utc};
@@ -13,16 +9,30 @@ use tokio::{
     time::{Instant, sleep},
 };
 
-use crate::models::institutions::{OwnershipProgress, SourceArchive};
+use serde::{Deserialize, Serialize};
 
-pub(crate) const NPORT_URL: &str =
+#[derive(Clone, Deserialize, Serialize)]
+pub struct SourceArchive {
+    pub period: i32,
+    pub url: String,
+}
+
+impl SourceArchive {
+    pub fn label(&self) -> String {
+        format!(
+            "{} Q{}",
+            self.period.div_euclid(4),
+            self.period.rem_euclid(4) + 1
+        )
+    }
+}
+
+pub const NPORT_URL: &str =
     "https://www.sec.gov/data-research/sec-markets-data/form-n-port-data-sets";
-pub(crate) const FACTS_URL: &str =
-    "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip";
-pub(crate) const TICKERS_URL: &str = "https://www.sec.gov/files/company_tickers.json";
-pub(crate) type Progress = Arc<RwLock<OwnershipProgress>>;
+pub const FACTS_URL: &str = "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip";
+pub const TICKERS_URL: &str = "https://www.sec.gov/files/company_tickers.json";
 
-pub(crate) struct SourceVersion {
+pub struct SourceVersion {
     pub modified_at: Option<DateTime<Utc>>,
     pub etag: Option<String>,
 }
@@ -46,7 +56,7 @@ impl SourceVersion {
 }
 
 /// All SEC hosts and retries share this gate. No automatic, unmetered redirects.
-pub(crate) struct SecClient {
+pub struct SecClient {
     http: Client,
     next_request: Mutex<Instant>,
     transfer: tokio::sync::Semaphore,
@@ -190,18 +200,14 @@ impl SecClient {
         &self,
         source: &SourceArchive,
         path: &Path,
-        progress: &Progress,
+        progress: impl Fn(u64, Option<u64>) + Send + Sync,
     ) -> Result<SourceVersion> {
         let _transfer = self.transfer.acquire().await?;
         for attempt in 1..=3 {
             let mut response = self.response(&source.url, true).await?;
             let version = SourceVersion::from_headers(response.headers())?;
             let expected = response.content_length();
-            {
-                let mut state = progress.write().unwrap();
-                state.bytes_received = 0;
-                state.bytes_total = expected;
-            }
+            progress(0, expected);
             let mut file = tokio::fs::File::create(path).await?;
             let mut received = 0_u64;
             let result = async {
@@ -212,7 +218,7 @@ impl SecClient {
                         "SEC archive exceeds 8 GB size limit"
                     );
                     file.write_all(&chunk).await?;
-                    progress.write().unwrap().bytes_received = received;
+                    progress(received, expected);
                 }
                 file.flush().await?;
                 ensure!(
@@ -236,17 +242,17 @@ impl SecClient {
     pub async fn archive_changed(
         &self,
         source: &SourceArchive,
-        known: &institutions::SourceState,
+        known: &SourceVersion,
     ) -> Result<bool> {
         let _transfer = self.transfer.acquire().await?;
         for attempt in 1..=3 {
             self.wait().await;
             tracing::debug!(url = %source.url, attempt, "checking SEC archive update");
             let mut request = self.http.head(&source.url);
-            if let Some(etag) = &known.source_etag {
+            if let Some(etag) = &known.etag {
                 request = request.header(header::IF_NONE_MATCH, etag);
             }
-            if let Some(modified) = known.source_modified_at {
+            if let Some(modified) = known.modified_at {
                 request = request.header(
                     header::IF_MODIFIED_SINCE,
                     modified.format("%a, %d %b %Y %H:%M:%S GMT").to_string(),
@@ -269,9 +275,9 @@ impl SecClient {
                 response.status()
             );
             let remote = SourceVersion::from_headers(response.headers())?;
-            return Ok(match (known.source_etag.as_ref(), remote.etag.as_ref()) {
+            return Ok(match (known.etag.as_ref(), remote.etag.as_ref()) {
                 (Some(before), Some(after)) => before != after,
-                _ => match (known.source_modified_at, remote.modified_at) {
+                _ => match (known.modified_at, remote.modified_at) {
                     (Some(before), Some(after)) => before != after,
                     _ => true,
                 },
@@ -316,10 +322,9 @@ mod tests {
         let modified = DateTime::parse_from_rfc2822("Wed, 21 Oct 2015 07:28:00 GMT")
             .unwrap()
             .with_timezone(&Utc);
-        let known = institutions::SourceState {
-            imported_at: Utc::now(),
-            source_modified_at: Some(modified),
-            source_etag: Some("\"version_1\"".into()),
+        let known = SourceVersion {
+            modified_at: Some(modified),
+            etag: Some("\"version_1\"".into()),
         };
         let (source, request) =
             server("HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n".into());
@@ -342,8 +347,7 @@ mod tests {
             "institutions_download_{:032x}.zip",
             fastrand::u128(..)
         ));
-        let progress = Arc::new(RwLock::new(OwnershipProgress::default()));
-        let version = client.download(&source, &path, &progress).await.unwrap();
+        let version = client.download(&source, &path, |_, _| {}).await.unwrap();
         let bytes = tokio::fs::read(&path).await.unwrap();
         tokio::fs::remove_file(path).await.unwrap();
         request.join().unwrap();

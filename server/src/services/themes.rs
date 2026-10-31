@@ -6,9 +6,12 @@ use crate::models::ThemeAiJobSummary;
 use crate::models::ThemeSuggestion;
 use crate::models::ThemeSuggestionError;
 use crate::models::ThemeTicker;
-use crate::providers::{AiClient, AiError, AiStreamDelta, UserAiJob};
 use crate::services::tickers::TickerCatalogService;
 use crate::store::Store;
+use ai::AiClient;
+use ai::AiError;
+use ai::AiStreamDelta;
+use ai::UserAiJob;
 use market_types::TickerSymbol;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -919,4 +922,87 @@ pub(crate) fn strip_code_fence(response: &str) -> &str {
         .and_then(|value| value.strip_suffix("```"))
         .map(str::trim)
         .unwrap_or(trimmed)
+}
+
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    use crate::config::Config;
+    use anyhow::Context;
+    #[derive(Deserialize)]
+    struct LiveThemeSuggestion {
+        symbol: String,
+        themes: Vec<String>,
+    }
+
+    #[tokio::test]
+    #[ignore = "submits a stored theme job to the configured live OpenAI-compatible API"]
+    async fn live_stored_theme_job() -> anyhow::Result<()> {
+        let job_id = std::env::var("OPENAI_COMPATIBLE_JOB_ID")
+            .context("OPENAI_COMPATIBLE_JOB_ID must identify a stored theme job")?
+            .parse::<i64>()
+            .context("OPENAI_COMPATIBLE_JOB_ID must be an integer")?;
+        let config = Config::load("config.toml")?;
+        let ai = config.ai.as_ref().context("AI must be configured")?;
+        let store = Store::connect(&config.database.url).await?;
+        let job = store
+            .theme_ai_job(job_id)
+            .await?
+            .with_context(|| format!("theme AI job {job_id} does not exist"))?;
+
+        let content = AiClient::new(ai)
+            .complete_with_updates(&job.prompt, |_| {})
+            .await?;
+        let suggestions = serde_json::from_str::<Vec<LiveThemeSuggestion>>(strip_fence(&content))
+            .context("OpenAI-compatible response must be a JSON suggestion array")?;
+        let expected = job
+            .symbols
+            .iter()
+            .map(ToString::to_string)
+            .collect::<HashSet<_>>();
+        let returned = suggestions
+            .iter()
+            .map(|suggestion| suggestion.symbol.trim().to_uppercase())
+            .collect::<HashSet<_>>();
+        let known_themes = store
+            .themes()
+            .await?
+            .into_iter()
+            .map(|theme| theme.name)
+            .collect::<HashSet<_>>();
+
+        anyhow::ensure!(
+            returned == expected,
+            "response ticker set did not match the job"
+        );
+        anyhow::ensure!(
+            suggestions
+                .iter()
+                .all(|suggestion| suggestion.themes.len() <= 2),
+            "a response assigned more than two themes to a ticker"
+        );
+        anyhow::ensure!(
+            suggestions
+                .iter()
+                .flat_map(|suggestion| &suggestion.themes)
+                .all(|theme| known_themes.contains(theme)),
+            "response contained an unknown theme"
+        );
+        println!(
+            "validated {} streamed suggestions ({} response bytes)",
+            suggestions.len(),
+            content.len()
+        );
+        Ok(())
+    }
+
+    fn strip_fence(response: &str) -> &str {
+        let response = response.trim();
+        response
+            .strip_prefix("```json")
+            .or_else(|| response.strip_prefix("```"))
+            .and_then(|response| response.strip_suffix("```"))
+            .map(str::trim)
+            .unwrap_or(response)
+    }
 }

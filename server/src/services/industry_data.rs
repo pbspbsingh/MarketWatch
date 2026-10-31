@@ -127,12 +127,12 @@ impl IndustryDataService {
 pub(crate) mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::providers::FinvizClient;
-    use crate::providers::YahooClient;
     use crate::services::yahoo::YahooService;
     use crate::store::IndustryClassification;
     use chrono::Utc;
+    use finviz::FinvizClient;
     use market_types::TickerSymbol;
+    use yahoo::YahooClient;
 
     use tokio::net::TcpListener;
 
@@ -202,6 +202,64 @@ pub(crate) mod tests {
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn importing_spy_records_etf_membership_once_without_a_stock_industry_link() {
+        use axum::{Router, extract::Query, routing::get};
+        use market_types::{CompanyProfile, ETF_INDUSTRY_KEY, Exchange};
+        use std::{
+            collections::HashMap,
+            sync::atomic::{AtomicUsize, Ordering},
+        };
+        struct Server(tokio::task::JoinHandle<()>);
+        impl Drop for Server {
+            fn drop(&mut self) {
+                self.0.abort();
+            }
+        }
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = requests.clone();
+        let app = Router::new().route(
+            "/",
+            get(move |Query(parameters): Query<HashMap<String, String>>| {
+                assert_eq!(parameters["t"], "SPY");
+                count.fetch_add(1, Ordering::SeqCst);
+                async {
+                    include_str!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../crates/providers/finviz/src/fixtures/etf_quote.html"
+                    ))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let _server = Server(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let symbol = TickerSymbol::parse("SPY").unwrap();
+        store
+            .upsert_company_profile(&CompanyProfile {
+                symbol: symbol.clone(),
+                name: Some("SPDR S&P 500 ETF Trust".into()),
+                exchange: Exchange::Nyse,
+                description: None,
+                fetched_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let (_, catalog, _) = fixture(store.clone(), client(&url));
+        catalog.ensure_ticker_symbol(&symbol).await.unwrap();
+        assert!(
+            store
+                .ticker_has_industry_membership(&symbol, ETF_INDUSTRY_KEY)
+                .await
+                .unwrap()
+        );
+        catalog.ensure_ticker_symbol(&symbol).await.unwrap();
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const MEMBERSHIP_FRESH_DAYS: i64 = 30;
-pub const ETF_INDUSTRY_KEY: &str = "exchangetradedfund";
+pub use market_types::ETF_INDUSTRY_KEY;
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct IndustryClassification {

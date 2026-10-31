@@ -182,17 +182,26 @@ fn sse_event_boundary(buffer: &[u8]) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
-    use crate::providers::AiClient;
-    use crate::store::Store;
-    use anyhow::Context;
-    use std::collections::HashSet;
+    use crate::AiConfig;
+    use std::path::{Path, PathBuf};
 
     #[derive(Deserialize)]
-    struct LiveThemeSuggestion {
-        symbol: String,
-        themes: Vec<String>,
+    struct Config {
+        ai: Option<AiConfig>,
     }
+    impl Config {
+        fn load(path: &str) -> anyhow::Result<Self> {
+            let path = std::env::var_os("MARKET_WATCH_CONFIG")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../..")
+                        .join(path)
+                });
+            Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
+        }
+    }
+    use anyhow::Context;
 
     #[test]
     fn stream_is_decoded_across_transport_chunks() -> anyhow::Result<()> {
@@ -284,76 +293,5 @@ mod tests {
 
         assert_eq!(content.trim(), "OK");
         Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "submits a stored theme job to the configured live OpenAI-compatible API"]
-    async fn live_stored_theme_job() -> anyhow::Result<()> {
-        let job_id = std::env::var("OPENAI_COMPATIBLE_JOB_ID")
-            .context("OPENAI_COMPATIBLE_JOB_ID must identify a stored theme job")?
-            .parse::<i64>()
-            .context("OPENAI_COMPATIBLE_JOB_ID must be an integer")?;
-        let config = Config::load("config.toml")?;
-        let ai = config.ai.as_ref().context("AI must be configured")?;
-        let store = Store::connect(&config.database.url).await?;
-        let job = store
-            .theme_ai_job(job_id)
-            .await?
-            .with_context(|| format!("theme AI job {job_id} does not exist"))?;
-
-        let content = AiClient::new(ai)
-            .complete_with_updates(&job.prompt, |_| {})
-            .await?;
-        let suggestions = serde_json::from_str::<Vec<LiveThemeSuggestion>>(strip_fence(&content))
-            .context("OpenAI-compatible response must be a JSON suggestion array")?;
-        let expected = job
-            .symbols
-            .iter()
-            .map(ToString::to_string)
-            .collect::<HashSet<_>>();
-        let returned = suggestions
-            .iter()
-            .map(|suggestion| suggestion.symbol.trim().to_uppercase())
-            .collect::<HashSet<_>>();
-        let known_themes = store
-            .themes()
-            .await?
-            .into_iter()
-            .map(|theme| theme.name)
-            .collect::<HashSet<_>>();
-
-        anyhow::ensure!(
-            returned == expected,
-            "response ticker set did not match the job"
-        );
-        anyhow::ensure!(
-            suggestions
-                .iter()
-                .all(|suggestion| suggestion.themes.len() <= 2),
-            "a response assigned more than two themes to a ticker"
-        );
-        anyhow::ensure!(
-            suggestions
-                .iter()
-                .flat_map(|suggestion| &suggestion.themes)
-                .all(|theme| known_themes.contains(theme)),
-            "response contained an unknown theme"
-        );
-        println!(
-            "validated {} streamed suggestions ({} response bytes)",
-            suggestions.len(),
-            content.len()
-        );
-        Ok(())
-    }
-
-    fn strip_fence(response: &str) -> &str {
-        let response = response.trim();
-        response
-            .strip_prefix("```json")
-            .or_else(|| response.strip_prefix("```"))
-            .and_then(|response| response.strip_suffix("```"))
-            .map(str::trim)
-            .unwrap_or(response)
     }
 }

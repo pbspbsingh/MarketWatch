@@ -1,9 +1,10 @@
-use crate::providers::{FinvizClient, is_http_not_found};
 use crate::services::yahoo::{YahooService, YahooServiceError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
+use finviz::FinvizClient;
 use market_types::{CompanyProfile, FundamentalPeriod, Fundamentals, TickerSymbol};
+use provider_http::is_http_not_found;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;

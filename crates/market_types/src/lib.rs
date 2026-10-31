@@ -11,3 +11,6 @@ pub use market_data::{CompanyProfile, DailyCandle};
 pub use ticker_symbol::{InvalidTickerSymbol, TickerSymbol, deserialize_valid_ticker_symbols};
 pub use tradingview_symbol::TradingViewSymbol;
 pub use yahoo_symbol::{InvalidYahooSymbol, YahooSymbol};
+
+/// Stable industry identity used for exchange-traded funds.
+pub const ETF_INDUSTRY_KEY: &str = "exchangetradedfund";

@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct OwnershipProgress {
@@ -66,20 +66,6 @@ pub struct FundPosition {
     pub filing_url: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct SourceArchive {
-    pub period: i32,
-    pub url: String,
-}
-
-impl SourceArchive {
-    pub fn label(&self) -> String {
-        format!(
-            "{} Q{}",
-            self.period.div_euclid(4),
-            self.period.rem_euclid(4) + 1
-        )
-    }
-}
+pub(crate) use sec::SourceArchive;
 
 pub(crate) use institutions::{ParsedArchive, SourceFiling, SourcePosition};

@@ -1,8 +1,6 @@
 use crate::api;
 use crate::auth;
 use crate::config::{AuthConfig, Config};
-use crate::providers::news::StockTitanClient;
-use crate::providers::{AiClient, FinvizClient, YahooClient};
 use crate::services::chart::ChartService;
 use crate::services::daily_notes::DailyNotesService;
 use crate::services::details::TickerDetailsService;
@@ -34,6 +32,7 @@ use crate::services::yahoo::YahooService;
 use crate::services::yahoo_live::YahooLiveHandle;
 use crate::store::Store;
 use crate::utils::MarketSchedule;
+use ai::AiClient;
 use axum::Router;
 #[cfg(any(not(debug_assertions), test))]
 use axum::body::Body;
@@ -42,17 +41,20 @@ use axum::http::StatusCode;
 use axum::http::{Uri, header};
 #[cfg(any(not(debug_assertions), test))]
 use axum::response::{IntoResponse, Response};
+use finviz::FinvizClient;
 #[cfg(any(not(debug_assertions), test))]
 use include_dir::Dir;
 #[cfg(not(debug_assertions))]
 use include_dir::include_dir;
 use market_types::TickerSymbol;
+use news::StockTitanClient;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::{
     CompressionLayer, DefaultPredicate,
     predicate::{And, Predicate, SizeAbove},
 };
+use yahoo::YahooClient;
 
 #[cfg(not(debug_assertions))]
 static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");

@@ -6,6 +6,10 @@ members = [
     "crates/providers/http",
     "crates/providers/yahoo",
     "crates/providers/nyse",
+    "crates/providers/news",
+    "crates/providers/finviz",
+    "crates/providers/ai",
+    "crates/providers/sec",
 ]
 default-members = ["server"]
 resolver = "3"
@@ -24,6 +28,10 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Workspace crates
+ai = { path = "crates/providers/ai" }
+sec = { path = "crates/providers/sec" }
+news = { path = "crates/providers/news" }
+finviz = { path = "crates/providers/finviz" }
 provider_http = { path = "crates/providers/http" }
 yahoo = { path = "crates/providers/yahoo" }
 nyse = { path = "crates/providers/nyse" }

@@ -11,6 +11,10 @@ sqlite-bundled = ["sqlx/sqlite-bundled", "institutions/sqlite-bundled"]
 sqlite-unbundled = ["sqlx/sqlite-unbundled", "institutions/sqlite-unbundled"]
 
 [dependencies]
+ai.workspace = true
+sec.workspace = true
+news.workspace = true
+finviz.workspace = true
 provider_http.workspace = true
 yahoo.workspace = true
 nyse.workspace = true
@@ -34,7 +38,6 @@ base64.workspace = true
 fastrand.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
-scraper.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ts-rs.workspace = true
@@ -45,5 +48,7 @@ subtle.workspace = true
 market_types.workspace = true
 
 [dev-dependencies]
+ai = { workspace = true, features = ["test-support"] }
+finviz = { workspace = true, features = ["test-support"] }
 tower.workspace = true
 tokio-tungstenite.workspace = true

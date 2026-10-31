@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, time::Duration};
 
 use anyhow::{Context, ensure};
@@ -8,12 +9,35 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{info, warn};
 
-use crate::config::ProviderConfig;
-use crate::models::n_factor::NewsCoverage;
-use crate::models::n_factor::NewsItem;
-use crate::models::n_factor::NewsStopReason;
 use market_types::TickerSymbol;
 use provider_http::BROWSER_USER_AGENT;
+use provider_http::ProviderConfig;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NewsItem {
+    pub id: usize,
+    pub title: String,
+    pub summary: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub url: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NewsStopReason {
+    SixMonths,
+    ArticleLimit,
+    SourceExhausted,
+    SourceLimited,
+    SourceNotFound,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NewsCoverage {
+    pub requested_since: DateTime<Utc>,
+    pub pages_fetched: usize,
+    pub stop_reason: NewsStopReason,
+}
 
 const MAX_NEWS_ITEMS: usize = 50;
 
@@ -420,7 +444,7 @@ fn parse_stock_titan_page(
     })
 }
 
-pub(crate) fn parse_finviz_news(html: &str, now: DateTime<Utc>) -> anyhow::Result<Vec<NewsItem>> {
+pub fn parse_finviz_news(html: &str, now: DateTime<Utc>) -> anyhow::Result<Vec<NewsItem>> {
     let document = Html::parse_document(html);
     let mut date = None;
     let mut items = Vec::new();

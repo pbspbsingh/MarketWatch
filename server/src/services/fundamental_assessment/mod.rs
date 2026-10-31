@@ -32,12 +32,12 @@ use crate::models::fundamental_assessment::AssessmentSnapshot;
 use crate::models::fundamental_assessment::FundamentalAssessment;
 use crate::models::fundamental_assessment::RUBRIC_VERSION;
 use crate::models::fundamentals_background::FundamentalsFeature;
-use crate::providers::AiClient;
-use crate::providers::AiStreamDelta;
-use crate::providers::is_http_not_found;
 use crate::store::Store;
+use ai::AiClient;
+use ai::AiStreamDelta;
 use input::fingerprint;
 use market_types::{Fundamentals, TickerSymbol};
+use provider_http::is_http_not_found;
 
 const PROMPT_VERSION: u32 = 3;
 const MAX_ACTIVE_JOBS: usize = 8;

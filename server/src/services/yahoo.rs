@@ -1,10 +1,9 @@
 use crate::config::MarketConfig;
 use crate::constants::DAILY_CANDLE_HISTORY;
-use crate::providers::FinvizClient;
-use crate::providers::{Candle, ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::store::Store;
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
 use chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
+use finviz::FinvizClient;
 use market_types::{CompanyProfile, DailyCandle, InvalidTickerSymbol, TickerSymbol, YahooSymbol};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -12,6 +11,11 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
 use tracing::{debug, warn};
+use yahoo::Candle;
+use yahoo::ChartInterval;
+use yahoo::ChartRange;
+use yahoo::YahooClient;
+use yahoo::YahooError;
 
 const REFRESH_OVERLAP_SESSIONS: usize = 7;
 const HISTORY_OVERLAP_SESSIONS: usize = 5;

@@ -9,7 +9,6 @@ use crate::models::chart::{
     market_chart_candles_for_interval, market_chart_indicators, market_chart_moving_averages,
     market_chart_volume_average_period, volume_sma,
 };
-use crate::providers::{ChartInterval, ChartRange, YahooClient, YahooError};
 use crate::services::yahoo::YahooService;
 use crate::utils::MarketSchedule;
 use chrono::{Months, NaiveDate, TimeZone, Utc};
@@ -21,6 +20,11 @@ use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::warn;
 use ts_rs::TS;
+use yahoo::Candle;
+use yahoo::ChartInterval;
+use yahoo::ChartRange;
+use yahoo::YahooClient;
+use yahoo::YahooError;
 
 #[derive(Clone, Debug, Serialize, TS)]
 pub struct StudyCandle {
@@ -488,7 +492,7 @@ fn provider_has_more_before(range: &ChartRange, start: NaiveDate) -> bool {
         .unwrap_or(!range.candles.is_empty())
 }
 
-fn provider_study_candle(candle: crate::providers::Candle) -> StudyCandle {
+fn provider_study_candle(candle: Candle) -> StudyCandle {
     StudyCandle {
         date: candle.timestamp.date_naive(),
         open: candle.open,

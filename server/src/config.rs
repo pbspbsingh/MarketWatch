@@ -168,25 +168,9 @@ pub struct HomeConfig {
 
 pub use provider_http::ProviderConfig;
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FinvizConfig {
-    pub top_stocks_base_filters: Vec<String>,
-    #[serde(default)]
-    pub top_stocks_additional_filters: Vec<String>,
-}
+pub use finviz::FinvizConfig;
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AiConfig {
-    pub endpoint: String,
-    pub model: String,
-    pub api_key: Option<String>,
-    pub batch_size: usize,
-    pub max_concurrent_requests: usize,
-    #[serde(alias = "request_timeout_secs")]
-    pub read_timeout_secs: u64,
-}
+pub use ai::AiConfig;
 
 impl Config {
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -309,26 +293,6 @@ fn valid_finviz_filters(filters: &[String]) -> bool {
                 .chars()
                 .all(|character| character.is_ascii_alphanumeric() || character == '_')
     })
-}
-
-impl AiConfig {
-    fn validate(&self) -> anyhow::Result<()> {
-        anyhow::ensure!(!self.endpoint.trim().is_empty(), "ai.endpoint is required");
-        anyhow::ensure!(!self.model.trim().is_empty(), "ai.model is required");
-        anyhow::ensure!(self.batch_size > 0, "ai.batch_size must be positive");
-        anyhow::ensure!(
-            self.max_concurrent_requests > 0,
-            "ai.max_concurrent_requests must be positive"
-        );
-        anyhow::ensure!(
-            self.read_timeout_secs > 0,
-            "ai.read_timeout_secs must be positive"
-        );
-        if let Some(api_key) = &self.api_key {
-            anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key cannot be empty");
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]

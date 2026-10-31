@@ -1,4 +1,12 @@
 use super::*;
+#[cfg(test)]
+use ai::test_support::TestAiServer;
+#[cfg(test)]
+use ai::test_support::probe_automatic_preemption;
+#[cfg(test)]
+use ai::test_support::probe_cancellation;
+#[cfg(test)]
+use ai::test_support::probe_wait_for_completion;
 use axum::{Json, Router, extract::State, routing::post};
 use market_types::FundamentalPeriod;
 use serde_json::{Value, json};
@@ -16,11 +24,10 @@ fn service_with_source(
     ai: Option<Arc<AiClient>>,
     url: &str,
 ) -> FundamentalAssessmentService {
-    use crate::{
-        providers::{FinvizClient, YahooClient},
-        services::yahoo::YahooService,
-        utils::MarketSchedule,
-    };
+    use crate::services::yahoo::YahooService;
+    use crate::utils::MarketSchedule;
+    use finviz::FinvizClient;
+    use yahoo::YahooClient;
     let mut config: crate::config::Config = toml::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../config.example.toml"
@@ -1043,7 +1050,7 @@ async fn background_preemption_preserves_saved_assessment_and_allows_retry() -> 
     saved.generated_at = Utc::now() - Duration::days(10);
     saved.prompt_version = 0;
     save_report(&store, &saved).await;
-    let provider = crate::providers::TestAiServer::new(1, Some(ai_response().to_string())).await?;
+    let provider = TestAiServer::new(1, Some(ai_response().to_string())).await?;
     let (url, _, financial_server) = fundamentals_server().await;
     let service = Arc::new(service_with_source(
         store.clone(),
@@ -1110,7 +1117,7 @@ async fn promotion_protects_an_already_running_assessment_from_preemption() -> a
     store
         .add_ticker_industry("semiconductors", "Semiconductors", &data.symbol)
         .await?;
-    let provider = crate::providers::TestAiServer::new(1, Some(ai_response().to_string())).await?;
+    let provider = TestAiServer::new(1, Some(ai_response().to_string())).await?;
     let (url, _, financial_server) = fundamentals_server().await;
     let service = Arc::new(service_with_source(store, Some(provider.ai.clone()), &url));
     let (background, completion) =
@@ -1207,13 +1214,11 @@ async fn manual_request_promotes_background_assessment_waiting_for_ai() {
 
 #[tokio::test]
 async fn shared_worker_continues_n_factor_after_assessment_refresh_failure() {
-    use crate::{
-        models::n_factor::NewsSource,
-        providers::{FinvizClient, news::StockTitanClient},
-        services::{
-            fundamentals_background::FundamentalsBackgroundService, n_factor::NFactorService,
-        },
-    };
+    use crate::models::n_factor::NewsSource;
+    use crate::services::fundamentals_background::FundamentalsBackgroundService;
+    use crate::services::n_factor::NFactorService;
+    use finviz::FinvizClient;
+    use news::StockTitanClient;
     let store = Store::connect("sqlite::memory:").await.unwrap();
     let symbol = fixture().symbol;
     seed(&store, &fixture()).await;
@@ -1375,7 +1380,7 @@ async fn run_live_assessment_preemption(mode: LivePreemptionMode) -> anyhow::Res
     let ai = config.ai.as_ref().context("AI must be configured")?;
     match mode {
         LivePreemptionMode::Wait => {
-            crate::providers::probe_wait_for_completion(
+            probe_wait_for_completion(
                 ai,
                 &workloads[0],
                 &workloads[1],
@@ -1385,11 +1390,10 @@ async fn run_live_assessment_preemption(mode: LivePreemptionMode) -> anyhow::Res
             .await
         }
         LivePreemptionMode::Abort => {
-            crate::providers::probe_cancellation(ai, &workloads[0], &workloads[1], validate).await
+            probe_cancellation(ai, &workloads[0], &workloads[1], validate).await
         }
         LivePreemptionMode::Automatic => {
-            crate::providers::probe_automatic_preemption(ai, &workloads[0], &workloads[1], validate)
-                .await
+            probe_automatic_preemption(ai, &workloads[0], &workloads[1], validate).await
         }
     }
 }

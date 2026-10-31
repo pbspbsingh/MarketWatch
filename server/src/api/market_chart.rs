@@ -2,7 +2,6 @@ use crate::app::AppState;
 use crate::models::RelativeStrengthCalculationError;
 use crate::models::chart::{MarketChartInterval, MarketChartSnapshot};
 use crate::models::chart_relative_strength_period;
-use crate::providers::YahooError;
 use crate::services::market_chart::MarketChartError;
 use crate::services::volume_run_rate::VolumeRunRate;
 use crate::services::yahoo::YahooServiceError;
@@ -14,6 +13,7 @@ use chrono::NaiveDate;
 use market_types::TickerSymbol;
 use serde::Deserialize;
 use tracing::error;
+use yahoo::YahooError;
 
 #[derive(Deserialize)]
 struct SnapshotQuery {

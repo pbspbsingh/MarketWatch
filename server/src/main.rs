@@ -11,7 +11,6 @@ mod config;
 mod constants;
 mod contracts;
 mod models;
-pub mod providers;
 mod services;
 mod store;
 mod utils;

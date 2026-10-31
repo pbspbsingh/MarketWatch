@@ -23,7 +23,7 @@ struct ActivityState {
     last_user_finished: Instant,
 }
 
-pub(crate) struct UserAiJob {
+pub struct UserAiJob {
     activity: Arc<AiActivity>,
 }
 
@@ -36,7 +36,7 @@ struct BackgroundActivity {
     origin: Option<watch::Receiver<bool>>,
 }
 
-pub(crate) struct BackgroundAiRequest {
+pub struct BackgroundAiRequest {
     activity: Arc<AiActivity>,
     cancellation: watch::Receiver<bool>,
 }
@@ -178,7 +178,7 @@ impl AiActivity {
 }
 
 impl BackgroundAiRequest {
-    pub(crate) fn with_origin(self, origin: watch::Receiver<bool>) -> Self {
+    pub fn with_origin(self, origin: watch::Receiver<bool>) -> Self {
         self.activity
             .state
             .lock()
@@ -211,7 +211,7 @@ impl BackgroundAiRequest {
         std::future::pending::<()>().await;
     }
 
-    pub(crate) fn user_work_pending(&self) -> bool {
+    pub fn user_work_pending(&self) -> bool {
         self.activity
             .state
             .lock()

@@ -23,14 +23,15 @@ use crate::models::institutions::ParsedArchive;
 use crate::models::institutions::SourceArchive;
 use crate::models::institutions::SourceFiling;
 use crate::models::institutions::SourcePosition;
-use crate::providers::YahooClient;
-use crate::providers::sec::FACTS_URL;
-use crate::providers::sec::NPORT_URL;
-use crate::providers::sec::Progress;
-use crate::providers::sec::SecClient;
-use crate::providers::sec::SourceVersion;
-use crate::providers::sec::TICKERS_URL;
 use market_types::TickerSymbol;
+use sec::FACTS_URL;
+use sec::NPORT_URL;
+use sec::SecClient;
+use sec::SourceVersion;
+use sec::TICKERS_URL;
+use yahoo::YahooClient;
+
+type Progress = Arc<RwLock<OwnershipProgress>>;
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -220,7 +221,15 @@ impl InstitutionsService {
         progress: &Progress,
     ) -> Result<Option<SourceVersion>> {
         if let Some(known) = self.store().await?.source(name).await?
-            && !sec.archive_changed(source, &known).await?
+            && !sec
+                .archive_changed(
+                    source,
+                    &SourceVersion {
+                        modified_at: known.source_modified_at,
+                        etag: known.source_etag.clone(),
+                    },
+                )
+                .await?
         {
             return Ok(None);
         }
@@ -231,9 +240,13 @@ impl InstitutionsService {
             state.bytes_received = 0;
             state.bytes_total = None;
         }
-        sec.download(source, &downloads.0.join(name), progress)
-            .await
-            .map(Some)
+        sec.download(source, &downloads.0.join(name), |received, total| {
+            let mut state = progress.write().unwrap();
+            state.bytes_received = received;
+            state.bytes_total = total;
+        })
+        .await
+        .map(Some)
     }
 
     async fn run(

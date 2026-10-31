@@ -1,5 +1,4 @@
 //! Intraday history belongs to the market day, independently of live subscription lifetime.
-use crate::providers::{Candle, YahooError};
 use crate::services::yahoo::YahooService;
 use crate::services::yahoo_live::{YahooLiveHandle, YahooLiveVolume};
 use crate::utils::{KeyedLock, MarketSchedule, MarketSession};
@@ -9,6 +8,8 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use ts_rs::TS;
+use yahoo::Candle;
+use yahoo::YahooError;
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 pub struct VolumeRunRate {

@@ -1,10 +1,10 @@
 mod activity;
 mod stream;
-#[cfg(test)]
-pub(super) mod tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
-use crate::config::AiConfig;
 use reqwest::{Client, Response, StatusCode};
+use serde::Deserialize;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,7 +13,39 @@ use tokio::sync::{Semaphore, TryAcquireError};
 use tracing::{error, info};
 
 use activity::AiActivity;
-pub(crate) use activity::{BackgroundAiRequest, UserAiJob};
+pub use activity::{BackgroundAiRequest, UserAiJob};
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AiConfig {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub batch_size: usize,
+    pub max_concurrent_requests: usize,
+    #[serde(alias = "request_timeout_secs")]
+    pub read_timeout_secs: u64,
+}
+
+impl AiConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.endpoint.trim().is_empty(), "ai.endpoint is required");
+        anyhow::ensure!(!self.model.trim().is_empty(), "ai.model is required");
+        anyhow::ensure!(self.batch_size > 0, "ai.batch_size must be positive");
+        anyhow::ensure!(
+            self.max_concurrent_requests > 0,
+            "ai.max_concurrent_requests must be positive"
+        );
+        anyhow::ensure!(
+            self.read_timeout_secs > 0,
+            "ai.read_timeout_secs must be positive"
+        );
+        if let Some(api_key) = &self.api_key {
+            anyhow::ensure!(!api_key.trim().is_empty(), "ai.api_key cannot be empty");
+        }
+        Ok(())
+    }
+}
 
 pub struct AiClient {
     http: Client,
@@ -26,7 +58,7 @@ pub struct AiClient {
     activity: Arc<AiActivity>,
 }
 
-pub(crate) enum AiStreamDelta<'a> {
+pub enum AiStreamDelta<'a> {
     Content(&'a str),
     Reasoning(&'a str),
 }
@@ -133,23 +165,23 @@ impl AiClient {
         self.batch_size
     }
 
-    pub(crate) fn max_concurrent_requests(&self) -> usize {
+    pub fn max_concurrent_requests(&self) -> usize {
         self.max_concurrent_requests
     }
 
-    pub(crate) fn user_job(&self) -> UserAiJob {
+    pub fn user_job(&self) -> UserAiJob {
         self.activity.user_job()
     }
 
-    pub(crate) async fn wait_idle(&self, delay: Duration) {
+    pub async fn wait_idle(&self, delay: Duration) {
         self.activity.wait_idle(delay).await;
     }
 
-    pub(crate) async fn background_request(&self, delay: Duration) -> BackgroundAiRequest {
+    pub async fn background_request(&self, delay: Duration) -> BackgroundAiRequest {
         self.activity.background_request(delay).await
     }
 
-    pub(crate) async fn complete_with_updates<F>(
+    pub async fn complete_with_updates<F>(
         &self,
         prompt: &str,
         mut on_delta: F,
@@ -163,7 +195,7 @@ impl AiClient {
             .await
     }
 
-    pub(crate) async fn complete_background_with_updates<F>(
+    pub async fn complete_background_with_updates<F>(
         &self,
         prompt: &str,
         request: BackgroundAiRequest,
